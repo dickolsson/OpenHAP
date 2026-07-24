@@ -1,9 +1,9 @@
 ---
 name: compliance-mqtt
 description:
-  Audit the OpenHAP MQTT/Tasmota integration for compliance with spec/MQTT.md,
-  writing findings to a scratchpad file. Use when asked to review, audit, or
-  verify Tasmota MQTT protocol handling.
+  Audit the OpenHAP MQTT/Tasmota integration for compliance with spec/MQTT.md
+  and spec/MQTT-*.md, writing findings to a scratchpad file. Use when asked to
+  review, audit, or verify Tasmota MQTT protocol handling.
 ---
 
 # Tasmota MQTT Protocol Compliance Review
@@ -15,12 +15,18 @@ specification.
 
 ## Preconditions
 
-`spec/MQTT.md` must exist — regenerate it with the `spec-mqtt` skill if missing.
+`spec/MQTT.md` and `spec/MQTT-*.md` must exist — regenerate them with the
+`spec-mqtt` skill if missing.
 
 ## Specification
 
-Study `spec/MQTT.md` thoroughly. This document defines how Tasmota devices
-communicate over MQTT and how OpenHAP must interact with them. Pay attention to:
+Study the MQTT specification files in `spec/` thoroughly:
+
+- `spec/MQTT.md` — Overview, glossary, and index to topic files
+- `spec/MQTT-*.md` — Detailed topic-specific specifications
+
+These documents define how Tasmota devices communicate over MQTT and how OpenHAP
+must interact with them. Pay attention to:
 
 - Topic naming conventions and patterns
 - Command/response message formats
@@ -49,8 +55,8 @@ they handle Tasmota communication correctly. Look for:
 
 For each finding, record:
 
-1. **What the spec requires** — cite the specific requirement from
-   `spec/MQTT.md`
+1. **What the spec requires** — cite the specific requirement and the
+   `spec/MQTT*.md` file
 2. **What the code does** — identify the file and relevant code section
 3. **The discrepancy** — explain how the implementation differs
 4. **Severity** — will this cause device control failures, state sync issues, or
