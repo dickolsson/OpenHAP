@@ -478,7 +478,8 @@ All HKDF operations use:
 | Session Read Key       | `Control-Salt`                    | `Control-Read-Encryption-Key`     |
 | Session Write Key      | `Control-Salt`                    | `Control-Write-Encryption-Key`    |
 
-From `hap_handler.py` and `HAPPairingPairVerify.c:556-561`.
+From `hap_handler.py` and `HAPPairingPairVerify.c` (function
+`HAPPairingPairVerifyStartSession`).
 
 ---
 

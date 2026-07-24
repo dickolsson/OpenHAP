@@ -510,8 +510,10 @@ Exceptions (immediate delivery):
 
 - `ProgrammableSwitchEvent` (0x73) — button press
 - `ButtonEvent` (0x126)
+- `MotionDetected` (0x22)
+- `ContactSensorState` (0x6A)
 
-From `eventedhttp.ts`.
+From `Accessory.ts` (`handleCharacteristicChangeEvent`).
 
 **Subscription Persistence:**
 

@@ -72,7 +72,8 @@ itself (`aid=1`) carries this service; bridged accessories do not.
 
 **Required Characteristics:**
 
-- Version (0x37) — fixed at `1.1.0` for HAP over IP
+- Version (0x37) — the HAP version; HAP-NodeJS reports `1.1.0`, HAP-python the
+  equivalent zero-padded `01.01.00`
 
 ---
 

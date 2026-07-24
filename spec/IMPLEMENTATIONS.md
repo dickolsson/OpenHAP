@@ -569,15 +569,16 @@ After verification, session keys are derived:
 
 ```c
 // external/HomeKitADK/HAP/HAPPairingPairVerify.c
+// (HAPPairingPairVerifyStartSession; each info constant is local to its
+// own block)
 static const uint8_t salt[] = "Control-Salt";
-static const uint8_t infoRead[] = "Control-Read-Encryption-Key";
-static const uint8_t infoWrite[] = "Control-Write-Encryption-Key";
-
-HAP_hkdf_sha512(accessoryToControllerKey, 32,
-    sharedSecret, 32, salt, 12, infoRead, 27);
-HAP_hkdf_sha512(controllerToAccessoryKey, 32,
-    sharedSecret, 32, salt, 12, infoWrite, 28);
+static const uint8_t info[] = "Control-Read-Encryption-Key";
+static const uint8_t info[] = "Control-Write-Encryption-Key";
 ```
+
+HKDF-SHA-512 derives the 32-byte accessory-to-controller key from the shared
+secret with the read info string, and the 32-byte controller-to-accessory key
+with the write info string.
 
 ---
 
@@ -600,9 +601,10 @@ ChaCha20-Poly1305.
 ```typescript
 // external/HAP-NodeJS/src/lib/util/hapCrypto.ts
 export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
-  let result = Buffer.alloc(0);
-  for (let offset = 0; offset < data.length; ) {
-    const length = Math.min(data.length - offset, 0x400); // Max 1024 bytes
+  const chunks: Buffer[] = [];
+  const total = data.length;
+  for (let offset = 0; offset < total; ) {
+    const length = Math.min(total - offset, 0x400);
     const leLength = Buffer.alloc(2);
     leLength.writeUInt16LE(length, 0);
 
@@ -612,19 +614,14 @@ export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
     const encrypted = chacha20_poly1305_encryptAndSeal(
       encryption.accessoryToControllerKey,
       nonce,
-      leLength, // AAD = length bytes
+      leLength,
       data.subarray(offset, offset + length),
     );
-
-    result = Buffer.concat([
-      result,
-      leLength,
-      encrypted.ciphertext,
-      encrypted.authTag,
-    ]);
     offset += length;
+
+    chunks.push(leLength, encrypted.ciphertext, encrypted.authTag);
   }
-  return result;
+  return Buffer.concat(chunks);
 }
 ```
 

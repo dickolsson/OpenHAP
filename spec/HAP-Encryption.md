@@ -100,11 +100,11 @@ responses):
    - Increment counter
 3. Concatenate all frames
 
-From `hapCrypto.ts:96-114`:
+From `hapCrypto.ts` (`layerEncrypt`):
 
 ```typescript
 export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
-  let result = Buffer.alloc(0);
+  const chunks: Buffer[] = [];
   const total = data.length;
   for (let offset = 0; offset < total; ) {
     const length = Math.min(total - offset, 0x400);
@@ -117,19 +117,14 @@ export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
     const encrypted = chacha20_poly1305_encryptAndSeal(
       encryption.accessoryToControllerKey,
       nonce,
-      leLength, // AAD
+      leLength,
       data.subarray(offset, offset + length),
     );
     offset += length;
 
-    result = Buffer.concat([
-      result,
-      leLength,
-      encrypted.ciphertext,
-      encrypted.authTag,
-    ]);
+    chunks.push(leLength, encrypted.ciphertext, encrypted.authTag);
   }
-  return result;
+  return Buffer.concat(chunks);
 }
 ```
 

@@ -557,7 +557,7 @@ Query comprehensive device state (from `Commands.md`).
     "MqttCount": 1,
     "POWER": "ON",
     "Dimmer": 75,
-    "Color": "FF5500",
+    "Color": "FF55000000",
     "HSBColor": "20,100,100",
     "CT": 300,
     "Wifi": {

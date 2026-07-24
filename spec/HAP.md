@@ -144,11 +144,12 @@ For custom/vendor UUIDs, use a different base UUID (not Apple's).
 
 ```
 HAP Protocol Version: 1.1
-Version String: "01.01.00"
 ```
 
 The protocol version is advertised in mDNS TXT records (`pv=1.1`) and reported
-via the HAPProtocolInformation service.
+via the ProtocolInformation service's Version characteristic. Implementations
+format that characteristic value differently: HAP-NodeJS reports `1.1.0`,
+HAP-python the equivalent zero-padded `01.01.00`.
 
 ---
 
