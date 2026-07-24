@@ -39,12 +39,21 @@ Record 2: Type=X, Length=245, Value[255..499]
 **Decoding rule:** When encountering consecutive TLV records with the same Type,
 concatenate their Values into a single logical value.
 
+Every fragment except the last MUST be exactly 255 bytes; only the final
+fragment may be shorter. Strict decoders depend on this: HAP-NodeJS's
+`decodeWithLists` merges a record into the previous one only when the preceding
+record has the same Type and a Length of exactly 255, and rejects adjacent
+same-type records otherwise.
+
 ---
 
 ## 3. Separators
 
 To encode multiple distinct values with the same Type (a list), separate them
-with a zero-length TLV (typically Type=0xFF):
+with a zero-length TLV of a different Type. Pairing messages define Type `0xFF`
+(Separator) for this purpose; in generic TLV8 characteristic payloads the
+separator Type is arbitrary, as long as the characteristic does not use it for
+something else:
 
 ```
 Record 1: Type=0x01, Length=32, Value[32 bytes]  // First identifier
@@ -96,7 +105,7 @@ These type codes are used in pair-setup, pair-verify, and pairings endpoints:
 | `0x00` | Method        | Pairing method (see Methods table)                    | `HAPPairing.h:108` |
 | `0x01` | Identifier    | Pairing identifier (UTF-8 string, max 36 bytes)       | `HAPPairing.h:114` |
 | `0x02` | Salt          | SRP salt (16+ bytes random)                           | `HAPPairing.h:120` |
-| `0x03` | PublicKey     | Curve25519 or SRP public key                          | `HAPPairing.h:126` |
+| `0x03` | PublicKey     | Curve25519, SRP public key, or signed Ed25519 key     | `HAPPairing.h:126` |
 | `0x04` | Proof         | SRP proof (M1/M2) or Ed25519 password proof           | `HAPPairing.h:132` |
 | `0x05` | EncryptedData | Encrypted payload with auth tag appended              | `HAPPairing.h:138` |
 | `0x06` | State         | Pairing state: 1=M1, 2=M2, 3=M3, 4=M4, 5=M5, 6=M6     | `HAPPairing.h:144` |
@@ -161,10 +170,11 @@ Hex dump: `06 01 01 00 01 00`
 ```
 06 01 02                    // State = 0x02 (M2)
 02 10 <16 bytes salt>       // Salt (16 bytes)
-03 80 01 <384 bytes>        // PublicKey (384 bytes = 0x180, fragmented)
+03 <fragmented>             // PublicKey (384 bytes, see below)
 ```
 
-The 384-byte SRP public key B requires fragmentation:
+A TLV8 length field is a single byte, so the 384-byte value cannot be carried in
+one record; the SRP public key B is split into two fragments:
 
 ```
 03 FF <255 bytes>           // First fragment

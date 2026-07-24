@@ -31,7 +31,7 @@ particular implementation.
 | **Setup Code**     | An 8-digit code in format `XXX-XX-XXX` used during Pair Setup. Also called PIN code.                                                                    |
 | **Setup ID**       | A 4-character alphanumeric code used with the setup code to generate QR codes and NFC tags for pairing.                                                 |
 | **SRP-6a**         | Secure Remote Password protocol variant used by HAP with SHA-512 instead of SHA-1, and a 3072-bit prime from RFC 5054.                                  |
-| **TLV8**           | Type-Length-Value encoding with 8-bit length field. Used for pairing protocol messages.                                                                 |
+| **TLV8**           | Type-Length-Value encoding with 8-bit length field. Used for pairing protocol messages and for characteristic values with format `tlv8`.                |
 | **UUID**           | Universally Unique Identifier. HAP uses Apple's base UUID `XXXXXXXX-0000-1000-8000-0026BB765291` with a 32-bit short form prefix for standard types.    |
 
 ---
@@ -84,16 +84,17 @@ Bridge/Accessory (aid)
 - Has a unique `iid` within its accessory
 - Has a type UUID identifying the service type (e.g., `43` = LightBulb)
 - Contains required and optional characteristics
-- May link to other services (`linkedServices`)
-- May be marked as primary (`isPrimaryService`)
+- May link to other services (`linked`, an array of service instance IDs)
+- May be marked as primary (`primary`) or hidden (`hidden`)
 
 ### 3.3 Characteristic
 
 - Has a unique `iid` within its accessory
 - Has a type UUID identifying the characteristic type (e.g., `25` = On)
-- Has a format (bool, uint8, int, float, string, tlv8, data)
-- Has permissions (pr, pw, ev, hd, wr)
-- May have constraints (minValue, maxValue, minStep, validValues)
+- Has a format (bool, uint8, uint16, uint32, uint64, int, float, string, tlv8,
+  data)
+- Has permissions (pr, pw, ev, aa, tw, hd, wr)
+- May have constraints (minValue, maxValue, minStep, maxLen, valid-values)
 
 ---
 

@@ -153,14 +153,17 @@ Services are defined with required and optional characteristics:
 ```json
 // external/HAP-python/pyhap/resources/services.json
 {
-  "LightBulb": {
+  "Lightbulb": {
     "UUID": "00000043-0000-1000-8000-0026BB765291",
     "RequiredCharacteristics": ["On"],
     "OptionalCharacteristics": [
       "Brightness",
       "Hue",
       "Saturation",
-      "ColorTemperature"
+      "Name",
+      "ActiveTransitionCount",
+      "TransitionControl",
+      "SupportedTransitionConfiguration"
     ]
   }
 }
@@ -221,13 +224,15 @@ BASE_UUID = "-0000-1000-8000-0026BB765291"
 
 ### Permissions
 
-| Code | Name           | Description                  |
-| ---- | -------------- | ---------------------------- |
-| `pr` | Paired Read    | Client can read when paired  |
-| `pw` | Paired Write   | Client can write when paired |
-| `ev` | Events         | Supports event notifications |
-| `hd` | Hidden         | Not visible in UI            |
-| `wr` | Write Response | Write returns a response     |
+| Code | Name                     | Description                              |
+| ---- | ------------------------ | ---------------------------------------- |
+| `pr` | Paired Read              | Client can read when paired              |
+| `pw` | Paired Write             | Client can write when paired             |
+| `ev` | Events                   | Supports event notifications             |
+| `aa` | Additional Authorization | Write needs additional authorization     |
+| `tw` | Timed Write              | Write must use the timed write procedure |
+| `hd` | Hidden                   | Not visible in UI                        |
+| `wr` | Write Response           | Write returns a response                 |
 
 ---
 
@@ -303,9 +308,17 @@ export const enum TLVValues {
   CERTIFICATE = 0x09, // X.509 certificate
   SIGNATURE = 0x0a, // Ed25519 signature
   PERMISSIONS = 0x0b, // Controller permissions
+  FRAGMENT_DATA = 0x0c, // Non-last fragment (obsolete since R7)
+  FRAGMENT_LAST = 0x0d, // Last fragment (obsolete since R7)
   SEPARATOR = 0xff, // List separator
 }
 ```
+
+The real enum additionally defines alias names for several of these codes —
+`REQUEST_TYPE` = `METHOD` (0x00), `USERNAME` = `IDENTIFIER` (0x01),
+`SEQUENCE_NUM` = `STATE` (0x06), `PROOF` = `SIGNATURE` (0x0a). Code excerpts in
+this document use the aliases (`SEQUENCE_NUM`, `USERNAME`, `PROOF`)
+interchangeably with the names above.
 
 ---
 
@@ -413,7 +426,9 @@ Controller sends:
 
 ### M4: SRP Verify Response
 
-Accessory verifies M1 and sends M2:
+Accessory verifies the controller's SRP proof M1 and answers with its own SRP
+proof M2 (the SRP proofs are conventionally named M1/M2; they are unrelated to
+the pairing message numbers M1-M6 carried in the State TLV):
 
 ```typescript
 // external/HAP-NodeJS/src/lib/HAPServer.ts
@@ -616,6 +631,8 @@ export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
 ### Nonce Handling
 
 - 12-byte nonce: first 4 bytes zero, last 8 bytes = counter (little-endian)
+- The snippet above allocates only the 8-byte counter; HAP-NodeJS left-pads it
+  to 12 bytes with zero bytes inside `chacha20_poly1305_encryptAndSeal`
 - Separate counters for each direction
 - Counter increments after each frame
 
@@ -634,7 +651,7 @@ export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
 | GET    | `/accessories`     | Yes            | Get accessory database                 |
 | GET    | `/characteristics` | Yes            | Read characteristics                   |
 | PUT    | `/characteristics` | Yes            | Write characteristics                  |
-| POST   | `/prepare`         | Yes            | Timed write preparation                |
+| PUT    | `/prepare`         | Yes            | Timed write preparation                |
 | POST   | `/resource`        | Yes            | Request resources (images)             |
 
 ### Content Types
@@ -714,6 +731,21 @@ Request body:
     { "aid": 1, "iid": 10, "value": false },
     { "aid": 1, "iid": 11, "ev": true }
   ]
+}
+```
+
+The accessory replies `204 No Content` when every entry succeeds, or
+`207 Multi-Status` with a body carrying a per-characteristic `status` code when
+any entry fails:
+
+```typescript
+// external/HAP-NodeJS/src/lib/HAPServer.ts
+if (multiStatus) {
+  response.writeHead(HAPHTTPCode.MULTI_STATUS, {
+    "Content-Type": HAPMimeTypes.HAP_JSON,
+  });
+} else {
+  response.writeHead(HAPHTTPCode.NO_CONTENT);
 }
 ```
 
@@ -797,8 +829,9 @@ public sendEvent(aid: number, iid: number, value, immediateDelivery?: boolean): 
 
 ### Event Coalescing
 
-Events are batched with a 250ms delay, except for immediate-delivery
-characteristics:
+HAP-NodeJS batches events with a 250ms delay (`EVENT_COALESCING_DELAY`), except
+for immediate-delivery characteristics. Coalescing is a design choice, not a
+protocol requirement; see Implementation Differences below:
 
 ```typescript
 // external/HAP-NodeJS/src/lib/util/eventedhttp.ts
@@ -813,10 +846,12 @@ if (immediateDelivery) {
 }
 ```
 
-**Immediate delivery characteristics**:
+**Immediate delivery characteristics** (from `Accessory.ts`):
 
 - `ProgrammableSwitchEvent` (0x73)
 - `ButtonEvent` (0x126)
+- `MotionDetected` (0x22)
+- `ContactSensorState` (0x6A)
 
 ---
 
@@ -864,6 +899,10 @@ static computeSetupHash(accessoryInfo: AccessoryInfo): string {
 }
 ```
 
+Here `username` is HAP-NodeJS's name for the accessory's device ID (the mDNS
+`id` field, `XX:XX:XX:XX:XX:XX` format), not a display or account name. The hash
+input is the 4-character Setup ID concatenated with the uppercased device ID.
+
 ### Category Identifiers
 
 ```python
@@ -879,7 +918,8 @@ CATEGORY_SWITCH = 8
 CATEGORY_THERMOSTAT = 9
 CATEGORY_SENSOR = 10
 CATEGORY_ALARM_SYSTEM = 11
-# ... more categories up to 36
+# ... more categories, up to CATEGORY_TARGET_CONTROLLER = 32
+# (HAP-NodeJS's Categories enum extends to 36, TV_STREAMING_STICK)
 ```
 
 ---

@@ -28,18 +28,28 @@ ControllerToAccessoryKey = HKDF-SHA-512(
 )
 ```
 
-From `HAPPairingPairVerify.c:556-561`:
+From `HAPPairingPairVerify.c`, function `HAPPairingPairVerifyStartSession`
+(lines 40-59; each `info` constant is local to its own block):
 
 ```c
 static const uint8_t salt[] = "Control-Salt";
-static const uint8_t infoRead[] = "Control-Read-Encryption-Key";
-static const uint8_t infoWrite[] = "Control-Write-Encryption-Key";
+static const uint8_t info[] = "Control-Read-Encryption-Key";
+static const uint8_t info[] = "Control-Write-Encryption-Key";
 ```
 
 **Note:** "Read" and "Write" are from the controller's perspective:
 
 - Accessory uses `Control-Read-Encryption-Key` for **outgoing** data
 - Accessory uses `Control-Write-Encryption-Key` for **incoming** data
+
+**Transient sessions:** A session can also be secured by transient Pair Setup
+(Pair Setup M1-M4 with the Transient flag, used for Software Authentication)
+without any Pair Verify. The frame format and nonce rules below are identical,
+but the keys are derived from the SRP shared secret `K` instead: salt
+`SplitSetupSalt`, info `AccessoryEncrypt-Control` for the
+accessory-to-controller key and `ControllerEncrypt-Control` for the
+controller-to-accessory key; both nonce counters start at 0 (from
+`HAPPairingPairSetup.c`, "Transient Pair Setup Start Session").
 
 ---
 
@@ -72,7 +82,9 @@ const length = Math.min(total - offset, 0x400);
 
 ## 3. Encryption Process
 
-For each HTTP message (request or response):
+For each HTTP message (request, response, or `EVENT/1.0` event notification —
+events share the accessory-to-controller key and nonce counter with regular
+responses):
 
 1. Split plaintext into chunks of at most 1024 bytes
 2. For each chunk:
@@ -93,8 +105,9 @@ From `hapCrypto.ts:96-114`:
 ```typescript
 export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
   let result = Buffer.alloc(0);
-  for (let offset = 0; offset < data.length; ) {
-    const length = Math.min(data.length - offset, 0x400);
+  const total = data.length;
+  for (let offset = 0; offset < total; ) {
+    const length = Math.min(total - offset, 0x400);
     const leLength = Buffer.alloc(2);
     leLength.writeUInt16LE(length, 0);
 

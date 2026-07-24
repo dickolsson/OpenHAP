@@ -42,13 +42,25 @@ From `const.py:23-50` and `Categories.md`:
 | 31  | `CATEGORY_TELEVISION`          | Television          |
 | 32  | `CATEGORY_TARGET_CONTROLLER`   | Remote Controller   |
 
-Note: IDs 24, 25, 27 are not defined in the public specification.
+Note: IDs 24, 25 and 27 are marked Reserved in the public specification and are
+absent from HAP-python; HAP-NodeJS defines them as the Apple-only device types
+`APPLE_TV` (24), `HOMEPOD` (25) and `AIRPORT` (27). Later protocol revisions add
+four more categories, defined in HAP-NodeJS:
+
+| ID  | Constant (HAP-NodeJS) | Name               |
+| --- | --------------------- | ------------------ |
+| 33  | `ROUTER`              | Wi-Fi Router       |
+| 34  | `AUDIO_RECEIVER`      | Audio Receiver     |
+| 35  | `TV_SET_TOP_BOX`      | TV Set Top Box     |
+| 36  | `TV_STREAMING_STICK`  | TV Streaming Stick |
 
 ---
 
 ## 2. Category Name List (HomeSpan)
 
-From `Categories.md`, the complete list of category names:
+From `Categories.md`, the category names HomeSpan supports (not a complete list
+— HomeSpan omits Range Extender (16), Speaker (26) and Remote Controller (32),
+which appear in the identifier table above):
 
 - AirConditioners
 - AirPurifiers
@@ -121,10 +133,17 @@ This indicates a Lightbulb accessory.
 
 2. **Bridges**: A bridge (category 2) aggregates multiple accessories. The
    bridge's category should always be 2, regardless of what types of accessories
-   it bridges.
+   it bridges. Bridged accessories have no advertised category of their own:
+   HomeKitADK assigns them category 0 (`kHAPAccessoryCategory_BridgedAccessory`,
+   "accessory that is accessed through a bridge"); only the bridge's category
+   appears in the `ci` TXT record.
 
 3. **Unknown categories**: If the Home app encounters an unknown category ID, it
    falls back to the "Other" icon.
 
 4. **Persistence**: The category should not change after initial pairing, as
    this may confuse users.
+
+5. **Obsolete categories**: Range Extender (16) is obsolete since HAP
+   specification R10 — HomeKitADK marks it "Obsolete since R10" and HomeSpan
+   omits it entirely. Do not use it for new accessories.

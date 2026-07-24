@@ -17,7 +17,8 @@ The service type is `_hap._tcp` (HAP over TCP/IP).
 
 ## 2. TXT Record Fields
 
-All accessories MUST advertise these TXT record fields:
+Accessories MUST advertise the following TXT record fields; only `sh` is
+optional (needed for QR code and NFC pairing):
 
 | Key  | Description                 | Example             | Required |
 | ---- | --------------------------- | ------------------- | -------- |
@@ -29,7 +30,7 @@ All accessories MUST advertise these TXT record fields:
 | `s#` | State number                | `1`                 | Yes      |
 | `sf` | Status flags                | `1`                 | Yes      |
 | `ci` | Category identifier         | `5`                 | Yes      |
-| `sh` | Setup hash                  | `ABCD`              | Optional |
+| `sh` | Setup hash                  | `Duww+A==`          | Optional |
 
 From `Advertiser.ts:155-170`.
 
@@ -41,7 +42,11 @@ From `Advertiser.ts:155-170`.
 
 - Integer starting at 1
 - Increments when accessory database changes (services, characteristics)
+- Also increments after a firmware update, even if the database is otherwise
+  unchanged
 - Maximum value: 65535 (wraps to 1)
+- Must be persisted across restarts — controllers compare it against their
+  cached value, so resetting it on reboot defeats cache validation
 - Controllers use this to detect when to refresh cached data
 
 ### 3.2 Feature Flags (ff)
@@ -222,7 +227,7 @@ pv=1.1
 s#=1
 sf=1
 ci=2
-sh=QRST
+sh=aWcyuQ==
 ```
 
 This describes:

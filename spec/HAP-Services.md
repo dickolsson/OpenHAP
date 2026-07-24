@@ -55,15 +55,33 @@ information.
 **Optional Characteristics:**
 
 - HardwareRevision (0x53)
+- SoftwareRevision (0x54)
 - AccessoryFlags (0xA6)
-- HardwareFinish
+- ProductData (0x220)
+- HardwareFinish (0x26C)
+
+---
+
+### ProtocolInformation (0xA2)
+
+Required on every accessory. For a bridge, only the bridge accessory object
+itself (`aid=1`) carries this service; bridged accessories do not.
+
+| UUID | `000000A2-0000-1000-8000-0026BB765291` |
+| ---- | -------------------------------------- |
+
+**Required Characteristics:**
+
+- Version (0x37) — fixed at `1.1.0` for HAP over IP
 
 ---
 
 ## 4. Service Catalog
 
-The following table lists all standard HAP services with their UUIDs and
-required/optional characteristics.
+The following table lists the standard HAP services most relevant to this
+project, with their UUIDs and required/optional characteristics. Apple defines
+further services (remote control, Siri, Wi-Fi router, data stream management,
+and others) that are out of scope here.
 
 ### Lights, Power, and Switches
 
@@ -190,7 +208,7 @@ Common linking patterns:
 - **IrrigationSystem** → **Valve** (for zone control)
 - **Faucet** → **Valve** (for tap control)
 - **AirPurifier** → **FilterMaintenance** (for filter status)
-- **ServiceLabel** → **StatelessProgrammableSwitch** (for button numbering)
+- **StatelessProgrammableSwitch** → **ServiceLabel** (for button numbering)
 
 ---
 
@@ -228,6 +246,7 @@ Common linking patterns:
 | NFCAccess                   | 266        | 00000266-0000-1000-8000-0026BB765291 |
 | OccupancySensor             | 86         | 00000086-0000-1000-8000-0026BB765291 |
 | Outlet                      | 47         | 00000047-0000-1000-8000-0026BB765291 |
+| ProtocolInformation         | A2         | 000000A2-0000-1000-8000-0026BB765291 |
 | SecuritySystem              | 7E         | 0000007E-0000-1000-8000-0026BB765291 |
 | ServiceLabel                | CC         | 000000CC-0000-1000-8000-0026BB765291 |
 | Slat                        | B9         | 000000B9-0000-1000-8000-0026BB765291 |
