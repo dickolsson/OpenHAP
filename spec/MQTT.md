@@ -87,7 +87,8 @@ Constructed from tokens that are substituted at runtime. Default pattern:
 `%prefix%/%topic%/`.
 
 **FallbackTopic** : An emergency topic (`DVES_XXXXXX_fb` where XXXXXX is derived
-from MAC address) that always works regardless of topic configuration.
+from MAC address) that works regardless of the configured Topic. Not subscribed
+when FullTopic omits the `%topic%` token (see 2.3).
 
 **GroupTopic** : A shared topic that multiple devices can subscribe to for
 synchronized control. Default is `tasmotas`.
@@ -100,7 +101,8 @@ publish a message when a device disconnects ungracefully. Tasmota uses
 broker and delivered to new subscribers immediately upon subscription.
 
 **TelePeriod** : The interval in seconds between automatic telemetry messages.
-Default is 300 seconds (5 minutes). Range: 10-3600 seconds, or 0 to disable.
+Default is 300 seconds (5 minutes). Range: 10-3600 seconds; 0 disables telemetry
+and 1 resets the value to the firmware default (see 8.1).
 
 ---
 
@@ -225,6 +227,16 @@ cmnd/%topic%/<command>
 - Payloads `0`, `off`, `false` are equivalent
 - Payloads `1`, `on`, `true` are equivalent
 - Payloads `2`, `toggle` toggle the current state
+
+**Backlog:** Several commands can be sent in a single message using the
+`Backlog` command — up to 30 commands separated by `;`:
+
+```
+cmnd/%topic%/Backlog Power ON; Dimmer 50; CT 300
+```
+
+`Backlog0` executes the commands without the default delay between them, and a
+`Backlog` without arguments clears a pending queue.
 
 ### 3.2 Response Topics
 
@@ -445,6 +457,11 @@ cmnd/tasmota/Color #FF5500
   ↳ stat/tasmota/RESULT → {"Color":"FF550000"}
 ```
 
+The reported `Color` string contains two hex digits per light channel: six
+digits for an RGB light, eight for RGBW (as in this example), ten for RGBCCT.
+Parse it according to the device's channel count rather than assuming six
+digits.
+
 **SetOption17:**
 
 - `SetOption17 0`: Color shown as hex string (default)
@@ -515,9 +532,13 @@ Query comprehensive device state (from `Commands.md`).
 | Status  | `0`     | All status information (1-11)      |
 | Status  | `1`     | Device parameters                  |
 | Status  | `2`     | Firmware information               |
+| Status  | `3`     | Logging and telemetry parameters   |
+| Status  | `4`     | Memory information                 |
 | Status  | `5`     | Network information                |
 | Status  | `6`     | MQTT information                   |
+| Status  | `7`     | Time and daylight saving settings  |
 | Status  | `8`     | Sensor information (legacy)        |
+| Status  | `9`     | Power thresholds (margins)         |
 | Status  | `10`    | Sensor information                 |
 | Status  | `11`    | Full state (like TelePeriod STATE) |
 
@@ -536,7 +557,7 @@ Query comprehensive device state (from `Commands.md`).
     "MqttCount": 1,
     "POWER": "ON",
     "Dimmer": 75,
-    "Color": "FF5500",
+    "Color": "FF55000000",
     "HSBColor": "20,100,100",
     "CT": 300,
     "Wifi": {
@@ -576,6 +597,18 @@ stat/%topic%/POWER1   → Multi-relay power state
 **PowerRetain setting:** When `PowerRetain 1` is enabled, power state messages
 are published with MQTT retain flag.
 
+**Button and switch events:** By default a physical button or switch toggles the
+device's own relay and only the resulting `POWER` message is published. To
+receive press events directly (e.g. for a HomeKit stateless programmable
+switch), detach them from the relays:
+
+- `SetOption73 1`: buttons stop controlling the relay and each press publishes
+  `stat/%topic%/RESULT` with `{"Button<x>":{"Action":"SINGLE"}}`; actions are
+  `SINGLE`, `DOUBLE`, `TRIPLE`, `QUAD`, `PENTA`, and `HOLD`
+- `SetOption114 1`: switches are detached from all relays and publish
+  `{"Switch<x>":{"Action":"TOGGLE"}}`, with the action depending on the
+  configured SwitchMode
+
 ### 5.2 Periodic Telemetry (tele/)
 
 Periodic telemetry is published at intervals defined by TelePeriod (from
@@ -608,7 +641,7 @@ The STATE message includes complete device status (from `Commands.md`):
   "MqttCount": 1,
   "POWER": "ON",
   "Dimmer": 75,
-  "Color": "FF550000",
+  "Color": "FF55000000",
   "HSBColor": "20,100,100",
   "White": 0,
   "CT": 300,
@@ -642,7 +675,11 @@ appear based on device configuration:
 
 ### 5.4 RESULT Message Structure
 
-RESULT messages are simpler, containing only the changed values:
+RESULT messages contain the fields relevant to the executed command rather than
+the full device status. Depending on the command and light type, the response
+may include related fields whose values did not change (see the Color and CT
+examples below), so the presence of a field in a RESULT does not imply that it
+changed:
 
 **Power change:**
 
@@ -800,9 +837,9 @@ Sensor data is published on `tele/%topic%/SENSOR` (from `MQTT.md`):
 
 - `DS18B20`: Dallas 1-Wire temperature sensor
 - `DS18S20`: Dallas 1-Wire temperature sensor (older)
-- `AM2301`: DHT21/AM2301 temperature/humidity
+- `AM2301`: DHT21/AM2301, DHT22/AM2302, AM2320, and AM2321 temperature/humidity
+  (all variants report under the `AM2301` key)
 - `DHT11`: DHT11 temperature/humidity
-- `DHT22`: DHT22/AM2302 temperature/humidity
 - `BME280`: Bosch temperature/humidity/pressure
 - `BME680`: Bosch temperature/humidity/pressure/gas
 - `BMP280`: Bosch temperature/pressure
@@ -846,6 +883,8 @@ Sensor data is published on `tele/%topic%/SENSOR` (from `MQTT.md`):
 
 - Default: Celsius
 - `SetOption8 1`: Use Fahrenheit
+- SENSOR messages carry a top-level `TempUnit` field (`"C"` or `"F"`) indicating
+  the unit in use; check it before converting for HomeKit
 
 **Resolution:**
 
@@ -857,12 +896,12 @@ Sensor data is published on `tele/%topic%/SENSOR` (from `MQTT.md`):
 
 ### 7.4 Humidity Sensors
 
-**DHT22 example:**
+**AM2301 (DHT21/DHT22/AM2302) example:**
 
 ```json
 {
   "Time": "2021-01-01T12:00:00",
-  "DHT22": {
+  "AM2301": {
     "Temperature": 22.5,
     "Humidity": 45.0
   }
@@ -1201,7 +1240,9 @@ cmnd/%topic%/TelePeriod     → Trigger immediate telemetry
 ```
 stat/%topic%/RESULT         → Command responses
 stat/%topic%/POWER          → Power state changes
-stat/%topic%/POWER+         → Multi-relay (POWER1, POWER2, etc.)
+stat/%topic%/POWER1         → Multi-relay (POWER1, POWER2, ...); MQTT has
+stat/%topic%/POWER2           no partial-level wildcard, so subscribe to
+                              each relay topic or to stat/%topic%/+
 tele/%topic%/STATE          → Periodic state
 tele/%topic%/SENSOR         → Sensor readings
 tele/%topic%/LWT            → Online/Offline status

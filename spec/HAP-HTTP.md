@@ -16,7 +16,7 @@ codes used by HAP over IP.
 | GET    | `/accessories`     | Yes           | `application/hap+json`     | Get accessory database     |
 | GET    | `/characteristics` | Yes           | `application/hap+json`     | Read characteristics       |
 | PUT    | `/characteristics` | Yes           | `application/hap+json`     | Write characteristics      |
-| POST   | `/prepare`         | Yes           | `application/hap+json`     | Timed write preparation    |
+| PUT    | `/prepare`         | Yes           | `application/hap+json`     | Timed write preparation    |
 | POST   | `/resource`        | Yes           | `application/hap+json`     | Request resources (images) |
 
 "Auth Required" = must complete Pair Verify first (encrypted session).
@@ -55,7 +55,8 @@ No body required.
 **Response:**
 
 - `204 No Content` — Success
-- `400 Bad Request` — Already paired
+- `400 Bad Request` — Already paired; body is `application/hap+json`
+  `{"status": -70401}` (insufficient privileges)
 
 ---
 
@@ -124,7 +125,11 @@ See [HAP-Pairing.md](HAP-Pairing.md) for TLV format.
 | HTTP Code | Condition                           |
 | --------- | ----------------------------------- |
 | `470`     | Not verified (no encrypted session) |
-| `400`     | Bad request or insufficient perms   |
+| `400`     | Malformed request (bad TLV)         |
+
+Insufficient permissions is not an HTTP-level error: when a non-admin controller
+attempts to add, remove, or list pairings, the accessory responds `200 OK` with
+a TLV8 body containing State `M2` and Error `0x02` (Authentication).
 
 ---
 
@@ -210,6 +215,7 @@ Content-Length: <length>
 | `maxValue`     | number  | No       | Maximum allowed value                 |
 | `minStep`      | number  | No       | Minimum step between values           |
 | `maxLen`       | integer | No       | Maximum string length                 |
+| `maxDataLen`   | integer | No       | Maximum data length (format `data`)   |
 | `valid-values` | array   | No       | List of valid enum values             |
 | `ev`           | boolean | No       | Event notifications enabled           |
 
@@ -285,19 +291,29 @@ Content-Type: application/hap+json
 
 **Write Fields:**
 
-| Field   | Type    | Description                        |
-| ------- | ------- | ---------------------------------- |
-| `aid`   | integer | Accessory ID                       |
-| `iid`   | integer | Instance ID                        |
-| `value` | varies  | New value to write                 |
-| `ev`    | boolean | Enable/disable event notifications |
-| `r`     | boolean | Request write response             |
+| Field      | Type    | Description                          |
+| ---------- | ------- | ------------------------------------ |
+| `aid`      | integer | Accessory ID                         |
+| `iid`      | integer | Instance ID                          |
+| `value`    | varies  | New value to write                   |
+| `ev`       | boolean | Enable/disable event notifications   |
+| `authData` | string  | Base64 additional authorization data |
+| `remote`   | boolean | Write performed via remote access    |
+| `r`        | boolean | Request write response               |
+
+For timed writes, the request object also carries a top-level `pid` field
+(alongside the `characteristics` array) matching a preceding `/prepare` request.
 
 **Response (success):**
 
 ```http
 HTTP/1.1 204 No Content
 ```
+
+`204 No Content` applies only when every write succeeds and no write response
+was requested. If an entry requested a write response (`r: true`), the server
+instead returns `207 Multi-Status` with a body carrying the resulting `value`
+(and `status`) for that entry.
 
 **Response (partial failure):**
 
@@ -315,14 +331,14 @@ Content-Type: application/hap+json
 
 ---
 
-## 10. POST /prepare
+## 10. PUT /prepare
 
 Prepare for a timed write operation.
 
 **Request:**
 
 ```http
-POST /prepare HTTP/1.1
+PUT /prepare HTTP/1.1
 Content-Type: application/hap+json
 
 {
@@ -347,7 +363,21 @@ Content-Type: application/hap+json
 }
 ```
 
-The subsequent PUT `/characteristics` must include the `pid`.
+The subsequent PUT `/characteristics` must include the same `pid` as a top-level
+field of the request object, alongside the `characteristics` array (not inside
+the individual characteristic objects):
+
+```http
+PUT /characteristics HTTP/1.1
+Content-Type: application/hap+json
+
+{
+  "pid": 12345678,
+  "characteristics": [
+    {"aid": 1, "iid": 10, "value": true}
+  ]
+}
+```
 
 ---
 
@@ -480,8 +510,10 @@ Exceptions (immediate delivery):
 
 - `ProgrammableSwitchEvent` (0x73) — button press
 - `ButtonEvent` (0x126)
+- `MotionDetected` (0x22)
+- `ContactSensorState` (0x6A)
 
-From `eventedhttp.ts`.
+From `Accessory.ts` (`handleCharacteristicChangeEvent`).
 
 **Subscription Persistence:**
 

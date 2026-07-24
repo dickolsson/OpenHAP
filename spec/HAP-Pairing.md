@@ -96,6 +96,27 @@ Controller sends:
 | Transient | `1 << 4`  | Pair Setup M1-M4 only, no key exchange |
 | Split     | `1 << 24` | Used with Transient for split pairing  |
 
+If M1 contained flags, the accessory returns the granted flags in a Flags TLV in
+M2, omitted when the resulting value is zero (HomeKitADK echoes
+`Transient | Split` together, or `Split` alone, but never `Transient` alone).
+When a transient Pair Setup completes at M4, no pairing is stored; the session
+immediately becomes encrypted using keys derived from the SRP shared secret `K`:
+
+```
+AccessoryToControllerKey = HKDF-SHA-512(
+    Salt: "SplitSetupSalt",
+    IKM:  K,
+    Info: "AccessoryEncrypt-Control",
+    L:    32
+)
+ControllerToAccessoryKey = HKDF-SHA-512(
+    Salt: "SplitSetupSalt",
+    IKM:  K,
+    Info: "ControllerEncrypt-Control",
+    L:    32
+)
+```
+
 ### 2.4 M2: SRP Start Response
 
 Accessory generates:
@@ -103,7 +124,8 @@ Accessory generates:
 1. Random 16-byte salt `s`
 2. Computes verifier: `v = g^x mod N` where `x = H(s | H(I | ":" | P))`
 3. Generates random 256-bit `b`
-4. Computes public value: `B = (kv + g^b) mod N` where `k = H(N | g)`
+4. Computes public value: `B = (kv + g^b) mod N` where `k = H(N | PAD(g))`;
+   `PAD()` left-pads the value with zeros to the 384-byte length of N (RFC 5054)
 
 Response TLVs:
 
@@ -122,7 +144,7 @@ Response TLVs:
 
 Common errors:
 
-- `0x06` Unavailable: Already paired (except for PairSetupWithAuth)
+- `0x06` Unavailable: Already paired (regardless of pairing method)
 - `0x07` Busy: Another pairing in progress
 - `0x05` MaxTries: Too many failed attempts (limit: 100)
 
@@ -132,7 +154,8 @@ Controller computes:
 
 1. Generates random 256-bit `a`
 2. Computes public value: `A = g^a mod N`
-3. Computes: `u = H(A | B)`, `x = H(s | H(I | ":" | P))`
+3. Computes: `u = H(PAD(A) | PAD(B))` (both values left-padded with zeros to 384
+   bytes, RFC 5054), `x = H(s | H(I | ":" | P))`
 4. Computes: `S = (B - kg^x)^(a + ux) mod N`
 5. Computes session key: `K = H(S)`
 6. Computes proof: `M1 = H(H(N) xor H(g) | H(I) | s | A | B | K)`
@@ -150,7 +173,8 @@ Request TLVs:
 Accessory:
 
 1. Verifies `A mod N != 0`
-2. Computes `u = H(A | B)`
+2. Computes `u = H(PAD(A) | PAD(B))` (values left-padded with zeros to 384
+   bytes, RFC 5054)
 3. Computes `S = (Av^u)^b mod N`
 4. Computes `K = H(S)`
 5. Verifies M1
@@ -162,6 +186,13 @@ Response TLVs:
 | -------- | --------------------- |
 | State    | `0x04` (M4)           |
 | Proof    | 64 bytes (SHA-512 M2) |
+
+For `PairSetupWithAuth` (Method `0x01`), M4 additionally carries an
+EncryptedData TLV: a sub-TLV containing Signature (the MFi proof over a 32-byte
+challenge derived via HKDF-SHA-512 with salt `MFi-Pair-Setup-Salt` and info
+`MFi-Pair-Setup-Info` from the SRP session key `K`) and Certificate (the Apple
+Authentication Coprocessor certificate), encrypted with the Pair Setup
+encryption key (see 2.7) and nonce `PS-Msg04`.
 
 **Error Response:**
 
@@ -212,7 +243,7 @@ iOSDeviceSignature = Ed25519_Sign(iOSDeviceLTSK, iOSDeviceInfo)
 ```
 EncryptedData = ChaCha20-Poly1305-Encrypt(
     Key:   EncryptionKey,
-    Nonce: "PS-Msg05" (padded to 12 bytes with zeros),
+    Nonce: 4 zero bytes then "PS-Msg05" (12 bytes; see Nonce Format section),
     AAD:   empty,
     Data:  SubTLV
 )
@@ -268,6 +299,16 @@ Response TLVs:
 | ------------- | ----------------------------- |
 | State         | `0x06` (M6)                   |
 | EncryptedData | Ciphertext + 16-byte auth tag |
+
+**Error Response:**
+
+| TLV Type | Value                          |
+| -------- | ------------------------------ |
+| State    | `0x06` (M6)                    |
+| Error    | `0x02` (Authentication failed) |
+
+Sent when the M5 EncryptedData fails to decrypt (bad auth tag) or the
+iOSDeviceInfo signature does not verify.
 
 ---
 
@@ -437,7 +478,8 @@ All HKDF operations use:
 | Session Read Key       | `Control-Salt`                    | `Control-Read-Encryption-Key`     |
 | Session Write Key      | `Control-Salt`                    | `Control-Write-Encryption-Key`    |
 
-From `hap_handler.py` and `HAPPairingPairVerify.c:556-561`.
+From `hap_handler.py` and `HAPPairingPairVerify.c` (function
+`HAPPairingPairVerifyStartSession`).
 
 ---
 
@@ -527,9 +569,11 @@ Response:
 When the last admin pairing is removed, accessory should:
 
 1. Remove all pairings
-2. Clear accessory LTPK/LTSK
-3. Generate new identity
-4. Update mDNS to show unpaired
+2. Update mDNS to show unpaired
+
+The accessory keeps its long-term identity (LTPK/LTSK): reference
+implementations generate a new LTSK only when none exists in persistent storage
+(i.e. after a factory reset), not when the last pairing is removed.
 
 ### 7.3 List Pairings
 
@@ -550,6 +594,20 @@ Response (for each pairing, separated by 0xFF):
 | Permissions | Permission byte         |
 | Separator   | (between pairings)      |
 
+### 7.4 Error Responses
+
+On failure, all three methods respond with State `0x02` (M2) plus an Error TLV:
+
+| Error  | Condition                                                         |
+| ------ | ----------------------------------------------------------------- |
+| `0x02` | Requesting controller lacks Admin permission (all three methods)  |
+| `0x01` | Add Pairing: identifier exists but LTPK differs; storage failures |
+| `0x04` | Add Pairing: no free pairing slots (MaxPeers)                     |
+
+If Add Pairing is called with an identifier that already exists and a matching
+LTPK, the accessory updates the stored permissions and returns success. Remove
+Pairing for a pairing that does not exist returns success.
+
 ---
 
 ## 8. Authentication Attempt Limits
@@ -558,5 +616,6 @@ From `HAPPairingPairSetup.c`:
 
 - Maximum unsuccessful attempts: **100**
 - After limit reached, respond with error `0x05` (MaxTries)
-- Counter may reset on successful pairing or after reboot (implementation
-  choice)
+- Counter is stored persistently (HomeKitADK keeps it in the key-value store) so
+  it survives reboots, and is reset only after a successful SRP proof
+  verification

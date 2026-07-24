@@ -36,7 +36,7 @@ Each characteristic has the following properties:
 | `uint8`  | Unsigned 8-bit integer (0–255)    | number    |
 | `uint16` | Unsigned 16-bit integer (0–65535) | number    |
 | `uint32` | Unsigned 32-bit integer           | number    |
-| `uint64` | Unsigned 64-bit integer           | string    |
+| `uint64` | Unsigned 64-bit integer           | number    |
 | `int`    | Signed 32-bit integer             | number    |
 | `float`  | IEEE 754 floating point           | number    |
 | `string` | UTF-8 string                      | string    |
@@ -55,7 +55,7 @@ Each characteristic has the following properties:
 | `aa`       | Additional Authorization required             |
 | `tw`       | Timed Write required                          |
 | `hd`       | Hidden — not shown in Home app                |
-| `wr`       | Write Response — returns response after write |
+| `wr`       | Write Response — value returned in reply body |
 
 ---
 
@@ -75,17 +75,18 @@ Each characteristic has the following properties:
 
 ### Identification
 
-| Characteristic       | UUID | Format | Permissions | Range/Values                     |
-| -------------------- | ---- | ------ | ----------- | -------------------------------- |
-| **Identify**         | 0x14 | bool   | pw          | -                                |
-| **Manufacturer**     | 0x20 | string | pr          | -                                |
-| **Model**            | 0x21 | string | pr          | -                                |
-| **Name**             | 0x23 | string | pr          | -                                |
-| **SerialNumber**     | 0x30 | string | pr          | max 64 chars                     |
-| **FirmwareRevision** | 0x52 | string | pr          | x.y.z format                     |
-| **HardwareRevision** | 0x53 | string | pr          | x.y.z format                     |
-| **AccessoryFlags**   | 0xA6 | uint32 | pr, ev      | bit 0: requires additional setup |
-| **ConfiguredName**   | 0xE3 | string | pr, pw, ev  | -                                |
+| Characteristic       | UUID  | Format | Permissions | Range/Values                     |
+| -------------------- | ----- | ------ | ----------- | -------------------------------- |
+| **Identify**         | 0x14  | bool   | pw          | -                                |
+| **Manufacturer**     | 0x20  | string | pr          | -                                |
+| **Model**            | 0x21  | string | pr          | -                                |
+| **Name**             | 0x23  | string | pr          | -                                |
+| **SerialNumber**     | 0x30  | string | pr          | max 64 chars                     |
+| **FirmwareRevision** | 0x52  | string | pr          | x.y.z format                     |
+| **HardwareRevision** | 0x53  | string | pr          | x.y.z format                     |
+| **AccessoryFlags**   | 0xA6  | uint32 | pr, ev      | bit 0: requires additional setup |
+| **ConfiguredName**   | 0xE3  | string | pr, pw, ev  | -                                |
+| **ProductData**      | 0x220 | data   | pr          | -                                |
 
 ### On/Off and Active
 
@@ -104,7 +105,11 @@ Each characteristic has the following properties:
 | **Brightness**       | 0x08 | int    | pr, pw, ev  | 0–100   | percentage |
 | **Hue**              | 0x13 | float  | pr, pw, ev  | 0–360   | arcdegrees |
 | **Saturation**       | 0x2F | float  | pr, pw, ev  | 0–100   | percentage |
-| **ColorTemperature** | 0xCE | uint32 | pr, pw, ev  | 140–500 | mired      |
+| **ColorTemperature** | 0xCE | uint32 | pr, pw, ev  | 140–500 | -          |
+
+ColorTemperature values are expressed in mireds (reciprocal megakelvins), but
+`mired` is not a defined HAP unit (see section 4); the `unit` field is omitted
+for this characteristic.
 
 ### Temperature
 
@@ -158,6 +163,8 @@ Each characteristic has the following properties:
 | **PM2.5Density**           | 0xC6 | float  | pr, ev      | 0–1000 μg/m³                                               |
 | **PM10Density**            | 0xC7 | float  | pr, ev      | 0–1000 μg/m³                                               |
 | **VOCDensity**             | 0xC8 | float  | pr, ev      | 0–1000 μg/m³                                               |
+| **AirParticulateDensity**  | 0x64 | float  | pr, ev      | 0–1000 μg/m³                                               |
+| **AirParticulateSize**     | 0x65 | uint8  | pr, ev      | 0=2.5μm, 1=10μm                                            |
 
 ### Air Purifier
 
@@ -187,14 +194,14 @@ Each characteristic has the following properties:
 
 ### Sensors
 
-| Characteristic               | UUID | Format | Permissions | Values                    |
-| ---------------------------- | ---- | ------ | ----------- | ------------------------- |
-| **ContactSensorState**       | 0x6A | uint8  | pr, ev      | 0=Detected, 1=NotDetected |
-| **LeakDetected**             | 0x70 | uint8  | pr, ev      | 0=NotDetected, 1=Detected |
-| **MotionDetected**           | 0x22 | bool   | pr, ev      | -                         |
-| **OccupancyDetected**        | 0x71 | uint8  | pr, ev      | 0=NotDetected, 1=Detected |
-| **SmokeDetected**            | 0x76 | uint8  | pr, ev      | 0=NotDetected, 1=Detected |
-| **CurrentAmbientLightLevel** | 0x6B | float  | pr, ev      | 0.0001–100000 lux         |
+| Characteristic               | UUID | Format | Permissions | Values                                                  |
+| ---------------------------- | ---- | ------ | ----------- | ------------------------------------------------------- |
+| **ContactSensorState**       | 0x6A | uint8  | pr, ev      | 0=ContactDetected (closed), 1=ContactNotDetected (open) |
+| **LeakDetected**             | 0x70 | uint8  | pr, ev      | 0=NotDetected, 1=Detected                               |
+| **MotionDetected**           | 0x22 | bool   | pr, ev      | -                                                       |
+| **OccupancyDetected**        | 0x71 | uint8  | pr, ev      | 0=NotDetected, 1=Detected                               |
+| **SmokeDetected**            | 0x76 | uint8  | pr, ev      | 0=NotDetected, 1=Detected                               |
+| **CurrentAmbientLightLevel** | 0x6B | float  | pr, ev      | 0.0001–100000 lux                                       |
 
 ### Status
 
@@ -243,15 +250,15 @@ Each characteristic has the following properties:
 
 ### Doors and Locks
 
-| Characteristic                        | UUID | Format | Permissions | Values                                            |
-| ------------------------------------- | ---- | ------ | ----------- | ------------------------------------------------- |
-| **CurrentDoorState**                  | 0x0E | uint8  | pr, ev      | 0=Open, 1=Closed, 2=Opening, 3=Closing, 4=Stopped |
-| **TargetDoorState**                   | 0x32 | uint8  | pr, pw, ev  | 0=Open, 1=Closed                                  |
-| **LockCurrentState**                  | 0x1D | uint8  | pr, ev      | 0=Unsecured, 1=Secured, 2=Jammed, 3=Unknown       |
-| **LockTargetState**                   | 0x1E | uint8  | pr, pw, ev  | 0=Unsecured, 1=Secured                            |
-| **LockControlPoint**                  | 0x19 | tlv8   | pw          | -                                                 |
-| **LockLastKnownAction**               | 0x1C | uint8  | pr, ev      | (see spec)                                        |
-| **LockManagementAutoSecurityTimeout** | 0x1A | uint32 | pr, pw, ev  | seconds                                           |
+| Characteristic                        | UUID | Format | Permissions | Values                                                                                                                                                                          |
+| ------------------------------------- | ---- | ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CurrentDoorState**                  | 0x0E | uint8  | pr, ev      | 0=Open, 1=Closed, 2=Opening, 3=Closing, 4=Stopped                                                                                                                               |
+| **TargetDoorState**                   | 0x32 | uint8  | pr, pw, ev  | 0=Open, 1=Closed                                                                                                                                                                |
+| **LockCurrentState**                  | 0x1D | uint8  | pr, ev      | 0=Unsecured, 1=Secured, 2=Jammed, 3=Unknown                                                                                                                                     |
+| **LockTargetState**                   | 0x1E | uint8  | pr, pw, ev  | 0=Unsecured, 1=Secured                                                                                                                                                          |
+| **LockControlPoint**                  | 0x19 | tlv8   | pw          | -                                                                                                                                                                               |
+| **LockLastKnownAction**               | 0x1C | uint8  | pr, ev      | 0=SecuredInterior, 1=UnsecuredInterior, 2=SecuredExterior, 3=UnsecuredExterior, 4=SecuredKeypad, 5=UnsecuredKeypad, 6=SecuredRemotely, 7=UnsecuredRemotely, 8=AutoSecureTimeout |
+| **LockManagementAutoSecurityTimeout** | 0x1A | uint32 | pr, pw, ev  | seconds                                                                                                                                                                         |
 
 ### Security System
 
@@ -280,22 +287,22 @@ Each characteristic has the following properties:
 
 ### Television
 
-| Characteristic             | UUID  | Format | Permissions | Values                                                                                                                        |
-| -------------------------- | ----- | ------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **ActiveIdentifier**       | 0xE7  | uint32 | pr, pw, ev  | -                                                                                                                             |
-| **Identifier**             | 0xE6  | uint32 | pr          | -                                                                                                                             |
-| **InputSourceType**        | 0xDB  | uint8  | pr, ev      | 0=Other, 1=HomeScreen, 2=Tuner, 3=HDMI, 4=CompositeVideo, 5=SVideo, 6=ComponentVideo, 7=DVI, 8=AirPlay, 9=USB, 10=Application |
-| **InputDeviceType**        | 0xDC  | uint8  | pr, ev      | 0=Other, 1=TV, 2=Recording, 3=Tuner, 4=Playback, 5=AudioSystem                                                                |
-| **SleepDiscoveryMode**     | 0xE8  | uint8  | pr, ev      | 0=NotDiscoverable, 1=AlwaysDiscoverable                                                                                       |
-| **CurrentVisibilityState** | 0x135 | uint8  | pr, ev      | 0=Shown, 1=Hidden                                                                                                             |
-| **TargetVisibilityState**  | 0x134 | uint8  | pr, pw, ev  | 0=Shown, 1=Hidden                                                                                                             |
-| **ClosedCaptions**         | 0xDD  | uint8  | pr, pw, ev  | 0=Disabled, 1=Enabled                                                                                                         |
-| **DisplayOrder**           | 0x136 | tlv8   | pr, pw, ev  | -                                                                                                                             |
-| **CurrentMediaState**      | 0xE0  | uint8  | pr, ev      | 0=Play, 1=Pause, 2=Stop, 3=Unknown                                                                                            |
-| **TargetMediaState**       | 0x137 | uint8  | pr, pw, ev  | 0=Play, 1=Pause, 2=Stop                                                                                                       |
-| **PictureMode**            | 0xE2  | uint8  | pr, pw, ev  | 0=Other, 1=Standard, 2=Calibrated, ...                                                                                        |
-| **PowerModeSelection**     | 0xDF  | uint8  | pw          | 0=Show, 1=Hide                                                                                                                |
-| **RemoteKey**              | 0xE1  | uint8  | pw          | 4=Up, 5=Down, 6=Left, 7=Right, 8=Select, 9=Back, 11=PlayPause, 15=Info                                                        |
+| Characteristic             | UUID  | Format | Permissions | Values                                                                                                                                 |
+| -------------------------- | ----- | ------ | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **ActiveIdentifier**       | 0xE7  | uint32 | pr, pw, ev  | -                                                                                                                                      |
+| **Identifier**             | 0xE6  | uint32 | pr          | -                                                                                                                                      |
+| **InputSourceType**        | 0xDB  | uint8  | pr, ev      | 0=Other, 1=HomeScreen, 2=Tuner, 3=HDMI, 4=CompositeVideo, 5=SVideo, 6=ComponentVideo, 7=DVI, 8=AirPlay, 9=USB, 10=Application          |
+| **InputDeviceType**        | 0xDC  | uint8  | pr, ev      | 0=Other, 1=TV, 2=Recording, 3=Tuner, 4=Playback, 5=AudioSystem                                                                         |
+| **SleepDiscoveryMode**     | 0xE8  | uint8  | pr, ev      | 0=NotDiscoverable, 1=AlwaysDiscoverable                                                                                                |
+| **CurrentVisibilityState** | 0x135 | uint8  | pr, ev      | 0=Shown, 1=Hidden                                                                                                                      |
+| **TargetVisibilityState**  | 0x134 | uint8  | pr, pw, ev  | 0=Shown, 1=Hidden                                                                                                                      |
+| **ClosedCaptions**         | 0xDD  | uint8  | pr, pw, ev  | 0=Disabled, 1=Enabled                                                                                                                  |
+| **DisplayOrder**           | 0x136 | tlv8   | pr, pw, ev  | -                                                                                                                                      |
+| **CurrentMediaState**      | 0xE0  | uint8  | pr, ev      | 0=Play, 1=Pause, 2=Stop, 3=Unknown                                                                                                     |
+| **TargetMediaState**       | 0x137 | uint8  | pr, pw, ev  | 0=Play, 1=Pause, 2=Stop                                                                                                                |
+| **PictureMode**            | 0xE2  | uint8  | pr, pw, ev  | 0=Other, 1=Standard, 2=Calibrated, ...                                                                                                 |
+| **PowerModeSelection**     | 0xDF  | uint8  | pw          | 0=Show, 1=Hide                                                                                                                         |
+| **RemoteKey**              | 0xE1  | uint8  | pw          | 0=Rewind, 1=FastForward, 2=NextTrack, 3=PreviousTrack, 4=Up, 5=Down, 6=Left, 7=Right, 8=Select, 9=Back, 10=Exit, 11=PlayPause, 15=Info |
 
 ### Audio
 
@@ -349,6 +356,9 @@ Each characteristic has the following properties:
 | **ActiveTransitionCount**            | 0x24B | uint8  | pr, ev      |
 | **TransitionControl**                | 0x143 | tlv8   | pr, pw, wr  |
 | **SupportedTransitionConfiguration** | 0x144 | tlv8   | pr          |
+| **ConfigurationState**               | 0x263 | uint16 | pr, ev      |
+| **NFCAccessControlPoint**            | 0x264 | tlv8   | pr, pw, wr  |
+| **NFCAccessSupportedConfiguration**  | 0x265 | tlv8   | pr          |
 
 ---
 
@@ -479,6 +489,11 @@ Each characteristic has the following properties:
 | SleepDiscoveryMode                    | E8    | 000000E8-0000-1000-8000-0026BB765291 |
 | VolumeControlType                     | E9    | 000000E9-0000-1000-8000-0026BB765291 |
 | VolumeSelector                        | EA    | 000000EA-0000-1000-8000-0026BB765291 |
+| SupportedVideoStreamConfiguration     | 114   | 00000114-0000-1000-8000-0026BB765291 |
+| SupportedAudioStreamConfiguration     | 115   | 00000115-0000-1000-8000-0026BB765291 |
+| SupportedRTPConfiguration             | 116   | 00000116-0000-1000-8000-0026BB765291 |
+| SelectedRTPStreamConfiguration        | 117   | 00000117-0000-1000-8000-0026BB765291 |
+| SetupEndpoints                        | 118   | 00000118-0000-1000-8000-0026BB765291 |
 | Volume                                | 119   | 00000119-0000-1000-8000-0026BB765291 |
 | Mute                                  | 11A   | 0000011A-0000-1000-8000-0026BB765291 |
 | NightVision                           | 11B   | 0000011B-0000-1000-8000-0026BB765291 |
