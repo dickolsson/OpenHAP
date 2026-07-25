@@ -169,7 +169,23 @@ sub interactive ($self)
 		"$self->{user}\@$self->{host}",
 	);
 
-	return system(@cmd);
+	# Return the child's exit code, not the raw wait status: callers
+	# (and ultimately the openhvf exit status) expect a 0-255 code. A
+	# raw status of, say, 256 for a remote exit code of 1 would become
+	# exit(256) -> 0, silently turning a failed remote command (e.g. a
+	# failing `prove` run driven over stdin) into success.
+	return _exit_code( system(@cmd) );
+}
+
+# _exit_code($status):
+#	Map a raw system()/$? wait status to a 0-255 exit code: the low
+#	byte encodes the terminating signal, the high byte the exit code.
+#	system() returns -1 when the child could not be run at all.
+sub _exit_code ($status)
+{
+	return EXIT_ERROR               if $status == -1;
+	return 128 + ( $status & 0x7f ) if $status & 0x7f;
+	return $status >> 8;
 }
 
 # $self->write_file($remote_path, $content, $mode):
