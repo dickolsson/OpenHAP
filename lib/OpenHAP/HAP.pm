@@ -207,8 +207,11 @@ sub _handle_client ( $self, $sock, $select )
 		return;
 	}
 
-	# Decrypt if session is encrypted
-	if ( $session->is_encrypted() ) {
+	# Decrypt if session is encrypted. Remember the state: pair-verify
+	# M4 enables encryption during dispatch, but the M4 response itself
+	# is still sent in the clear; only subsequent traffic is encrypted.
+	my $was_encrypted = $session->is_encrypted();
+	if ($was_encrypted) {
 		$data = $session->decrypt($data);
 		unless ( defined $data ) {
 			$OpenHAP::logger->warning(
@@ -232,8 +235,9 @@ sub _handle_client ( $self, $sock, $select )
 	# Dispatch request
 	my $response = $self->_dispatch( $request, $session );
 
-	# Encrypt if session is encrypted
-	if ( $session->is_encrypted() ) {
+	# Encrypt only if the session was already encrypted when the
+	# request arrived (see note above)
+	if ($was_encrypted) {
 		$response = $session->encrypt($response);
 	}
 
