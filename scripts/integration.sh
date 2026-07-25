@@ -44,6 +44,11 @@ sleep 2
 # Set integration test flag
 export OPENHAP_INTEGRATION_TEST=1
 
+# The test controller talks to the real daemon, whose SRP modexp is slow
+# under TCG emulation. Give its socket reads a generous timeout so
+# pair-setup/pair-verify do not give up before the daemon responds.
+export OPENHAP_TEST_TIMEOUT="${OPENHAP_TEST_TIMEOUT:-60}"
+
 # Run tests in order (environment first, then others)
 TESTS="t/openhap/integration/environment.t"
 for test in t/openhap/integration/*.t; do

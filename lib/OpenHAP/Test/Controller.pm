@@ -40,7 +40,12 @@ sub new ( $class, %args )
 		port      => $args{port} // 51827,
 		pin       => $args{pin}  // '031-45-154',
 		transport => $args{transport},
-		timeout   => $args{timeout} // 5,
+
+		# Socket read timeout. The default suits fast in-process and
+		# native runs; integration tests against a real daemon under
+		# TCG emulation, where a single SRP modexp can take many
+		# seconds, raise it via OPENHAP_TEST_TIMEOUT.
+		timeout => $args{timeout} // $ENV{OPENHAP_TEST_TIMEOUT} // 5,
 
 		controller_id => $args{controller_id} // 'openhap-test-ctrl',
 
