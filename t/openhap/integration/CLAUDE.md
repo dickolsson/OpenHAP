@@ -47,6 +47,14 @@ $env->teardown;
 done_testing();
 ```
 
+## Paired behavior
+
+Testing anything behind pair-verify (authenticated endpoints, events,
+encrypted framing) goes through `OpenHAP::Test::Controller` (API in
+`lib/OpenHAP/Test/Controller.pod`): complete `pair_setup`/`pair_verify`
+in setup, use `request`/`next_event`, and `remove_pairing` in teardown so
+the shared daemon is never left paired between files.
+
 ## References
 
 - Running and debugging the suite: `integration-tests` skill

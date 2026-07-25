@@ -1,0 +1,55 @@
+=head1 NAME
+
+OpenHAP::Test::Controller::SRP - SRP-6a client role for tests
+
+=head1 SYNOPSIS
+
+    use OpenHAP::Test::Controller::SRP;
+
+    my $srp = OpenHAP::Test::Controller::SRP->new(
+        password => '031-45-154');
+
+    my $A  = $srp->compute_public;              # 384 bytes, send in M3
+    my $M1 = $srp->compute_proof($salt, $B);    # from the server's M2
+    my $K  = $srp->session_key;                 # 64 bytes shared key
+
+    $srp->verify_server_proof($M2) or die 'server proof invalid';
+
+=head1 DESCRIPTION
+
+The client (controller) role of the SRP-6a exchange served by
+L<OpenHAP::SRP>: the same RFC 5054 3072-bit group, g = 5, SHA-512
+hash, fixed username C<Pair-Setup>, and 384-byte padding rules
+(F<spec/HAP-Pairing.md> section 2). The setup code is normalized like
+the server side (dashes and spaces stripped).
+
+=head1 METHODS
+
+=head2 new(%args)
+
+C<password> is the 8-digit setup code; C<username> defaults to
+C<Pair-Setup>.
+
+=head2 compute_public()
+
+Generate the ephemeral secret and return the padded 384-byte public
+value A.
+
+=head2 compute_proof($salt, $B_bytes)
+
+Derive the session key from the server's salt and public key B, and
+return the client proof M1. Returns undef if B mod N == 0.
+
+=head2 verify_server_proof($M2)
+
+True iff $M2 equals H(PAD(A) | M1 | K).
+
+=head2 session_key()
+
+The 64-byte shared session key K, available after C<compute_proof>.
+
+=head1 SEE ALSO
+
+L<OpenHAP::Test::Controller>, L<OpenHAP::SRP>, F<spec/HAP-Pairing.md>
+
+=cut

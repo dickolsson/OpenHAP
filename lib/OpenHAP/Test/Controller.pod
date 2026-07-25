@@ -1,0 +1,115 @@
+=head1 NAME
+
+OpenHAP::Test::Controller - minimal HomeKit controller for tests
+
+=head1 SYNOPSIS
+
+    use OpenHAP::Test::Controller;
+
+    my $c = OpenHAP::Test::Controller->new(
+        host => '127.0.0.1',
+        port => 51827,
+        pin  => '031-45-154',
+    );
+
+    $c->pair_setup  or die 'pair-setup failed: ' . $c->last_error;
+    $c->pair_verify or die 'pair-verify failed: ' . $c->last_error;
+
+    my $res = $c->request('GET', '/accessories');
+    my $put = $c->request('PUT', '/characteristics',
+        '{"characteristics":[{"aid":2,"iid":11,"value":true}]}',
+        { 'Content-Type' => 'application/hap+json' });
+
+    my $event = $c->next_event(5);
+
+    $c->remove_pairing;    # cleanup for test teardown
+
+=head1 DESCRIPTION
+
+A minimal HomeKit controller used by conformance and integration
+tests. It completes SRP-6a pair-setup (M1-M6), X25519 pair-verify, and
+speaks the ChaCha20-Poly1305 session framing, either over TCP against
+a live accessory or in-process through an injected transport.
+
+The controller follows the repository error convention: methods return
+undef (bare return) on protocol or transport errors, recording the TLV
+error code (or a message string) in C<last_error>; they die only on
+programming errors.
+
+=head1 METHODS
+
+=head2 new(%args)
+
+Create a controller. Arguments: C<host> (default 127.0.0.1), C<port>
+(default 51827), C<pin> (setup code, default 031-45-154),
+C<controller_id> (pairing identifier, default openhap-test-ctrl),
+C<timeout> (socket timeout in seconds, default 5), and C<transport>.
+
+C<transport>, when given, is a code ref C<($request_bytes) ->
+$response_bytes> replacing the TCP socket; this enables in-process use
+against an OpenHAP::HAP instance without sockets. Request and response
+bytes are pre-encryption/post-encryption wire bytes.
+
+An Ed25519 controller identity is generated once per controller.
+
+=head2 pair_setup()
+
+Complete pair-setup M1-M6 with the configured PIN. On success the
+accessory LTPK and pairing identifier are stored on the controller and
+true is returned.
+
+=head2 pair_verify()
+
+Complete pair-verify M1-M4 and switch the connection to encrypted
+session framing. When the accessory LTPK is known from a prior
+C<pair_setup>, the accessory signature in M2 is verified against it.
+
+=head2 request($method, $path, $body?, $headers?)
+
+Perform one HTTP request over the session, encrypted once pair-verify
+has completed. Returns a hash ref with C<status>, C<headers> (lower
+cased names) and C<body>.
+
+=head2 next_event($timeout)
+
+Wait up to $timeout seconds for an EVENT/1.0 message, decrypt and
+parse it. Returns a hash ref with C<status>, C<headers> and C<body>,
+or undef on timeout. Requires a socket connection.
+
+=head2 add_pairing($identifier, $ltpk, $permissions)
+
+Add a pairing over POST /pairings (method AddPairing).
+
+=head2 remove_pairing($identifier?)
+
+Remove a pairing (default: this controller's own).
+
+=head2 list_pairings()
+
+Return an array ref of hashes with C<identifier>, C<ltpk> and
+C<permissions>.
+
+=head2 last_error()
+
+The TLV error code (numeric) or message string of the last failure.
+
+=head2 is_encrypted()
+
+True once pair-verify has switched the session to encrypted framing.
+
+=head2 close()
+
+Close the socket connection and reset session state.
+
+=head1 ENVIRONMENT
+
+Test-only namespace: not part of the production daemon and never a
+dependency of production modules. Ships to the integration VM together
+with the integration tests.
+
+=head1 SEE ALSO
+
+L<OpenHAP::Test::Controller::SRP>, L<OpenHAP::Test::Integration>,
+F<spec/HAP-Pairing.md>, F<spec/HAP-Encryption.md>
+
+=cut
