@@ -9,6 +9,11 @@ messages and Apple HomeKit. Detailed protocol information lives in the
 the Tasmota documentation files `MQTT.md`, `Commands.md`, `Lights.md`, and
 `Buttons-and-Switches.md` in the Tasmota-Docs repository.
 
+**Provenance:** Extracted 2026-01-06 from an unpinned `--depth 1` checkout of
+Tasmota-Docs; the source commit was not recorded. Regenerating with the
+`spec-mqtt` skill replaces this notice with the extraction date and the source
+repository's commit.
+
 ---
 
 ## 1. Glossary

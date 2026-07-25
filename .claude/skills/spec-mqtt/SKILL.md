@@ -117,6 +117,9 @@ specification easier to navigate and maintain.
 - Links to the topic-specific files for detailed information
 - Carries the cross-cutting quick references (HomeKit mapping, essential
   commands and subscriptions)
+- Records provenance near the top: the extraction date and the source
+  repository's commit (`git -C external/Tasmota-Docs rev-parse --short HEAD`),
+  so staleness against upstream can be checked later
 
 **Topic files:** Break out detailed content into separate `spec/MQTT-*.md`
 files. Split along the code's own boundaries — transport concerns (topics,
