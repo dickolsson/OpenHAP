@@ -1,6 +1,7 @@
 runtime pkg mosquitto
 runtime pkg avahi-daemon
 runtime pkg libperl-dev
+runtime pkg libmath-bigint-gmp-perl
 runtime cpan JSON::XS
 runtime cpan Crypt::Ed25519
 runtime cpan Crypt::Curve25519
@@ -12,7 +13,9 @@ test cpan Perl::Critic
 test cpan Perl::Tidy
 test cpan Net::SSH2
 
-develop pkg qemu-system-aarch64
+develop pkg qemu-system-arm
 develop pkg qemu-efi-aarch64
+develop pkg expect
+develop pkg telnet
 develop cpan HTTP::Daemon
 develop cpan LWP::UserAgent

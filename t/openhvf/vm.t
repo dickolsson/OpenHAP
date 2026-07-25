@@ -31,4 +31,51 @@ use_ok('OpenHVF::VM');
 	is(OpenHVF::VM::EXIT_TIMEOUT(), 7, 'EXIT_TIMEOUT is 7');
 }
 
+# Accelerator selection
+{
+	# --emulate always forces TCG with a named CPU model
+	my $emulated = OpenHVF::VM->new(emulate => 1);
+	my %args = ($emulated->_accel_args);
+	is($args{'-accel'}, 'tcg', '--emulate forces TCG');
+	is($args{'-cpu'}, OpenHVF::VM::TCG_CPU(),
+	    'TCG uses a named CPU model, not host passthrough');
+
+	# Auto-selection returns a consistent accel/cpu pair
+	my $auto = OpenHVF::VM->new;
+	%args = ($auto->_accel_args);
+	like($args{'-accel'}, qr/^(hvf|kvm|tcg)$/, 'known accelerator');
+	if ($args{'-accel'} eq 'tcg') {
+		is($args{'-cpu'}, OpenHVF::VM::TCG_CPU(),
+		    'software emulation pairs with a named CPU');
+	} else {
+		is($args{'-cpu'}, 'host',
+		    'hardware acceleration pairs with host CPU');
+	}
+
+	# Host arch helper returns a non-empty machine string
+	ok(length(OpenHVF::VM::_host_arch()), 'host arch detected');
+}
+
+# Bounded guest interaction: _bounded must return the code's value when
+# it finishes in time and undef (without hanging) when it does not, so a
+# wedged guest can never stall shutdown.
+{
+	my $vm = OpenHVF::VM->new;
+	$vm->{log} = TestLog->new;    # swallow the timeout warning
+
+	is($vm->_bounded(5, sub { return 'done' }), 'done',
+	    '_bounded returns the code result when it finishes in time');
+
+	my $start = time;
+	my $ret = $vm->_bounded(1, sub { sleep 5; return 'late' });
+	is($ret, undef, '_bounded returns undef when the deadline elapses');
+	ok(time - $start < 4, '_bounded aborts near the deadline, not later');
+	ok($vm->{log}{warned}, '_bounded warns on timeout');
+}
+
 done_testing();
+
+# Minimal log stub capturing the timeout warning from _bounded
+package TestLog;
+sub new { return bless { warned => 0 }, shift }
+sub warning { my $self = shift; $self->{warned}++; return; }

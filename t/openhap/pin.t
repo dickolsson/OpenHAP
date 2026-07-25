@@ -12,7 +12,8 @@ use_ok('OpenHAP::PIN');
 # Test normalize_pin - basic functionality
 {
 	my $pin = OpenHAP::PIN::normalize_pin('1234-5678');
-	is($pin, '12345678', 'Normalize PIN with single dash');
+	is($pin, '12345678',
+	    '[HAP-Pairing §2.2] 8-digit setup code accepted with dashes');
 }
 
 {
@@ -38,7 +39,8 @@ use_ok('OpenHAP::PIN');
 # Test normalize_pin - invalid formats
 {
 	my $pin = OpenHAP::PIN::normalize_pin('123-4567');
-	is($pin, undef, 'Reject PIN with 7 digits');
+	is($pin, undef,
+	    '[HAP-Pairing §2.2] reject PIN with 7 digits (setup code is 8 digits)');
 }
 
 {
@@ -88,7 +90,8 @@ use_ok('OpenHAP::PIN');
 	ok(OpenHAP::PIN::validate_pin('0000-0001'), 'Valid PIN starting with zeros');
 }
 
-# Test validate_pin - invalid PINs per HAP spec
+# Test validate_pin - trivial setup codes disallowed by HAP
+# (Apple HAP R2 5.3; the trivial-code blacklist is not in spec/)
 {
 	ok(!OpenHAP::PIN::validate_pin('00000000'), 'Reject 00000000');
 }

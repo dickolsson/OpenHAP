@@ -40,7 +40,7 @@ fi
 EOF
 
 echo "==> Copying to VM..."
-vm_scp "${TARBALL}" "root@localhost:/tmp/openhap.tar.gz"
+vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
 
 echo "==> Installing OpenHAP..."
 vm_run <<'EOF'
@@ -85,15 +85,35 @@ cd /tmp && rm -rf openhap-* openhap.tar.gz
 rcctl enable mosquitto
 rcctl start mosquitto
 
-# Configure and enable mdnsd with the first active network interface
-# mdnsd requires an interface to be specified for multicast DNS
+# Configure and start mdnsd on the primary network interface. mdnsd
+# needs an interface for multicast DNS; started without one it exits
+# immediately, which later surfaces as failing mDNS integration tests.
+# Prefer the default-route interface, fall back to the first UP, non
+# loopback interface, and verify the daemon actually came up.
 if rcctl get mdnsd >/dev/null 2>&1; then
-	# Find the first active network interface (not loopback)
-	IFACE=$(ifconfig -a | grep '^[a-z]' | grep -v '^lo' | grep -v '^enc' | grep -v '^pflog' | head -1 | cut -d: -f1)
+	IFACE=$(route -n show -inet 2>/dev/null |
+		awk '/^default/ { print $NF; exit }')
+	[ -n "${IFACE}" ] || IFACE=$(ifconfig -a |
+		awk -F: '/^[a-z].*<UP,/ && !/^(lo|enc|pflog)/ { print $1; exit }')
+
 	if [ -n "${IFACE}" ]; then
 		rcctl set mdnsd flags "${IFACE}"
 		rcctl enable mdnsd
-		rcctl start mdnsd 2>/dev/null || true
+		rcctl restart mdnsd || true
+		if ! rcctl check mdnsd; then
+			# Surface why mdnsd would not stay up so the mDNS
+			# integration tests are diagnosable from CI logs
+			# instead of just reporting a missing daemon.
+			echo "WARNING: mdnsd did not start on ${IFACE}; diagnostics:"
+			rcctl get mdnsd || true
+			ifconfig "${IFACE}" || true
+			echo "-- mdnsd foreground start (2s) --"
+			timeout 2 /usr/local/sbin/mdnsd -d "${IFACE}" 2>&1 |
+				head -n 20 || true
+		fi
+	else
+		echo "WARNING: no network interface found for mdnsd"
+		ifconfig -a || true
 	fi
 fi
 

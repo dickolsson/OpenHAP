@@ -1,0 +1,673 @@
+# ex:ts=8 sw=4:
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@ekkis.net>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+use v5.36;
+
+package OpenHAP::Test::Controller;
+
+use IO::Socket::INET;
+use IO::Select;
+use OpenHAP::Crypto;
+use OpenHAP::TLV;
+use OpenHAP::Pairing;
+use OpenHAP::Test::Controller::SRP;
+
+# A minimal HomeKit controller for tests: completes pair-setup (SRP
+# M1-M6), pair-verify (X25519), and speaks the encrypted session
+# framing, against a live accessory over TCP or in-process through an
+# injected transport code ref.
+
+use constant MAX_FRAME => 1024;
+
+sub new ( $class, %args )
+{
+	my $self = bless {
+		host      => $args{host} // '127.0.0.1',
+		port      => $args{port} // 51827,
+		pin       => $args{pin}  // '031-45-154',
+		transport => $args{transport},
+
+		# Socket read timeout. The default suits fast in-process and
+		# native runs; integration tests against a real daemon under
+		# TCG emulation, where a single SRP modexp can take many
+		# seconds, raise it via OPENHAP_TEST_TIMEOUT.
+		timeout => $args{timeout} // $ENV{OPENHAP_TEST_TIMEOUT} // 5,
+
+		controller_id => $args{controller_id} // 'openhap-test-ctrl',
+
+		# Controller long-term identity (generated once)
+		ltsk => undef,
+		ltpk => undef,
+
+		# Learned during pair-setup
+		accessory_ltpk => undef,
+		accessory_id   => undef,
+
+		# Session state after pair-verify
+		encrypted     => 0,
+		encrypt_key   => undef,
+		decrypt_key   => undef,
+		encrypt_count => 0,
+		decrypt_count => 0,
+
+		socket     => undef,
+		inbuf      => '',
+		last_error => undef,
+	}, $class;
+
+	( $self->{ltsk}, $self->{ltpk} ) =
+	    OpenHAP::Crypto::generate_keypair_ed25519();
+
+	return $self;
+}
+
+# $self->last_error():
+#	TLV error code (or message string) of the last failed exchange.
+sub last_error ($self)
+{
+	return $self->{last_error};
+}
+
+sub is_encrypted ($self)
+{
+	return $self->{encrypted};
+}
+
+# --- transport ---------------------------------------------------------
+
+sub _connect ($self)
+{
+	return 1 if $self->{transport} || $self->{socket};
+
+	my $socket = IO::Socket::INET->new(
+		PeerAddr => $self->{host},
+		PeerPort => $self->{port},
+		Proto    => 'tcp',
+		Timeout  => $self->{timeout},
+	);
+	unless ( defined $socket ) {
+		$self->{last_error} = "connect: $!";
+		return;
+	}
+
+	$self->{socket} = $socket;
+	return 1;
+}
+
+sub close ($self)
+{
+	if ( $self->{socket} ) {
+		$self->{socket}->close;
+		$self->{socket} = undef;
+	}
+	$self->{encrypted} = 0;
+	$self->{inbuf}     = '';
+	return 1;
+}
+
+# $self->_round_trip($request_bytes):
+#	Send raw bytes and return the raw response bytes (one HTTP
+#	response; encrypted responses are returned still encrypted).
+sub _round_trip ( $self, $request )
+{
+	if ( $self->{transport} ) {
+		return $self->{transport}->($request);
+	}
+
+	return unless $self->_connect;
+
+	my $socket = $self->{socket};
+	$socket->syswrite($request);
+
+	# Read until a full HTTP response is decodable from the buffer
+	my $select = IO::Select->new($socket);
+	my $raw    = '';
+	while (1) {
+		last unless $select->can_read( $self->{timeout} );
+		my $bytes = $socket->sysread( my $chunk, 65535 );
+		unless ($bytes) {
+			$self->{last_error} = 'connection closed';
+			last;
+		}
+		$raw .= $chunk;
+
+		my $plain =
+		      $self->{encrypted}
+		    ? $self->_decrypt_peek($raw)
+		    : $raw;
+		last if defined $plain && _message_complete($plain);
+	}
+
+	return $raw;
+}
+
+# _message_complete($text):
+#	True once $text holds a complete HTTP message (headers plus
+#	Content-Length bytes of body).
+sub _message_complete ($text)
+{
+	return unless $text =~ /\r\n\r\n/;
+	my ( $head, $body ) = split /\r\n\r\n/, $text, 2;
+	my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
+	return 1 unless $length;
+	return length($body) >= $length;
+}
+
+# --- session framing (HAP-Encryption.md §2-§5) -------------------------
+
+sub _encrypt ( $self, $data )
+{
+	my $out = '';
+	while ( length($data) > 0 ) {
+		my $chunk = substr( $data, 0, MAX_FRAME, '' );
+		my $aad   = pack( 'v',      length($chunk) );
+		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
+		my ( $ciphertext, $tag ) =
+		    OpenHAP::Crypto::chacha20_poly1305_encrypt(
+			$self->{encrypt_key},
+			$nonce, $chunk, $aad );
+		$out .= $aad . $ciphertext . $tag;
+	}
+	return $out;
+}
+
+# _decrypt_peek($data):
+#	Decrypt without consuming the counter state (used while
+#	accumulating frames from the socket).
+sub _decrypt_peek ( $self, $data )
+{
+	my $count = $self->{decrypt_count};
+	my $plain = $self->_decrypt($data);
+	$self->{decrypt_count} = $count;
+	return $plain;
+}
+
+sub _decrypt ( $self, $data )
+{
+	my $out = '';
+	my $pos = 0;
+	while ( $pos < length($data) ) {
+		return if $pos + 2 > length($data);
+		my $length = unpack( 'v', substr( $data, $pos, 2 ) );
+		my $aad    = substr( $data, $pos, 2 );
+		$pos += 2;
+		return if $length > MAX_FRAME;
+		return if $pos + $length + 16 > length($data);
+		my $ciphertext = substr( $data, $pos, $length );
+		$pos += $length;
+		my $tag = substr( $data, $pos, 16 );
+		$pos += 16;
+
+		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
+		my $plain =
+		    OpenHAP::Crypto::chacha20_poly1305_decrypt(
+			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
+		return unless defined $plain;
+		$out .= $plain;
+	}
+	return $out;
+}
+
+# --- HTTP --------------------------------------------------------------
+
+sub _build_request ( $self, $method, $path, $body = undef, $headers = {} )
+{
+	my $request = "$method $path HTTP/1.1\r\n";
+	$request .= "Host: $self->{host}:$self->{port}\r\n";
+	for my $name ( sort keys %$headers ) {
+		$request .= "$name: $headers->{$name}\r\n";
+	}
+	if ( defined $body ) {
+		$request .= 'Content-Length: ' . length($body) . "\r\n";
+	}
+	$request .= "\r\n";
+	$request .= $body if defined $body;
+	return $request;
+}
+
+sub _parse_response ( $self, $raw )
+{
+	unless ( defined $raw && length $raw ) {
+		$self->{last_error} = 'no response';
+		return;
+	}
+
+	my ( $head, $body ) = split /\r\n\r\n/, $raw, 2;
+	my ($status) = $head =~ m{^HTTP/1\.[01]\s+(\d+)};
+	unless ( defined $status ) {
+		$self->{last_error} = 'malformed response';
+		return;
+	}
+
+	my %headers;
+	for my $line ( split /\r\n/, $head ) {
+		$headers{ lc $1 } = $2 if $line =~ /^([^:]+):\s*(.*)$/;
+	}
+
+	return {
+		status  => $status,
+		headers => \%headers,
+		body    => $body // '',
+	};
+}
+
+# $self->request($method, $path, $body?, $headers?):
+#	Perform one HTTP request over the session (encrypted framing
+#	once pair-verify has completed). Returns a hash ref with
+#	status, headers and body, or undef on transport error.
+sub request ( $self, $method, $path, $body = undef, $headers = {} )
+{
+	my $raw = $self->_build_request( $method, $path, $body, $headers );
+	$raw = $self->_encrypt($raw) if $self->{encrypted};
+
+	my $response = $self->_round_trip($raw);
+	return unless defined $response && length $response;
+
+	if ( $self->{encrypted} ) {
+		$response = $self->_decrypt($response);
+		unless ( defined $response ) {
+			$self->{last_error} = 'response decryption failed';
+			return;
+		}
+	}
+
+	# Keep anything beyond the first complete message (e.g. an event
+	# that arrived back-to-back with the response) for next_event
+	if ( $response =~ /\A(.*?\r\n\r\n)(.*)\z/s ) {
+		my ( $head, $rest ) = ( $1, $2 );
+		my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
+		$length //= 0;
+		my $body = substr( $rest, 0, $length );
+		$self->{inbuf} .= substr( $rest, $length );
+		$response = $head . $body;
+	}
+
+	return $self->_parse_response($response);
+}
+
+# --- pairing ------------------------------------------------------------
+
+sub _tlv_request ( $self, $path, %tlv_items )
+{
+	my $body     = OpenHAP::TLV::encode(%tlv_items);
+	my $response = $self->request( 'POST', $path, $body,
+		{ 'Content-Type' => 'application/pairing+tlv8' } );
+	return unless defined $response;
+
+	unless ( $response->{status} == 200 ) {
+		$self->{last_error} = "HTTP $response->{status}";
+		return;
+	}
+
+	my %tlv   = OpenHAP::TLV::decode( $response->{body} );
+	my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
+	if ( defined $error ) {
+		$self->{last_error} = unpack( 'C', $error );
+		return;
+	}
+
+	return \%tlv;
+}
+
+# $self->pair_setup():
+#	Complete SRP pair-setup M1-M6. On success the accessory LTPK is
+#	stored and true is returned; on any protocol error undef is
+#	returned with the TLV error code in last_error.
+sub pair_setup ($self)
+{
+	$self->{last_error} = undef;
+
+	# M1 -> M2
+	my $m2 = $self->_tlv_request(
+		'/pair-setup',
+		OpenHAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
+		OpenHAP::Pairing::kTLVType_Method() => pack( 'C', 0 ),
+	) or return;
+
+	my $salt = $m2->{ OpenHAP::Pairing::kTLVType_Salt() };
+	my $B    = $m2->{ OpenHAP::Pairing::kTLVType_PublicKey() };
+	unless ( defined $salt && defined $B ) {
+		$self->{last_error} = 'M2 missing salt or public key';
+		return;
+	}
+
+	# M3 -> M4
+	my $srp =
+	    OpenHAP::Test::Controller::SRP->new( password => $self->{pin} );
+	my $A  = $srp->compute_public;
+	my $M1 = $srp->compute_proof( $salt, $B );
+	unless ( defined $M1 ) {
+		$self->{last_error} = 'bogus server public key';
+		return;
+	}
+
+	my $m4 = $self->_tlv_request(
+		'/pair-setup',
+		OpenHAP::Pairing::kTLVType_State()     => pack( 'C', 3 ),
+		OpenHAP::Pairing::kTLVType_PublicKey() => $A,
+		OpenHAP::Pairing::kTLVType_Proof()     => $M1,
+	) or return;
+
+	my $M2 = $m4->{ OpenHAP::Pairing::kTLVType_Proof() };
+	unless ( $srp->verify_server_proof($M2) ) {
+		$self->{last_error} = 'server proof verification failed';
+		return;
+	}
+
+	# M5 -> M6
+	my $K           = $srp->session_key;
+	my $encrypt_key = OpenHAP::Crypto::hkdf_sha512( $K,
+		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
+
+	my $ios_x = OpenHAP::Crypto::hkdf_sha512(
+		$K,
+		'Pair-Setup-Controller-Sign-Salt',
+		'Pair-Setup-Controller-Sign-Info', 32
+	);
+	my $signature = OpenHAP::Crypto::sign_ed25519(
+		$ios_x . $self->{controller_id} . $self->{ltpk},
+		$self->{ltsk}, $self->{ltpk} );
+
+	my $inner = OpenHAP::TLV::encode(
+		OpenHAP::Pairing::kTLVType_Identifier() =>
+		    $self->{controller_id},
+		OpenHAP::Pairing::kTLVType_PublicKey() => $self->{ltpk},
+		OpenHAP::Pairing::kTLVType_Signature() => $signature,
+	);
+	my ( $encrypted, $tag ) =
+	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $encrypt_key,
+		pack('x[4]') . 'PS-Msg05', $inner );
+
+	my $m6 = $self->_tlv_request(
+		'/pair-setup',
+		OpenHAP::Pairing::kTLVType_State()         => pack( 'C', 5 ),
+		OpenHAP::Pairing::kTLVType_EncryptedData() => $encrypted . $tag,
+	) or return;
+
+	my $m6_data = $m6->{ OpenHAP::Pairing::kTLVType_EncryptedData() };
+	unless ( defined $m6_data && length($m6_data) > 16 ) {
+		$self->{last_error} = 'M6 missing encrypted data';
+		return;
+	}
+	my $m6_tag = substr( $m6_data, -16, 16, '' );
+	my $m6_plain =
+	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $encrypt_key,
+		pack('x[4]') . 'PS-Msg06',
+		$m6_data, $m6_tag );
+	unless ( defined $m6_plain ) {
+		$self->{last_error} = 'M6 decryption failed';
+		return;
+	}
+
+	my %m6_inner = OpenHAP::TLV::decode($m6_plain);
+	my $acc_id   = $m6_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
+	my $acc_ltpk = $m6_inner{ OpenHAP::Pairing::kTLVType_PublicKey() };
+	my $acc_sig  = $m6_inner{ OpenHAP::Pairing::kTLVType_Signature() };
+
+	my $acc_x = OpenHAP::Crypto::hkdf_sha512(
+		$K,
+		'Pair-Setup-Accessory-Sign-Salt',
+		'Pair-Setup-Accessory-Sign-Info', 32
+	);
+	unless (
+		OpenHAP::Crypto::verify_ed25519(
+			$acc_sig, $acc_x . $acc_id . $acc_ltpk, $acc_ltpk
+		) )
+	{
+		$self->{last_error} = 'accessory signature invalid';
+		return;
+	}
+
+	$self->{accessory_ltpk} = $acc_ltpk;
+	$self->{accessory_id}   = $acc_id;
+
+	return 1;
+}
+
+# $self->pair_verify():
+#	Complete pair-verify M1-M4 and switch the connection to
+#	encrypted session framing. Requires a completed pair_setup (or
+#	an accessory_ltpk supplied by the caller).
+sub pair_verify ($self)
+{
+	$self->{last_error} = undef;
+
+	my ( $secret, $public ) = OpenHAP::Crypto::generate_keypair_x25519();
+
+	# M1 -> M2
+	my $m2 = $self->_tlv_request(
+		'/pair-verify',
+		OpenHAP::Pairing::kTLVType_State()     => pack( 'C', 1 ),
+		OpenHAP::Pairing::kTLVType_PublicKey() => $public,
+	) or return;
+
+	my $acc_public = $m2->{ OpenHAP::Pairing::kTLVType_PublicKey() };
+	my $m2_data    = $m2->{ OpenHAP::Pairing::kTLVType_EncryptedData() };
+	unless ( defined $acc_public && defined $m2_data ) {
+		$self->{last_error} = 'M2 missing public key or data';
+		return;
+	}
+
+	my $shared =
+	    OpenHAP::Crypto::derive_shared_secret( $secret, $acc_public );
+	my $pv_key = OpenHAP::Crypto::hkdf_sha512( $shared,
+		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
+
+	my $m2_tag = substr( $m2_data, -16, 16, '' );
+	my $m2_plain =
+	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $pv_key,
+		pack('x[4]') . 'PV-Msg02',
+		$m2_data, $m2_tag );
+	unless ( defined $m2_plain ) {
+		$self->{last_error} = 'M2 decryption failed';
+		return;
+	}
+
+	my %m2_inner = OpenHAP::TLV::decode($m2_plain);
+	my $acc_id   = $m2_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
+	my $acc_sig  = $m2_inner{ OpenHAP::Pairing::kTLVType_Signature() };
+
+	# Verify the accessory signature when we know its LTPK
+	if ( defined $self->{accessory_ltpk} ) {
+		unless (
+			OpenHAP::Crypto::verify_ed25519(
+				$acc_sig,
+				$acc_public . $acc_id . $public,
+				$self->{accessory_ltpk} ) )
+		{
+			$self->{last_error} = 'accessory signature invalid';
+			return;
+		}
+	}
+
+	# M3 -> M4
+	my $signature = OpenHAP::Crypto::sign_ed25519(
+		$public . $self->{controller_id} . $acc_public,
+		$self->{ltsk}, $self->{ltpk} );
+	my $inner = OpenHAP::TLV::encode(
+		OpenHAP::Pairing::kTLVType_Identifier() =>
+		    $self->{controller_id},
+		OpenHAP::Pairing::kTLVType_Signature() => $signature,
+	);
+	my ( $encrypted, $tag ) =
+	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $pv_key,
+		pack('x[4]') . 'PV-Msg03', $inner );
+
+	$self->_tlv_request(
+		'/pair-verify',
+		OpenHAP::Pairing::kTLVType_State()         => pack( 'C', 3 ),
+		OpenHAP::Pairing::kTLVType_EncryptedData() => $encrypted . $tag,
+	) or return;
+
+	# Session keys: the controller writes with the Write key and
+	# reads with the Read key (HAP-Encryption.md §1)
+	$self->{encrypt_key} =
+	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
+		'Control-Write-Encryption-Key', 32 );
+	$self->{decrypt_key} =
+	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
+		'Control-Read-Encryption-Key', 32 );
+	$self->{encrypt_count} = 0;
+	$self->{decrypt_count} = 0;
+	$self->{encrypted}     = 1;
+
+	return 1;
+}
+
+# --- pairings management (HAP-Pairing.md §7) ----------------------------
+
+sub add_pairing ( $self, $identifier, $ltpk, $permissions = 0 )
+{
+	$self->{last_error} = undef;
+
+	my $result = $self->_tlv_request(
+		'/pairings',
+		OpenHAP::Pairing::kTLVType_State()       => pack( 'C', 1 ),
+		OpenHAP::Pairing::kTLVType_Method()      => pack( 'C', 3 ),
+		OpenHAP::Pairing::kTLVType_Identifier()  => $identifier,
+		OpenHAP::Pairing::kTLVType_PublicKey()   => $ltpk,
+		OpenHAP::Pairing::kTLVType_Permissions() =>
+		    pack( 'C', $permissions ),
+	) or return;
+
+	return 1;
+}
+
+sub remove_pairing ( $self, $identifier = undef )
+{
+	$self->{last_error} = undef;
+	$identifier //= $self->{controller_id};
+
+	my $result = $self->_tlv_request(
+		'/pairings',
+		OpenHAP::Pairing::kTLVType_State()      => pack( 'C', 1 ),
+		OpenHAP::Pairing::kTLVType_Method()     => pack( 'C', 4 ),
+		OpenHAP::Pairing::kTLVType_Identifier() => $identifier,
+	) or return;
+
+	return 1;
+}
+
+sub list_pairings ($self)
+{
+	$self->{last_error} = undef;
+
+	my $body = OpenHAP::TLV::encode(
+		OpenHAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
+		OpenHAP::Pairing::kTLVType_Method() => pack( 'C', 5 ),
+	);
+	my $response = $self->request( 'POST', '/pairings', $body,
+		{ 'Content-Type' => 'application/pairing+tlv8' } );
+	return unless defined $response;
+
+	unless ( $response->{status} == 200 ) {
+		$self->{last_error} = "HTTP $response->{status}";
+		return;
+	}
+
+	# Split entries on the zero-length separator; TLV::decode would
+	# concatenate the repeated Identifier/PublicKey types
+	my @pairings;
+	for my $entry ( split /\xFF\x00/, $response->{body} ) {
+		my %tlv = OpenHAP::TLV::decode($entry);
+		my $id  = $tlv{ OpenHAP::Pairing::kTLVType_Identifier() };
+		next unless defined $id;
+
+		my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
+		if ( defined $error ) {
+			$self->{last_error} = unpack( 'C', $error );
+			return;
+		}
+
+		push @pairings,
+		    {
+			identifier => $id,
+			ltpk => $tlv{ OpenHAP::Pairing::kTLVType_PublicKey() },
+			permissions => unpack(
+				'C',
+				$tlv{
+					OpenHAP::Pairing::kTLVType_Permissions(
+					)
+				} // "\x00"
+			),
+		    };
+	}
+
+	# A lone error TLV (no identifiers) means the request failed
+	if ( !@pairings ) {
+		my %tlv   = OpenHAP::TLV::decode( $response->{body} );
+		my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
+		if ( defined $error ) {
+			$self->{last_error} = unpack( 'C', $error );
+			return;
+		}
+	}
+
+	return \@pairings;
+}
+
+# --- events -------------------------------------------------------------
+
+# $self->next_event($timeout):
+#	Wait for an EVENT/1.0 message on the socket, decrypt and parse
+#	it. Returns { status, headers, body } or undef on timeout.
+#	Requires a socket connection (not an injected transport).
+sub next_event ( $self, $timeout = 5 )
+{
+	return unless $self->{socket};
+
+	my $select = IO::Select->new( $self->{socket} );
+	my $end    = time + $timeout;
+
+	while (1) {
+
+		# A complete event may already be buffered
+		if ( $self->{inbuf} =~ s{\A(EVENT/1\.0.*?\r\n\r\n)}{}s ) {
+			my $head = $1;
+			my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
+			$length //= 0;
+			my $body = substr( $self->{inbuf}, 0, $length, '' );
+
+			my %headers;
+			for my $line ( split /\r\n/, $head ) {
+				$headers{ lc $1 } = $2
+				    if $line =~ /^([^:]+):\s*(.*)$/;
+			}
+			my ($status) = $head =~ m{^EVENT/1\.0\s+(\d+)};
+
+			return {
+				status  => $status,
+				headers => \%headers,
+				body    => $body,
+			};
+		}
+
+		my $remaining = $end - time;
+		return if $remaining <= 0;
+		next unless $select->can_read($remaining);
+
+		my $bytes = $self->{socket}->sysread( my $chunk, 65535 );
+		return unless $bytes;
+
+		my $plain =
+		    $self->{encrypted} ? $self->_decrypt($chunk) : $chunk;
+		return unless defined $plain;
+		$self->{inbuf} .= $plain;
+	}
+}
+
+1;

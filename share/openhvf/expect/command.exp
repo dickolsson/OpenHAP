@@ -46,6 +46,10 @@ expect {
     "#" {
         # Already logged in
     }
+    eof {
+        puts stderr "telnet could not connect to the VM console"
+        exit 1
+    }
     timeout {
         puts stderr "Timeout waiting for prompt"
         exit 1

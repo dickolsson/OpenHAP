@@ -7,92 +7,198 @@ use lib "$RealBin/../../lib";
 use FuguLib::Log;
 $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
 
-# Test device loading validation and robustness
+# Test device loading through OpenHAP::DeviceLoader with a mock config,
+# mock MQTT client and a recording HAP stand-in.
 
-plan tests => 8;
+use_ok('OpenHAP::DeviceLoader');
 
-# Test 1: Config has get_devices method
+package MockConfig;
+
+sub new ( $class, @devices )
 {
-	use OpenHAP::Config;
-
-	my $config = OpenHAP::Config->new(file => '/nonexistent');
-	ok($config->can('get_devices'), 'Config has get_devices method');
+	bless { devices => \@devices }, $class;
 }
 
-# Test 2: MQTT has is_connected method
-{
-	use OpenHAP::MQTT;
+sub get_devices ($self) { @{ $self->{devices} } }
 
-	my $mqtt = OpenHAP::MQTT->new(host => '127.0.0.1', port => 1883);
-	ok($mqtt->can('is_connected'), 'MQTT has is_connected method');
+package MockMQTT;
+
+sub new ( $class, %args )
+{
+	bless {
+		connected     => $args{connected} // 1,
+		subscriptions => {},
+		published     => [],
+	}, $class;
 }
 
-# Test 3: Device field validation - missing name
+sub is_connected ($self) { $self->{connected} }
+
+sub subscribe ( $self, $topic, $callback )
 {
-	my $device = {
+	$self->{subscriptions}{$topic} = $callback;
+}
+
+sub publish ( $self, $topic, $payload )
+{
+	push @{ $self->{published} }, { topic => $topic, payload => $payload };
+}
+
+package MockHAP;
+
+sub new ($class) { bless { accessories => [] }, $class }
+
+sub add_accessory ( $self, $accessory )
+{
+	push @{ $self->{accessories} }, $accessory;
+}
+
+package main;
+
+# Valid device is loaded and added to the bridge
+{
+	my $config = MockConfig->new( {
+		type    => 'tasmota',
+		subtype => 'thermostat',
+		name    => 'Bedroom Thermostat',
+		topic   => 'tasmota_bedroom',
+		id      => 'TEST001',
+	} );
+	my $mqtt   = MockMQTT->new;
+	my $hap    = MockHAP->new;
+	my $loader = OpenHAP::DeviceLoader->new;
+
+	my $count = $loader->load_devices( $config, $hap, $mqtt );
+	is( $count, 1, 'One device loaded' );
+
+	my @loaded = $loader->get_devices;
+	is( scalar @loaded, 1, 'Loader tracks loaded device' );
+	isa_ok( $loaded[0], 'OpenHAP::Tasmota::Thermostat' );
+	is( $loaded[0]{aid}, 2, 'First device gets AID 2 (bridge is AID 1)' );
+	is( scalar @{ $hap->{accessories} }, 1, 'Accessory added to bridge' );
+	ok( scalar keys %{ $mqtt->{subscriptions} } > 0,
+		'Device subscribed to MQTT topics' );
+}
+
+# Device missing name is rejected
+{
+	my $config = MockConfig->new( {
 		type    => 'tasmota',
 		subtype => 'thermostat',
 		topic   => 'test/topic',
 		id      => 'TEST001',
-	};
+	} );
+	my $loader = OpenHAP::DeviceLoader->new;
 
-	# Should validate name exists
-	ok(!defined $device->{name} || $device->{name} eq '',
-	    'Device without name should be caught');
+	my $count =
+	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
+	is( $count, 0, 'Device without name is skipped' );
 }
 
-# Test 4: Device field validation - missing topic
+# Device missing topic is rejected
 {
-	my $device = {
+	my $config = MockConfig->new( {
 		type    => 'tasmota',
 		subtype => 'thermostat',
 		name    => 'Test Device',
 		id      => 'TEST001',
-	};
+	} );
+	my $loader = OpenHAP::DeviceLoader->new;
 
-	ok(!defined $device->{topic} || $device->{topic} eq '',
-	    'Device without topic should be caught');
+	my $count =
+	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
+	is( $count, 0, 'Device without topic is skipped' );
 }
 
-# Test 5: Device field validation - missing id (should use topic as fallback)
+# Device missing id falls back to topic as serial
 {
-	my $device = {
+	my $config = MockConfig->new( {
 		type    => 'tasmota',
-		subtype => 'thermostat',
-		name    => 'Test Device',
-		topic   => 'test/topic',
-	};
+		subtype => 'heater',
+		name    => 'Test Heater',
+		topic   => 'test_heater',
+	} );
+	my $loader = OpenHAP::DeviceLoader->new;
 
-	ok(!defined $device->{id} || $device->{id} eq '',
-	    'Device without id should be handled');
+	my $count =
+	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
+	is( $count, 1, 'Device without id still loads' );
+
+	my ($device) = $loader->get_devices;
+	is( $device->{serial}, 'test_heater', 'Topic used as serial fallback' );
 }
 
-# Test 6: Device type validation - wrong type
+# Unsupported device type is skipped
 {
-	my $device = {
+	my $config = MockConfig->new( {
 		type    => 'zigbee',
 		subtype => 'sensor',
 		name    => 'Test Device',
 		topic   => 'test/topic',
 		id      => 'TEST001',
-	};
+	} );
+	my $loader = OpenHAP::DeviceLoader->new;
 
-	ok($device->{type} ne 'tasmota' || $device->{subtype} ne 'thermostat',
-	    'Wrong device type should be skipped');
+	my $count =
+	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
+	is( $count, 0, 'Unsupported device type is skipped' );
 }
 
-# Test 7: Thermostat module exists and is loadable
+# MQTT subscription deferred when broker not connected
 {
-	eval { require OpenHAP::Tasmota::Thermostat; };
-	ok(!$@, 'Thermostat module loads without error');
+	my $config = MockConfig->new( {
+		type    => 'tasmota',
+		subtype => 'sensor',
+		name    => 'Test Sensor',
+		topic   => 'test_sensor',
+		id      => 'SENS01',
+	} );
+	my $mqtt   = MockMQTT->new( connected => 0 );
+	my $loader = OpenHAP::DeviceLoader->new;
+
+	my $count = $loader->load_devices( $config, MockHAP->new, $mqtt );
+	is( $count, 1, 'Device loads while MQTT disconnected' );
+	is( scalar keys %{ $mqtt->{subscriptions} },
+		0, 'Subscription deferred while disconnected' );
 }
 
-# Test 8: Thermostat has subscribe_mqtt method
+# Mixed configuration: AIDs assigned sequentially, invalid entries skipped
 {
-	use OpenHAP::Tasmota::Thermostat;
+	my $config = MockConfig->new(
+		{
+			type    => 'tasmota',
+			subtype => 'lightbulb',
+			name    => 'Light One',
+			topic   => 'light1',
+			id      => 'L1',
+		},
+		{
+			type    => 'tasmota',
+			subtype => 'unsupported',
+			name    => 'Bogus',
+			topic   => 'bogus',
+			id      => 'B1',
+		},
+		{
+			type    => 'tasmota',
+			subtype => 'sensor',
+			name    => 'Sensor One',
+			topic   => 'sensor1',
+			id      => 'S1',
+		},
+	);
+	my $hap    = MockHAP->new;
+	my $loader = OpenHAP::DeviceLoader->new;
 
-	ok(OpenHAP::Tasmota::Thermostat->can('subscribe_mqtt'),
-	    'Thermostat has subscribe_mqtt method');
+	my $count = $loader->load_devices( $config, $hap, MockMQTT->new );
+	is( $count, 2, 'Two of three devices loaded' );
+
+	my @loaded = $loader->get_devices;
+	isa_ok( $loaded[0], 'OpenHAP::Tasmota::Lightbulb' );
+	isa_ok( $loaded[1], 'OpenHAP::Tasmota::Sensor' );
+	is( $loaded[0]{aid}, 2, 'First device AID 2' );
+	is( $loaded[1]{aid}, 3,
+		'Second device AID 3 (skipped device consumes no AID)' );
 }
 
 done_testing();

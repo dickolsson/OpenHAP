@@ -5,7 +5,17 @@
 # Usage: install.exp <host> <port> [root_password] [proxy_url]
 #
 
-set timeout 300
+# Use OPENHVF_TIMEOUT from the environment when it exceeds the
+# script default (slow hosts, e.g. TCG emulation in CI)
+proc env_timeout {default} {
+    global env
+    if {[info exists env(OPENHVF_TIMEOUT)] && $env(OPENHVF_TIMEOUT) > $default} {
+        return $env(OPENHVF_TIMEOUT)
+    }
+    return $default
+}
+
+set timeout [env_timeout 300]
 
 if {[llength $argv] < 2} {
     puts stderr "Usage: install.exp <host> <port> \[root_password\] \[proxy_url\]"
@@ -36,12 +46,23 @@ proc respond {response} {
 # Connect to console
 spawn telnet $host $port
 
-# Wait for telnet connection
+# Wait for the console connection. telnet prints "Connected to <host>"
+# on success; match on the host-independent prefix since the host may be
+# an IP address. An eof means telnet could not connect at all (console
+# port not listening) - fail fast rather than hang to the full timeout.
 expect {
-    "Connected to localhost" {
+    "Connected to" {
         # Send an empty line to trigger prompt if already at installer
         sleep 0.5
         send "\r"
+    }
+    "Escape character" {
+        sleep 0.5
+        send "\r"
+    }
+    eof {
+        send_user "\n==> ERROR: telnet could not connect to the VM console\n"
+        exit 1
     }
     timeout {
         send_user "\n==> ERROR: Failed to connect to VM console\n"
@@ -154,7 +175,7 @@ expect "Set name(s)?" {
 expect "Set name(s)?" { respond "done" }
 
 # Wait for sets to install and prompt for more sets
-set timeout 900
+set timeout [env_timeout 900]
 expect {
     "Continue without verification?" { 
         respond "yes" 
@@ -167,19 +188,37 @@ expect {
     }
 }
 
-# Time confirmation (may or may not appear)
-set timeout 60
+# The installer may ask to correct the clock before finishing; answer
+# yes if it does. The (R)eboot? prompt marks the end of the install -
+# choose halt instead of reboot so the harness can restart from the
+# installed disk without the miniroot attached. A single expect block
+# handles both so a missing time prompt never stalls to the timeout.
+set timeout [env_timeout 900]
 expect {
-    "Time appears wrong" { 
+    "Time appears wrong" {
         respond "yes"
         exp_continue
     }
+    "(R)eboot?" {
+        respond "h"
+    }
+    timeout {
+        send_user "\n==> ERROR: Timeout waiting for install to finish\n"
+        exit 1
+    }
 }
 
-# Reboot - choose halt instead so we can restart without miniroot
-expect "(R)eboot?" { respond "h" }
-
-# Wait for system to halt
-expect "The operating system has halted"
-expect eof
-exit 0
+# The install is complete once the system halts. Do NOT wait for eof:
+# OpenBSD's halt stops at the "press any key to reboot" prompt without
+# closing the console, so telnet stays connected and no eof ever
+# arrives. The harness terminates QEMU via QMP once this script
+# returns, then restarts from the installed disk.
+set timeout [env_timeout 120]
+expect {
+    "The operating system has halted" { exit 0 }
+    "press any key to reboot" { exit 0 }
+    timeout {
+        send_user "\n==> ERROR: Timeout waiting for system halt\n"
+        exit 1
+    }
+}

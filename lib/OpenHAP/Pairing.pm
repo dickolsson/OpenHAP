@@ -59,6 +59,11 @@ sub new ( $class, %args )
 		accessory_ltpk => $args{accessory_ltpk},
 	}, $class;
 
+	# Restore the persisted attempt counter so the limit survives
+	# restarts (HAP-Pairing.md §8)
+	$failed_auth_attempts = $self->{storage}->get_auth_attempts
+	    if $self->{storage};
+
 	return $self;
 }
 
@@ -77,10 +82,20 @@ sub clear_pairing_state ( $class_or_self, $session = undef )
 }
 
 # reset_auth_attempts() - Reset failed authentication counter
-# Called after successful pairing or administratively
+# Called after successful SRP proof verification or administratively
 sub reset_auth_attempts ($class_or_self)
 {
 	$failed_auth_attempts = 0;
+	$class_or_self->{storage}->set_auth_attempts(0)
+	    if ref $class_or_self && $class_or_self->{storage};
+}
+
+# _record_failed_attempt() - Count and persist a failed attempt (§8)
+sub _record_failed_attempt ($self)
+{
+	$failed_auth_attempts++;
+	$self->{storage}->set_auth_attempts($failed_auth_attempts)
+	    if $self->{storage};
 }
 
 # get_failed_attempts() - Get current failed attempt count (for testing)
@@ -100,8 +115,16 @@ sub handle_pair_setup ( $self, $body, $session )
 {
 
 	my %request = OpenHAP::TLV::decode($body);
-	my $state   = unpack( 'C', $request{ kTLVType_State() } );
-	my $method  = unpack( 'C', $request{ kTLVType_Method() } // "\x00" );
+
+	# Reject malformed TLV or missing State ([HAP-TLV8 §10])
+	unless ( defined $request{ kTLVType_State() } ) {
+		$OpenHAP::logger->warning(
+			'Pair-setup rejected: malformed TLV request');
+		return $self->_error_response( kTLVError_Unknown, 2 );
+	}
+
+	my $state  = unpack( 'C', $request{ kTLVType_State() } );
+	my $method = unpack( 'C', $request{ kTLVType_Method() } // "\x00" );
 	$OpenHAP::logger->debug( 'Pair-setup M%d received (method=%d)',
 		$state, $method );
 
@@ -189,7 +212,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	# Compute session key (returns undef if A mod N == 0)
 	my $K = $srp->compute_session_key($A);
 	unless ( defined $K ) {
-		$failed_auth_attempts++;
+		$self->_record_failed_attempt;
 		$OpenHAP::logger->warning(
 			'Pair-setup M3 rejected: invalid public key A');
 		if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
@@ -199,7 +222,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	}
 
 	unless ( $srp->verify_client_proof($M1) ) {
-		$failed_auth_attempts++;
+		$self->_record_failed_attempt;
 		$OpenHAP::logger->warning(
 'Pair-setup M3 proof verification failed (attempt %d/%d)',
 			$failed_auth_attempts, MAX_AUTH_ATTEMPTS
@@ -209,6 +232,9 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 		}
 		return $self->_error_response( kTLVError_Authentication, 4 );
 	}
+
+	# Successful SRP proof resets the attempt counter (§8)
+	$self->reset_auth_attempts;
 
 	# Generate server proof
 	my $M2 = $srp->generate_server_proof();
@@ -275,9 +301,9 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 		$ios_device_pairing_id );
 
 	# Pairing successful - reset attempt counter and clear pairing lock
-	$failed_auth_attempts = 0;
-	$pairing_in_progress  = 0;
-	$pairing_session_id   = undef;
+	$self->reset_auth_attempts;
+	$pairing_in_progress = 0;
+	$pairing_session_id  = undef;
 
 	# Generate accessory signature
 	my $accessory_x = OpenHAP::Crypto::hkdf_sha512(
@@ -319,7 +345,15 @@ sub handle_pair_verify ( $self, $body, $session )
 {
 
 	my %request = OpenHAP::TLV::decode($body);
-	my $state   = unpack( 'C', $request{ kTLVType_State() } );
+
+	# Reject malformed TLV or missing State ([HAP-TLV8 §10])
+	unless ( defined $request{ kTLVType_State() } ) {
+		$OpenHAP::logger->warning(
+			'Pair-verify rejected: malformed TLV request');
+		return $self->_error_response( kTLVError_Unknown, 2 );
+	}
+
+	my $state = unpack( 'C', $request{ kTLVType_State() } );
 	$OpenHAP::logger->debug( 'Pair-verify M%d received', $state );
 
 	if ( $state == 1 ) {
@@ -395,6 +429,10 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	my $shared_secret    = $session->{pairing_state}{shared_secret};
 	my $accessory_public = $session->{pairing_state}{accessory_public};
 	my $ios_public_key   = $session->{pairing_state}{ios_public_key};
+
+	# M3 without a preceding M1 exchange is a protocol error
+	return $self->_error_response( kTLVError_Unknown, 4 )
+	    unless defined $shared_secret;
 
 	# Derive session key
 	my $session_key = OpenHAP::Crypto::hkdf_sha512( $shared_secret,

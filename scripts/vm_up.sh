@@ -41,6 +41,8 @@ if [ ${FRESH} -eq 1 ]; then
 	"${OPENHVF}" destroy 2>/dev/null || true
 fi
 
-# Bring up VM (idempotent)
+# Bring up VM (idempotent). Under TCG emulation (e.g. CI runners
+# without hardware acceleration) boot and install take far longer than
+# under HVF/KVM, so the wait timeout is overridable.
 "${OPENHVF}" up
-"${OPENHVF}" wait --timeout 120
+"${OPENHVF}" wait --timeout "${OPENHVF_WAIT_TIMEOUT:-120}"

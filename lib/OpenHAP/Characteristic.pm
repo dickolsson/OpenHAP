@@ -28,6 +28,18 @@ our %CHAR_TYPES = (
 	# Switch/Outlet
 	'On'          => '00000025-0000-1000-8000-0026BB765291',
 	'OutletInUse' => '00000026-0000-1000-8000-0026BB765291',
+
+	# Lightbulb
+	'Brightness'       => '00000008-0000-1000-8000-0026BB765291',
+	'Hue'              => '00000013-0000-1000-8000-0026BB765291',
+	'Saturation'       => '0000002F-0000-1000-8000-0026BB765291',
+	'ColorTemperature' => '000000CE-0000-1000-8000-0026BB765291',
+
+	# Sensors
+	'CurrentRelativeHumidity' => '00000010-0000-1000-8000-0026BB765291',
+
+	# Protocol information
+	'Version' => '00000037-0000-1000-8000-0026BB765291',
 );
 
 # _uuid_to_short($uuid) - Convert full UUID to short form for JSON
@@ -63,6 +75,7 @@ our %PERMISSIONS = (
 	'aa' => 1,    # Additional Authorization
 	'tw' => 1,    # Timed Write
 	'hd' => 1,    # Hidden
+	'wr' => 1,    # Write Response
 );
 
 sub new ( $class, %args )
@@ -73,7 +86,7 @@ sub new ( $class, %args )
 
 	my $self = bless {
 		type   => $uuid,
-		iid    => $args{iid}    // die "Instance ID required",
+		iid    => $args{iid}    // die('Instance ID required'),
 		format => $args{format} // 'string',
 		perms  => $args{perms}  // ['pr'],
 
@@ -166,24 +179,28 @@ sub to_json ( $self, $include_value = 1 )
 
 	# Add value if requested and readable
 	if ( $include_value && grep { $_ eq 'pr' } @{ $self->{perms} } ) {
-		my $value = $self->get_value();
-
-		# Convert value to proper JSON type
-		if ( $self->{format} eq 'bool' ) {
-			$json->{value} = $value ? \1 : \0;
-		}
-		elsif ( $self->{format} =~ /^(uint|int)/ ) {
-			$json->{value} = $value + 0;
-		}
-		elsif ( $self->{format} eq 'float' ) {
-			$json->{value} = $value + 0.0;
-		}
-		else {
-			$json->{value} = $value;
-		}
+		$json->{value} = $self->json_value;
 	}
 
 	return $json;
+}
+
+# json_value() - Current value converted to its JSON type per the
+# characteristic format (HAP-HTTP.md §15.1)
+sub json_value ($self)
+{
+	my $value = $self->get_value();
+
+	if ( $self->{format} eq 'bool' ) {
+		return $value ? \1 : \0;
+	}
+	if ( $self->{format} =~ /^(uint|int)/ ) {
+		return $value + 0;
+	}
+	if ( $self->{format} eq 'float' ) {
+		return $value + 0.0;
+	}
+	return $value;
 }
 
 1;

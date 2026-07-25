@@ -72,29 +72,9 @@ use_ok('OpenHAP::Pairing');
     like($device_id, qr/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/, 'Device ID is MAC format');
 }
 
-# Test get_mdns_txt_records()
-{
-    my $temp_dir = tempdir(CLEANUP => 1);
-    my $hap = OpenHAP::HAP->new(
-        port         => 51830,
-        pin          => '123-45-678',
-        storage_path => $temp_dir,
-    );
+# mDNS TXT record content is covered by t/conformance/hap-mdns.t
 
-    my $records = $hap->get_mdns_txt_records();
-    ok(defined $records, 'mDNS records generated');
-    ok(exists $records->{'c#'}, 'c# record exists');
-    ok(exists $records->{'id'}, 'id record exists');
-    ok(exists $records->{'sf'}, 'sf record exists');
-    is($records->{'sf'}, 1, 'sf=1 when not paired');
-
-    # Add pairing and check sf changes
-    $hap->{storage}->save_pairing('test-controller', 'X' x 32, 1);
-    $records = $hap->get_mdns_txt_records();
-    is($records->{'sf'}, 0, 'sf=0 when paired');
-}
-
-# Test event queue initialization (Finding 10)
+# Test event queue initialization ([HAP-HTTP §14] event notifications)
 {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $hap = OpenHAP::HAP->new(
@@ -103,12 +83,12 @@ use_ok('OpenHAP::Pairing');
         storage_path => $temp_dir,
     );
 
-    ok(exists $hap->{event_queue}, 'Event queue exists');
+    ok(exists $hap->{event_queue}, '[HAP-HTTP §14] event queue exists');
     ok(ref $hap->{event_queue} eq 'HASH', 'Event queue is a hash');
     ok(!defined $hap->{event_flush_scheduled}, 'No flush scheduled initially');
 }
 
-# Test identity regeneration (Finding 8)
+# Test identity regeneration
 {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $hap = OpenHAP::HAP->new(
@@ -132,7 +112,84 @@ use_ok('OpenHAP::Pairing');
     is($stored_ltpk, $new_ltpk, 'New LTPK persisted to storage');
 }
 
-# Test IMMEDIATE_EVENT_TYPES constant (Finding 10)
+# Test config number tracking ([HAP-mDNS §3.1] c# increments on change)
+{
+    my $temp_dir = tempdir(CLEANUP => 1);
+    my %args = (
+        port         => 51834,
+        pin          => '123-45-678',
+        storage_path => $temp_dir,
+    );
+
+    my $hap = OpenHAP::HAP->new(%args);
+    is($hap->update_config_number, 1,
+        '[HAP-mDNS §3.1] first run keeps c# at 1');
+    is($hap->update_config_number, 1,
+        'unchanged database keeps c# stable');
+
+    # Restart with the same database: c# unchanged
+    my $hap2 = OpenHAP::HAP->new(%args);
+    is($hap2->update_config_number, 1,
+        '[HAP-mDNS §8] c# persisted across restart');
+
+    # Restart with an added accessory: c# increments
+    require OpenHAP::Tasmota::Heater;
+    require OpenHAP::TestMock::MQTT;
+    my $hap3 = OpenHAP::HAP->new(%args);
+    $hap3->add_accessory(
+        OpenHAP::Tasmota::Heater->new(
+            aid         => 2,
+            name        => 'New Heater',
+            mqtt_topic  => 'heater',
+            mqtt_client => OpenHAP::TestMock::MQTT->new,
+        ));
+    is($hap3->update_config_number, 2,
+        '[HAP-mDNS §3.1] c# increments when a device is added');
+    is($hap3->get_mdns_txt_records->{'c#'}, 2, 'TXT c# reflects change');
+}
+
+# Test mDNS re-advertisement on pairing change ([HAP-mDNS §8])
+{
+    package MockMDNS;
+
+    sub new($class) { bless { updates => [] }, $class }
+
+    sub update_txt_records($self, $records)
+    {
+        push @{ $self->{updates} }, $records;
+        return 1;
+    }
+
+    package main;
+
+    my $temp_dir = tempdir(CLEANUP => 1);
+    my $hap = OpenHAP::HAP->new(
+        port         => 51835,
+        pin          => '123-45-678',
+        storage_path => $temp_dir,
+    );
+    my $mdns = MockMDNS->new;
+    $hap->set_mdns($mdns);
+
+    # No change: no re-advertisement
+    $hap->_refresh_mdns;
+    is(scalar @{ $mdns->{updates} }, 0, 'no update without state change');
+
+    # Pairing added: sf flips to 0 and the TXT record is re-advertised
+    $hap->{storage}->save_pairing('controller', 'X' x 32, 1);
+    $hap->_refresh_mdns;
+    is(scalar @{ $mdns->{updates} }, 1,
+        '[HAP-mDNS §8] TXT re-advertised when pairing added');
+    is($mdns->{updates}[0]{sf}, 0, 'advertised sf=0 once paired');
+
+    # Pairing removed: re-advertised again with sf=1
+    $hap->{storage}->remove_all_pairings;
+    $hap->_refresh_mdns;
+    is($mdns->{updates}[1]{sf}, 1,
+        '[HAP-mDNS §8] advertised sf=1 when pairing removed');
+}
+
+# Test IMMEDIATE_EVENT_TYPES constant ([HAP-HTTP §14] event coalescing)
 {
     # Constants are defined in the package, access via method
     my $temp_dir = tempdir(CLEANUP => 1);
@@ -143,7 +200,7 @@ use_ok('OpenHAP::Pairing');
     );
 
     # Test that queue_event method exists (uses the constants internally)
-    ok($hap->can('queue_event'), 'queue_event method exists');
+    ok($hap->can('queue_event'), '[HAP-HTTP §14] queue_event method exists');
     ok($hap->can('flush_events'), 'flush_events method exists');
     ok($hap->can('send_event'), 'send_event method exists');
 }

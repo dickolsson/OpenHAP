@@ -5,7 +5,17 @@
 # Usage: login.exp <host> <port> [user] [password]
 #
 
-set timeout 30
+# Use OPENHVF_TIMEOUT from the environment when it exceeds the
+# script default (slow hosts, e.g. TCG emulation in CI)
+proc env_timeout {default} {
+    global env
+    if {[info exists env(OPENHVF_TIMEOUT)] && $env(OPENHVF_TIMEOUT) > $default} {
+        return $env(OPENHVF_TIMEOUT)
+    }
+    return $default
+}
+
+set timeout [env_timeout 30]
 
 if {[llength $argv] < 2} {
     puts stderr "Usage: login.exp <host> <port> \[user\] \[password\]"
@@ -39,6 +49,10 @@ expect {
         # Already logged in
         puts "Already logged in"
         exit 0
+    }
+    eof {
+        puts stderr "telnet could not connect to the VM console"
+        exit 1
     }
     timeout {
         puts stderr "Timeout waiting for login prompt"

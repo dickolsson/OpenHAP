@@ -35,3 +35,15 @@ device tasmota thermostat living_room {
     name = "Living Room Thermostat"
     topic = tasmota_DDEEFF
 }
+
+# Dimmable lightbulb example
+device tasmota lightbulb kitchen {
+    name = "Kitchen Light"
+    topic = tasmota_LIGHT1
+}
+
+# Temperature sensor example
+device tasmota sensor outdoor {
+    name = "Outdoor Sensor"
+    topic = tasmota_SENS01
+}

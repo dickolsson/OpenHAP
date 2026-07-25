@@ -134,7 +134,7 @@ use_ok('OpenHAP::SRP');
     is(length($K), 64, 'Session key is 64 bytes (SHA-512)');
 }
 
-# Test SRP A mod N == 0 validation (Finding 1 - Security)
+# Test SRP A mod N == 0 validation
 {
     my $srp = OpenHAP::SRP->new(password => '123-45-678');
 
@@ -145,7 +145,7 @@ use_ok('OpenHAP::SRP');
     # Test with A = 0 (should be rejected)
     my $A_zero = "\x00" x 384;  # 3072 bits = 384 bytes
     my $K = $srp->compute_session_key($A_zero);
-    ok(!defined $K, 'Session key rejected when A is zero');
+    ok(!defined $K, '[HAP-Pairing §2.6] session key rejected when A is zero');
 
     # Test with A = N (should be rejected since A mod N == 0)
     # Get N as bytes
@@ -153,7 +153,8 @@ use_ok('OpenHAP::SRP');
     $N_hex =~ s/^0x//;
     my $A_equals_N = pack('H*', $N_hex);
     $K = $srp->compute_session_key($A_equals_N);
-    ok(!defined $K, 'Session key rejected when A equals N');
+    ok(!defined $K,
+        '[HAP-Pairing §2.6] session key rejected when A mod N == 0');
 }
 
 # Test get_session_key

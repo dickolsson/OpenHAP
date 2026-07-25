@@ -1,4 +1,4 @@
-.PHONY: all build check clean clean-man deps deps-develop deps-test install install-man integration lint man package prettier prettier-fix test tidy tidy-fix uninstall upgrade vm-provision vm-up
+.PHONY: all build check clean clean-man deps deps-develop deps-test install install-man integration lint man package prettier prettier-fix spec-coverage test tidy tidy-fix uninstall upgrade vm-provision vm-up
 
 # Filesystem configuration
 PREFIX			?= /usr/local
@@ -68,6 +68,7 @@ install: install-man
 	install -d $(DESTDIR)$(LIBDIR)/OpenHAP
 	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota
 	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Test
+	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller
 	install -d $(DESTDIR)$(LIBDIR)/FuguLib
 	install -m 644 lib/OpenHAP/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/
 	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
@@ -75,6 +76,8 @@ install: install-man
 	install -m 644 lib/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
 	[ ! -e lib/OpenHAP/Test/*.pm ] || install -m 644 lib/OpenHAP/Test/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Test/
 	[ ! -e lib/OpenHAP/Test/*.pod ] || install -m 644 lib/OpenHAP/Test/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Test/
+	[ ! -e lib/OpenHAP/Test/Controller/*.pm ] || install -m 644 lib/OpenHAP/Test/Controller/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/
+	[ ! -e lib/OpenHAP/Test/Controller/*.pod ] || install -m 644 lib/OpenHAP/Test/Controller/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/
 	install -m 644 lib/FuguLib/*.pm $(DESTDIR)$(LIBDIR)/FuguLib/
 	install -m 644 lib/FuguLib/*.pod $(DESTDIR)$(LIBDIR)/FuguLib/
 	# Install rc.d script
@@ -107,6 +110,9 @@ prettier:
 prettier-fix:
 	npx prettier --write '**/*.md' '**/*.json' '**/*.yml'
 
+spec-coverage:
+	@perl scripts/spec-coverage --quiet
+
 %.cat1: %.1
 	$(MANDOC) -Tascii $< > $@
 
@@ -119,7 +125,7 @@ prettier-fix:
 package: clean
 	mkdir -p build/$(PACKAGE)/bin
 	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Tasmota
-	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test
+	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test/Controller
 	mkdir -p build/$(PACKAGE)/lib/FuguLib
 	mkdir -p build/$(PACKAGE)/etc/rc.d
 	mkdir -p build/$(PACKAGE)/share/openhap/examples
@@ -132,6 +138,7 @@ package: clean
 	cp lib/OpenHAP/*.pm lib/OpenHAP/*.pod build/$(PACKAGE)/lib/OpenHAP/
 	cp lib/OpenHAP/Tasmota/*.pm lib/OpenHAP/Tasmota/*.pod build/$(PACKAGE)/lib/OpenHAP/Tasmota/
 	cp lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/
+	cp lib/OpenHAP/Test/Controller/*.pm lib/OpenHAP/Test/Controller/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/Controller/
 	cp lib/FuguLib/*.pm lib/FuguLib/*.pod build/$(PACKAGE)/lib/FuguLib/
 	# rc.d script
 	cp etc/rc.d/openhapd build/$(PACKAGE)/etc/rc.d/
@@ -153,7 +160,9 @@ package: clean
 
 test:
 	prove -l -v t/openhvf/*.t
+	prove -l -v t/fugulib/*.t
 	prove -l -v t/openhap/*.t
+	prove -l -v t/conformance/*.t
 
 tidy:
 	@find lib bin -name '*.pm' -o -name 'openhapd' -o -name 'hapctl' | while read f; do \

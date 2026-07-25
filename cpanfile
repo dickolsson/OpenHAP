@@ -9,6 +9,11 @@ requires 'CryptX';
 # JSON parsing
 requires 'JSON::XS';
 
+# GMP backend for Math::BigInt: SRP does 3072-bit modular exponentiation,
+# which is impractically slow in the pure-Perl backend. Math::BigInt loads
+# this automatically when present.
+requires 'Math::BigInt::GMP';
+
 # MQTT client for device integration
 requires 'Net::MQTT::Simple';
 

@@ -19,10 +19,15 @@ use_ok('FuguLib::Log');
 	my $log = FuguLib::Log->new( mode => 'quiet' );
 	ok( defined $log, 'Created quiet logger' );
 
-	# These should not produce output
-	$log->debug('test');
-	$log->info('test');
-	ok( 1, 'Quiet logger produces no output' );
+	# Capture STDERR to prove quiet mode produces no output
+	my $stderr = '';
+	{
+		local *STDERR;
+		open STDERR, '>', \$stderr or die "Cannot capture STDERR: $!";
+		$log->debug('test');
+		$log->info('test');
+	}
+	is( $stderr, '', 'Quiet logger produces no output' );
 }
 
 # Test 3: Level filtering
@@ -49,12 +54,24 @@ use_ok('FuguLib::Log');
 
 # Test 5: Change log level
 {
-	my $log = FuguLib::Log->new( mode => 'quiet', level => 'error' );
-	$log->set_level('debug');
+	my $log = FuguLib::Log->new( mode => 'stderr', level => 'error' );
 
-	# Just verify no errors
-	$log->debug('now visible');
-	ok( 1, 'set_level works' );
+	my $stderr = '';
+	{
+		local *STDERR;
+		open STDERR, '>', \$stderr or die "Cannot capture STDERR: $!";
+		$log->debug('suppressed at error level');
+	}
+	is( $stderr, '', 'debug suppressed before set_level' );
+
+	$log->set_level('debug');
+	$stderr = '';
+	{
+		local *STDERR;
+		open STDERR, '>', \$stderr or die "Cannot capture STDERR: $!";
+		$log->debug('now visible');
+	}
+	like( $stderr, qr/now visible/, 'set_level enables debug output' );
 }
 
 # Test 6: Default values

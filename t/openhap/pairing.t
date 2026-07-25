@@ -150,21 +150,21 @@ SKIP: {
     ok(defined $response, 'Invalid state returns error response');
 }
 
-# Test new TLV type constants (Finding 6)
+# Test new TLV type constants
 {
     ok(defined &OpenHAP::Pairing::kTLVType_SessionID, 'kTLVType_SessionID defined');
     ok(defined &OpenHAP::Pairing::kTLVType_Flags, 'kTLVType_Flags defined');
-    is(OpenHAP::Pairing::kTLVType_SessionID(), 0x0E, 'kTLVType_SessionID is 0x0E');
-    is(OpenHAP::Pairing::kTLVType_Flags(), 0x13, 'kTLVType_Flags is 0x13');
+    is(OpenHAP::Pairing::kTLVType_SessionID(), 0x0E, '[HAP-TLV8 §5] kTLVType_SessionID is 0x0E');
+    is(OpenHAP::Pairing::kTLVType_Flags(), 0x13, '[HAP-TLV8 §5] kTLVType_Flags is 0x13');
 }
 
-# Test kTLVError_MaxTries constant (Finding 4)
+# Test kTLVError_MaxTries constant
 {
     ok(defined &OpenHAP::Pairing::kTLVError_MaxTries, 'kTLVError_MaxTries defined');
-    is(OpenHAP::Pairing::kTLVError_MaxTries(), 0x05, 'kTLVError_MaxTries is 0x05');
+    is(OpenHAP::Pairing::kTLVError_MaxTries(), 0x05, '[HAP-TLV8 §7] kTLVError_MaxTries is 0x05');
 }
 
-# Test invalid pairing method rejection (Finding 7)
+# Test invalid pairing method rejection
 SKIP: {
     eval {
         require Crypt::Ed25519;
@@ -201,12 +201,13 @@ SKIP: {
     # Decode response to check for error
     my %resp_tlv = OpenHAP::TLV::decode($response);
     my $error = unpack('C', $resp_tlv{ OpenHAP::Pairing::kTLVType_Error() } // '');
-    is($error, OpenHAP::Pairing::kTLVError_Unknown(), 'Invalid method returns kTLVError_Unknown');
-    
+    is($error, OpenHAP::Pairing::kTLVError_Unknown(),
+        '[HAP-TLV8 §6] invalid pairing method returns kTLVError_Unknown');
+
     OpenHAP::Pairing->clear_pairing_state();
 }
 
-# Test already-paired rejection (Finding 2)
+# Test already-paired rejection
 SKIP: {
     eval {
         require Crypt::Ed25519;
@@ -242,7 +243,8 @@ SKIP: {
     my $response = $pairing->handle_pair_setup($body, $session);
     my %resp_tlv = OpenHAP::TLV::decode($response);
     my $error = unpack('C', $resp_tlv{ OpenHAP::Pairing::kTLVType_Error() } // '');
-    is($error, OpenHAP::Pairing::kTLVError_Unavailable(), 'Already paired returns kTLVError_Unavailable');
+    is($error, OpenHAP::Pairing::kTLVError_Unavailable(),
+        '[HAP-Pairing §2.4] already paired returns kTLVError_Unavailable in M2');
     
     # But PairSetupWithAuth (method=1) should be allowed even when paired
     OpenHAP::Pairing->clear_pairing_state();
@@ -255,12 +257,13 @@ SKIP: {
     my $response_auth = $pairing->handle_pair_setup($body_auth, $session2);
     my %resp_auth = OpenHAP::TLV::decode($response_auth);
     my $state = unpack('C', $resp_auth{ OpenHAP::Pairing::kTLVType_State() } // '');
-    is($state, 2, 'PairSetupWithAuth allowed when already paired (returns M2)');
+    is($state, 2,
+        '[HAP-Pairing §2.3] PairSetupWithAuth allowed when already paired (returns M2)');
     
     OpenHAP::Pairing->clear_pairing_state();
 }
 
-# Test concurrent pairing protection (Finding 3)
+# Test concurrent pairing protection
 SKIP: {
     eval {
         require Crypt::Ed25519;
@@ -299,15 +302,17 @@ SKIP: {
     my $response2 = $pairing->handle_pair_setup($body, $session2);
     my %resp2 = OpenHAP::TLV::decode($response2);
     my $error2 = unpack('C', $resp2{ OpenHAP::Pairing::kTLVType_Error() } // '');
-    is($error2, OpenHAP::Pairing::kTLVError_Busy(), 'Concurrent pairing returns kTLVError_Busy');
+    is($error2, OpenHAP::Pairing::kTLVError_Busy(),
+        '[HAP-Pairing §2.4] concurrent pairing returns kTLVError_Busy in M2');
     
     OpenHAP::Pairing->clear_pairing_state();
 }
 
-# Test failed attempt counting (Finding 4)
+# Test failed attempt counting
 {
     OpenHAP::Pairing->reset_auth_attempts();
-    is(OpenHAP::Pairing->get_failed_attempts(), 0, 'Failed attempts starts at 0');
+    is(OpenHAP::Pairing->get_failed_attempts(), 0,
+        '[HAP-Pairing §8] failed attempt counter starts at 0');
 }
 
 # Test M2 response doesn't contain '0x' prefix in public key (Bug fix)
@@ -350,10 +355,12 @@ SKIP: {
     
     # Check that the hex doesn't start with '30' which is ASCII '0'
     # If the bug existed, we'd see '307830...' (0x30='0', 0x78='x')
-    isnt(substr($hex, 0, 4), '3078', 'Public key does not start with ASCII "0x"');
-    
+    isnt(substr($hex, 0, 4), '3078',
+        '[HAP-Pairing §2.4] public key does not start with ASCII "0x"');
+
     # The public key should be 384 bytes (3072 bits)
-    is(length($public_key), 384, 'Public key is 384 bytes (3072 bits)');
+    is(length($public_key), 384,
+        '[HAP-Pairing §2.4] M2 public key B is 384 bytes (3072 bits)');
     
     OpenHAP::Pairing->clear_pairing_state();
 }

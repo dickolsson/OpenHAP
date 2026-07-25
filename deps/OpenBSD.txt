@@ -4,6 +4,7 @@ runtime pkg p5-Crypt-Ed25519
 runtime pkg p5-Crypt-Curve25519
 runtime pkg p5-CryptX
 runtime pkg p5-JSON-XS
+runtime pkg p5-Math-BigInt-GMP
 runtime cpan Net::MQTT::Simple
 
 test pkg p5-Perl-Critic

@@ -5,10 +5,9 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 
-use_ok('FuguLib::Process');
+use File::Temp qw(tempdir);
 
-# Test 1: Module loads
-ok( 1, 'FuguLib::Process loaded' );
+use_ok('FuguLib::Process');
 
 # Test 2: Basic spawn and terminate
 {
@@ -162,11 +161,9 @@ SKIP: {
 }
 
 # Test 13: I/O redirection
-SKIP: {
-	skip 'Requires writable /tmp', 1 unless -w '/tmp';
-
-	my $outfile = "/tmp/fugulib-process-test-$$.txt";
-	unlink $outfile if -f $outfile;
+{
+	my $tmpdir  = tempdir( CLEANUP => 1 );
+	my $outfile = "$tmpdir/fugulib-process-test.txt";
 
 	my $result = FuguLib::Process->spawn_command(
 		cmd         => [ 'echo', 'test output' ],
@@ -179,11 +176,11 @@ SKIP: {
 
 	ok( -f $outfile, 'Output file created' );
 	if ( -f $outfile ) {
-		open my $fh, '<', $outfile;
+		open my $fh, '<', $outfile
+		    or do { fail("Cannot read $outfile: $!"); };
 		my $content = <$fh>;
 		close $fh;
 		like( $content, qr/test output/, 'Output redirected correctly' );
-		unlink $outfile;
 	}
 }
 

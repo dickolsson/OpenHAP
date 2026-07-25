@@ -1,0 +1,103 @@
+name: Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Manual runs against any branch, e.g. to test workflow changes
+  # before merging
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Integration tests (OpenBSD VM)
+    # arm64 runner: the OpenBSD guest is arm64, so the VM runs without
+    # cross-architecture translation. KVM is picked up automatically by
+    # openhvf if the runner ever exposes /dev/kvm; until then QEMU falls
+    # back to TCG software emulation, which is why the timeouts below
+    # are generous.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build version derives from `git rev-list --count HEAD`
+          fetch-depth: 0
+
+      - name: Setup Perl
+        uses: ./.github/actions/setup-perl
+
+      - name: Install development dependencies
+        run: make deps-develop
+
+      - name: Cache OpenBSD miniroot image
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/openhvf
+          key: openhvf-image-${{ hashFiles('.openhvfrc') }}
+
+      - name: Cache provisioned VM disk
+        # Saved only after a clean shutdown (see the last step), so a
+        # cache hit boots the already-installed OpenBSD system instead
+        # of reinstalling it from the miniroot on every run.
+        uses: actions/cache@v4
+        with:
+          path: .openhvf
+          key:
+            openhvf-state-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
+            'deps/OpenBSD.txt', 'scripts/vm_provision.sh') }}
+
+      - name: Generate ephemeral SSH key for the VM
+        # The harness installs an authorized_keys entry on the guest and
+        # then uses key-based auth for every later `openhvf ssh`/`scp`.
+        # Developers configure this in ~/.openhvfrc; CI has no key, so
+        # mint a throwaway one per run. Write the public half to the
+        # GLOBAL rc (~/.openhvfrc) rather than the project .openhvfrc so
+        # the disk-cache key (which hashes the project file) stays stable.
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keygen -t ed25519 -N '' -C openhvf-ci -f ~/.ssh/id_ed25519
+          printf 'ssh_pubkey "%s"\n' "$(cat ~/.ssh/id_ed25519.pub)" \
+            > ~/.openhvfrc
+
+      - name: Run integration tests
+        env:
+          # Expect-script step timeout and post-boot SSH wait, both far
+          # beyond the defaults to accommodate TCG emulation
+          OPENHVF_TIMEOUT: 1800
+          OPENHVF_WAIT_TIMEOUT: 1800
+        run: |
+          # `openhvf ssh` authenticates via the SSH agent; load the key
+          # so the harness and the test scripts can reach the guest.
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+          make integration
+
+      - name: Show VM diagnostics on failure
+        if: failure()
+        run: |
+          echo "==> openhvf status"
+          ./bin/openhvf status || true
+          echo "==> QEMU log tail"
+          tail -n 80 .openhvf/state/*/qemu.log 2>/dev/null || true
+          echo "==> Host virtualization"
+          ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm"
+          qemu-system-aarch64 --version 2>/dev/null | head -1 || true
+
+      - name: Shut down VM
+        # A clean shutdown before the cache post-step keeps the cached
+        # qcow2 consistent. `openhvf down` is internally bounded (its
+        # guest interactions are time-limited and it force-stops the
+        # QEMU process as a last resort), so it cannot hang the job even
+        # when the guest is wedged. Leftover sockets cannot be archived
+        # and are removed.
+        if: always()
+        run: |
+          ./bin/openhvf down || true
+          find .openhvf -type s -delete 2>/dev/null || true

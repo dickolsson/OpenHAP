@@ -36,6 +36,8 @@ use OpenHVF::Util;
 use OpenHVF::QMP;
 use OpenHVF::QGA;
 
+use FuguLib::Process;
+
 use constant {
 	EXIT_SUCCESS        => 0,
 	EXIT_ERROR          => 1,
@@ -43,18 +45,22 @@ use constant {
 	EXIT_VM_NOT_RUNNING => 6,
 	EXIT_TIMEOUT        => 7,
 
-	# Fixed configuration for OpenBSD on Apple Silicon
+	# Fixed configuration for OpenBSD arm64 guests
 	QEMU_BINARY    => 'qemu-system-aarch64',
 	MEMORY_DEFAULT => '1G',
 	CPU_COUNT      => 2,
+
+	# Guest CPU model under TCG emulation (no host passthrough)
+	TCG_CPU => 'cortex-a57',
 };
 
 sub new ( $class, %args )
 {
 	my $self = bless {
-		config => $args{config},
-		state  => $args{state},
-		log    => $args{log},
+		config  => $args{config},
+		state   => $args{state},
+		log     => $args{log},
+		emulate => $args{emulate} // 0,
 	}, $class;
 
 	return $self;
@@ -169,7 +175,7 @@ sub up ($self)
 
 		$log->info("Installing OpenBSD...");
 		my $expect = OpenHVF::Expect->new(
-			host => 'localhost',
+			host => '127.0.0.1',
 			port => $config->{console_port},
 		);
 
@@ -273,7 +279,7 @@ sub down ($self)
 		"Graceful shutdown failed, force stopping (risk of corruption)"
 	);
 	$state->mark_unclean_shutdown;
-	$self->_qmp_quit;
+	$self->_force_stop;
 	$state->clear_vm_pid;
 	$log->info("VM stopped");
 
@@ -361,7 +367,7 @@ sub stop ( $self, $force = 0 )
 		$log->warning(
 			"Force stopping VM (filesystem may be corrupted)");
 		$state->mark_unclean_shutdown;
-		$self->_qmp_quit;
+		$self->_force_stop;
 		$state->clear_vm_pid;
 		$log->info("VM stopped");
 		return EXIT_SUCCESS;
@@ -381,7 +387,7 @@ sub stop ( $self, $force = 0 )
 "Graceful shutdown timed out, force stopping (risk of corruption)"
 	);
 	$state->mark_unclean_shutdown;
-	$self->_qmp_quit;
+	$self->_force_stop;
 	$state->clear_vm_pid;
 	$log->info("VM stopped");
 	return EXIT_SUCCESS;
@@ -444,7 +450,7 @@ sub wait_ssh ( $self, $timeout = 120, $sig = undef )
 
 	# Uses SSH agent for authentication
 	my $ssh = OpenHVF::SSH->new(
-		host => 'localhost',
+		host => '127.0.0.1',
 		port => $config->{ssh_port},
 		user => 'root',
 	);
@@ -460,7 +466,7 @@ sub _wait_ssh_password ( $self, $password, $timeout = 120 )
 	my $config = $self->{config};
 
 	my $ssh = OpenHVF::SSH->new(
-		host     => 'localhost',
+		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
 		password => $password,
@@ -550,7 +556,7 @@ sub _install_ssh_key ( $self, $password )
 
 	# Connect with password
 	my $ssh = OpenHVF::SSH->new(
-		host     => 'localhost',
+		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
 		password => $password,
@@ -590,39 +596,33 @@ sub _graceful_shutdown ($self)
 	my $config = $self->{config};
 	my $log    = $self->{log};
 
-	# Method 1: SSH sync + ACPI powerdown
-	# First sync filesystems via SSH, then use QMP to send ACPI power button
-	# This avoids the problem of SSH connection being killed by halt
-	my $ssh = OpenHVF::SSH->new(
-		host => 'localhost',
-		port => $config->{ssh_port},
-		user => 'root',
-	);
+	# Best-effort filesystem sync over SSH before pulling the power.
+	# Hard-bounded: a wedged guest must never stall shutdown, and
+	# libssh2 does not reliably honor its own timeout on the connect
+	# and handshake. A failure or timeout here is fine - the ACPI
+	# powerdown below runs the guest's own orderly shutdown (which
+	# syncs), and a force stop is the ultimate fallback.
+	$self->_bounded(
+		OpenHVF::SSH::DEFAULT_TIMEOUT + 5,
+		sub {
+			my $ssh = OpenHVF::SSH->new(
+				host => '127.0.0.1',
+				port => $config->{ssh_port},
+				user => 'root',
+			);
+			return $ssh->run_command('sync; sync; sync');
+		} );
 
-	# Try to sync filesystems via SSH (non-blocking command)
-	my $sync_result = $ssh->run_command('sync; sync; sync');
-
-	if ( $sync_result->{exit_code} == 0 ) {
-
-		# Synced successfully, now use ACPI powerdown via QMP
-		if ( $self->_qmp_powerdown ) {
-			if ( $self->_wait_exit(60) ) {
-				$log->info(
-					"Shutdown via SSH sync + ACPI powerdown"
-				);
-				return 1;
-			}
-		}
+	# Ask the guest to power off via the ACPI power button, then wait.
+	if ( $self->_qmp_powerdown && $self->_wait_exit(60) ) {
+		$log->info("Shutdown via ACPI powerdown");
+		return 1;
 	}
 
-	# Method 2: Try QGA shutdown (if guest agent is available)
+	# Guest-agent shutdown, if the agent is available.
 	my $qga = $self->_qga_connect;
 	if ($qga) {
-
-		# Sync filesystems first
 		$qga->sync;
-
-		# Request shutdown via guest agent
 		$qga->shutdown('powerdown');
 		$qga->disconnect;
 
@@ -632,15 +632,41 @@ sub _graceful_shutdown ($self)
 		}
 	}
 
-	# Method 3: Try direct ACPI powerdown as last resort
-	if ( $self->_qmp_powerdown ) {
-		if ( $self->_wait_exit(30) ) {
-			$log->info("Shutdown via ACPI powerdown");
-			return 1;
-		}
-	}
-
 	return 0;
+}
+
+# $self->_bounded($seconds, $code):
+#	Run $code under a hard wall-clock deadline so a blocking guest
+#	interaction cannot stall the caller. Returns $code's return value,
+#	or undef if the deadline elapsed. Mirrors the alarm guard used for
+#	the MQTT connect in OpenHAP::MQTT.
+sub _bounded ( $self, $seconds, $code )
+{
+	my $result;
+	my $ok = eval {
+		local $SIG{ALRM} = sub { die "timeout\n" };
+		alarm $seconds;
+		$result = $code->();
+		alarm 0;
+		1;
+	};
+	alarm 0;
+	return $result if $ok;
+
+	$self->{log}->warning("Guest did not respond within ${seconds}s");
+	return;
+}
+
+# $self->_force_stop:
+#	Terminate the QEMU process deterministically: SIGTERM (QEMU exits
+#	and flushes its disk caches), escalating to SIGKILL if it lingers.
+#	Unlike a QMP 'quit', this cannot hang on an unresponsive monitor
+#	socket, so it is a safe last resort.
+sub _force_stop ($self)
+{
+	my $pid = $self->{state}->get_vm_pid;
+	return 1 if !defined $pid;
+	return FuguLib::Process->terminate( $pid, grace_period => 5 );
 }
 
 # QGA methods
@@ -721,10 +747,9 @@ sub _start_qemu ( $self, $boot_image = undef )
 
 	my @cmd = (QEMU_BINARY);
 
-	# Machine type for arm64 with HVF acceleration
-	push @cmd, '-M',     'virt,highmem=off';
-	push @cmd, '-cpu',   'host';
-	push @cmd, '-accel', 'hvf';
+	# Machine type for arm64, acceleration by host capability
+	push @cmd, '-M', 'virt,highmem=off';
+	push @cmd, $self->_accel_args;
 
 	# Memory and CPU
 	push @cmd, '-m',   $config->{memory} // MEMORY_DEFAULT;
@@ -790,25 +815,131 @@ sub _start_qemu ( $self, $boot_image = undef )
 
 	# Wait for QEMU to write PID file
 	my $start = time;
+	my $pid;
 	while ( time - $start < 5 ) {
 		if ( -f $state->{vm_pid_file} ) {
 			my $qemu_pid = $state->get_vm_pid;
 			if ( defined $qemu_pid && kill( 0, $qemu_pid ) ) {
-				return $qemu_pid;
+				$pid = $qemu_pid;
+				last;
 			}
 		}
 		usleep(100_000);    # 0.1 seconds
 	}
 
 	# Fallback: use forked PID from FuguLib::Process
-	my $pid = $result->{pid};
-	if ( kill( 0, $pid ) ) {
-		$state->set_vm_pid($pid);
-		$state->mark_running;
-		return $pid;
+	unless ( defined $pid ) {
+		my $forked = $result->{pid};
+		if ( kill( 0, $forked ) ) {
+			$state->set_vm_pid($forked);
+			$state->mark_running;
+			$pid = $forked;
+		}
 	}
 
+	unless ( defined $pid ) {
+		$self->_dump_qemu_log($log_file);
+		return;
+	}
+
+	# Confirm QEMU is actually accepting console connections before the
+	# installer tries to attach. A QEMU that exited at startup (bad
+	# accelerator, missing firmware) leaves the port closed; catching
+	# that here fails fast with the QEMU log instead of a long telnet
+	# timeout later.
+	unless ( $self->_wait_console_ready( $config->{console_port}, 30 ) ) {
+		$self->{log}
+		    ->error( 'QEMU console port %d not listening after start',
+			$config->{console_port} );
+		$self->_dump_qemu_log($log_file);
+		return;
+	}
+
+	return $pid;
+}
+
+# $self->_wait_console_ready($port, $timeout):
+#	Poll the console TCP port until it accepts a connection, so the
+#	installer's telnet attaches to a live console. The bind happens
+#	at QEMU startup (before guest boot), so this is quick when QEMU
+#	is healthy and bounded when it is not.
+sub _wait_console_ready ( $self, $port, $timeout )
+{
+	require IO::Socket::INET;
+
+	my $start = time;
+	while ( time - $start < $timeout ) {
+		my $sock = IO::Socket::INET->new(
+			PeerAddr => '127.0.0.1',
+			PeerPort => $port,
+			Proto    => 'tcp',
+			Timeout  => 2,
+		);
+		if ( defined $sock ) {
+			$sock->close;
+			return 1;
+		}
+
+		# Give up early if QEMU has already exited
+		my $qemu_pid = $self->{state}->get_vm_pid;
+		return 0 if defined $qemu_pid && !kill( 0, $qemu_pid );
+
+		usleep(200_000);    # 0.2 seconds
+	}
+
+	return 0;
+}
+
+# $self->_dump_qemu_log($log_file):
+#	Emit the tail of the QEMU log so a startup failure is visible in
+#	CI output instead of requiring shell access to the runner.
+sub _dump_qemu_log ( $self, $log_file )
+{
+	open my $fh, '<', $log_file or return;
+	my @lines = <$fh>;
+	close $fh;
+
+	@lines = splice( @lines, -40 ) if @lines > 40;
+	$self->{log}->error('QEMU log tail:');
+	$self->{log}->error( '  %s', $_ ) for map { chomp; $_ } @lines;
+
 	return;
+}
+
+# $self->_accel_args():
+#	Pick the QEMU accelerator for the host: HVF on macOS, KVM on
+#	aarch64 Linux hosts with /dev/kvm, TCG software emulation
+#	otherwise or when --emulate was given. Host CPU passthrough is
+#	only valid with hardware acceleration; TCG needs a named model.
+sub _accel_args ($self)
+{
+	my $accel;
+	if ( $self->{emulate} ) {
+		$accel = 'tcg';
+	}
+	elsif ( $^O eq 'darwin' ) {
+		$accel = 'hvf';
+	}
+	elsif ( $^O eq 'linux' && -w '/dev/kvm' && _host_arch() eq 'aarch64' ) {
+		$accel = 'kvm';
+	}
+	else {
+		$accel = 'tcg';
+	}
+
+	$self->{log}->debug("Using QEMU accelerator: $accel")
+	    if $self->{log};
+
+	return ( '-accel', $accel, '-cpu', $accel eq 'tcg' ? TCG_CPU : 'host' );
+}
+
+# _host_arch():
+#	Host machine architecture from uname
+sub _host_arch ()
+{
+	require POSIX;
+	my @uname = POSIX::uname();
+	return $uname[4] // '';
 }
 
 sub _find_efi_firmware ($self)
@@ -816,6 +947,9 @@ sub _find_efi_firmware ($self)
 	my @paths = (
 		'/opt/homebrew/share/qemu/edk2-aarch64-code.fd',
 		'/usr/local/share/qemu/edk2-aarch64-code.fd',
+		'/usr/share/qemu-efi-aarch64/QEMU_EFI.fd',
+		'/usr/share/AAVMF/AAVMF_CODE.fd',
+		'/usr/share/qemu/edk2-aarch64-code.fd',
 	);
 
 	for my $path (@paths) {

@@ -4,6 +4,7 @@ runtime cpan Crypt::Ed25519
 runtime cpan Crypt::Curve25519
 runtime cpan CryptX
 runtime cpan Net::MQTT::Simple
+runtime cpan Math::BigInt::GMP
 
 test cpan Perl::Critic
 test cpan Perl::Tidy
@@ -11,5 +12,6 @@ test cpan Net::SSH2
 
 develop pkg libssh2
 develop pkg qemu
+develop pkg telnet
 develop cpan HTTP::Daemon
 develop cpan LWP::UserAgent

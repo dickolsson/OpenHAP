@@ -15,7 +15,9 @@ OpenHAP::Bridge - HAP bridge accessory
 =head1 DESCRIPTION
 
 This module represents a HAP bridge that can contain multiple
-bridged accessories.
+bridged accessories. The bridge accessory carries the mandatory
+AccessoryInformation and ProtocolInformation services; bridged
+accessories carry only AccessoryInformation.
 
 =head1 SEE ALSO
 

@@ -1,108 +1,91 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Integration test: HAP pairing workflow
+# Integration test: complete HAP pairing workflow against the live
+# daemon, driven by OpenHAP::Test::Controller.
 
 use v5.36;
-use Test::More tests => 15;
+use Test::More tests => 18;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
 use OpenHAP::Test::Integration;
+use OpenHAP::Pairing;
 
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
+$env->ensure_unpaired or die "Cannot reset pairing state\n";
 
-# Test 1: Pairing data directory exists
+# Test 1: Pairing data directory exists and is readable
 my $storage_dir = '/var/db/openhapd';
-ok(-d $storage_dir, 'pairing storage directory exists');
+ok(-d $storage_dir && -r $storage_dir, 'pairing storage directory exists');
 
-# Test 2: Storage directory is readable
-ok(-r $storage_dir, 'storage directory is readable');
-
-# Test 3: hapctl status shows pairing information
-my $config_file = $env->{config_file};
-my $status_output = `hapctl -c $config_file status 2>&1`;
-my $has_pairing_info = $status_output =~ /(Pairing status|not paired|paired|not initialized|openhapd)/i;
-ok($has_pairing_info, 'hapctl status shows pairing state');
-
-# Test 4: Pair-setup M1: Client sends Start Request
+# Test 2: Pair-setup M1 rejects a stale "0x"-prefixed public key
+# (regression guard: Math::BigInt->as_hex once leaked its 0x prefix)
 my $response = $env->http_request('POST', '/pair-setup',
-	"\x06\x01\x01\x00\x01\x00",  # State=M1 (0x06,0x01,0x01), Method=PairSetup (0x00,0x01,0x00)
+	"\x06\x01\x01\x00\x01\x00",
 	{'Content-Type' => 'application/pairing+tlv8'});
-my ($status) = OpenHAP::Test::Integration::parse_http_response($response);
-ok($status == 200, 'pair-setup M1 accepted');
-
-# Test 5: Pair-setup M1 response contains TLV8 data
-my (undef, undef, $body) = OpenHAP::Test::Integration::parse_http_response($response);
-ok(length($body) > 0, 'pair-setup M1 returns data');
-
-# Test 5b: Pair-setup M2 response doesn't contain ASCII '0x' prefix in public key
-# This was a bug where Math::BigInt->as_hex() returned "0x..." which was incorrectly packed
+my ($status, undef, $body) =
+	OpenHAP::Test::Integration::parse_http_response($response);
+is($status, 200, 'pair-setup M1 accepted');
 my $hex = unpack('H*', $body);
-unlike($hex, qr/03..0130783078/, 'M2 public key does not contain ASCII "0x" prefix');
+unlike($hex, qr/03..0130783078/,
+    '[HAP-Pairing §2.4] M2 public key does not contain ASCII "0x" prefix');
 
-# Test 6: Pair-setup responds with proper Content-Type
-ok($response =~ /Content-Type:\s*application\/pairing\+tlv8/i,
-   'pair-setup uses application/pairing+tlv8');
+# Restart cleanly so the M1 probe above does not hold the pairing lock
+$env->ensure_daemon_stopped or die "Cannot stop daemon\n";
+$env->ensure_daemon_running or die "Cannot start daemon\n";
 
-# Test 7: Pair-verify endpoint available
-$response = $env->http_request('POST', '/pair-verify',
-	"\x06\x01\x01",  # State=M1
-	{'Content-Type' => 'application/pairing+tlv8'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
-ok($status == 200, 'pair-verify endpoint available');
+# Test 3: Full pair-setup with the real PIN
+my $controller = $env->get_controller;
+ok($controller->pair_setup,
+   '[HAP-Pairing §2] full pair-setup M1-M6 with the configured PIN')
+    or diag('pair_setup error: ' . ($controller->last_error // 'none'));
+ok(defined $controller->{accessory_ltpk},
+   '[HAP-Pairing §2.8] accessory LTPK received in M6');
 
-# Test 8: Pair-verify returns TLV8 data
-(undef, undef, $body) = OpenHAP::Test::Integration::parse_http_response($response);
-ok(length($body) > 0, 'pair-verify returns data');
+# Test 4: Pair-verify establishes an encrypted session
+ok($controller->pair_verify,
+   '[HAP-Pairing §3] pair-verify M1-M4 completes')
+    or diag('pair_verify error: ' . ($controller->last_error // 'none'));
+ok($controller->is_encrypted, 'session switched to encrypted framing');
 
-# Test 9: Repeated pair-setup attempts don't crash daemon
-for (1..3) {
-	$response = $env->http_request('POST', '/pair-setup',
-		"\x06\x01\x01\x00\x01\x00",
-		{'Content-Type' => 'application/pairing+tlv8'});
-	($status) = OpenHAP::Test::Integration::parse_http_response($response);
-	last unless $status == 200;
-}
-ok($status == 200, 'repeated pair-setup attempts handled');
+# Test 5: Authenticated endpoint works over the session
+my $result = $controller->request('GET', '/accessories');
+is($result->{status}, 200,
+   '[HAP-HTTP §7] paired GET /accessories returns 200');
 
-# Test 10: Daemon still responsive after pairing attempts
-$response = $env->http_request('GET', '/accessories');
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
-ok(defined $status, 'daemon responsive after pairing attempts');
+# Test 6: Add, list, and remove an additional pairing over the wire
+ok($controller->add_pairing('extra-ctrl', 'X' x 32, 0),
+   '[HAP-Pairing §7.1] add pairing accepted');
+my $pairings = $controller->list_pairings;
+is(scalar @$pairings, 2, '[HAP-Pairing §7.3] both pairings listed');
+ok($controller->remove_pairing('extra-ctrl'),
+   '[HAP-Pairing §7.2] remove pairing accepted');
+$pairings = $controller->list_pairings;
+is(scalar @$pairings, 1, 'extra pairing removed');
 
-# Test 11: Invalid pairing method returns error (Finding 7)
-$response = $env->http_request('POST', '/pair-setup',
-	"\x06\x01\x01\x00\x01\x63",  # State=M1, Method=0x63 (invalid)
-	{'Content-Type' => 'application/pairing+tlv8'});
-($status, undef, $body) = OpenHAP::Test::Integration::parse_http_response($response);
-# Response should contain error TLV with kTLVError_Unknown (0x01)
-my $has_error = $body =~ /\x07\x01\x01/;  # Error type (0x07), length 1, value 1
-ok($status == 200 && length($body) > 0, 'invalid method returns error response');
+# Test 7: Removing a nonexistent pairing returns success
+ok($controller->remove_pairing('ghost-ctrl'),
+   '[HAP-Pairing §7.4] removing nonexistent pairing succeeds');
 
-# Test 12: /prepare accepts POST method (Finding 9)
-$response = $env->http_request('POST', '/prepare',
-	'{"ttl":10000,"pid":1}',
-	{'Content-Type' => 'application/hap+json'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
-# Should return 470 (unauthorized) since not paired, but endpoint is reachable
-ok($status == 470 || $status == 200, '/prepare accepts POST method');
+# Test 8: Wrong-PIN attempt is rejected and counted after unpairing
+$controller->close;
+$env->ensure_unpaired or die "Cannot reset pairing state\n";
 
-# Test 13: /prepare also accepts PUT method (Finding 9 - compatibility)
-$response = $env->http_request('PUT', '/prepare',
-	'{"ttl":10000,"pid":1}',
-	{'Content-Type' => 'application/hap+json'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
-ok($status == 470 || $status == 200, '/prepare accepts PUT method');
+my $bad = $env->get_controller(pin => '876-54-321',
+	controller_id => 'bad-ctrl');
+ok(!$bad->pair_setup, 'pair-setup fails with the wrong PIN');
+is($bad->last_error,
+   OpenHAP::Pairing::kTLVError_Authentication(),
+   '[HAP-Pairing §2.6] M4 returns kTLVError_Authentication');
+$bad->close;
 
-# Test 14: Concurrent pair-setup from different connections gets Busy (Finding 3)
-# Note: This is tricky to test in integration - we test that rapid requests work
-for (1..5) {
-	$response = $env->http_request('POST', '/pair-setup',
-		"\x06\x01\x01\x00\x01\x00",
-		{'Content-Type' => 'application/pairing+tlv8'});
-	($status) = OpenHAP::Test::Integration::parse_http_response($response);
-}
-ok($status == 200, 'rapid pair-setup attempts handled gracefully');
+# Test 9: Re-pair after the failed attempt
+$env->ensure_unpaired or die "Cannot reset pairing state\n";
+my $again = $env->get_controller(controller_id => 're-pair-ctrl');
+ok($again->pair_setup, '[HAP-Pairing §2.4] re-pair succeeds after unpair');
+ok($again->pair_verify, 'pair-verify succeeds on the new pairing');
 
+# Teardown: leave the daemon unpaired for the next test file
+ok($again->remove_pairing, 'unpaired in teardown');
 $env->teardown;

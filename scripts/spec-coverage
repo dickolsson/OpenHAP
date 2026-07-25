@@ -1,0 +1,199 @@
+#!/usr/bin/env perl
+# ex:ts=8 sw=4:
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@ekkis.net>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+# spec-coverage: cross-verify spec/ section anchors against test citations.
+#
+# Parses the numbered ##/### headings of spec/*.md into a section
+# inventory, scans t/ for [<spec-stem> §<section>] citations, and prints
+# a coverage matrix. Exits non-zero iff a citation points at a section
+# that does not exist (stale after spec regeneration). Low coverage is
+# informative, never fatal. See t/CLAUDE.md for the citation convention.
+
+use v5.36;
+use File::Basename qw(dirname);
+use File::Find     qw(find);
+use Getopt::Long   qw(GetOptions);
+
+my $quiet     = 0;
+my $uncovered = 0;
+my $spec_dir;
+my $test_dir;
+
+GetOptions(
+	'quiet'      => \$quiet,
+	'uncovered'  => \$uncovered,
+	'spec-dir=s' => \$spec_dir,
+	'test-dir=s' => \$test_dir,
+) or die "usage: spec-coverage [--quiet] [--uncovered] "
+    . "[--spec-dir dir] [--test-dir dir]\n";
+
+my $root = dirname(dirname(__FILE__));
+$spec_dir //= "$root/spec";
+$test_dir //= "$root/t";
+
+-d $spec_dir or die "spec-coverage: no such directory: $spec_dir\n";
+-d $test_dir or die "spec-coverage: no such directory: $test_dir\n";
+
+# _read_inventory($dir):
+#	Parse numbered ##/### headings of every *.md file in $dir.
+#	Returns a hash: stem => {
+#		file     => basename,
+#		index    => 1 for index files (stem without '-'),
+#		sections => { '2.6' => 1, ... },
+#		order    => [ '1', '1.1', '2', ... ],
+#	}
+sub _read_inventory ($dir)
+{
+	my %inventory;
+
+	opendir my $dh, $dir or die "spec-coverage: opendir $dir: $!\n";
+	my @files = sort grep { /\.md$/ && $_ ne 'CLAUDE.md' } readdir $dh;
+	closedir $dh;
+
+	for my $file (@files) {
+		my ($stem) = $file =~ /^(.*)\.md$/;
+		my %entry = (
+			file     => $file,
+			index    => ( $stem =~ /-/ ? 0 : 1 ),
+			sections => {},
+			order    => [],
+		);
+
+		open my $fh, '<', "$dir/$file"
+		    or die "spec-coverage: open $dir/$file: $!\n";
+		while ( my $line = <$fh> ) {
+			next unless $line =~ /^#{2,3}\s+(\d+(?:\.\d+)*)\.?\s/;
+			my $section = $1;
+			next if $entry{sections}{$section}++;
+			push @{ $entry{order} }, $section;
+		}
+		close $fh;
+
+		$inventory{$stem} = \%entry;
+	}
+
+	return %inventory;
+}
+
+# _scan_citations($dir):
+#	Grep test files recursively for the citation pattern.
+#	Returns a list of { stem, section, row, site => 'file:line' }.
+sub _scan_citations ($dir)
+{
+	my @citations;
+
+	my $wanted = sub {
+		return unless -f && /\.(?:t|pm)$/;
+		my $path = $File::Find::name;
+		$path =~ s{^\./}{};
+
+		open my $fh, '<', $_
+		    or die "spec-coverage: open $path: $!\n";
+		while ( my $line = <$fh> ) {
+			while ( $line =~
+			    /\[((?:HAP|MQTT)[A-Za-z0-9-]*) §([0-9][0-9.]*)(?:\/([^\]]+))?\]/g
+			    )
+			{
+				my ( $stem, $section, $row ) = ( $1, $2, $3 );
+				$section =~ s/\.+$//;
+				push @citations, {
+					stem    => $stem,
+					section => $section,
+					row     => $row,
+					site    => "$path:$.",
+				};
+			}
+		}
+		close $fh;
+	};
+
+	find( { wanted => $wanted, no_chdir => 0 }, $dir );
+
+	return @citations;
+}
+
+my %inventory = _read_inventory($spec_dir);
+my @citations = _scan_citations($test_dir);
+
+# Join citations against the inventory
+my %cited;    # stem => section => { site => 1 }
+my @stale;
+
+for my $c (@citations) {
+	my $entry = $inventory{ $c->{stem} };
+	if ( !defined $entry ) {
+		push @stale, sprintf '%s cites %s §%s (no such spec file)',
+		    $c->{site}, $c->{stem}, $c->{section};
+		next;
+	}
+	if ( !exists $entry->{sections}{ $c->{section} } ) {
+		push @stale, sprintf '%s cites %s §%s (no such section)',
+		    $c->{site}, $c->{stem}, $c->{section};
+		next;
+	}
+	$cited{ $c->{stem} }{ $c->{section} }{ $c->{site} } = 1;
+}
+
+# Report
+my $total_sections = 0;
+my $total_cited    = 0;
+
+for my $stem ( sort keys %inventory ) {
+	my $entry    = $inventory{$stem};
+	my @sections = @{ $entry->{order} };
+
+	if ( $entry->{index} ) {
+		printf "%-28s (%s, not counted)\n", "spec/$entry->{file}",
+		    @sections ? 'index' : 'unnumbered'
+		    unless $quiet || $uncovered;
+		next;
+	}
+
+	my $cited_count =
+	    grep { exists $cited{$stem}{$_} } @sections;
+	$total_sections += @sections;
+	$total_cited    += $cited_count;
+
+	next if $quiet;
+
+	printf "%-28s %d/%d sections cited\n", "spec/$entry->{file}",
+	    $cited_count, scalar @sections
+	    unless $uncovered && $cited_count == @sections;
+
+	for my $section (@sections) {
+		my $sites = $cited{$stem}{$section};
+		if ( !defined $sites ) {
+			printf "  §%-6s UNCOVERED\n", $section;
+		}
+		elsif ( !$uncovered ) {
+			printf "  §%-6s %s\n", $section,
+			    join ' ', sort keys %$sites;
+		}
+	}
+}
+
+my $pct =
+    $total_sections ? int( 100 * $total_cited / $total_sections ) : 0;
+printf "TOTAL: %d/%d numbered sections cited (%d%%)\n",
+    $total_cited, $total_sections, $pct;
+
+for my $stale (@stale) {
+	print "STALE: $stale\n";
+}
+
+exit( @stale ? 1 : 0 );

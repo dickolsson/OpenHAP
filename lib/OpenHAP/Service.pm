@@ -8,10 +8,13 @@ use constant HAP_BASE_UUID => '-0000-1000-8000-0026BB765291';
 # HAP Service Type UUIDs
 our %SERVICE_TYPES = (
 	'AccessoryInformation' => '0000003E-0000-1000-8000-0026BB765291',
+	'ProtocolInformation'  => '000000A2-0000-1000-8000-0026BB765291',
 	'Thermostat'           => '0000004A-0000-1000-8000-0026BB765291',
 	'Switch'               => '00000049-0000-1000-8000-0026BB765291',
 	'TemperatureSensor'    => '0000008A-0000-1000-8000-0026BB765291',
+	'HumiditySensor'       => '00000082-0000-1000-8000-0026BB765291',
 	'Outlet'               => '00000047-0000-1000-8000-0026BB765291',
+	'Lightbulb'            => '00000043-0000-1000-8000-0026BB765291',
 );
 
 # _uuid_to_short($uuid) - Convert full UUID to short form for JSON

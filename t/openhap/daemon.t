@@ -8,7 +8,8 @@ use FuguLib::Log;
 $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
 use File::Temp qw(tempdir);
 
-# Test daemon mode functionality
+# Test daemon mode functionality. mDNS TXT record content is covered by
+# the spec-cited tests in t/conformance/hap-mdns.t.
 
 # Test 1: MQTT connection with timeout
 {
@@ -58,125 +59,6 @@ use File::Temp qw(tempdir);
 	# Should have private resubscribe method
 	ok($hap->can('_mqtt_resubscribe_accessories'),
 	    'HAP has _mqtt_resubscribe_accessories method');
-}
-
-# Test 4: HAP get_mdns_txt_records returns correct structure
-{
-	use OpenHAP::HAP;
-
-	my $tmpdir = tempdir(CLEANUP => 1);
-
-	my $hap = OpenHAP::HAP->new(
-		port         => 51829,
-		pin          => '123-45-678',
-		name         => 'Test MDNS Bridge',
-		storage_path => $tmpdir,
-	);
-
-	my $txt = $hap->get_mdns_txt_records();
-
-	# Verify structure
-	ok(defined $txt, 'get_mdns_txt_records returns defined value');
-	is(ref $txt, 'HASH', 'Returns a hash reference');
-
-	# Verify required HAP fields exist
-	ok(exists $txt->{'c#'}, "Contains 'c#' (config number)");
-	ok(exists $txt->{'ff'}, "Contains 'ff' (feature flags)");
-	ok(exists $txt->{'id'}, "Contains 'id' (device ID)");
-	ok(exists $txt->{'md'}, "Contains 'md' (model name)");
-	ok(exists $txt->{'pv'}, "Contains 'pv' (protocol version)");
-	ok(exists $txt->{'s#'}, "Contains 's#' (state number)");
-	ok(exists $txt->{'sf'}, "Contains 'sf' (status flags)");
-	ok(exists $txt->{'ci'}, "Contains 'ci' (category identifier)");
-
-	# Verify values
-	is($txt->{'ff'}, 0, 'Feature flags is 0');
-	is($txt->{'pv'}, '1', 'Protocol version is 1');
-	is($txt->{'s#'}, 1, 'State number is 1');
-	is($txt->{'ci'}, 2, 'Category identifier is 2 (bridge)');
-	is($txt->{'md'}, 'Test MDNS Bridge', 'Model name matches HAP name');
-	ok($txt->{'sf'} == 0 || $txt->{'sf'} == 1,
-		'Status flags is 0 (paired) or 1 (unpaired)');
-	# Check device ID format (XX:XX:XX:XX:XX:XX) - MUST be uppercase per HAP spec
-	ok($txt->{'id'} =~ /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/,
-		'Device ID is in uppercase XX:XX:XX:XX:XX:XX format');
-	# Verify device ID is specifically uppercase (not lowercase)
-	ok($txt->{'id'} !~ /[a-f]/,
-		'Device ID contains no lowercase hex characters');
-}
-
-# Test 5: Setup hash in mDNS TXT records
-{
-	use OpenHAP::HAP;
-
-	my $tmpdir = tempdir(CLEANUP => 1);
-
-	# Create HAP with setup_id
-	my $hap = OpenHAP::HAP->new(
-		port         => 51831,
-		pin          => '123-45-678',
-		name         => 'Setup Hash Test',
-		storage_path => $tmpdir,
-		setup_id     => 'XYZQ',  # 4-character setup ID
-	);
-
-	my $txt = $hap->get_mdns_txt_records();
-
-	# Verify setup hash exists when setup_id is provided
-	ok(exists $txt->{'sh'}, "Contains 'sh' (setup hash) when setup_id provided");
-	# Setup hash should be 4 bytes base64 encoded = ~6 characters
-	ok(length($txt->{'sh'}) >= 4 && length($txt->{'sh'}) <= 8,
-		'Setup hash has reasonable length for base64-encoded 4 bytes');
-}
-
-# Test 6: No setup hash without setup_id
-{
-	use OpenHAP::HAP;
-
-	my $tmpdir = tempdir(CLEANUP => 1);
-
-	# Create HAP without setup_id
-	my $hap = OpenHAP::HAP->new(
-		port         => 51832,
-		pin          => '123-45-678',
-		name         => 'No Setup ID Test',
-		storage_path => $tmpdir,
-		# no setup_id
-	);
-
-	my $txt = $hap->get_mdns_txt_records();
-
-	# Verify setup hash is NOT present without setup_id
-	ok(!exists $txt->{'sh'} || !defined $txt->{'sh'},
-		"No 'sh' (setup hash) when setup_id not provided");
-}
-
-# Test 7: Status flag changes with pairing state
-{
-	use OpenHAP::HAP;
-	use OpenHAP::Storage;
-
-	my $tmpdir = tempdir(CLEANUP => 1);
-
-	my $hap = OpenHAP::HAP->new(
-		port         => 51830,
-		pin          => '123-45-678',
-		name         => 'Pairing Test',
-		storage_path => $tmpdir,
-	);
-
-	# Unpaired state
-	my $txt_unpaired = $hap->get_mdns_txt_records();
-	is($txt_unpaired->{'sf'}, 1, 'Status flag is 1 when unpaired');
-
-	# Add a pairing using Storage directly
-	my $storage = OpenHAP::Storage->new(db_path => $tmpdir);
-	my $dummy_ltpk = chr(0) x 32;  # 32 zero bytes
-	$storage->save_pairing('test-controller', $dummy_ltpk, 1);
-
-	# Check status flag after pairing
-	my $txt_paired = $hap->get_mdns_txt_records();
-	is($txt_paired->{'sf'}, 0, 'Status flag is 0 when paired');
 }
 
 done_testing();

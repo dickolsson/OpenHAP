@@ -1,375 +1,171 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Integration test: MQTT protocol compliance for Tasmota devices
+# Integration test: MQTT <-> HAP round trips for Tasmota devices. Each
+# simulated device message is published on the real broker and its
+# effect asserted through the paired HAP data plane, and vice versa.
 
 use v5.36;
-use Test::More;
+use Test::More tests => 11;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-# Skip if not in VM environment
-unless ( -f '/etc/rc.d/openhapd' || $ENV{OPENHAP_INTEGRATION_TEST} ) {
-	plan skip_all => 'Integration tests require OpenBSD VM environment';
-	exit 0;
-}
-
-eval { require OpenHAP::Test::Integration };
-if ($@) {
-	plan skip_all => 'OpenHAP::Test::Integration not available';
-	exit 0;
-}
-
 use OpenHAP::Test::Integration;
-use Time::HiRes qw(sleep);
+use JSON::PP qw(decode_json encode_json);
+use Time::HiRes qw(sleep time);
 
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
+$env->ensure_unpaired or die "Cannot reset pairing state\n";
 
-# Test 1: MQTT broker is available
-my $mqtt_ok = $env->ensure_mqtt_running;
-ok( $mqtt_ok, 'MQTT broker is running' );
-
-die "MQTT broker required for protocol compliance tests\n" unless $mqtt_ok;
-
+die "MQTT broker required for protocol tests\n"
+    unless $env->ensure_mqtt_running;
 my $mqtt = $env->get_mqtt;
-ok( defined $mqtt, 'Connected to MQTT broker' );
-
 die "Cannot connect to MQTT broker\n" unless defined $mqtt;
 
-# Get first configured device topic
-my @device_topics = $env->get_device_topics;
-die "No devices configured for testing\n" unless @device_topics;
+my ($light)  = grep { $_->{subtype} eq 'lightbulb' } $env->get_devices;
+my ($sensor) = grep { $_->{subtype} eq 'sensor' } $env->get_devices;
+die "No lightbulb device configured for testing\n" unless $light;
+die "No sensor device configured for testing\n"    unless $sensor;
 
-my $topic = $device_topics[0];
+my $controller = $env->get_controller;
+$controller->pair_setup
+    or die 'pair-setup failed: ' . ( $controller->last_error // '?' ) . "\n";
+$controller->pair_verify
+    or die 'pair-verify failed: ' . ( $controller->last_error // '?' ) . "\n";
 
-# Test 2: LWT subscription and handling (C1)
+# Locate accessories by their configured names
+my $result   = $controller->request('GET', '/accessories');
+my $database = decode_json($result->{body});
+
+# find_char($device, $type): (aid, iid) of a characteristic by short
+# type on the accessory whose Name matches the device's config name
+sub find_char ($device, $type)
 {
-	my $lwt_received = 0;
-	my $lwt_payload;
-
-	$mqtt->subscribe(
-		"tele/$topic/LWT",
-		sub( $t, $p, $ = undef ) {
-			$lwt_received = 1;
-			$lwt_payload  = $p;
-		} );
-
-	# Simulate LWT Online message
-	$mqtt->publish( "tele/$topic/LWT", "Online" );
-	sleep 0.5;
-	$mqtt->tick(0.5);
-
-	# Check if retained LWT was received or our published one
-	ok( 1, 'C1: LWT topic subscription works' );
-}
-
-# Test 3: tele/STATE periodic updates (C2)
-{
-	my $state_received = 0;
-
-	$mqtt->subscribe(
-		"tele/$topic/STATE",
-		sub( $t, $p, $ = undef ) {
-			$state_received = 1;
-		} );
-
-	# Simulate STATE message
-	my $state_json =
-	    '{"Time":"2024-01-01T00:00:00","POWER":"OFF","Dimmer":50}';
-	$mqtt->publish( "tele/$topic/STATE", $state_json );
-	sleep 0.3;
-	$mqtt->tick(0.5);
-
-	ok( 1, 'C2: tele/STATE subscription works' );
-}
-
-# Test 4: stat/RESULT command responses (C3)
-{
-	my $result_received = 0;
-
-	$mqtt->subscribe(
-		"stat/$topic/RESULT",
-		sub( $t, $p, $ = undef ) {
-			$result_received = 1;
-		} );
-
-	# Simulate RESULT message
-	$mqtt->publish( "stat/$topic/RESULT", '{"POWER":"ON"}' );
-	sleep 0.3;
-	$mqtt->tick(0.5);
-
-	ok( 1, 'C3: stat/RESULT subscription works' );
-}
-
-# Test 5: Multi-relay support (H1)
-{
-	# Test POWER1, POWER2 topics
-	for my $i ( 1 .. 2 ) {
-		my $power_received = 0;
-
-		$mqtt->subscribe(
-			"stat/$topic/POWER$i",
-			sub( $t, $p, $ = undef ) {
-				$power_received = 1;
-			} );
-
-		$mqtt->publish( "stat/$topic/POWER$i", "ON" );
-		sleep 0.2;
-		$mqtt->tick(0.3);
-
-		ok( 1, "H1: POWER$i subscription works" );
+	for my $accessory (@{ $database->{accessories} }) {
+		my $named = 0;
+		for my $service (@{ $accessory->{services} }) {
+			for my $char (@{ $service->{characteristics} }) {
+				$named = 1
+				    if $char->{type} eq '23'
+				    && ($char->{value} // '') eq
+				    $device->{name};
+			}
+		}
+		next unless $named;
+		for my $service (@{ $accessory->{services} }) {
+			for my $char (@{ $service->{characteristics} }) {
+				return ($accessory->{aid}, $char->{iid})
+				    if $char->{type} eq $type;
+			}
+		}
 	}
+	return;
 }
 
-# Test 6: SENSOR data with multiple types (H5)
+# poll_value($aid, $iid, $expected): poll the paired GET endpoint until
+# the value matches (JSON-encoded comparison) or 5 seconds pass
+sub poll_value ($aid, $iid, $expected)
 {
-	my @sensor_types = qw(DS18B20 DHT22 BME280);
-
-	for my $type (@sensor_types) {
-		my $json = "{\"$type\":{\"Temperature\":22.5},\"TempUnit\":\"C\"}";
-		$mqtt->publish( "tele/$topic/SENSOR", $json );
-		sleep 0.2;
-		$mqtt->tick(0.3);
+	my $deadline = time + 5;
+	my $seen;
+	while (time < $deadline) {
+		my $res = $controller->request('GET',
+			"/characteristics?id=$aid.$iid");
+		my $data = decode_json($res->{body});
+		$seen = $data->{characteristics}[0]{value};
+		my $normalized =
+		    JSON::PP::is_bool($seen) ? ( $seen ? 1 : 0 ) : $seen;
+		return $normalized
+		    if defined $normalized && "$normalized" eq "$expected";
+		sleep 0.25;
 	}
-
-	ok( 1, 'H5: Multiple sensor types supported' );
+	return $seen;
 }
 
-# Test 7: Temperature unit in SENSOR (H4)
-{
-	# Test Fahrenheit
-	my $json_f = '{"DS18B20":{"Temperature":77},"TempUnit":"F"}';
-	$mqtt->publish( "tele/$topic/SENSOR", $json_f );
-	sleep 0.2;
-	$mqtt->tick(0.3);
+my ($light_aid, $on_iid) = find_char($light, '25');
+ok(defined $on_iid, 'lightbulb On characteristic located');
+my (undef, $brightness_iid) = find_char($light, '8');
+ok(defined $brightness_iid, 'lightbulb Brightness characteristic located');
+my ($sensor_aid, $temp_iid) = find_char($sensor, '11');
+ok(defined $temp_iid, 'sensor CurrentTemperature located');
 
-	# Test Celsius
-	my $json_c = '{"DS18B20":{"Temperature":25},"TempUnit":"C"}';
-	$mqtt->publish( "tele/$topic/SENSOR", $json_c );
-	sleep 0.2;
-	$mqtt->tick(0.3);
+die "Accessory database missing expected characteristics\n"
+    unless defined $on_iid && defined $brightness_iid && defined $temp_iid;
 
-	ok( 1, 'H4: Temperature unit handling works' );
-}
+# Test 1: stat/POWER -> HAP On ([MQTT-State §1] -> [MQTT §4])
+$mqtt->publish("stat/$light->{topic}/POWER", 'ON');
+is(poll_value($light_aid, $on_iid, 1), 1,
+   '[MQTT-State §1] published POWER ON visible as HAP On=true');
 
-# Test 8: Lightbulb commands (H2)
-{
-	# Test Dimmer command
-	$mqtt->publish( "cmnd/$topic/Dimmer", "75" );
-	sleep 0.2;
+# Test 2: tele/STATE -> HAP Brightness ([MQTT-State §3])
+$mqtt->publish("tele/$light->{topic}/STATE",
+	'{"POWER":"ON","Dimmer":42}');
+is(poll_value($light_aid, $brightness_iid, 42), 42,
+   '[MQTT-State §3] STATE Dimmer visible as HAP Brightness');
 
-	# Test HSBColor command
-	$mqtt->publish( "cmnd/$topic/HSBColor", "240,100,50" );
-	sleep 0.2;
+# Test 3: tele/SENSOR -> HAP CurrentTemperature ([MQTT-Sensors §1])
+$mqtt->publish("tele/$sensor->{topic}/SENSOR",
+	'{"DS18B20":{"Temperature":23.5},"TempUnit":"C"}');
+is(poll_value($sensor_aid, $temp_iid, 23.5), 23.5,
+   '[MQTT-Sensors §1] SENSOR temperature visible via HAP');
 
-	# Test CT command
-	$mqtt->publish( "cmnd/$topic/CT", "300" );
-	sleep 0.2;
+# Test 4: Fahrenheit SENSOR converted ([MQTT-Sensors §3])
+$mqtt->publish("tele/$sensor->{topic}/SENSOR",
+	'{"DS18B20":{"Temperature":77},"TempUnit":"F"}');
+is(poll_value($sensor_aid, $temp_iid, 25), 25,
+   '[MQTT-Sensors §3] Fahrenheit reading converted to Celsius');
 
-	$mqtt->tick(0.5);
+# Test 5: HAP write -> cmnd publish ([MQTT-Control §1])
+my $power_cmd;
+$mqtt->subscribe("cmnd/$light->{topic}/Power",
+	sub ($t, $p, $ = undef) { $power_cmd = $p; });
+sleep 0.3;
 
-	ok( 1, 'H2: Lightbulb commands work' );
-}
+my $put = $controller->request('PUT', '/characteristics',
+	encode_json({ characteristics =>
+		[ { aid => $light_aid, iid => $on_iid, value => \0 } ] }),
+	{ 'Content-Type' => 'application/hap+json' });
+is($put->{status}, 204, 'HAP write accepted');
 
-# Test 9: Status 0 query (H3)
-{
-	# Subscribe to status responses
-	my $status_received = 0;
-	$mqtt->subscribe(
-		"stat/$topic/STATUS",
-		sub( $t, $p, $ = undef ) {
-			$status_received = 1;
-		} );
+my $deadline = time + 5;
+$mqtt->tick(0.2) while !defined $power_cmd && time < $deadline;
+is($power_cmd, 'OFF',
+   '[MQTT-Control §1] HAP On=false observed as cmnd Power OFF');
 
-	# Send Status 0 command
-	$mqtt->publish( "cmnd/$topic/Status", "0" );
-	sleep 0.5;
-	$mqtt->tick(1);
+# Test 6: HAP Brightness write -> cmnd Dimmer ([MQTT-Control §2])
+my $dimmer_cmd;
+$mqtt->subscribe("cmnd/$light->{topic}/Dimmer",
+	sub ($t, $p, $ = undef) { $dimmer_cmd = $p; });
+sleep 0.3;
 
-	ok( 1, 'H3: Status 0 query sent' );
-}
+$controller->request('PUT', '/characteristics',
+	encode_json({ characteristics => [
+		{ aid => $light_aid, iid => $brightness_iid, value => 66 }
+	] }),
+	{ 'Content-Type' => 'application/hap+json' });
 
-# Test 10: TOGGLE command (L1)
-{
-	$mqtt->publish( "cmnd/$topic/Power", "TOGGLE" );
-	sleep 0.2;
-	$mqtt->tick(0.3);
+$deadline = time + 5;
+$mqtt->tick(0.2) while !defined $dimmer_cmd && time < $deadline;
+is($dimmer_cmd, '66',
+   '[MQTT-Control §2] HAP Brightness observed as cmnd Dimmer');
 
-	ok( 1, 'L1: TOGGLE command works' );
-}
+# Test 7: LWT Online triggers a Status 11 state query
+# ([MQTT-Transport §1.4][MQTT-State §5.2])
+my $status_cmd;
+$mqtt->subscribe("cmnd/$light->{topic}/Status",
+	sub ($t, $p, $ = undef) { $status_cmd = $p; });
+sleep 0.3;
 
-# Test 11: BLINK commands (L2)
-{
-	$mqtt->publish( "cmnd/$topic/Power", "BLINK" );
-	sleep 0.2;
+$mqtt->publish("tele/$light->{topic}/LWT", 'Online');
+$deadline = time + 5;
+$mqtt->tick(0.2) while !defined $status_cmd && time < $deadline;
+is($status_cmd, '11',
+   '[MQTT-Transport §1.4] LWT Online answered with Status 11 query');
 
-	$mqtt->publish( "cmnd/$topic/Power", "BLINKOFF" );
-	sleep 0.2;
+# Cleanup
+$mqtt->unsubscribe("cmnd/$light->{topic}/Power");
+$mqtt->unsubscribe("cmnd/$light->{topic}/Dimmer");
+$mqtt->unsubscribe("cmnd/$light->{topic}/Status");
 
-	$mqtt->tick(0.3);
-
-	ok( 1, 'L2: BLINK commands work' );
-}
-
-# Test 12: Dimmer step commands (L3)
-{
-	$mqtt->publish( "cmnd/$topic/Dimmer", "+" );
-	sleep 0.1;
-
-	$mqtt->publish( "cmnd/$topic/Dimmer", "-" );
-	sleep 0.1;
-
-	$mqtt->publish( "cmnd/$topic/Dimmer", "<" );
-	sleep 0.1;
-
-	$mqtt->publish( "cmnd/$topic/Dimmer", ">" );
-	sleep 0.1;
-
-	$mqtt->tick(0.3);
-
-	ok( 1, 'L3: Dimmer step commands work' );
-}
-
-# Test 13: Indexed sensors (H5)
-{
-	my $json = '{"DS18B20-1":{"Temperature":20},"DS18B20-2":{"Temperature":25},"TempUnit":"C"}';
-	$mqtt->publish( "tele/$topic/SENSOR", $json );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'H5: Indexed sensors supported' );
-}
-
-# Test 14: STATUS8 sensor query (M1)
-{
-	my $status8_received = 0;
-	$mqtt->subscribe(
-		"stat/$topic/STATUS8",
-		sub( $t, $p, $ = undef ) {
-			$status8_received = 1;
-		} );
-
-	$mqtt->publish( "cmnd/$topic/Status", "8" );
-	sleep 0.3;
-	$mqtt->tick(0.5);
-
-	ok( 1, 'M1: STATUS8 query works' );
-}
-
-# Test 15: SetOption4 plain text response (M3)
-{
-	# Test plain text POWER response
-	$mqtt->publish( "stat/$topic/POWER", "ON" );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'M3: Plain text POWER response handled' );
-}
-
-# Test 16: STATUS11 state reconciliation (C1/H1)
-{
-	my $status11_received = 0;
-	$mqtt->subscribe(
-		"stat/$topic/STATUS11",
-		sub( $t, $p, $ = undef ) {
-			$status11_received = 1;
-		} );
-
-	# Send Status 11 command (recommended for state reconciliation)
-	$mqtt->publish( "cmnd/$topic/Status", "11" );
-	sleep 0.3;
-	$mqtt->tick(0.5);
-
-	ok( 1, 'C1/H1: STATUS11 query sent' );
-}
-
-# Test 17: STATUS10 sensor query (recommended per spec)
-{
-	my $status10_received = 0;
-	$mqtt->subscribe(
-		"stat/$topic/STATUS10",
-		sub( $t, $p, $ = undef ) {
-			$status10_received = 1;
-		} );
-
-	$mqtt->publish( "cmnd/$topic/Status", "10" );
-	sleep 0.3;
-	$mqtt->tick(0.5);
-
-	ok( 1, 'STATUS10 sensor query works' );
-}
-
-# Test 18: TelePeriod for forcing telemetry (L1)
-{
-	$mqtt->publish( "cmnd/$topic/TelePeriod", "" );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'L1: TelePeriod command works' );
-}
-
-# Test 19: SetOption4 DIMMER topic (M2)
-{
-	$mqtt->publish( "stat/$topic/DIMMER", "75" );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'M2: DIMMER topic works' );
-}
-
-# Test 20: SetOption4 HSBCOLOR topic (M2)
-{
-	$mqtt->publish( "stat/$topic/HSBCOLOR", "180,100,50" );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'M2: HSBCOLOR topic works' );
-}
-
-# Test 21: SetOption4 CT topic (M2)
-{
-	$mqtt->publish( "stat/$topic/CT", "300" );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'M2: CT topic works' );
-}
-
-# Test 22: SetOption17 decimal color format (M3)
-{
-	# Test decimal color format
-	my $json = '{"Color":"255,128,0","HSBColor":"30,100,100"}';
-	$mqtt->publish( "stat/$topic/RESULT", $json );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'M3: SetOption17 decimal color format works' );
-}
-
-# Test 23: Sensor with Id field (L3)
-{
-	my $json = '{"DS18B20":{"Id":"01131B123456","Temperature":22.5},"TempUnit":"C"}';
-	$mqtt->publish( "tele/$topic/SENSOR", $json );
-	sleep 0.2;
-	$mqtt->tick(0.3);
-
-	ok( 1, 'L3: Sensor Id field supported' );
-}
-
-# Test 24: OpenHAP daemon still responsive after all MQTT activity
-sleep 0.5;
-my $response = $env->http_request( 'GET', '/accessories' );
-ok( defined $response, 'Daemon responsive after MQTT tests' );
-
-# Clean up
-$mqtt->unsubscribe("tele/$topic/LWT");
-$mqtt->unsubscribe("tele/$topic/STATE");
-$mqtt->unsubscribe("stat/$topic/RESULT");
-$mqtt->unsubscribe("stat/$topic/STATUS");
-$mqtt->unsubscribe("stat/$topic/STATUS8");
-$mqtt->unsubscribe("stat/$topic/POWER1");
-$mqtt->unsubscribe("stat/$topic/POWER2");
-
+$controller->remove_pairing;
 $env->teardown;
-
-done_testing();

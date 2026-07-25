@@ -102,6 +102,33 @@ sub set_mqtt_client ( $self, $mqtt )
 	$self->{mqtt_client} = $mqtt;
 }
 
+# $self->set_mdns($mdns):
+#	set the mDNS registration handle so the TXT record can be
+#	re-advertised when the pairing state changes (HAP-mDNS.md §8)
+sub set_mdns ( $self, $mdns )
+{
+	$self->{mdns}              = $mdns;
+	$self->{last_paired_state} = $self->is_paired() ? 1 : 0;
+}
+
+# $self->_refresh_mdns():
+#	re-advertise the TXT record if the pairing state changed
+sub _refresh_mdns ($self)
+{
+	return unless defined $self->{mdns};
+
+	my $paired = $self->is_paired() ? 1 : 0;
+	return if ( $self->{last_paired_state} // -1 ) == $paired;
+
+	$self->{last_paired_state} = $paired;
+	$self->{mdns}->update_txt_records( $self->get_mdns_txt_records );
+	$OpenHAP::logger->info(
+		'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
+		$paired ? 0 : 1 );
+
+	return;
+}
+
 sub run ($self)
 {
 	my $server = IO::Socket::INET->new(
@@ -198,7 +225,10 @@ sub _handle_client ( $self, $sock, $select )
 
 	if ( !$bytes ) {
 
-		# Connection closed
+		# Connection closed: release the pairing lock if this
+		# session held it, so an aborted pair-setup cannot lock
+		# out pairing until restart
+		OpenHAP::Pairing->clear_pairing_state($session);
 		$OpenHAP::logger->info( 'Client disconnected from %s',
 			$sock->peerhost );
 		$select->remove($sock);
@@ -207,12 +237,16 @@ sub _handle_client ( $self, $sock, $select )
 		return;
 	}
 
-	# Decrypt if session is encrypted
-	if ( $session->is_encrypted() ) {
+	# Decrypt if session is encrypted. Remember the state: pair-verify
+	# M4 enables encryption during dispatch, but the M4 response itself
+	# is still sent in the clear; only subsequent traffic is encrypted.
+	my $was_encrypted = $session->is_encrypted();
+	if ($was_encrypted) {
 		$data = $session->decrypt($data);
 		unless ( defined $data ) {
 			$OpenHAP::logger->warning(
 				'Decryption failed for client session');
+			OpenHAP::Pairing->clear_pairing_state($session);
 			$select->remove($sock);
 			delete $self->{sessions}{$sock};
 			$sock->close();
@@ -232,13 +266,17 @@ sub _handle_client ( $self, $sock, $select )
 	# Dispatch request
 	my $response = $self->_dispatch( $request, $session );
 
-	# Encrypt if session is encrypted
-	if ( $session->is_encrypted() ) {
+	# Encrypt only if the session was already encrypted when the
+	# request arrived (see note above)
+	if ($was_encrypted) {
 		$response = $session->encrypt($response);
 	}
 
 	# Send response
 	$sock->syswrite($response);
+
+	# Re-advertise mDNS if this request changed the pairing state
+	$self->_refresh_mdns;
 }
 
 sub _dispatch ( $self, $request, $session )
@@ -394,7 +432,7 @@ sub _handle_characteristics_get ( $self, $request, $session )
 		my $result = {
 			aid   => $aid + 0,
 			iid   => $iid + 0,
-			value => $char->get_value(),
+			value => $char->json_value,
 		};
 
 		# Add optional metadata if requested
@@ -582,10 +620,10 @@ sub _handle_pairings ( $self, $request, $session )
 {
 	my %tlv = OpenHAP::TLV::decode( $request->{body} );
 
-	my $method =
-	    unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Method() } // '' );
+	my $method_raw = $tlv{ OpenHAP::Pairing::kTLVType_Method() };
+	my $method     = defined $method_raw ? unpack( 'C', $method_raw ) : -1;
 
-	$OpenHAP::logger->debug( 'Pairings request method=%d', $method // -1 );
+	$OpenHAP::logger->debug( 'Pairings request method=%d', $method );
 
 	# Method values: 3=Add, 4=Remove, 5=List
 	if ( $method == 3 ) {
@@ -633,6 +671,25 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 			OpenHAP::Pairing::kTLVType_Error(),
 			pack( 'C',
 				OpenHAP::Pairing::kTLVError_Authentication() ),
+		);
+		return OpenHAP::HTTP::build_response(
+			status  => 200,
+			headers =>
+			    { 'Content-Type' => 'application/pairing+tlv8' },
+			body => $error,
+		);
+	}
+
+	# An existing identifier with a different LTPK is an error;
+	# with a matching LTPK only the permissions are updated
+	# (HAP-Pairing.md §7.4)
+	my $existing = $pairings->{$identifier};
+	if ( $existing && $existing->{ltpk} ne $ltpk ) {
+		my $error = OpenHAP::TLV::encode(
+			OpenHAP::Pairing::kTLVType_State(),
+			pack( 'C', 2 ),
+			OpenHAP::Pairing::kTLVType_Error(),
+			pack( 'C', OpenHAP::Pairing::kTLVError_Unknown() ),
 		);
 		return OpenHAP::HTTP::build_response(
 			status  => 200,
@@ -926,6 +983,45 @@ sub is_paired ($self)
 sub get_config_number ($self)
 {
 	return $self->{storage}->get_config_number();
+}
+
+# $self->update_config_number():
+#	Increment c# when the accessory database changed since the last
+#	run (HAP-mDNS.md §3.1). Called after device loading; compares a
+#	digest of the accessory structure against the stored one.
+sub update_config_number ($self)
+{
+	my @parts;
+	for my $accessory ( $self->{bridge}->get_all_accessories ) {
+		push @parts, "a$accessory->{aid}";
+		for my $service ( $accessory->get_services ) {
+			push @parts,
+			    "s$service->{iid}:" . $service->to_json->{type};
+			for my $char ( $service->get_characteristics ) {
+				push @parts,
+				      "c$char->{iid}:"
+				    . $char->to_json->{type} . ':'
+				    . $char->{format};
+			}
+		}
+	}
+	my $digest = unpack( 'H*', sha512( join( ';', @parts ) ) );
+
+	my $stored = $self->{storage}->get_config_digest;
+	if ( !defined $stored ) {
+
+		# First run: record the digest, c# stays at its initial 1
+		$self->{storage}->save_config_digest($digest);
+	}
+	elsif ( $stored ne $digest ) {
+		$self->{storage}->increment_config_number;
+		$self->{storage}->save_config_digest($digest);
+		$OpenHAP::logger->info(
+			'Accessory database changed, c# is now %d',
+			$self->get_config_number );
+	}
+
+	return $self->get_config_number;
 }
 
 sub get_device_id ($self)

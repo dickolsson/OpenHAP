@@ -66,11 +66,11 @@ my $unknown_output = `$hapctl unknown_command_xyz 2>&1`;
 my $unknown_rejected = $? != 0 || $unknown_output =~ /(Unknown|invalid)/i;
 ok($unknown_rejected, 'unknown commands rejected');
 
-# Test 12: hapctl handles missing config file
-my $invalid_config = '/nonexistent/openhapd-test-$$.conf';
-my $invalid_output = `$hapctl -c $invalid_config status 2>&1`;
-# May handle gracefully or error - both OK, just shouldn't crash
-ok(1, 'handles missing config file');
+# Test 12: hapctl survives a missing config file without crashing
+my $invalid_config = "/nonexistent/openhapd-test-$$.conf";
+my $invalid_exit = system("$hapctl -c $invalid_config status >/dev/null 2>&1");
+ok($invalid_exit != -1 && ($invalid_exit & 127) == 0,
+   'missing config file does not crash hapctl (no signal, command ran)');
 
 # Test 13: Multiple hapctl invocations work
 my $multi_ok = 1;
@@ -87,20 +87,16 @@ system("$hapctl -c $config_file devices >/dev/null 2>&1");
 my $after = system('rcctl check openhapd >/dev/null 2>&1');
 is($before, $after, 'hapctl doesn\'t interfere with daemon');
 
-# Test 15: hapctl check detects invalid configuration
-my $temp_config = "/tmp/openhapd-bad-$$.conf";
-if (open my $tmp, '>', $temp_config) {
-	print $tmp "hap_name = \n";  # Invalid: missing value
-	print $tmp "invalid_key = value\n";
-	close $tmp;
-	
-	my $bad_result = system("$hapctl -c $temp_config check 2>/dev/null");
-	unlink $temp_config;
-	
-	# Should fail or warn about invalid config
-	ok($bad_result != 0 || 1, 'detects invalid configuration');
-} else {
-	fail('could not create temp config');
-}
+# Test 15: hapctl check reports zero devices for an empty configuration
+my $temp_config = "/tmp/openhapd-empty-$$.conf";
+open my $tmp, '>', $temp_config
+    or die "Cannot create temp config: $!\n";
+print $tmp "hap_name = \"Empty Bridge\"\n";
+close $tmp;
+
+my $empty_output = `$hapctl -c $temp_config check 2>&1`;
+unlink $temp_config;
+like($empty_output, qr/Configured devices:\s*0/,
+   'check reports zero devices for device-less configuration');
 
 $env->teardown;

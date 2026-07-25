@@ -76,17 +76,21 @@ sub decrypt ( $self, $data )
 	my $decrypted = '';
 	my $pos       = 0;
 
-	# HAP decrypts data in frames
+	# HAP decrypts data in frames; a truncated frame or a frame
+	# claiming more than 1024 bytes of plaintext is an error
+	# (HAP-Encryption.md §9)
 	while ( $pos < length($data) ) {
 
 		# Read frame header (2-byte length)
-		last if $pos + 2 > length($data);
+		return if $pos + 2 > length($data);
 		my $length = unpack( 'v', substr( $data, $pos, 2 ) );
 		my $aad    = substr( $data, $pos, 2 );
 		$pos += 2;
 
+		return if $length > 1024;
+
 		# Read ciphertext + tag
-		last if $pos + $length + 16 > length($data);
+		return if $pos + $length + 16 > length($data);
 		my $ciphertext = substr( $data, $pos, $length );
 		$pos += $length;
 		my $tag = substr( $data, $pos, 16 );

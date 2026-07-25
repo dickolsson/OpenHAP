@@ -18,7 +18,33 @@ sub new ( $class, %args )
 
 	$self->{bridged_accessories} = [];
 
+	# ProtocolInformation is required on the bridge accessory object
+	# itself; bridged accessories do not carry it (HAP-Services.md §3)
+	$self->_add_protocol_info_service;
+
 	return $self;
+}
+
+sub _add_protocol_info_service ($self)
+{
+	require OpenHAP::Service;
+	require OpenHAP::Characteristic;
+
+	my $protocol = OpenHAP::Service->new(
+		type => 'ProtocolInformation',
+		iid  => 8,
+	);
+
+	$protocol->add_characteristic(
+		OpenHAP::Characteristic->new(
+			type   => 'Version',
+			iid    => 9,
+			format => 'string',
+			perms  => ['pr'],
+			value  => '1.1.0',
+		) );
+
+	$self->add_service($protocol);
 }
 
 sub add_bridged_accessory ( $self, $accessory )

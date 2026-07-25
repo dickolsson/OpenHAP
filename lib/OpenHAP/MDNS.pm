@@ -171,6 +171,19 @@ sub unregister_service ($self)
 	return 1;
 }
 
+# $self->update_txt_records($records):
+#	Replace the TXT records and re-register the service so the
+#	advertisement reflects state changes (HAP-mDNS.md §8)
+sub update_txt_records ( $self, $records )
+{
+	$self->{txt_records} = $records;
+
+	return 1 unless $self->{registered};
+
+	$self->unregister_service;
+	return $self->register_service;
+}
+
 # $self->is_registered():
 #	Check if service is currently registered
 sub is_registered ($self)

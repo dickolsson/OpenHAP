@@ -24,11 +24,6 @@ use_ok('OpenHAP::Crypto');
 #
 # Bug: The original implementation did not pad A and B to 384 bytes before
 # hashing, causing proof verification failures with iOS Home app.
-#
-# References:
-# - HAP-Pairing.md §2.5-2.6: Specifies u = H(A | B) and M1 = H(...)
-# - HAP-python hsrp.py: Uses _padN() to pad both A and B to N_len
-# - SRP-6a spec: Requires consistent encoding/padding of group elements
 
 # Test padding of A and B in u computation
 {
@@ -41,19 +36,19 @@ use_ok('OpenHAP::Crypto');
     # For example, a small value like 256 (0x100) would be 2 bytes unpadded
     my $A_small = Math::BigInt->new(256);
     my $A_bytes_unpadded = OpenHAP::SRP::_bigint_to_bytes($A_small);
-    
+
     # Without padding, this would be 2 bytes
-    ok(length($A_bytes_unpadded) < 384, 
+    ok(length($A_bytes_unpadded) < 384,
         'Small A is less than 384 bytes without padding');
-    
+
     # With padding, it should be 384 bytes
     my $A_bytes_padded = OpenHAP::SRP::_bigint_to_bytes($A_small, 384);
-    is(length($A_bytes_padded), 384, 
-        'Small A is exactly 384 bytes with padding');
-    
+    is(length($A_bytes_padded), 384,
+        '[HAP-Pairing §2.5] small A is left-padded to 384 bytes');
+
     # Verify padding is with leading zeros
     is(unpack('H*', $A_bytes_padded), ('00' x 382) . '0100',
-        'A is padded with leading zeros');
+        '[HAP-Pairing §2.5] A is padded with leading zeros');
 }
 
 # Test that compute_session_key uses padded A and B for u
@@ -71,11 +66,11 @@ use_ok('OpenHAP::Crypto');
     
     isnt(length($A_bytes_unpadded), length($A_bytes_padded),
         'Padded and unpadded A have different lengths');
-    
+
     # Both should produce the same session key because internally
-    # compute_session_key should pad before computing u
+    # compute_session_key pads A to 384 bytes before computing u
     my $K1 = $srp->compute_session_key($A_bytes_unpadded);
-    
+
     # Need a fresh SRP instance for second test
     my $srp2 = OpenHAP::SRP->new(password => '123-45-678');
     $srp2->generate_salt();
@@ -85,15 +80,16 @@ use_ok('OpenHAP::Crypto');
     $srp2->{B} = $srp->{B};
     $srp2->{v} = $srp->{v};
     $srp2->{salt} = $srp->{salt};
-    
+
     my $K2 = $srp2->compute_session_key($A_bytes_padded);
-    
-    # Note: These might differ because A is interpreted as a different number
-    # What matters is that the padding happens consistently internally
+
+    ok(defined $K1 && defined $K2, 'Both session keys computed');
+    is(unpack('H*', $K1), unpack('H*', $K2),
+        '[HAP-Pairing §2.6] u uses PAD(A): unpadded and padded A '
+        . 'wire encodings derive the same session key');
 }
 
 # Test full SRP exchange with known values to verify padding
-# This tests against a reference implementation (HAP-python)
 {
     # Set up SRP with known parameters
     my $password = '123-45-678';
@@ -112,7 +108,8 @@ use_ok('OpenHAP::Crypto');
     # Compute session key (this internally computes u = H(PAD(A) | PAD(B)))
     my $K = $srp->compute_session_key($A_bytes);
     ok(defined $K, 'Session key computed successfully');
-    is(length($K), 64, 'Session key is 64 bytes (SHA-512 output)');
+    is(length($K), 64,
+        '[HAP-Pairing §2.6] session key K = H(S) is 64 bytes (SHA-512)');
     
     # Verify internal A is stored correctly
     ok(defined $srp->{A}, 'A is stored in SRP object');
@@ -122,14 +119,15 @@ use_ok('OpenHAP::Crypto');
     # For now, just test that verify_client_proof uses padded values
     my $M1_dummy = 'X' x 64;  # Wrong proof for this test
     my $result = $srp->verify_client_proof($M1_dummy);
-    ok(!$result, 'Wrong proof is rejected');
+    ok(!$result, '[HAP-Pairing §2.6] wrong client proof M1 is rejected');
 }
 
 # Test N_len constant matches our padding expectation
 {
     # N is 3072 bits = 384 bytes
     my $N_len = length($OpenHAP::Crypto::N_3072);
-    is($N_len, 384, 'N_3072 constant is 384 bytes');
+    is($N_len, 384,
+        '[HAP-Pairing §2.2] N_3072 group prime is 384 bytes (3072 bits)');
 }
 
 done_testing();

@@ -135,7 +135,7 @@ sub new ( $class, %args )
 			OpenHAP::Characteristic->new(
 				type   => 'ColorTemperature',
 				iid    => 15,
-				format => 'int',
+				format => 'uint32',
 				perms  => [ 'pr', 'pw', 'ev' ],
 				value  => \$self->{ct},
 				min    => 153,    # M4: Match Tasmota range

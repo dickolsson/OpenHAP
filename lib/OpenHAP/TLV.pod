@@ -32,6 +32,9 @@ Values longer than 255 bytes are automatically split into chunks.
 Decodes TLV8 data into a hash of type => value pairs.
 Automatically concatenates chunks with the same type.
 
+Returns the empty list if the buffer is malformed: a truncated record
+header, or a length field pointing past the end of the buffer.
+
 =head1 SEE ALSO
 
 F<spec/HAP-TLV8.md>

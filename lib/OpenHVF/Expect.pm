@@ -27,7 +27,7 @@ sub new ( $class, %args )
 	my $self = bless {
 		host    => $args{host} // 'localhost',
 		port    => $args{port},
-		timeout => $args{timeout} // 180,
+		timeout => $args{timeout} // $ENV{OPENHVF_TIMEOUT} // 180,
 	}, $class;
 
 	return $self;
