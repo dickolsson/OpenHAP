@@ -19,7 +19,7 @@ The repo contains three Perl namespaces with distinct concerns:
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/openhvf/*.t t/fugulib/*.t t/openhap/*.t
+make test           # prove -l -v t/{openhvf,fugulib,openhap,conformance}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check
@@ -43,6 +43,7 @@ make integration    # provision OpenBSD VM and run integration tests
   (`Config.pm`, `Storage.pm`), integration (`MQTT.pm`, `MDNS.pm`,
   `DeviceLoader.pm`), devices (`Tasmota/*.pm`)
 - `t/openhap/`, `t/fugulib/`, `t/openhvf/` — unit tests;
+  `t/conformance/` — spec-cited conformance tests (see `t/CLAUDE.md`);
   `t/openhap/integration/` — integration tests, run inside the OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/openhvf/` — `openhvf.1` (development-only, not

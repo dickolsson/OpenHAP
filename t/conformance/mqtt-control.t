@@ -1,0 +1,271 @@
+#!/usr/bin/env perl
+# ex:ts=8 sw=4:
+# Conformance tests for spec/MQTT-Control.md
+
+use v5.36;
+use Test::More;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../lib";
+use lib "$RealBin/../lib";
+use FuguLib::Log;
+$OpenHAP::logger = FuguLib::Log->new( mode => 'quiet', ident => 'test' );
+
+use_ok('OpenHAP::TestMock::MQTT');
+use_ok('OpenHAP::Tasmota::Heater');
+use_ok('OpenHAP::Tasmota::Thermostat');
+use_ok('OpenHAP::Tasmota::Sensor');
+use_ok('OpenHAP::Tasmota::Lightbulb');
+
+sub make_heater ( $mqtt, %extra )
+{
+	return OpenHAP::Tasmota::Heater->new(
+		aid         => 2,
+		name        => 'Heater',
+		mqtt_topic  => 'device',
+		mqtt_client => $mqtt,
+		%extra,
+	);
+}
+
+sub make_light ( $mqtt, $capabilities )
+{
+	return OpenHAP::Tasmota::Lightbulb->new(
+		aid          => 2,
+		name         => 'Light',
+		mqtt_topic   => 'light',
+		mqtt_client  => $mqtt,
+		capabilities => $capabilities,
+	);
+}
+
+my $CAP_DIMMER = OpenHAP::Tasmota::Lightbulb::CAP_DIMMER();
+my $CAP_COLOR  = OpenHAP::Tasmota::Lightbulb::CAP_COLOR();
+my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
+
+sub last_published ($mqtt)
+{
+	my @published = $mqtt->get_published;
+	return $published[-1];
+}
+
+subtest '[MQTT-Control §1] power control payloads' => sub {
+	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $heater = make_heater($mqtt);
+
+	$mqtt->clear_published;
+	$heater->set_power(1);
+	is( last_published($mqtt)->{topic},
+		'cmnd/device/Power', 'Power command topic' );
+	is( last_published($mqtt)->{payload}, 'ON', 'ON turns relay on' );
+
+	$mqtt->clear_published;
+	$heater->set_power(0);
+	is( last_published($mqtt)->{payload}, 'OFF', 'OFF turns relay off' );
+
+	$mqtt->clear_published;
+	$heater->toggle_power;
+	is( last_published($mqtt)->{payload},
+		'TOGGLE', 'TOGGLE toggles state' );
+
+	$mqtt->clear_published;
+	$heater->blink(1);
+	is( last_published($mqtt)->{payload},
+		'BLINK', 'BLINK starts blinking' );
+
+	$mqtt->clear_published;
+	$heater->blink(0);
+	is( last_published($mqtt)->{payload},
+		'BLINKOFF', 'BLINKOFF stops blinking' );
+};
+
+subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
+	my $mqtt = OpenHAP::TestMock::MQTT->new;
+
+	my $plain = make_heater($mqtt);
+	is( $plain->_get_power_key,   'POWER', 'single relay uses POWER' );
+	is( $plain->_get_power_topic, 'cmnd/device/Power',
+		'single relay topic has no index' );
+
+	my $relay2 = make_heater( $mqtt, aid => 3, relay_index => 2 );
+	is( $relay2->_get_power_key, 'POWER2',
+		'relay 2 uses POWER2 state key' );
+	is( $relay2->_get_power_topic, 'cmnd/device/Power2',
+		'relay 2 commands Power2' );
+
+	my $so26 = make_heater( $mqtt, aid => 4, setoption26 => 1 );
+	is( $so26->_get_power_key, 'POWER1',
+		'SetOption26 uses POWER1 even for a single relay' );
+
+	# FullTopic composes with relay index
+	my $custom = OpenHAP::Tasmota::Base->new(
+		aid         => 5,
+		name        => 'Custom',
+		mqtt_topic  => 'device',
+		mqtt_client => $mqtt,
+		relay_index => 2,
+		fulltopic   => 'home/%topic%/%prefix%/',
+	);
+	is( $custom->_get_power_topic, 'home/device/cmnd/Power2',
+		'FullTopic + relay_index builds correct topic' );
+};
+
+subtest '[MQTT-Control §2] dimmer control' => sub {
+	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $light = make_light( $mqtt, $CAP_DIMMER );
+	$light->subscribe_mqtt;
+
+	$mqtt->clear_published;
+	$light->_set_brightness(75);
+	is( last_published($mqtt)->{topic},
+		'cmnd/light/Dimmer', 'Dimmer command topic' );
+	is( last_published($mqtt)->{payload},
+		'75', 'brightness percentage 0..100' );
+
+	for my $step (
+		[ '+', 'increase by DimmerStep' ],
+		[ '-', 'decrease by DimmerStep' ],
+	    )
+	{
+		$mqtt->clear_published;
+		$light->dimmer_step( $step->[0] );
+		is( last_published($mqtt)->{payload},
+			$step->[0], "dimmer step $step->[1]" );
+	}
+
+	$mqtt->clear_published;
+	$light->dimmer_min;
+	is( last_published($mqtt)->{payload}, '<', '< decreases to 1' );
+
+	$mqtt->clear_published;
+	$light->dimmer_max;
+	is( last_published($mqtt)->{payload}, '>', '> increases to 100' );
+};
+
+subtest '[MQTT-Control §3][MQTT-Control §3.1] HSBColor control' => sub {
+	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $light = make_light( $mqtt, $CAP_DIMMER | $CAP_COLOR );
+	$light->subscribe_mqtt;
+
+	$mqtt->clear_published;
+	$light->_set_hue(240);
+	is( last_published($mqtt)->{topic},
+		'cmnd/light/HSBColor1', 'HSBColor1 sets hue only' );
+	is( last_published($mqtt)->{payload}, '240', 'hue 0..360' );
+
+	$mqtt->clear_published;
+	$light->_set_saturation(80);
+	is( last_published($mqtt)->{topic},
+		'cmnd/light/HSBColor2', 'HSBColor2 sets saturation only' );
+	is( last_published($mqtt)->{payload}, '80', 'saturation 0..100' );
+
+	$mqtt->clear_published;
+	$light->set_color( 120, 100, 50 );
+	is( last_published($mqtt)->{topic},
+		'cmnd/light/HSBColor', 'HSBColor sets all three' );
+	is( last_published($mqtt)->{payload},
+		'120,100,50', 'payload is <hue>,<sat>,<bri>' );
+};
+
+subtest '[MQTT-Control §3.2] Color RGB formats' => sub {
+	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $light = make_light( $mqtt, $CAP_COLOR );
+	$light->subscribe_mqtt;
+
+	# Hex color format (SetOption17 0, default)
+	$mqtt->simulate_message( 'stat/light/RESULT', '{"Color":"FF0000"}' );
+	is( $light->{hue}, 0, 'hex color red parsed (hue 0)' );
+
+	# Decimal color format (SetOption17 1)
+	$mqtt->simulate_message( 'stat/light/RESULT', '{"Color":"0,255,0"}' );
+	is( $light->{hue}, 120, 'decimal color green parsed (hue 120)' );
+
+	$mqtt->simulate_message( 'stat/light/RESULT', '{"Color":"0,0,255"}' );
+	is( $light->{hue}, 240, 'decimal color blue parsed (hue 240)' );
+
+	# RGB -> HSB conversion per the spec value ranges
+	my ( $h, $s, $b ) = $light->_rgb_to_hsb( 255, 0, 0 );
+	is_deeply( [ $h, $s, $b ], [ 0, 100, 100 ],
+		'pure red is 0,100,100' );
+	( $h, $s, $b ) = $light->_rgb_to_hsb( 255, 255, 255 );
+	is_deeply( [ $s, $b ], [ 0, 100 ], 'white has no saturation' );
+	( $h, $s, $b ) = $light->_rgb_to_hsb( 128, 128, 128 );
+	is_deeply( [ $s, $b ], [ 0, 50 ], '50% gray at half brightness' );
+};
+
+subtest '[MQTT-Control §4] color temperature range' => sub {
+	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $light = make_light( $mqtt, $CAP_CT );
+	$light->subscribe_mqtt;
+
+	$mqtt->clear_published;
+	$light->_set_ct(300);
+	is( last_published($mqtt)->{topic}, 'cmnd/light/CT',
+		'CT command topic' );
+	is( last_published($mqtt)->{payload}, '300', 'CT in mireds' );
+
+	# Range is 153..500 mireds
+	$mqtt->clear_published;
+	$light->_set_ct(100);
+	is( last_published($mqtt)->{payload},
+		'153', 'CT clamped to 153 (cold end)' );
+
+	$mqtt->simulate_message( 'stat/light/RESULT', '{"CT":600}' );
+	is( $light->{ct}, 500, 'reported CT clamped to 500 (warm end)' );
+};
+
+subtest '[MQTT-Control §5] status queries' => sub {
+	my $mqtt = OpenHAP::TestMock::MQTT->new;
+
+	# Thermostats query sensor information (Status 10) on subscribe
+	my $thermostat = OpenHAP::Tasmota::Thermostat->new(
+		aid         => 2,
+		name        => 'Thermostat',
+		mqtt_topic  => 'thermostat',
+		mqtt_client => $mqtt,
+	);
+	$thermostat->subscribe_mqtt;
+	ok(
+		( grep {
+			$_->{topic} eq 'cmnd/thermostat/Status'
+			    && $_->{payload} eq '10'
+		} $mqtt->get_published ),
+		'Status 10 (sensor information) queried on subscribe'
+	);
+
+	# STATUS8 (legacy sensor) responses are handled
+	$mqtt->simulate_message( 'stat/thermostat/STATUS8',
+		'{"StatusSNS":{"DS18B20":{"Temperature":23},"TempUnit":"C"}}'
+	);
+	is( $thermostat->{current_temp}, 23,
+		'STATUS8 response updates temperature' );
+
+	# STATUS10 responses are handled
+	my $sensor = OpenHAP::Tasmota::Sensor->new(
+		aid         => 3,
+		name        => 'Sensor',
+		mqtt_topic  => 'sensor',
+		mqtt_client => $mqtt,
+	);
+	$sensor->subscribe_mqtt;
+	ok( ( grep { $_ eq 'stat/sensor/STATUS10' }
+		    $mqtt->get_subscriptions ),
+		'subscribed to STATUS10 responses' );
+	$mqtt->simulate_message( 'stat/sensor/STATUS10',
+		'{"StatusSNS":{"DS18B20":{"Temperature":26},"TempUnit":"C"}}'
+	);
+	is( $sensor->{current_temp}, 26,
+		'STATUS10 response updates temperature' );
+
+	# STATUS11 (full state) responses are handled
+	my $heater = make_heater($mqtt);
+	$heater->subscribe_mqtt;
+	ok( ( grep { $_ eq 'stat/device/STATUS11' }
+		    $mqtt->get_subscriptions ),
+		'subscribed to STATUS11 responses' );
+	$mqtt->simulate_message( 'stat/device/STATUS11',
+		'{"StatusSTS":{"POWER":"ON","Uptime":"1T00:00:00"}}' );
+	is( $heater->{power_state}, 1,
+		'STATUS11 response updates power state' );
+};
+
+done_testing();

@@ -72,27 +72,7 @@ use_ok('OpenHAP::Pairing');
     like($device_id, qr/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/, 'Device ID is MAC format');
 }
 
-# Test get_mdns_txt_records()
-{
-    my $temp_dir = tempdir(CLEANUP => 1);
-    my $hap = OpenHAP::HAP->new(
-        port         => 51830,
-        pin          => '123-45-678',
-        storage_path => $temp_dir,
-    );
-
-    my $records = $hap->get_mdns_txt_records();
-    ok(defined $records, 'mDNS records generated');
-    ok(exists $records->{'c#'}, 'c# record exists');
-    ok(exists $records->{'id'}, 'id record exists');
-    ok(exists $records->{'sf'}, 'sf record exists');
-    is($records->{'sf'}, 1, 'sf=1 when not paired');
-
-    # Add pairing and check sf changes
-    $hap->{storage}->save_pairing('test-controller', 'X' x 32, 1);
-    $records = $hap->get_mdns_txt_records();
-    is($records->{'sf'}, 0, 'sf=0 when paired');
-}
+# mDNS TXT record content is covered by t/conformance/hap-mdns.t
 
 # Test event queue initialization ([HAP-HTTP §14] event notifications)
 {

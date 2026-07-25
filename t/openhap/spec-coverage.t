@@ -24,7 +24,7 @@ sub write_file ( $path, $content )
 	close $fh;
 }
 
-write_file( "$spec_dir/HAP-Fixture.md", <<'EOF' );
+write_file( "$spec_dir/HAP-Fixture8.md", <<'EOF' );
 # HAP Fixture
 
 ## 1. First Section
@@ -64,7 +64,8 @@ EOF
 
 # Citation strings are assembled at runtime so this file's own source
 # never matches the citation grep when the tool runs on the real tree.
-my $STEM = 'HAP-' . 'Fixture';
+# The stem carries a digit to cover stems like HAP-TLV8.
+my $STEM = 'HAP-' . 'Fixture8';
 
 write_file( "$test_dir/fixture.t", <<EOF );
 ok(1, '[$STEM §1] first section requirement');
@@ -84,7 +85,7 @@ sub run_tool (@args)
 {
 	my ( $exit, $output ) = run_tool();
 	is( $exit, 0, 'exits 0 with no stale citations' );
-	like( $output, qr/HAP-Fixture\.md\s+3\/5 sections cited/,
+	like( $output, qr/HAP-Fixture8\.md\s+3\/5 sections cited/,
 		'per-file coverage counts cited sections' );
 	like( $output, qr/§1\s+\S*fixture\.t:1/,
 		'citation resolved to file:line' );
@@ -127,7 +128,7 @@ EOF
 	my ( $exit, $output ) = run_tool('--quiet');
 	is( $exit, 1, 'stale citation exits non-zero' );
 	like( $output,
-		qr/STALE: \S*stale\.t:1 cites HAP-Fixture §9\.9 \(no such section\)/,
+		qr/STALE: \S*stale\.t:1 cites HAP-Fixture8 §9\.9 \(no such section\)/,
 		'stale citation names file:line and section' );
 	unlink "$test_dir/stale.t";
 }

@@ -4,15 +4,32 @@ Applies when working on files under `t/`.
 
 ## Test tiers
 
-| Tier        | Location                  | Verifies                        | Runs via           |
-| ----------- | ------------------------- | ------------------------------- | ------------------ |
-| Module      | `t/openhap/` `t/fugulib/` | Perl API behavior, error paths  | `make test` (host) |
-| Module      | `t/openhvf/`              | test VM harness                 | `make test` (host) |
-| Integration | `t/openhap/integration/`  | real daemon, full protocol flow | `make integration` |
+| Tier        | Location                  | Verifies                             | Runs via           |
+| ----------- | ------------------------- | ------------------------------------ | ------------------ |
+| Conformance | `t/conformance/`          | spec requirements, wire formats, KAT | `make test` (host) |
+| Module      | `t/openhap/` `t/fugulib/` | Perl API behavior, error paths       | `make test` (host) |
+| Module      | `t/openhvf/`              | test VM harness                      | `make test` (host) |
+| Integration | `t/openhap/integration/`  | real daemon, full protocol flow      | `make integration` |
 
 Module tests follow the unit-test rules in the root `CLAUDE.md` (skip
-gracefully on missing dependencies). Integration tests follow the stricter
-rules in `t/openhap/integration/CLAUDE.md` (never skip, no log parsing).
+gracefully on missing dependencies) and need no citations. Integration tests
+follow the stricter rules in `t/openhap/integration/CLAUDE.md` (never skip, no
+log parsing).
+
+## Conformance tier
+
+One `.t` per normative spec topic file, named after the lowercased stem
+(`spec/HAP-TLV8.md` ↔ `t/conformance/hap-tlv8.t`). Rules:
+
+- Every subtest name starts with a citation; catalog tables are data-driven
+  loops citing `/<row>`; wire examples from the spec are replayed byte-exactly;
+  crypto known-answer vectors live under the algorithm sections.
+- Host-side, `Test::More` + `subtest`, `skip_all` on missing CPAN dependencies.
+- Data tables and vectors live inline — no network, no `external/`.
+- Shared mocks live in `t/lib/` (e.g. `OpenHAP::TestMock::MQTT`), loaded with
+  `use lib "$RealBin/../lib"`.
+- The index files (`HAP.md`, `MQTT.md`) and `IMPLEMENTATIONS.md` get no test
+  file; their few normative facts are covered by topic files.
 
 ## Spec citations
 
@@ -38,8 +55,8 @@ ok($error == 0x02, '[HAP-Pairing §2.6] M4 returns kTLVError_Authentication');
 subtest '[HAP-TLV8 §2] fragmentation' => sub { ... };
 ```
 
-The grep pattern is `\[(HAP|MQTT)[A-Za-z-]* §[0-9][0-9.]*(/[^\]]+)?\]`. One
-test may carry several citations. A citation asserts the section's
+The grep pattern is `\[(HAP|MQTT)[A-Za-z0-9-]* §[0-9][0-9.]*(/[^\]]+)?\]`.
+One test may carry several citations. A citation asserts the section's
 requirement — do not cite a section the test merely mentions.
 
 Coverage of `spec/` and stale-citation detection are computed by

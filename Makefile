@@ -158,6 +158,7 @@ test:
 	prove -l -v t/openhvf/*.t
 	prove -l -v t/fugulib/*.t
 	prove -l -v t/openhap/*.t
+	prove -l -v t/conformance/*.t
 
 tidy:
 	@find lib bin -name '*.pm' -o -name 'openhapd' -o -name 'hapctl' | while read f; do \
