@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.pod"
+      - "spec/**"
+      - "plans/**"
+      - "man/**"
+      - ".claude/**"
+      - ".devcontainer/**"
+      - ".prettierrc"
+      - ".gitignore"
+      - "LICENSE"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.pod"
+      - "spec/**"
+      - "plans/**"
+      - "man/**"
+      - ".claude/**"
+      - ".devcontainer/**"
+      - ".prettierrc"
+      - ".gitignore"
+      - "LICENSE"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: ./.github/actions/setup-perl
+
+      - name: Install test dependencies
+        run: make deps-test
+
+      - name: Run tests
+        run: make test
+
+      - name: Check spec coverage
+        run: make spec-coverage
