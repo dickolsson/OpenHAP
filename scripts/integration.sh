@@ -20,7 +20,7 @@ echo "==> Copying test files..."
 cd "${PROJECT_ROOT}"
 TARBALL="/tmp/tests-$$.tar.gz"
 tar czf "${TARBALL}" t/openhap/integration/ t/lib/ lib/OpenHAP/Test/
-vm_scp "${TARBALL}" "root@localhost:/tmp/tests.tar.gz"
+vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/tests.tar.gz"
 rm -f "${TARBALL}"
 
 echo "==> Running integration tests..."

@@ -46,12 +46,23 @@ proc respond {response} {
 # Connect to console
 spawn telnet $host $port
 
-# Wait for telnet connection
+# Wait for the console connection. telnet prints "Connected to <host>"
+# on success; match on the host-independent prefix since the host may be
+# an IP address. An eof means telnet could not connect at all (console
+# port not listening) - fail fast rather than hang to the full timeout.
 expect {
-    "Connected to localhost" {
+    "Connected to" {
         # Send an empty line to trigger prompt if already at installer
         sleep 0.5
         send "\r"
+    }
+    "Escape character" {
+        sleep 0.5
+        send "\r"
+    }
+    eof {
+        send_user "\n==> ERROR: telnet could not connect to the VM console\n"
+        exit 1
     }
     timeout {
         send_user "\n==> ERROR: Failed to connect to VM console\n"

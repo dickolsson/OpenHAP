@@ -61,9 +61,16 @@ jobs:
           OPENHVF_WAIT_TIMEOUT: 1800
         run: make integration
 
-      - name: Show VM status on failure
+      - name: Show VM diagnostics on failure
         if: failure()
-        run: ./bin/openhvf status || true
+        run: |
+          echo "==> openhvf status"
+          ./bin/openhvf status || true
+          echo "==> QEMU log tail"
+          tail -n 80 .openhvf/state/*/qemu.log 2>/dev/null || true
+          echo "==> Host virtualization"
+          ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm"
+          qemu-system-aarch64 --version 2>/dev/null | head -1 || true
 
       - name: Shut down VM
         # A clean shutdown before the cache post-step saves .openhvf

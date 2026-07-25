@@ -173,7 +173,7 @@ sub up ($self)
 
 		$log->info("Installing OpenBSD...");
 		my $expect = OpenHVF::Expect->new(
-			host => 'localhost',
+			host => '127.0.0.1',
 			port => $config->{console_port},
 		);
 
@@ -448,7 +448,7 @@ sub wait_ssh ( $self, $timeout = 120, $sig = undef )
 
 	# Uses SSH agent for authentication
 	my $ssh = OpenHVF::SSH->new(
-		host => 'localhost',
+		host => '127.0.0.1',
 		port => $config->{ssh_port},
 		user => 'root',
 	);
@@ -464,7 +464,7 @@ sub _wait_ssh_password ( $self, $password, $timeout = 120 )
 	my $config = $self->{config};
 
 	my $ssh = OpenHVF::SSH->new(
-		host     => 'localhost',
+		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
 		password => $password,
@@ -554,7 +554,7 @@ sub _install_ssh_key ( $self, $password )
 
 	# Connect with password
 	my $ssh = OpenHVF::SSH->new(
-		host     => 'localhost',
+		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
 		password => $password,
@@ -598,7 +598,7 @@ sub _graceful_shutdown ($self)
 	# First sync filesystems via SSH, then use QMP to send ACPI power button
 	# This avoids the problem of SSH connection being killed by halt
 	my $ssh = OpenHVF::SSH->new(
-		host => 'localhost',
+		host => '127.0.0.1',
 		port => $config->{ssh_port},
 		user => 'root',
 	);
@@ -793,23 +793,93 @@ sub _start_qemu ( $self, $boot_image = undef )
 
 	# Wait for QEMU to write PID file
 	my $start = time;
+	my $pid;
 	while ( time - $start < 5 ) {
 		if ( -f $state->{vm_pid_file} ) {
 			my $qemu_pid = $state->get_vm_pid;
 			if ( defined $qemu_pid && kill( 0, $qemu_pid ) ) {
-				return $qemu_pid;
+				$pid = $qemu_pid;
+				last;
 			}
 		}
 		usleep(100_000);    # 0.1 seconds
 	}
 
 	# Fallback: use forked PID from FuguLib::Process
-	my $pid = $result->{pid};
-	if ( kill( 0, $pid ) ) {
-		$state->set_vm_pid($pid);
-		$state->mark_running;
-		return $pid;
+	unless ( defined $pid ) {
+		my $forked = $result->{pid};
+		if ( kill( 0, $forked ) ) {
+			$state->set_vm_pid($forked);
+			$state->mark_running;
+			$pid = $forked;
+		}
 	}
+
+	unless ( defined $pid ) {
+		$self->_dump_qemu_log($log_file);
+		return;
+	}
+
+	# Confirm QEMU is actually accepting console connections before the
+	# installer tries to attach. A QEMU that exited at startup (bad
+	# accelerator, missing firmware) leaves the port closed; catching
+	# that here fails fast with the QEMU log instead of a long telnet
+	# timeout later.
+	unless ( $self->_wait_console_ready( $config->{console_port}, 30 ) ) {
+		$self->{log}
+		    ->error( 'QEMU console port %d not listening after start',
+			$config->{console_port} );
+		$self->_dump_qemu_log($log_file);
+		return;
+	}
+
+	return $pid;
+}
+
+# $self->_wait_console_ready($port, $timeout):
+#	Poll the console TCP port until it accepts a connection, so the
+#	installer's telnet attaches to a live console. The bind happens
+#	at QEMU startup (before guest boot), so this is quick when QEMU
+#	is healthy and bounded when it is not.
+sub _wait_console_ready ( $self, $port, $timeout )
+{
+	require IO::Socket::INET;
+
+	my $start = time;
+	while ( time - $start < $timeout ) {
+		my $sock = IO::Socket::INET->new(
+			PeerAddr => '127.0.0.1',
+			PeerPort => $port,
+			Proto    => 'tcp',
+			Timeout  => 2,
+		);
+		if ( defined $sock ) {
+			$sock->close;
+			return 1;
+		}
+
+		# Give up early if QEMU has already exited
+		my $qemu_pid = $self->{state}->get_vm_pid;
+		return 0 if defined $qemu_pid && !kill( 0, $qemu_pid );
+
+		usleep(200_000);    # 0.2 seconds
+	}
+
+	return 0;
+}
+
+# $self->_dump_qemu_log($log_file):
+#	Emit the tail of the QEMU log so a startup failure is visible in
+#	CI output instead of requiring shell access to the runner.
+sub _dump_qemu_log ( $self, $log_file )
+{
+	open my $fh, '<', $log_file or return;
+	my @lines = <$fh>;
+	close $fh;
+
+	@lines = splice( @lines, -40 ) if @lines > 40;
+	$self->{log}->error('QEMU log tail:');
+	$self->{log}->error( '  %s', $_ ) for map { chomp; $_ } @lines;
 
 	return;
 }

@@ -40,7 +40,7 @@ fi
 EOF
 
 echo "==> Copying to VM..."
-vm_scp "${TARBALL}" "root@localhost:/tmp/openhap.tar.gz"
+vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
 
 echo "==> Installing OpenHAP..."
 vm_run <<'EOF'

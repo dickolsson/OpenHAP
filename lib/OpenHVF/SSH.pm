@@ -33,7 +33,7 @@ use constant {
 sub new ( $class, %args )
 {
 	my $self = bless {
-		host     => $args{host} // 'localhost',
+		host     => $args{host} // '127.0.0.1',
 		port     => $args{port} // 22,
 		user     => $args{user} // 'root',
 		password => $args{password},

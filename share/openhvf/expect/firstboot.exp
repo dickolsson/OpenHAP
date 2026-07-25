@@ -38,6 +38,10 @@ expect {
     "login:" {
         send "root\r"
     }
+    eof {
+        puts stderr "telnet could not connect to the VM console"
+        exit 1
+    }
     timeout {
         puts stderr "Timeout waiting for login prompt"
         exit 1
