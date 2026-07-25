@@ -1,7 +1,12 @@
 use v5.36;
 
 package OpenHAP::SRP;
-use Math::BigInt;
+
+# Prefer the GMP backend: SRP's 3072-bit modular exponentiation is
+# impractically slow in the pure-Perl Calc backend (seconds per op,
+# far worse under emulation). 'try' falls back to Calc silently when
+# Math::BigInt::GMP is not installed, so this stays correct everywhere.
+use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
 use OpenHAP::Crypto;
 use OpenHAP::PIN qw(normalize_pin);

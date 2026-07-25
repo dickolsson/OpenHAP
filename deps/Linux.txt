@@ -1,6 +1,7 @@
 runtime pkg mosquitto
 runtime pkg avahi-daemon
 runtime pkg libperl-dev
+runtime pkg libmath-bigint-gmp-perl
 runtime cpan JSON::XS
 runtime cpan Crypt::Ed25519
 runtime cpan Crypt::Curve25519

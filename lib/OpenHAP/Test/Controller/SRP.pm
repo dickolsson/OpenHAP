@@ -19,7 +19,10 @@ use v5.36;
 
 package OpenHAP::Test::Controller::SRP;
 
-use Math::BigInt;
+# Match the server: prefer the GMP backend so the controller's own
+# 3072-bit modexp is not the bottleneck when it runs inside the slow
+# emulated test guest. Falls back to pure-Perl Calc when GMP is absent.
+use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
 use OpenHAP::Crypto;
 use OpenHAP::PIN qw(normalize_pin);
