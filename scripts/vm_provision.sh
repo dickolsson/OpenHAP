@@ -85,15 +85,25 @@ cd /tmp && rm -rf openhap-* openhap.tar.gz
 rcctl enable mosquitto
 rcctl start mosquitto
 
-# Configure and enable mdnsd with the first active network interface
-# mdnsd requires an interface to be specified for multicast DNS
+# Configure and start mdnsd on the primary network interface. mdnsd
+# needs an interface for multicast DNS; started without one it exits
+# immediately, which later surfaces as failing mDNS integration tests.
+# Prefer the default-route interface, fall back to the first UP, non
+# loopback interface, and verify the daemon actually came up.
 if rcctl get mdnsd >/dev/null 2>&1; then
-	# Find the first active network interface (not loopback)
-	IFACE=$(ifconfig -a | grep '^[a-z]' | grep -v '^lo' | grep -v '^enc' | grep -v '^pflog' | head -1 | cut -d: -f1)
+	IFACE=$(route -n show -inet 2>/dev/null |
+		awk '/^default/ { print $NF; exit }')
+	[ -n "${IFACE}" ] || IFACE=$(ifconfig -a |
+		awk -F: '/^[a-z].*<UP,/ && !/^(lo|enc|pflog)/ { print $1; exit }')
+
 	if [ -n "${IFACE}" ]; then
 		rcctl set mdnsd flags "${IFACE}"
 		rcctl enable mdnsd
-		rcctl start mdnsd 2>/dev/null || true
+		rcctl restart mdnsd
+		rcctl check mdnsd ||
+			echo "WARNING: mdnsd did not start on ${IFACE}"
+	else
+		echo "WARNING: no network interface found for mdnsd"
 	fi
 fi
 
