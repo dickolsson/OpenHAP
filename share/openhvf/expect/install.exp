@@ -188,19 +188,37 @@ expect {
     }
 }
 
-# Time confirmation (may or may not appear)
-set timeout [env_timeout 60]
+# The installer may ask to correct the clock before finishing; answer
+# yes if it does. The (R)eboot? prompt marks the end of the install -
+# choose halt instead of reboot so the harness can restart from the
+# installed disk without the miniroot attached. A single expect block
+# handles both so a missing time prompt never stalls to the timeout.
+set timeout [env_timeout 900]
 expect {
-    "Time appears wrong" { 
+    "Time appears wrong" {
         respond "yes"
         exp_continue
     }
+    "(R)eboot?" {
+        respond "h"
+    }
+    timeout {
+        send_user "\n==> ERROR: Timeout waiting for install to finish\n"
+        exit 1
+    }
 }
 
-# Reboot - choose halt instead so we can restart without miniroot
-expect "(R)eboot?" { respond "h" }
-
-# Wait for system to halt
-expect "The operating system has halted"
-expect eof
-exit 0
+# The install is complete once the system halts. Do NOT wait for eof:
+# OpenBSD's halt stops at the "press any key to reboot" prompt without
+# closing the console, so telnet stays connected and no eof ever
+# arrives. The harness terminates QEMU via QMP once this script
+# returns, then restarts from the installed disk.
+set timeout [env_timeout 120]
+expect {
+    "The operating system has halted" { exit 0 }
+    "press any key to reboot" { exit 0 }
+    timeout {
+        send_user "\n==> ERROR: Timeout waiting for system halt\n"
+        exit 1
+    }
+}
