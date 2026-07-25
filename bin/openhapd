@@ -100,12 +100,17 @@ else {
 my $loader = OpenHAP::DeviceLoader->new();
 $loader->load_devices( $config, $hap, $mqtt );
 
-# Create mDNS handler (registration happens after privilege drop)
+# Bump c# if the accessory database changed since the last run
+$hap->update_config_number();
+
+# Create mDNS handler (registration happens after privilege drop);
+# the HAP server re-advertises the TXT record on pairing changes
 my $mdns = OpenHAP::MDNS->new(
 	service_name => $hap_name,
 	port         => $hap_port,
 	txt_records  => $hap->get_mdns_txt_records(),
 );
+$hap->set_mdns($mdns);
 
 # Drop privileges before registering mDNS
 # _openhap must be in wheel group to access /var/run/mdnsd.sock

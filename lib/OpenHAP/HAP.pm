@@ -102,6 +102,33 @@ sub set_mqtt_client ( $self, $mqtt )
 	$self->{mqtt_client} = $mqtt;
 }
 
+# $self->set_mdns($mdns):
+#	set the mDNS registration handle so the TXT record can be
+#	re-advertised when the pairing state changes (HAP-mDNS.md §8)
+sub set_mdns ( $self, $mdns )
+{
+	$self->{mdns}              = $mdns;
+	$self->{last_paired_state} = $self->is_paired() ? 1 : 0;
+}
+
+# $self->_refresh_mdns():
+#	re-advertise the TXT record if the pairing state changed
+sub _refresh_mdns ($self)
+{
+	return unless defined $self->{mdns};
+
+	my $paired = $self->is_paired() ? 1 : 0;
+	return if ( $self->{last_paired_state} // -1 ) == $paired;
+
+	$self->{last_paired_state} = $paired;
+	$self->{mdns}->update_txt_records( $self->get_mdns_txt_records );
+	$OpenHAP::logger->info(
+		'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
+		$paired ? 0 : 1 );
+
+	return;
+}
+
 sub run ($self)
 {
 	my $server = IO::Socket::INET->new(
@@ -198,7 +225,10 @@ sub _handle_client ( $self, $sock, $select )
 
 	if ( !$bytes ) {
 
-		# Connection closed
+		# Connection closed: release the pairing lock if this
+		# session held it, so an aborted pair-setup cannot lock
+		# out pairing until restart
+		OpenHAP::Pairing->clear_pairing_state($session);
 		$OpenHAP::logger->info( 'Client disconnected from %s',
 			$sock->peerhost );
 		$select->remove($sock);
@@ -216,6 +246,7 @@ sub _handle_client ( $self, $sock, $select )
 		unless ( defined $data ) {
 			$OpenHAP::logger->warning(
 				'Decryption failed for client session');
+			OpenHAP::Pairing->clear_pairing_state($session);
 			$select->remove($sock);
 			delete $self->{sessions}{$sock};
 			$sock->close();
@@ -243,6 +274,9 @@ sub _handle_client ( $self, $sock, $select )
 
 	# Send response
 	$sock->syswrite($response);
+
+	# Re-advertise mDNS if this request changed the pairing state
+	$self->_refresh_mdns;
 }
 
 sub _dispatch ( $self, $request, $session )
@@ -949,6 +983,45 @@ sub is_paired ($self)
 sub get_config_number ($self)
 {
 	return $self->{storage}->get_config_number();
+}
+
+# $self->update_config_number():
+#	Increment c# when the accessory database changed since the last
+#	run (HAP-mDNS.md §3.1). Called after device loading; compares a
+#	digest of the accessory structure against the stored one.
+sub update_config_number ($self)
+{
+	my @parts;
+	for my $accessory ( $self->{bridge}->get_all_accessories ) {
+		push @parts, "a$accessory->{aid}";
+		for my $service ( $accessory->get_services ) {
+			push @parts,
+			    "s$service->{iid}:" . $service->to_json->{type};
+			for my $char ( $service->get_characteristics ) {
+				push @parts,
+				      "c$char->{iid}:"
+				    . $char->to_json->{type} . ':'
+				    . $char->{format};
+			}
+		}
+	}
+	my $digest = unpack( 'H*', sha512( join( ';', @parts ) ) );
+
+	my $stored = $self->{storage}->get_config_digest;
+	if ( !defined $stored ) {
+
+		# First run: record the digest, c# stays at its initial 1
+		$self->{storage}->save_config_digest($digest);
+	}
+	elsif ( $stored ne $digest ) {
+		$self->{storage}->increment_config_number;
+		$self->{storage}->save_config_digest($digest);
+		$OpenHAP::logger->info(
+			'Accessory database changed, c# is now %d',
+			$self->get_config_number );
+	}
+
+	return $self->get_config_number;
 }
 
 sub get_device_id ($self)

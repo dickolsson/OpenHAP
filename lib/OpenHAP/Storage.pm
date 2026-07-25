@@ -181,6 +181,26 @@ sub increment_config_number ($self)
 	return $num;
 }
 
+sub get_config_digest ($self)
+{
+	my $digest_file = "$self->{db_path}/config_digest";
+	if ( -f $digest_file ) {
+		my $digest = $self->_read_file($digest_file);
+		chomp $digest;
+		return $digest;
+	}
+
+	return;
+}
+
+sub save_config_digest ( $self, $digest )
+{
+	my $digest_file = "$self->{db_path}/config_digest";
+	$self->_write_file( $digest_file, "$digest\n", 0600 );
+
+	return;
+}
+
 sub get_auth_attempts ($self)
 {
 	my $attempts_file = "$self->{db_path}/auth_attempts";
