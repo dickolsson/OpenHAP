@@ -608,7 +608,7 @@ ChaCha20-Poly1305.
 export function layerEncrypt(data: Buffer, encryption: HAPEncryption): Buffer {
   const chunks: Buffer[] = [];
   const total = data.length;
-  for (let offset = 0; offset < total; ) {
+  for (let offset = 0; offset < total;) {
     const length = Math.min(total - offset, 0x400);
     const leLength = Buffer.alloc(2);
     leLength.writeUInt16LE(length, 0);

@@ -2,7 +2,10 @@ name: Build
 
 on:
   workflow_run:
-    workflows: ["Check"]
+    # Gate releases on the test suite. The Test workflow only runs when
+    # production code changed, so docs-only merges produce no release;
+    # the commit-count-derived tag simply skips ahead on the next one.
+    workflows: ["Test"]
     types:
       - completed
     branches:
