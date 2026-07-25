@@ -3,7 +3,7 @@
 # Integration test: mDNS service advertisement
 
 use v5.36;
-use Test::More tests => 9;
+use Test::More tests => 12;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
@@ -13,6 +13,7 @@ use Time::HiRes qw(sleep);
 
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
+$env->ensure_unpaired or die "Cannot reset pairing state\n";
 
 # Test 1: mdnsctl command available
 my $mdnsctl_available = -x '/usr/sbin/mdnsctl' || -x '/usr/local/bin/mdnsctl';
@@ -87,4 +88,36 @@ if ($lookup_output =~ /(\d{4,5})/) {
 	$listening->close if defined $listening;
 }
 
+# browse_txt(): resolved browse output including TXT strings
+sub browse_txt
+{
+	return `timeout 5 mdnsctl browse -r hap tcp 2>&1 || true`;
+}
+
+# Test 10: sf=1 advertised while unpaired
+my $txt_output = browse_txt();
+like($txt_output, qr/sf=1/,
+   '[HAP-mDNS §3.7] sf=1 advertised while unpaired');
+
+# Test 11: after pairing, sf flips to 0 in the browsed TXT record
+my $controller = $env->get_controller;
+$controller->pair_setup
+    or die 'pair-setup failed: ' . ( $controller->last_error // '?' ) . "\n";
+sleep 2;    # allow re-registration to propagate
+
+$txt_output = browse_txt();
+like($txt_output, qr/sf=0/,
+   '[HAP-mDNS §8] sf flips to 0 in the browsed TXT after pairing');
+
+# Test 12: c# persists across a daemon restart
+my ($config_number) = $txt_output =~ /c#=(\d+)/;
+system('rcctl restart openhapd >/dev/null 2>&1');
+sleep 2;
+$txt_output = browse_txt();
+my ($config_number_after) = $txt_output =~ /c#=(\d+)/;
+is($config_number_after, $config_number,
+   '[HAP-mDNS §3.1] c# persisted across daemon restart');
+
+# Teardown: unpair via state wipe (the pairing survived the restart)
+$env->ensure_unpaired or die "Cannot reset pairing state\n";
 $env->teardown;

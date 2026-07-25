@@ -27,6 +27,7 @@ our @EXPORT_OK = qw(
     setup teardown
     http_request parse_http_response
     get_config_value get_device_topics
+    get_controller ensure_unpaired
     clear_logs get_log_lines
     ensure_daemon_running ensure_daemon_stopped
     ensure_mqtt_running
@@ -35,10 +36,12 @@ our @EXPORT_OK = qw(
 use constant {
 	DEFAULT_CONFIG    => '/etc/openhapd.conf',
 	DEFAULT_HAP_PORT  => 51827,
+	DEFAULT_HAP_PIN   => '1995-1018',
 	DEFAULT_MQTT_HOST => '127.0.0.1',
 	DEFAULT_MQTT_PORT => 1883,
 	SYSLOG_FILE       => '/var/log/daemon',
 	PIDFILE           => '/var/run/openhapd.pid',
+	DB_PATH           => '/var/db/openhapd',
 };
 
 sub new ( $class, %options )
@@ -50,6 +53,7 @@ sub new ( $class, %options )
 		mqtt_port    => $options{mqtt_port}   // DEFAULT_MQTT_PORT,
 		log_baseline => 0,
 		sockets      => [],
+		controllers  => [],
 		mqtt         => undef,
 	}, $class;
 
@@ -79,6 +83,12 @@ sub setup ($self)
 
 sub teardown ($self)
 {
+	# Close any controller connections
+	for my $controller ( @{ $self->{controllers} } ) {
+		$controller->close if defined $controller;
+	}
+	$self->{controllers} = [];
+
 	# Close any open sockets
 	for my $socket ( @{ $self->{sockets} } ) {
 		$socket->close if defined $socket;
@@ -89,6 +99,45 @@ sub teardown ($self)
 	if ( defined $self->{mqtt} ) {
 		eval { undef $self->{mqtt}; };
 	}
+
+	return 1;
+}
+
+# $self->get_controller(%args):
+#	Construct an OpenHAP::Test::Controller for the configured
+#	host/port/PIN. The connection is tracked and closed in teardown.
+sub get_controller ( $self, %args )
+{
+	require OpenHAP::Test::Controller;
+
+	my $controller = OpenHAP::Test::Controller->new(
+		host => '127.0.0.1',
+		port => $self->{hap_port},
+		pin  => $self->get_config_value('hap_pin') // DEFAULT_HAP_PIN,
+		%args,
+	);
+
+	push @{ $self->{controllers} }, $controller;
+
+	return $controller;
+}
+
+# $self->ensure_unpaired():
+#	Guarantee the daemon starts unpaired: when stored pairings
+#	exist, stop the daemon, wipe the pairing state (keeping the
+#	accessory identity), and start it again.
+sub ensure_unpaired ($self)
+{
+	my $pairings_file = DB_PATH . '/pairings';
+	return 1 unless -s $pairings_file;
+
+	$self->ensure_daemon_stopped or return;
+
+	unlink $pairings_file
+	    or do { warn "Cannot remove $pairings_file: $!\n"; return; };
+	unlink DB_PATH . '/auth_attempts';
+
+	$self->ensure_daemon_running or return;
 
 	return 1;
 }
@@ -167,6 +216,14 @@ sub get_config_value ( $self, $key )
 sub get_device_topics ($self)
 {
 	return @{ $self->{device_topics} // [] };
+}
+
+# $self->get_devices():
+#	Return the configured device records as a list of hashes with
+#	type, subtype, id, name, and topic.
+sub get_devices ($self)
+{
+	return @{ $self->{devices} // [] };
 }
 
 sub ensure_daemon_running ($self)
@@ -281,38 +338,52 @@ sub _parse_config ($self)
 
 	my %config;
 	my @device_topics;
-	my $in_device = 0;
+	my @devices;
+	my $device;
 
 	while (<$fh>) {
 
 		# Skip comments and empty lines
 		next if /^\s*#/ || /^\s*$/;
 
+		# Device blocks: device <type> <subtype> <id> {
+		if (/^\s*device\s+(\w+)\s+(\w+)\s+(\w+)/) {
+			$device = {
+				type    => $1,
+				subtype => $2,
+				id      => $3,
+			};
+			next;
+		}
+		if (/^\s*\}/) {
+			push @devices, $device if defined $device;
+			$device = undef;
+			next;
+		}
+
 		# Simple key = value
 		if (/^\s*(\w+)\s*=\s*(.+)/) {
 			my ( $key, $value ) = ( $1, $2 );
 			$value =~ s/^"(.*)"$/$1/;    # Remove quotes
+
+			if ( defined $device ) {
+				$device->{$key} = $value;
+				push @device_topics, $value
+				    if $key eq 'topic';
+				next;
+			}
+
 			$config{$key} = $value;
 
 			# Update hap_port if configured
 			$self->{hap_port} = $value if $key eq 'hap_port';
-		}
-
-		# Device blocks
-		if (/^\s*device\s+/) {
-			$in_device = 1;
-		}
-		elsif ( $in_device && /^\s*topic\s*=\s*(\S+)/ ) {
-			push @device_topics, $1;
-		}
-		elsif (/^\s*\}/) {
-			$in_device = 0;
 		}
 	}
 	close $fh;
 
 	$self->{config}        = \%config;
 	$self->{device_topics} = \@device_topics;
+	$self->{devices}       = \@devices;
 
 	return 1;
 }

@@ -76,7 +76,27 @@ Validate environment and prepare for testing. Dies if environment is not ready.
 
     $env->teardown;
 
-Clean up resources after testing.
+Clean up resources after testing, including any controller connections
+handed out by C<get_controller>.
+
+=head2 get_controller
+
+    my $c = $env->get_controller;
+    $c->pair_setup or die 'pair-setup: ' . $c->last_error;
+
+Construct an L<OpenHAP::Test::Controller> for the configured host,
+port, and setup code (read from the C<hap_pin> configuration key). The
+connection is tracked and closed in C<teardown>. Extra arguments are
+passed through to the controller constructor.
+
+=head2 ensure_unpaired
+
+    $env->ensure_unpaired or die 'cannot unpair';
+
+Guarantee the daemon starts unpaired. When stored pairings exist, the
+daemon is stopped, the pairing state under /var/db/openhapd is wiped
+(the accessory identity is kept), and the daemon is started again.
+Every integration test file starts unpaired unless it pairs itself.
 
 =head2 http_request
 
@@ -102,6 +122,13 @@ Get a configuration value.
     my @topics = $env->get_device_topics;
 
 Get all device MQTT topics.
+
+=head2 get_devices
+
+    my ($light) = grep { $_->{subtype} eq 'lightbulb' } $env->get_devices;
+
+Get the configured device records: hashes with C<type>, C<subtype>,
+C<id>, C<name>, and C<topic>.
 
 =head2 ensure_daemon_running
 

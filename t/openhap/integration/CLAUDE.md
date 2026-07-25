@@ -55,6 +55,16 @@ encrypted framing) goes through `OpenHAP::Test::Controller` (API in
 in setup, use `request`/`next_event`, and `remove_pairing` in teardown so
 the shared daemon is never left paired between files.
 
+## Ordering and state
+
+- `scripts/integration.sh` runs the files as an explicit ordered list
+  with `environment.t` always first.
+- Files own their pairing lifecycle: call `$env->ensure_unpaired` in
+  setup, pair via the controller if needed, and unpair in teardown. The
+  shared daemon is never left paired between files.
+- `lib/OpenHAP/Test/` and `t/lib/` ship to the VM alongside the tests;
+  `prove` runs with `-It/lib`.
+
 ## References
 
 - Running and debugging the suite: `integration-tests` skill
