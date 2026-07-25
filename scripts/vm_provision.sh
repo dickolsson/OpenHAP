@@ -99,11 +99,21 @@ if rcctl get mdnsd >/dev/null 2>&1; then
 	if [ -n "${IFACE}" ]; then
 		rcctl set mdnsd flags "${IFACE}"
 		rcctl enable mdnsd
-		rcctl restart mdnsd
-		rcctl check mdnsd ||
-			echo "WARNING: mdnsd did not start on ${IFACE}"
+		rcctl restart mdnsd || true
+		if ! rcctl check mdnsd; then
+			# Surface why mdnsd would not stay up so the mDNS
+			# integration tests are diagnosable from CI logs
+			# instead of just reporting a missing daemon.
+			echo "WARNING: mdnsd did not start on ${IFACE}; diagnostics:"
+			rcctl get mdnsd || true
+			ifconfig "${IFACE}" || true
+			echo "-- mdnsd foreground start (2s) --"
+			timeout 2 /usr/local/sbin/mdnsd -d "${IFACE}" 2>&1 |
+				head -n 20 || true
+		fi
 	else
 		echo "WARNING: no network interface found for mdnsd"
+		ifconfig -a || true
 	fi
 fi
 
