@@ -17,4 +17,8 @@ OpenHAP::Service - HAP service definitions
 
 This module represents HAP services that contain related characteristics.
 
+=head1 SEE ALSO
+
+L<OpenHAP::Characteristic>, F<spec/HAP-Services.md>
+
 =cut

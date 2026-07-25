@@ -19,4 +19,8 @@ OpenHAP::MQTT - MQTT client wrapper for OpenHAP
 
 This module provides a simple MQTT client wrapper for OpenHAP.
 
+=head1 SEE ALSO
+
+F<spec/MQTT.md>, F<spec/MQTT-Transport.md>
+
 =cut

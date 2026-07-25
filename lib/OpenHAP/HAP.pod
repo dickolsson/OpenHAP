@@ -20,4 +20,8 @@ OpenHAP::HAP - Main HAP server
 This module implements the main HAP server with HTTP endpoints,
 pairing, and accessory management.
 
+=head1 SEE ALSO
+
+F<spec/HAP.md>, F<spec/HAP-HTTP.md>
+
 =cut

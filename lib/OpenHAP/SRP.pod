@@ -21,4 +21,8 @@ OpenHAP::SRP - SRP-6a implementation for HAP pairing
 
 This module implements SRP-6a protocol for HomeKit pairing.
 
+=head1 SEE ALSO
+
+L<OpenHAP::Pairing>, F<spec/HAP-Pairing.md>
+
 =cut

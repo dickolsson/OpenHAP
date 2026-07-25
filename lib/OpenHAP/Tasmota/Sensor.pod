@@ -19,4 +19,8 @@ OpenHAP::Tasmota::Sensor - Tasmota temperature sensor HAP accessory
 This module implements a HAP temperature sensor accessory for Tasmota
 devices with temperature sensors (DS18B20, DHT22, etc).
 
+=head1 SEE ALSO
+
+F<spec/MQTT-Sensors.md>
+
 =cut

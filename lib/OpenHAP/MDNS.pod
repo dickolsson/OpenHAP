@@ -203,6 +203,7 @@ Returns undef for recoverable errors, reserves die for programming errors
 
 =head1 SEE ALSO
 
-L<OpenHAP::HAP>, L<OpenHAP::Log>, L<mdnsctl(8)>, L<mdnsd(8)>
+L<OpenHAP::HAP>, L<OpenHAP::Log>, L<mdnsctl(8)>, L<mdnsd(8)>,
+F<spec/HAP-mDNS.md>
 
 =cut

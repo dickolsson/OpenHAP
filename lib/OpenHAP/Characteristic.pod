@@ -23,4 +23,8 @@ OpenHAP::Characteristic - HAP characteristic definitions
 This module represents HAP characteristics with their properties,
 values, and permissions.
 
+=head1 SEE ALSO
+
+F<spec/HAP-Characteristics.md>
+
 =cut
