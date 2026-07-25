@@ -23,6 +23,8 @@ use Exporter 'import';
 use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
+use FuguLib::Log;
+
 our @EXPORT_OK = qw(
     setup teardown
     http_request parse_http_response
@@ -65,6 +67,16 @@ sub setup ($self)
 	# Verify we're in integration test mode
 	die "OPENHAP_INTEGRATION_TEST not set\n"
 	    unless $ENV{OPENHAP_INTEGRATION_TEST};
+
+	# The controller drives the accessory's own crypto/pairing library
+	# code in this process, which logs through the $OpenHAP::logger the
+	# daemon normally installs. Give it a quiet logger so those calls
+	# do not die on an undefined logger, matching how the unit tests
+	# set one up per file.
+	$OpenHAP::logger //= FuguLib::Log->new(
+		mode  => 'quiet',
+		ident => 'openhap-integration'
+	);
 
 	# Verify system prerequisites
 	$self->_verify_system or die "System prerequisites not met\n";
