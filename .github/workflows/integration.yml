@@ -3,8 +3,30 @@ name: Integration
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.pod"
+      - "spec/**"
+      - "plans/**"
+      - "man/**"
+      - ".claude/**"
+      - ".devcontainer/**"
+      - ".prettierrc"
+      - ".gitignore"
+      - "LICENSE"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.pod"
+      - "spec/**"
+      - "plans/**"
+      - "man/**"
+      - ".claude/**"
+      - ".devcontainer/**"
+      - ".prettierrc"
+      - ".gitignore"
+      - "LICENSE"
   # Manual runs against any branch, e.g. to test workflow changes
   # before merging
   workflow_dispatch:

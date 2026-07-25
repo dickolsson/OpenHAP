@@ -3,8 +3,30 @@ name: Check
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.pod"
+      - "spec/**"
+      - "plans/**"
+      - "man/**"
+      - ".claude/**"
+      - ".devcontainer/**"
+      - ".prettierrc"
+      - ".gitignore"
+      - "LICENSE"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "**.pod"
+      - "spec/**"
+      - "plans/**"
+      - "man/**"
+      - ".claude/**"
+      - ".devcontainer/**"
+      - ".prettierrc"
+      - ".gitignore"
+      - "LICENSE"
 
 jobs:
   tidy:
