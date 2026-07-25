@@ -181,6 +181,26 @@ sub increment_config_number ($self)
 	return $num;
 }
 
+sub get_auth_attempts ($self)
+{
+	my $attempts_file = "$self->{db_path}/auth_attempts";
+	if ( -f $attempts_file ) {
+		my $num = $self->_read_file($attempts_file);
+		chomp $num;
+		return $num if $num =~ /^\d+$/;
+	}
+
+	return 0;
+}
+
+sub set_auth_attempts ( $self, $count )
+{
+	my $attempts_file = "$self->{db_path}/auth_attempts";
+	$self->_write_file( $attempts_file, "$count\n", 0600 );
+
+	return;
+}
+
 sub _read_file ( $self, $path )
 {
 	open my $fh, '<', $path or croak "Cannot open $path: $!";

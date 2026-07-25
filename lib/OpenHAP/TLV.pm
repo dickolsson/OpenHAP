@@ -45,15 +45,24 @@ sub encode_separator()
 	return pack( 'CC', kTLVType_Separator, 0 );
 }
 
+# decode($data) - Decode TLV8 buffer into a type => value hash
+# Consecutive records with the same type are concatenated (fragmentation).
+# Returns the empty list if the buffer is malformed: a truncated record
+# header or a length field pointing past the end of the buffer.
 sub decode ($data)
 {
 	my %items;
 	my $pos = 0;
 
 	while ( $pos < length($data) ) {
+
+		# Reject a truncated record header
+		return if $pos + 2 > length($data);
 		my ( $type, $len ) = unpack( 'CC', substr( $data, $pos, 2 ) );
 		$pos += 2;
 
+		# Reject a length running past the end of the buffer
+		return if $pos + $len > length($data);
 		my $value = substr( $data, $pos, $len );
 		$pos += $len;
 

@@ -20,7 +20,9 @@ OpenHAP::Session - Encrypted session state for HAP connections
 
 This module manages the encrypted session state for HAP connections,
 including ChaCha20-Poly1305 encryption/decryption with proper nonce
-management and frame handling.
+management and frame handling. C<decrypt> returns undef on a failed
+authentication tag, a truncated frame, or a frame claiming more than
+1024 bytes of plaintext; the caller must close the connection.
 
 =head1 SEE ALSO
 

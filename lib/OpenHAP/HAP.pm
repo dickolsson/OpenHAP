@@ -394,7 +394,7 @@ sub _handle_characteristics_get ( $self, $request, $session )
 		my $result = {
 			aid   => $aid + 0,
 			iid   => $iid + 0,
-			value => $char->get_value(),
+			value => $char->json_value,
 		};
 
 		# Add optional metadata if requested
@@ -582,10 +582,10 @@ sub _handle_pairings ( $self, $request, $session )
 {
 	my %tlv = OpenHAP::TLV::decode( $request->{body} );
 
-	my $method =
-	    unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Method() } // '' );
+	my $method_raw = $tlv{ OpenHAP::Pairing::kTLVType_Method() };
+	my $method     = defined $method_raw ? unpack( 'C', $method_raw ) : -1;
 
-	$OpenHAP::logger->debug( 'Pairings request method=%d', $method // -1 );
+	$OpenHAP::logger->debug( 'Pairings request method=%d', $method );
 
 	# Method values: 3=Add, 4=Remove, 5=List
 	if ( $method == 3 ) {
@@ -633,6 +633,25 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 			OpenHAP::Pairing::kTLVType_Error(),
 			pack( 'C',
 				OpenHAP::Pairing::kTLVError_Authentication() ),
+		);
+		return OpenHAP::HTTP::build_response(
+			status  => 200,
+			headers =>
+			    { 'Content-Type' => 'application/pairing+tlv8' },
+			body => $error,
+		);
+	}
+
+	# An existing identifier with a different LTPK is an error;
+	# with a matching LTPK only the permissions are updated
+	# (HAP-Pairing.md §7.4)
+	my $existing = $pairings->{$identifier};
+	if ( $existing && $existing->{ltpk} ne $ltpk ) {
+		my $error = OpenHAP::TLV::encode(
+			OpenHAP::Pairing::kTLVType_State(),
+			pack( 'C', 2 ),
+			OpenHAP::Pairing::kTLVType_Error(),
+			pack( 'C', OpenHAP::Pairing::kTLVError_Unknown() ),
 		);
 		return OpenHAP::HTTP::build_response(
 			status  => 200,

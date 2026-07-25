@@ -20,6 +20,8 @@ OpenHAP::Storage - Persistent storage for pairing data
 =head1 DESCRIPTION
 
 This module handles persistent storage of pairing data, accessory keys,
-and configuration state.
+and configuration state, including the failed pairing attempt counter
+(C<get_auth_attempts>/C<set_auth_attempts>) that must survive restarts
+per F<spec/HAP-Pairing.md> section 8.
 
 =cut
