@@ -23,6 +23,8 @@ GITHUB_RELEASE	= https://github.com/$(GITHUB_OWNER)/$(GITHUB_REPO)/releases/down
 # Build tools
 MANDOC			?= mandoc
 PERLTIDY		= perl -MPerl::Tidy -e 'Perl::Tidy::perltidy()'
+# Pinned so local runs and CI agree on formatting
+PRETTIER		= npx prettier@3.9.6
 
 # OS detection
 UNAME			!= uname
@@ -105,10 +107,10 @@ lint:
 man: $(CATMAN1) $(CATMAN5) $(CATMAN8)
 
 prettier:
-	@npx prettier --check '**/*.md' '**/*.json' '**/*.yml' || { echo "Run 'make prettier-fix' to fix formatting"; exit 1; }
+	@$(PRETTIER) --check '**/*.md' '**/*.json' '**/*.yml' || { echo "Run 'make prettier-fix' to fix formatting"; exit 1; }
 
 prettier-fix:
-	npx prettier --write '**/*.md' '**/*.json' '**/*.yml'
+	$(PRETTIER) --write '**/*.md' '**/*.json' '**/*.yml'
 
 spec-coverage:
 	@perl scripts/spec-coverage --quiet
