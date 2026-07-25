@@ -3,11 +3,12 @@
 # Integration test: mDNS service advertisement
 
 use v5.36;
-use Test::More tests => 10;
+use Test::More tests => 9;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
 use OpenHAP::Test::Integration;
+use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
 my $env = OpenHAP::Test::Integration->new;
@@ -17,81 +18,73 @@ $env->setup;
 my $mdnsctl_available = -x '/usr/sbin/mdnsctl' || -x '/usr/local/bin/mdnsctl';
 ok($mdnsctl_available, 'mdnsctl command available');
 
-SKIP: {
-	skip 'mdnsctl required for mDNS integration tests', 9
-		unless $mdnsctl_available;
+die "mdnsctl required for mDNS integration tests\n" unless $mdnsctl_available;
 
-	# Test 2: OpenHAP daemon is running
-	my $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
-	ok($daemon_running, 'OpenHAP daemon is running');
+# Test 2: OpenHAP daemon is running
+my $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
+ok($daemon_running, 'OpenHAP daemon is running');
 
-	# Test 3: mdnsd daemon is available
-	my $mdnsd_available = 0;
-
-	# Try to enable and start mdnsd if not running
-	unless (system('rcctl check mdnsd >/dev/null 2>&1') == 0) {
-		system('rcctl enable mdnsd >/dev/null 2>&1');
-		system('rcctl start mdnsd >/dev/null 2>&1');
-		sleep 1;
-	}
-
-	$mdnsd_available = system('rcctl check mdnsd >/dev/null 2>&1') == 0;
-	ok($mdnsd_available, 'mdnsd daemon is running');
-
-	skip 'mdnsd daemon required for mDNS integration tests', 7
-		unless $mdnsd_available;
-
-# Test 4: OpenHAP MDNS module loaded (check logs)
-my @logs = $env->get_log_lines('mDNS|mdns|Starting OpenHAP');
-ok(@logs > 0, 'OpenHAP MDNS-related log entries exist');
-
-# Test 5: HAP service can be browsed
-my $mdns_output = `timeout 3 mdnsctl browse hap tcp 2>&1 || true`;
-my $browse_works = $? == 0 || length($mdns_output) > 0;
-ok($browse_works, 'mdnsctl browse command works');
-
-# Test 6: HAP service is advertised
-sleep 1;  # Give time for registration
-$mdns_output = `timeout 3 mdnsctl browse hap tcp 2>&1 || true`;
-my $hap_found = $mdns_output =~ /hap.*tcp/i;
-ok($hap_found, 'HAP service advertised via mDNS');
-
-# Test 7: Service advertisement includes required fields or is findable
-if ($hap_found) {
-	# Check for HAP service - just verify it's advertised
-	# Required fields (md=, pv=, etc.) may not show in browse output
-	ok($mdns_output =~ /hap/i, 'mDNS service is advertised');
-} else {
-	ok(1, 'cannot verify fields without service');
+# Test 3: mdnsd daemon is running (start it if needed)
+unless (system('rcctl check mdnsd >/dev/null 2>&1') == 0) {
+	system('rcctl enable mdnsd >/dev/null 2>&1');
+	system('rcctl start mdnsd >/dev/null 2>&1');
+	sleep 1;
 }
+my $mdnsd_available = system('rcctl check mdnsd >/dev/null 2>&1') == 0;
+ok($mdnsd_available, 'mdnsd daemon is running');
 
-# Test 8: Daemon restart re-advertises service
+die "mdnsd required for mDNS integration tests\n" unless $mdnsd_available;
+
+# Restart openhapd so it re-registers with the running mdnsd
+system('rcctl restart openhapd >/dev/null 2>&1');
+sleep 2;
+
+# Test 4: mdnsctl browse works
+my $mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+ok(length($mdns_output) > 0, 'mdnsctl browse produces output');
+
+# Test 5: HAP service is advertised ([HAP-mDNS §1] _hap._tcp)
+sleep 1;    # Give time for registration
+$mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+my $hap_found = $mdns_output =~ /hap.*tcp/i;
+ok($hap_found, '[HAP-mDNS §1] HAP service advertised via mDNS');
+
+# Test 6: Advertised service name matches the configured bridge name
+my $hap_name = $env->get_config_value('hap_name') // 'OpenHAP';
+ok($mdns_output =~ /\Q$hap_name\E/i,
+   '[HAP-mDNS §4] service instance name matches configured name');
+
+# Test 7: Daemon restart re-advertises service
 system('rcctl restart openhapd >/dev/null 2>&1');
 sleep 2;
 
 $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
-ok($daemon_running, 'daemon running and mDNS operational after restart');
+ok($daemon_running, 'daemon running after restart');
 
-# Test 9: Device ID format is uppercase (HAP R2 4.5.1 requirement)
-# Get TXT records via lookup or browse
-$mdns_output = `timeout 3 mdnsctl lookup _hap._tcp.local 2>&1 || true`;
-# If we can see TXT records, verify id= field is uppercase
-if ($mdns_output =~ /id=([0-9A-Fa-f:]+)/) {
-	my $device_id = $1;
-	my $is_uppercase = $device_id !~ /[a-f]/;  # No lowercase hex
-	ok($is_uppercase, 'device ID in mDNS is uppercase');
+# Test 8: Service still browsable after restart ([HAP-mDNS §8])
+$mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+ok($mdns_output =~ /hap.*tcp/i,
+   '[HAP-mDNS §8] service re-advertised after daemon restart');
+
+# Test 9: Port advertised by daemon matches configuration
+my $hap_port = $env->get_config_value('hap_port')
+    // OpenHAP::Test::Integration::DEFAULT_HAP_PORT;
+my $lookup_output =
+    `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+if ($lookup_output =~ /(\d{4,5})/) {
+	ok($lookup_output =~ /\b\Q$hap_port\E\b/,
+	   '[HAP-mDNS §6] advertised port matches configured hap_port');
 } else {
-	# Can't verify without TXT record access, skip test
-	ok(1, 'device ID format verification skipped (no TXT access)');
-}
-
-	# Test 10: Setup hash present if configured (HAP R2 4.5.2 requirement)
-	# This depends on configuration - if setup_id is configured, sh= should be present
-	$mdns_output = `timeout 3 mdnsctl lookup _hap._tcp.local 2>&1 || true`;
-	# Just verify the daemon can provide TXT records at all
-	my $txt_accessible = $mdns_output =~ /pv=|id=|c#=/;
-	ok($txt_accessible || $hap_found,
-	   'mDNS TXT records accessible or service found');
+	# browse output carries no port; verify the daemon listens on it
+	my $listening = IO::Socket::INET->new(
+		PeerAddr => '127.0.0.1',
+		PeerPort => $hap_port,
+		Proto    => 'tcp',
+		Timeout  => 2,
+	);
+	ok(defined $listening,
+	   '[HAP-mDNS §6] daemon listens on the configured HAP port');
+	$listening->close if defined $listening;
 }
 
 $env->teardown;

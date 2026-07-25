@@ -41,21 +41,19 @@ sleep 2
 export OPENHAP_INTEGRATION_TEST=1
 
 # Run tests in order (environment first, then others)
+TESTS="t/openhap/integration/environment.t"
+for test in t/openhap/integration/*.t; do
+	[ "$test" = "t/openhap/integration/environment.t" ] && continue
+	TESTS="$TESTS $test"
+done
+
 if command -v prove >/dev/null 2>&1; then
-	prove -I/usr/local/libdata/perl5/site_perl -v t/openhap/integration/
+	prove -I/usr/local/libdata/perl5/site_perl -v $TESTS
 	result=$?
 else
 	result=0
-	# Run environment test first
-	for test in t/openhap/integration/environment.t; do
+	for test in $TESTS; do
 		[ -f "$test" ] || continue
-		echo "Running $test..."
-		perl -I/usr/local/libdata/perl5/site_perl "$test" || result=1
-	done
-	# Run remaining tests
-	for test in t/openhap/integration/*.t; do
-		[ "$test" = "t/openhap/integration/environment.t" ] && continue
-		[ "$test" = "t/openhap/integration/README.md" ] && continue
 		echo "Running $test..."
 		perl -I/usr/local/libdata/perl5/site_perl "$test" || result=1
 	done

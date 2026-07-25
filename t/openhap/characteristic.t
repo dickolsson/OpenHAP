@@ -129,9 +129,11 @@ use_ok('OpenHAP::Characteristic');
     ok(exists $json->{iid}, 'JSON has iid');
     ok(exists $json->{format}, 'JSON has format');
     ok(exists $json->{perms}, 'JSON has perms');
-    
-    # These may or may not be included depending on implementation
-    ok(1, 'JSON structure validated');
+    is($json->{value}, 21.5, 'JSON value dereferences scalar ref');
+    is($json->{unit}, 'celsius', 'JSON has unit');
+    is($json->{minValue}, -40, 'JSON has minValue');
+    is($json->{maxValue}, 100, 'JSON has maxValue');
+    is($json->{minStep}, 0.1, 'JSON has minStep');
 }
 
 # Test JSON with boolean value

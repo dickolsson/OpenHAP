@@ -153,6 +153,7 @@ package: clean
 
 test:
 	prove -l -v t/openhvf/*.t
+	prove -l -v t/fugulib/*.t
 	prove -l -v t/openhap/*.t
 
 tidy:

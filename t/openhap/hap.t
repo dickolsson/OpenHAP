@@ -94,7 +94,7 @@ use_ok('OpenHAP::Pairing');
     is($records->{'sf'}, 0, 'sf=0 when paired');
 }
 
-# Test event queue initialization (Finding 10)
+# Test event queue initialization ([HAP-HTTP §14] event notifications)
 {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $hap = OpenHAP::HAP->new(
@@ -103,12 +103,12 @@ use_ok('OpenHAP::Pairing');
         storage_path => $temp_dir,
     );
 
-    ok(exists $hap->{event_queue}, 'Event queue exists');
+    ok(exists $hap->{event_queue}, '[HAP-HTTP §14] event queue exists');
     ok(ref $hap->{event_queue} eq 'HASH', 'Event queue is a hash');
     ok(!defined $hap->{event_flush_scheduled}, 'No flush scheduled initially');
 }
 
-# Test identity regeneration (Finding 8)
+# Test identity regeneration
 {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $hap = OpenHAP::HAP->new(
@@ -132,7 +132,7 @@ use_ok('OpenHAP::Pairing');
     is($stored_ltpk, $new_ltpk, 'New LTPK persisted to storage');
 }
 
-# Test IMMEDIATE_EVENT_TYPES constant (Finding 10)
+# Test IMMEDIATE_EVENT_TYPES constant ([HAP-HTTP §14] event coalescing)
 {
     # Constants are defined in the package, access via method
     my $temp_dir = tempdir(CLEANUP => 1);
@@ -143,7 +143,7 @@ use_ok('OpenHAP::Pairing');
     );
 
     # Test that queue_event method exists (uses the constants internally)
-    ok($hap->can('queue_event'), 'queue_event method exists');
+    ok($hap->can('queue_event'), '[HAP-HTTP §14] queue_event method exists');
     ok($hap->can('flush_events'), 'flush_events method exists');
     ok($hap->can('send_event'), 'send_event method exists');
 }

@@ -89,19 +89,17 @@ eval {
 $multiple_ok = 0 if $@;
 ok($multiple_ok, 'multiple MQTT messages handled');
 
-# Test 10: Multiple device topics work
-if (@device_topics > 1) {
-	my $multi_device_ok = 1;
+# Test 10: Publishing works on every configured device topic
+{
+	my $all_topics_ok = 1;
 	eval {
 		for my $t (@device_topics[0..min(2, $#device_topics)]) {
 			$mqtt->publish("stat/$t/POWER", "ON");
 			sleep 0.1;
 		}
 	};
-	$multi_device_ok = 0 if $@;
-	ok($multi_device_ok, 'multiple device topics work');
-} else {
-	ok(1, 'only one device configured (skip multi-device test)');
+	$all_topics_ok = 0 if $@;
+	ok($all_topics_ok, 'all configured device topics accept publishes');
 }
 
 sub min($a, $b) { $a < $b ? $a : $b; }

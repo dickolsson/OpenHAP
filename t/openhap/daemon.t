@@ -80,29 +80,30 @@ use File::Temp qw(tempdir);
 	is(ref $txt, 'HASH', 'Returns a hash reference');
 
 	# Verify required HAP fields exist
-	ok(exists $txt->{'c#'}, "Contains 'c#' (config number)");
-	ok(exists $txt->{'ff'}, "Contains 'ff' (feature flags)");
-	ok(exists $txt->{'id'}, "Contains 'id' (device ID)");
-	ok(exists $txt->{'md'}, "Contains 'md' (model name)");
-	ok(exists $txt->{'pv'}, "Contains 'pv' (protocol version)");
-	ok(exists $txt->{'s#'}, "Contains 's#' (state number)");
-	ok(exists $txt->{'sf'}, "Contains 'sf' (status flags)");
-	ok(exists $txt->{'ci'}, "Contains 'ci' (category identifier)");
+	ok(exists $txt->{'c#'}, "[HAP-mDNS §2] contains 'c#' (config number)");
+	ok(exists $txt->{'ff'}, "[HAP-mDNS §2] contains 'ff' (feature flags)");
+	ok(exists $txt->{'id'}, "[HAP-mDNS §2] contains 'id' (device ID)");
+	ok(exists $txt->{'md'}, "[HAP-mDNS §2] contains 'md' (model name)");
+	ok(exists $txt->{'pv'}, "[HAP-mDNS §2] contains 'pv' (protocol version)");
+	ok(exists $txt->{'s#'}, "[HAP-mDNS §2] contains 's#' (state number)");
+	ok(exists $txt->{'sf'}, "[HAP-mDNS §2] contains 'sf' (status flags)");
+	ok(exists $txt->{'ci'}, "[HAP-mDNS §2] contains 'ci' (category identifier)");
 
 	# Verify values
-	is($txt->{'ff'}, 0, 'Feature flags is 0');
-	is($txt->{'pv'}, '1', 'Protocol version is 1');
-	is($txt->{'s#'}, 1, 'State number is 1');
-	is($txt->{'ci'}, 2, 'Category identifier is 2 (bridge)');
-	is($txt->{'md'}, 'Test MDNS Bridge', 'Model name matches HAP name');
+	is($txt->{'ff'}, 0, '[HAP-mDNS §3.2] feature flags is 0');
+	is($txt->{'pv'}, '1', '[HAP-mDNS §3.5] protocol version is 1');
+	is($txt->{'s#'}, 1, '[HAP-mDNS §3.6] state number is 1');
+	is($txt->{'ci'}, 2, '[HAP-mDNS §3.8] category identifier is 2 (bridge)');
+	is($txt->{'md'}, 'Test MDNS Bridge',
+		'[HAP-mDNS §3.4] model name matches HAP name');
 	ok($txt->{'sf'} == 0 || $txt->{'sf'} == 1,
-		'Status flags is 0 (paired) or 1 (unpaired)');
-	# Check device ID format (XX:XX:XX:XX:XX:XX) - MUST be uppercase per HAP spec
+		'[HAP-mDNS §3.7] status flags is 0 (paired) or 1 (unpaired)');
+	# Check device ID format (XX:XX:XX:XX:XX:XX)
 	ok($txt->{'id'} =~ /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/,
-		'Device ID is in uppercase XX:XX:XX:XX:XX:XX format');
+		'[HAP-mDNS §3.3] device ID is in uppercase XX:XX:XX:XX:XX:XX format');
 	# Verify device ID is specifically uppercase (not lowercase)
 	ok($txt->{'id'} !~ /[a-f]/,
-		'Device ID contains no lowercase hex characters');
+		'[HAP-mDNS §3.3] device ID contains no lowercase hex characters');
 }
 
 # Test 5: Setup hash in mDNS TXT records
@@ -123,10 +124,11 @@ use File::Temp qw(tempdir);
 	my $txt = $hap->get_mdns_txt_records();
 
 	# Verify setup hash exists when setup_id is provided
-	ok(exists $txt->{'sh'}, "Contains 'sh' (setup hash) when setup_id provided");
+	ok(exists $txt->{'sh'},
+		"[HAP-mDNS §3.9] contains 'sh' (setup hash) when setup_id provided");
 	# Setup hash should be 4 bytes base64 encoded = ~6 characters
 	ok(length($txt->{'sh'}) >= 4 && length($txt->{'sh'}) <= 8,
-		'Setup hash has reasonable length for base64-encoded 4 bytes');
+		'[HAP-mDNS §3.9] setup hash length matches base64-encoded 4 bytes');
 }
 
 # Test 6: No setup hash without setup_id
@@ -167,7 +169,8 @@ use File::Temp qw(tempdir);
 
 	# Unpaired state
 	my $txt_unpaired = $hap->get_mdns_txt_records();
-	is($txt_unpaired->{'sf'}, 1, 'Status flag is 1 when unpaired');
+	is($txt_unpaired->{'sf'}, 1,
+		'[HAP-mDNS §3.7] status flag is 1 when unpaired');
 
 	# Add a pairing using Storage directly
 	my $storage = OpenHAP::Storage->new(db_path => $tmpdir);
@@ -176,7 +179,8 @@ use File::Temp qw(tempdir);
 
 	# Check status flag after pairing
 	my $txt_paired = $hap->get_mdns_txt_records();
-	is($txt_paired->{'sf'}, 0, 'Status flag is 0 when paired');
+	is($txt_paired->{'sf'}, 0,
+		'[HAP-mDNS §3.7] status flag is 0 when paired');
 }
 
 done_testing();

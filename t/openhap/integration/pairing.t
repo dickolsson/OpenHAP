@@ -39,11 +39,12 @@ ok(length($body) > 0, 'pair-setup M1 returns data');
 # Test 5b: Pair-setup M2 response doesn't contain ASCII '0x' prefix in public key
 # This was a bug where Math::BigInt->as_hex() returned "0x..." which was incorrectly packed
 my $hex = unpack('H*', $body);
-unlike($hex, qr/03..0130783078/, 'M2 public key does not contain ASCII "0x" prefix');
+unlike($hex, qr/03..0130783078/,
+    '[HAP-Pairing §2.4] M2 public key does not contain ASCII "0x" prefix');
 
 # Test 6: Pair-setup responds with proper Content-Type
 ok($response =~ /Content-Type:\s*application\/pairing\+tlv8/i,
-   'pair-setup uses application/pairing+tlv8');
+   '[HAP-HTTP §2] pair-setup uses application/pairing+tlv8');
 
 # Test 7: Pair-verify endpoint available
 $response = $env->http_request('POST', '/pair-verify',
@@ -71,31 +72,32 @@ $response = $env->http_request('GET', '/accessories');
 ($status) = OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status, 'daemon responsive after pairing attempts');
 
-# Test 11: Invalid pairing method returns error (Finding 7)
+# Test 11: Invalid pairing method returns error TLV
 $response = $env->http_request('POST', '/pair-setup',
 	"\x06\x01\x01\x00\x01\x63",  # State=M1, Method=0x63 (invalid)
 	{'Content-Type' => 'application/pairing+tlv8'});
 ($status, undef, $body) = OpenHAP::Test::Integration::parse_http_response($response);
 # Response should contain error TLV with kTLVError_Unknown (0x01)
 my $has_error = $body =~ /\x07\x01\x01/;  # Error type (0x07), length 1, value 1
-ok($status == 200 && length($body) > 0, 'invalid method returns error response');
+ok($status == 200 && $has_error,
+   '[HAP-TLV8 §6] invalid method returns kTLVError_Unknown');
 
-# Test 12: /prepare accepts POST method (Finding 9)
+# Test 12: /prepare accepts POST method
 $response = $env->http_request('POST', '/prepare',
 	'{"ttl":10000,"pid":1}',
 	{'Content-Type' => 'application/hap+json'});
 ($status) = OpenHAP::Test::Integration::parse_http_response($response);
-# Should return 470 (unauthorized) since not paired, but endpoint is reachable
-ok($status == 470 || $status == 200, '/prepare accepts POST method');
+# Returns 470 (unauthorized) since not paired, but endpoint is reachable
+is($status, 470, '[HAP-HTTP §10] unpaired /prepare POST returns 470');
 
-# Test 13: /prepare also accepts PUT method (Finding 9 - compatibility)
+# Test 13: /prepare also accepts PUT method (spec shows both)
 $response = $env->http_request('PUT', '/prepare',
 	'{"ttl":10000,"pid":1}',
 	{'Content-Type' => 'application/hap+json'});
 ($status) = OpenHAP::Test::Integration::parse_http_response($response);
-ok($status == 470 || $status == 200, '/prepare accepts PUT method');
+is($status, 470, '[HAP-HTTP §10] unpaired /prepare PUT returns 470');
 
-# Test 14: Concurrent pair-setup from different connections gets Busy (Finding 3)
+# Test 14: Rapid sequential pair-setup attempts are handled
 # Note: This is tricky to test in integration - we test that rapid requests work
 for (1..5) {
 	$response = $env->http_request('POST', '/pair-setup',

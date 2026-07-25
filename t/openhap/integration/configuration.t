@@ -3,11 +3,12 @@
 # Integration test: Configuration loading and validation
 
 use v5.36;
-use Test::More tests => 11;
+use Test::More tests => 10;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
 use OpenHAP::Test::Integration;
+use Time::HiRes qw(sleep);
 
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
@@ -40,27 +41,18 @@ ok(defined $hap_port, 'configuration has hap_port');
 ok($hap_port =~ /^\d+$/ && $hap_port >= 1024 && $hap_port <= 65535,
    'hap_port is valid');
 
-# Test 7: Device configuration can be parsed
+# Test 7: Device count reported by hapctl matches parsed configuration
+my ($reported_count) = $check_output =~ /Configured devices:\s*(\d+)/;
 my @device_topics = $env->get_device_topics;
-ok(1, 'device configuration parsed');
+is($reported_count, scalar @device_topics,
+   'hapctl device count matches parsed device topics');
 
-# Test 8: Invalid configuration handling
-my $temp_config = "/tmp/openhapd-invalid-$$.conf";
-open my $tmp, '>', $temp_config or die "Cannot create temp config";
-print $tmp "invalid_syntax_no_equals\n";
-close $tmp;
-
-my $invalid_result = system("openhapd -n -c $temp_config 2>/dev/null");
-unlink $temp_config;
-# Config parser may be lenient, so just verify command runs
-ok(1, 'invalid configuration handling tested');
-
-# Test 9: Daemon still running
+# Test 8: Daemon still running
 sleep 0.5;
 my $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
 ok($running, 'daemon still running');
 
-# Test 11: Can restart daemon (reload may not be supported)
+# Test 9: Can restart daemon (reload may not be supported)
 system('rcctl restart openhapd >/dev/null 2>&1');
 sleep 1;
 $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;

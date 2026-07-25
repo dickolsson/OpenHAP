@@ -5,11 +5,13 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 use FuguLib::Log;
 $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use File::Temp qw(tempdir);
 
 use_ok('OpenHAP::Config');
 
 # Create temporary config file
-my $config_file = "/tmp/openhap_test_$$.conf";
+my $temp_dir    = tempdir(CLEANUP => 1);
+my $config_file = "$temp_dir/openhap_test.conf";
 open my $fh, '>', $config_file or die "Cannot create test config: $!";
 print $fh <<'EOF';
 # Test configuration
@@ -44,8 +46,5 @@ is($devices[0]{topic}, 'tasmota_test', 'Device topic correct');
 
 # Test default value
 is($config->get('nonexistent', 'default'), 'default', 'Default value returned');
-
-# Cleanup
-unlink $config_file;
 
 done_testing();

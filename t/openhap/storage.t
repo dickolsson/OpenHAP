@@ -103,7 +103,7 @@ my $temp_dir = tempdir(CLEANUP => 1);
     is($pairings->{'binary-controller'}{ltpk}, $binary_ltpk, 'Binary LTPK stored correctly');
 }
 
-# Test remove_all_pairings (Finding 8)
+# Test remove_all_pairings ([HAP-Pairing §7.2] last-admin removal)
 {
     my $temp_dir3 = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir3);
@@ -118,9 +118,10 @@ my $temp_dir = tempdir(CLEANUP => 1);
     
     # Remove all pairings
     $storage->remove_all_pairings();
-    
+
     $pairings = $storage->load_pairings();
-    is(scalar keys %$pairings, 0, 'All pairings removed');
+    is(scalar keys %$pairings, 0,
+        '[HAP-Pairing §7.2] all pairings removed');
 }
 
 done_testing();

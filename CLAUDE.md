@@ -19,7 +19,7 @@ The repo contains three Perl namespaces with distinct concerns:
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/openhvf/*.t t/openhap/*.t
+make test           # prove -l -v t/openhvf/*.t t/fugulib/*.t t/openhap/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make tidy           # check perltidy formatting

@@ -99,7 +99,7 @@ use constant CAP_CT               => 4;
 		'Initial availability is unknown' );
 }
 
-# Test Base MQTT subscriptions (C1, C2, C3)
+# Test Base MQTT subscriptions
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -113,16 +113,16 @@ use constant CAP_CT               => 4;
 
 	my @subs = $mqtt->get_subscriptions();
 	ok( ( grep { $_ eq 'tele/test_device/LWT' } @subs ),
-		'C1: Subscribed to LWT' );
+		'[MQTT-Transport §1.4] Subscribed to LWT' );
 	ok( ( grep { $_ eq 'tele/test_device/STATE' } @subs ),
-		'C2: Subscribed to tele/STATE' );
+		'[MQTT-State §2] Subscribed to tele/STATE' );
 	ok( ( grep { $_ eq 'stat/test_device/RESULT' } @subs ),
-		'C3: Subscribed to stat/RESULT' );
+		'[MQTT-State §1] Subscribed to stat/RESULT' );
 	ok( ( grep { $_ eq 'tele/test_device/SENSOR' } @subs ),
-		'Subscribed to tele/SENSOR' );
+		'[MQTT-Sensors §1] Subscribed to tele/SENSOR' );
 }
 
-# Test LWT handling (C1)
+# Test LWT handling
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -138,24 +138,24 @@ use constant CAP_CT               => 4;
 	$mqtt->simulate_message( 'tele/test_device/LWT', 'Online' );
 	is( $base->{availability},
 		AVAILABILITY_ONLINE,
-		'LWT Online sets availability' );
+		'[MQTT-Transport §4.2] LWT Online sets availability' );
 	ok( $base->is_online(), 'is_online() returns true' );
 
-	# Check that Status 11 was queried (C1/H1)
+	# Check that Status 11 was queried
 	my @published = $mqtt->get_published();
 	ok( ( grep { $_->{topic} eq 'cmnd/test_device/Status'
 			    && $_->{payload} eq '11' } @published ),
-		'C1/H1: Status 11 queried on Online' );
+		'[MQTT-State §5.2] Status 11 queried on Online' );
 
 	# Simulate Offline message
 	$mqtt->simulate_message( 'tele/test_device/LWT', 'Offline' );
 	is( $base->{availability},
 		AVAILABILITY_OFFLINE,
-		'LWT Offline sets availability' );
+		'[MQTT-Transport §4.2] LWT Offline sets availability' );
 	ok( !$base->is_online(), 'is_online() returns false' );
 }
 
-# Test temperature conversion (H4)
+# Test temperature conversion
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -167,19 +167,19 @@ use constant CAP_CT               => 4;
 
 	# Test Celsius passthrough
 	$base->{temp_unit} = 'C';
-	is( $base->convert_temperature(25), 25, 'Celsius passthrough' );
+	is( $base->convert_temperature(25), 25, '[MQTT-Sensors §3] Celsius passthrough' );
 
 	# Test Fahrenheit to Celsius conversion
 	$base->{temp_unit} = 'F';
 	my $celsius = $base->convert_temperature(77);    # 77F = 25C
-	ok( abs( $celsius - 25 ) < 0.1, 'Fahrenheit to Celsius conversion' );
+	ok( abs( $celsius - 25 ) < 0.1, '[MQTT-Sensors §3] Fahrenheit to Celsius conversion' );
 
 	# Test 32F = 0C
 	$celsius = $base->convert_temperature(32);
-	ok( abs($celsius) < 0.1, '32F = 0C' );
+	ok( abs($celsius) < 0.1, '[MQTT-Sensors §3] 32F = 0C' );
 }
 
-# Test multi-relay support (H1)
+# Test multi-relay support
 {
 	my $mqtt = MockMQTT->new();
 
@@ -191,7 +191,7 @@ use constant CAP_CT               => 4;
 		mqtt_client => $mqtt,
 	);
 
-	is( $heater1->_get_power_key(),   'POWER',           'No index: POWER' );
+	is( $heater1->_get_power_key(),   'POWER',           '[MQTT-Control §1] No index: POWER' );
 	is( $heater1->_get_power_topic(), 'cmnd/device/Power', 'No index topic' );
 
 	# With relay index
@@ -203,7 +203,7 @@ use constant CAP_CT               => 4;
 		relay_index => 2,
 	);
 
-	is( $heater2->_get_power_key(), 'POWER2', 'Index 2: POWER2' );
+	is( $heater2->_get_power_key(), 'POWER2', '[MQTT-Control §1] Index 2: POWER2' );
 	is( $heater2->_get_power_topic(),
 		'cmnd/device/Power2', 'Index 2 topic' );
 }
@@ -228,25 +228,25 @@ use constant CAP_CT               => 4;
 	$heater->set_power(1);
 
 	my @published = $mqtt->get_published();
-	is( $published[0]{topic},   'cmnd/heater/Power', 'Power topic correct' );
-	is( $published[0]{payload}, 'ON',                'Power ON sent' );
+	is( $published[0]{topic},   'cmnd/heater/Power', '[MQTT-Control §1] Power topic correct' );
+	is( $published[0]{payload}, 'ON',                '[MQTT-Control §1] Power ON sent' );
 
-	# Test TOGGLE (L1)
+	# Test TOGGLE
 	$mqtt->clear_published();
 	$heater->toggle_power();
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, 'TOGGLE', 'L1: TOGGLE command works' );
+	is( $published[0]{payload}, 'TOGGLE', '[MQTT-Control §1] TOGGLE command works' );
 
-	# Test BLINK (L2)
+	# Test BLINK
 	$mqtt->clear_published();
 	$heater->blink(1);
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, 'BLINK', 'L2: BLINK command works' );
+	is( $published[0]{payload}, 'BLINK', '[MQTT-Control §1] BLINK command works' );
 
 	$mqtt->clear_published();
 	$heater->blink(0);
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, 'BLINKOFF', 'L2: BLINKOFF command works' );
+	is( $published[0]{payload}, 'BLINKOFF', '[MQTT-Control §1] BLINKOFF command works' );
 }
 
 # Test Heater state updates
@@ -261,21 +261,21 @@ use constant CAP_CT               => 4;
 
 	$heater->subscribe_mqtt();
 
-	# Test RESULT message (C3)
+	# Test RESULT message
 	$mqtt->simulate_message( 'stat/heater/RESULT', '{"POWER":"ON"}' );
-	is( $heater->{power_state}, 1, 'C3: RESULT updates power state' );
+	is( $heater->{power_state}, 1, '[MQTT-State §4] RESULT updates power state' );
 
-	# Test plain POWER message (M3)
+	# Test plain POWER message
 	$mqtt->simulate_message( 'stat/heater/POWER', 'OFF' );
-	is( $heater->{power_state}, 0, 'M3: POWER updates power state' );
+	is( $heater->{power_state}, 0, '[MQTT-State §1] plain POWER updates power state' );
 
-	# Test STATE message (C2)
+	# Test STATE message
 	$mqtt->simulate_message( 'tele/heater/STATE',
 		'{"POWER":"ON","Uptime":"1T00:00:00"}' );
-	is( $heater->{power_state}, 1, 'C2: STATE updates power state' );
+	is( $heater->{power_state}, 1, '[MQTT-State §3] STATE updates power state' );
 }
 
-# Test Sensor device (H5 - multiple sensor types)
+# Test Sensor device with multiple sensor types
 {
 	my $mqtt = MockMQTT->new();
 	my $sensor = OpenHAP::Tasmota::Sensor->new(
@@ -294,11 +294,11 @@ use constant CAP_CT               => 4;
 	$mqtt->simulate_message( 'tele/sensor/SENSOR',
 		'{"Time":"2024-01-01T00:00:00","DS18B20":{"Temperature":25.5},"TempUnit":"C"}'
 	);
-	is( $sensor->{current_temp}, 25.5, 'DS18B20 temperature updated' );
-	is( $sensor->{sensor_type}, 'DS18B20', 'Sensor type auto-detected' );
+	is( $sensor->{current_temp}, 25.5, '[MQTT-Sensors §2] DS18B20 temperature updated' );
+	is( $sensor->{sensor_type}, 'DS18B20', '[MQTT-Sensors §2] sensor type auto-detected' );
 }
 
-# Test Sensor with Fahrenheit (H4)
+# Test Sensor with Fahrenheit
 {
 	my $mqtt = MockMQTT->new();
 	my $sensor = OpenHAP::Tasmota::Sensor->new(
@@ -317,10 +317,10 @@ use constant CAP_CT               => 4;
 
 	# 77F = 25C
 	ok( abs( $sensor->{current_temp} - 25 ) < 0.1,
-		'H4: Fahrenheit converted to Celsius' );
+		'[MQTT-Sensors §3] Fahrenheit converted to Celsius' );
 }
 
-# Test Sensor with DHT22 (H5)
+# Test Sensor with DHT22
 {
 	my $mqtt = MockMQTT->new();
 	my $sensor = OpenHAP::Tasmota::Sensor->new(
@@ -336,12 +336,12 @@ use constant CAP_CT               => 4;
 	$mqtt->simulate_message( 'tele/dht/SENSOR',
 		'{"DHT22":{"Temperature":22.5,"Humidity":65},"TempUnit":"C"}' );
 
-	is( $sensor->{current_temp},     22.5, 'DHT22 temperature' );
-	is( $sensor->{current_humidity}, 65,   'DHT22 humidity' );
-	is( $sensor->{sensor_type}, 'DHT22', 'DHT22 auto-detected' );
+	is( $sensor->{current_temp},     22.5, '[MQTT-Sensors §4] DHT22 temperature' );
+	is( $sensor->{current_humidity}, 65,   '[MQTT-Sensors §4] DHT22 humidity' );
+	is( $sensor->{sensor_type}, 'DHT22', '[MQTT-Sensors §2] DHT22 auto-detected' );
 }
 
-# Test Sensor with indexed sensors (H5)
+# Test Sensor with indexed sensors
 {
 	my $mqtt = MockMQTT->new();
 	my $sensor = OpenHAP::Tasmota::Sensor->new(
@@ -359,7 +359,7 @@ use constant CAP_CT               => 4;
 		'{"DS18B20-1":{"Temperature":20},"DS18B20-2":{"Temperature":25},"TempUnit":"C"}'
 	);
 
-	is( $sensor->{current_temp}, 25, 'H5: Indexed sensor DS18B20-2' );
+	is( $sensor->{current_temp}, 25, '[MQTT-Sensors §3] indexed sensor DS18B20-2' );
 }
 
 # Test Thermostat device
@@ -383,7 +383,7 @@ use constant CAP_CT               => 4;
 	my @published = $mqtt->get_published();
 	ok( ( grep { $_->{topic} eq 'cmnd/thermostat/Status'
 			    && $_->{payload} eq '10' } @published ),
-		'Status 10 queried on subscribe' );
+		'[MQTT-Control §5] Status 10 queried on subscribe' );
 }
 
 # Test Thermostat temperature updates
@@ -401,15 +401,15 @@ use constant CAP_CT               => 4;
 	# Test SENSOR message
 	$mqtt->simulate_message( 'tele/thermostat/SENSOR',
 		'{"DS18B20":{"Temperature":22.5},"TempUnit":"C"}' );
-	is( $thermostat->{current_temp}, 22.5, 'SENSOR updates temperature' );
+	is( $thermostat->{current_temp}, 22.5, '[MQTT-Sensors §1] SENSOR updates temperature' );
 
 	# Test STATUS8 response
 	$mqtt->simulate_message( 'stat/thermostat/STATUS8',
 		'{"StatusSNS":{"DS18B20":{"Temperature":23},"TempUnit":"C"}}' );
-	is( $thermostat->{current_temp}, 23, 'STATUS8 updates temperature' );
+	is( $thermostat->{current_temp}, 23, '[MQTT-Control §5] STATUS8 updates temperature' );
 }
 
-# Test Lightbulb device (H2)
+# Test Lightbulb device
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -429,7 +429,7 @@ use constant CAP_CT               => 4;
 	$lightbulb->subscribe_mqtt();
 }
 
-# Test Lightbulb Dimmer control (H2)
+# Test Lightbulb Dimmer control
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -447,32 +447,32 @@ use constant CAP_CT               => 4;
 	$lightbulb->_set_brightness(75);
 
 	my @published = $mqtt->get_published();
-	is( $published[0]{topic},   'cmnd/light/Dimmer', 'Dimmer topic' );
-	is( $published[0]{payload}, '75',                'Dimmer value' );
+	is( $published[0]{topic},   'cmnd/light/Dimmer', '[MQTT-Control §2] Dimmer topic' );
+	is( $published[0]{payload}, '75',                '[MQTT-Control §2] Dimmer value' );
 
-	# Test dimmer step commands (L3)
+	# Test dimmer step commands
 	$mqtt->clear_published();
 	$lightbulb->dimmer_step('+');
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, '+', 'L3: Dimmer step +' );
+	is( $published[0]{payload}, '+', '[MQTT-Control §2] Dimmer step +' );
 
 	$mqtt->clear_published();
 	$lightbulb->dimmer_step('-');
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, '-', 'L3: Dimmer step -' );
+	is( $published[0]{payload}, '-', '[MQTT-Control §2] Dimmer step -' );
 
 	$mqtt->clear_published();
 	$lightbulb->dimmer_min();
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, '<', 'L3: Dimmer min' );
+	is( $published[0]{payload}, '<', '[MQTT-Control §2] Dimmer min' );
 
 	$mqtt->clear_published();
 	$lightbulb->dimmer_max();
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, '>', 'L3: Dimmer max' );
+	is( $published[0]{payload}, '>', '[MQTT-Control §2] Dimmer max' );
 }
 
-# Test Lightbulb Color control (H2)
+# Test Lightbulb Color control
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -490,25 +490,25 @@ use constant CAP_CT               => 4;
 	$mqtt->clear_published();
 	$lightbulb->_set_hue(240);
 	my @published = $mqtt->get_published();
-	is( $published[0]{topic},   'cmnd/light/HSBColor1', 'Hue topic' );
-	is( $published[0]{payload}, '240',                  'Hue value' );
+	is( $published[0]{topic},   'cmnd/light/HSBColor1', '[MQTT-Control §3.1] Hue topic' );
+	is( $published[0]{payload}, '240',                  '[MQTT-Control §3.1] Hue value' );
 
 	# Test saturation control
 	$mqtt->clear_published();
 	$lightbulb->_set_saturation(80);
 	@published = $mqtt->get_published();
-	is( $published[0]{topic},   'cmnd/light/HSBColor2', 'Saturation topic' );
-	is( $published[0]{payload}, '80',                   'Saturation value' );
+	is( $published[0]{topic},   'cmnd/light/HSBColor2', '[MQTT-Control §3.1] Saturation topic' );
+	is( $published[0]{payload}, '80',                   '[MQTT-Control §3.1] Saturation value' );
 
 	# Test combined color
 	$mqtt->clear_published();
 	$lightbulb->set_color( 120, 100, 50 );
 	@published = $mqtt->get_published();
-	is( $published[0]{topic}, 'cmnd/light/HSBColor', 'HSBColor topic' );
-	is( $published[0]{payload}, '120,100,50', 'HSBColor value' );
+	is( $published[0]{topic}, 'cmnd/light/HSBColor', '[MQTT-Control §3.1] HSBColor topic' );
+	is( $published[0]{payload}, '120,100,50', '[MQTT-Control §3.1] HSBColor value' );
 }
 
-# Test Lightbulb CT control (H2)
+# Test Lightbulb CT control
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -525,17 +525,17 @@ use constant CAP_CT               => 4;
 	$mqtt->clear_published();
 	$lightbulb->_set_ct(300);
 	my @published = $mqtt->get_published();
-	is( $published[0]{topic},   'cmnd/light/CT', 'CT topic' );
-	is( $published[0]{payload}, '300',           'CT value' );
+	is( $published[0]{topic},   'cmnd/light/CT', '[MQTT-Control §4] CT topic' );
+	is( $published[0]{payload}, '300',           '[MQTT-Control §4] CT value' );
 
 	# Test CT clamping (min)
 	$mqtt->clear_published();
 	$lightbulb->_set_ct(100);    # Below min 153
 	@published = $mqtt->get_published();
-	is( $published[0]{payload}, '153', 'CT clamped to min' );
+	is( $published[0]{payload}, '153', '[MQTT-Control §4] CT clamped to min' );
 }
 
-# Test Lightbulb state updates from RESULT (C3, H2)
+# Test Lightbulb state updates from RESULT
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -552,31 +552,31 @@ use constant CAP_CT               => 4;
 
 	# Test RESULT with dimmer
 	$mqtt->simulate_message( 'stat/light/RESULT', '{"Dimmer":75}' );
-	is( $lightbulb->{brightness}, 75, 'RESULT updates brightness' );
+	is( $lightbulb->{brightness}, 75, '[MQTT-State §4] RESULT updates brightness' );
 
 	# Test RESULT with HSBColor
 	$mqtt->simulate_message( 'stat/light/RESULT',
 		'{"HSBColor":"180,50,80"}' );
-	is( $lightbulb->{hue},        180, 'RESULT updates hue' );
-	is( $lightbulb->{saturation}, 50,  'RESULT updates saturation' );
-	is( $lightbulb->{brightness}, 80,  'RESULT updates brightness from HSB' );
+	is( $lightbulb->{hue},        180, '[MQTT-State §4] RESULT updates hue' );
+	is( $lightbulb->{saturation}, 50,  '[MQTT-State §4] RESULT updates saturation' );
+	is( $lightbulb->{brightness}, 80,  '[MQTT-State §4] RESULT updates brightness from HSB' );
 
 	# Test RESULT with CT
 	$mqtt->simulate_message( 'stat/light/RESULT', '{"CT":250}' );
-	is( $lightbulb->{ct}, 250, 'RESULT updates CT' );
+	is( $lightbulb->{ct}, 250, '[MQTT-State §4] RESULT updates CT' );
 
-	# Test STATE message (C2)
+	# Test STATE message
 	$mqtt->simulate_message( 'tele/light/STATE',
 		'{"POWER":"ON","Dimmer":60,"HSBColor":"90,100,60","CT":400}' );
-	is( $lightbulb->{power_state}, 1,  'STATE updates power' );
-	is( $lightbulb->{brightness},  60, 'STATE updates brightness' );
+	is( $lightbulb->{power_state}, 1,  '[MQTT-State §3] STATE updates power' );
+	is( $lightbulb->{brightness},  60, '[MQTT-State §3] STATE updates brightness' );
 }
 
 # ==============================================================================
 # New tests for compliance fixes
 # ==============================================================================
 
-# Test FullTopic support (H2)
+# Test FullTopic support
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -590,18 +590,18 @@ use constant CAP_CT               => 4;
 	# Test custom FullTopic pattern
 	is( $base->_build_topic( 'cmnd', 'Power' ),
 		'tasmota/bedroom_light/cmnd/Power',
-		'H2: Custom FullTopic builds correctly' );
+		'[MQTT-Transport §1.2] custom FullTopic builds correctly' );
 
 	is( $base->_build_topic( 'stat', 'RESULT' ),
 		'tasmota/bedroom_light/stat/RESULT',
-		'H2: FullTopic stat topic correct' );
+		'[MQTT-Transport §1.2] FullTopic stat topic correct' );
 
 	is( $base->_build_topic( 'tele', 'STATE' ),
 		'tasmota/bedroom_light/tele/STATE',
-		'H2: FullTopic tele topic correct' );
+		'[MQTT-Transport §1.2] FullTopic tele topic correct' );
 }
 
-# Test default FullTopic (H2)
+# Test default FullTopic
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -613,10 +613,10 @@ use constant CAP_CT               => 4;
 
 	is( $base->_build_topic( 'cmnd', 'Power' ),
 		'cmnd/test_device/Power',
-		'H2: Default FullTopic works' );
+		'[MQTT-Transport §1.2] default FullTopic works' );
 }
 
-# Test SetOption26 support (M1)
+# Test SetOption26 support
 {
 	my $mqtt = MockMQTT->new();
 
@@ -629,7 +629,7 @@ use constant CAP_CT               => 4;
 	);
 
 	is( $heater1->_get_power_key(), 'POWER',
-		'M1: Without SetOption26 uses POWER' );
+		'[MQTT-Control §1] without SetOption26 uses POWER' );
 
 	# With SetOption26
 	my $heater2 = OpenHAP::Tasmota::Heater->new(
@@ -641,12 +641,12 @@ use constant CAP_CT               => 4;
 	);
 
 	is( $heater2->_get_power_key(), 'POWER1',
-		'M1: With SetOption26 uses POWER1' );
+		'[MQTT-Control §1] with SetOption26 uses POWER1' );
 	is( $heater2->_get_power_topic(), 'cmnd/device/Power1',
-		'M1: SetOption26 power topic correct' );
+		'[MQTT-Control §1] SetOption26 power topic correct' );
 }
 
-# Test STATUS11 handling (C1/H1)
+# Test STATUS11 handling
 {
 	my $mqtt = MockMQTT->new();
 	my $heater = OpenHAP::Tasmota::Heater->new(
@@ -661,15 +661,15 @@ use constant CAP_CT               => 4;
 	# Check STATUS11 subscription exists
 	my @subs = $mqtt->get_subscriptions();
 	ok( ( grep { $_ eq 'stat/device/STATUS11' } @subs ),
-		'C1/H1: Subscribed to STATUS11' );
+		'[MQTT-Control §5] Subscribed to STATUS11' );
 
 	# Simulate STATUS11 response
 	my $status11 = '{"StatusSTS":{"POWER":"ON","Uptime":"1T00:00:00"}}';
 	$mqtt->simulate_message( 'stat/device/STATUS11', $status11 );
-	is( $heater->{power_state}, 1, 'C1/H1: STATUS11 updates power state' );
+	is( $heater->{power_state}, 1, '[MQTT-Control §5] STATUS11 updates power state' );
 }
 
-# Test Status 11 query on LWT Online (C1/H1)
+# Test Status 11 query on LWT Online
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -689,10 +689,10 @@ use constant CAP_CT               => 4;
 	my @published = $mqtt->get_published();
 	ok( ( grep { $_->{topic} eq 'cmnd/device/Status'
 			    && $_->{payload} eq '11' } @published ),
-		'C1/H1: Status 11 queried on Online' );
+		'[MQTT-State §5.2] Status 11 queried on Online' );
 }
 
-# Test force_telemetry (L1)
+# Test force_telemetry
 {
 	my $mqtt = MockMQTT->new();
 	my $base = OpenHAP::Tasmota::Base->new(
@@ -707,10 +707,10 @@ use constant CAP_CT               => 4;
 
 	my @published = $mqtt->get_published();
 	ok( ( grep { $_->{topic} eq 'cmnd/device/TelePeriod' } @published ),
-		'L1: TelePeriod command sent' );
+		'[MQTT-Sensors §5.1] TelePeriod command sent' );
 }
 
-# Test SetOption4 topic subscriptions for Lightbulb (M2)
+# Test SetOption4 topic subscriptions for Lightbulb
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -726,14 +726,14 @@ use constant CAP_CT               => 4;
 	my @subs = $mqtt->get_subscriptions();
 
 	ok( ( grep { $_ eq 'stat/light/DIMMER' } @subs ),
-		'M2: Subscribed to DIMMER topic' );
+		'[MQTT-Transport §3.2] SetOption4: subscribed to DIMMER topic' );
 	ok( ( grep { $_ eq 'stat/light/HSBCOLOR' } @subs ),
-		'M2: Subscribed to HSBCOLOR topic' );
+		'[MQTT-Transport §3.2] SetOption4: subscribed to HSBCOLOR topic' );
 	ok( ( grep { $_ eq 'stat/light/CT' } @subs ),
-		'M2: Subscribed to CT topic' );
+		'[MQTT-Transport §3.2] SetOption4: subscribed to CT topic' );
 }
 
-# Test SetOption17 decimal color format (M3)
+# Test SetOption17 decimal color format
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -749,20 +749,20 @@ use constant CAP_CT               => 4;
 	# Test hex color format (default)
 	$mqtt->simulate_message( 'stat/light/RESULT',
 		'{"Color":"FF0000"}' );
-	is( $lightbulb->{hue}, 0, 'M3: Hex color red hue=0' );
+	is( $lightbulb->{hue}, 0, '[MQTT-Control §3.2] hex color red hue=0' );
 
 	# Test decimal color format (SetOption17 1)
 	$mqtt->simulate_message( 'stat/light/RESULT',
 		'{"Color":"0,255,0"}' );
-	is( $lightbulb->{hue}, 120, 'M3: Decimal color green hue=120' );
+	is( $lightbulb->{hue}, 120, '[MQTT-Control §3.2] SetOption17 decimal color green hue=120' );
 
 	# Test blue
 	$mqtt->simulate_message( 'stat/light/RESULT',
 		'{"Color":"0,0,255"}' );
-	is( $lightbulb->{hue}, 240, 'M3: Decimal color blue hue=240' );
+	is( $lightbulb->{hue}, 240, '[MQTT-Control §3.2] SetOption17 decimal color blue hue=240' );
 }
 
-# Test CT range clamping (M4)
+# Test CT range clamping
 {
 	my $mqtt = MockMQTT->new();
 	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
@@ -778,13 +778,13 @@ use constant CAP_CT               => 4;
 	# Verify HomeKit min is 153 (not 140)
 	# The characteristic is defined in new(), check the clamping behavior
 	$mqtt->simulate_message( 'stat/light/RESULT', '{"CT":100}' );
-	is( $lightbulb->{ct}, 153, 'M4: CT clamped to min 153' );
+	is( $lightbulb->{ct}, 153, '[MQTT-Control §4] CT clamped to min 153' );
 
 	$mqtt->simulate_message( 'stat/light/RESULT', '{"CT":600}' );
-	is( $lightbulb->{ct}, 500, 'M4: CT clamped to max 500' );
+	is( $lightbulb->{ct}, 500, '[MQTT-Control §4] CT clamped to max 500' );
 }
 
-# Test sensor ID tracking (L3)
+# Test sensor ID tracking
 {
 	my $mqtt = MockMQTT->new();
 	my $sensor = OpenHAP::Tasmota::Sensor->new(
@@ -801,7 +801,7 @@ use constant CAP_CT               => 4;
 		'{"DS18B20":{"Id":"01131B123456","Temperature":22.5},"TempUnit":"C"}'
 	);
 
-	is( $sensor->{sensor_id}, '01131B123456', 'L3: Sensor ID tracked' );
+	is( $sensor->{sensor_id}, '01131B123456', '[MQTT-Sensors §3] sensor Id tracked' );
 }
 
 # Test STATUS10 subscription for sensors
@@ -818,12 +818,12 @@ use constant CAP_CT               => 4;
 
 	my @subs = $mqtt->get_subscriptions();
 	ok( ( grep { $_ eq 'stat/sensor/STATUS10' } @subs ),
-		'Subscribed to STATUS10' );
+		'[MQTT-Control §5] Subscribed to STATUS10' );
 
 	# Simulate STATUS10 response
 	$mqtt->simulate_message( 'stat/sensor/STATUS10',
 		'{"StatusSNS":{"DS18B20":{"Temperature":26},"TempUnit":"C"}}' );
-	is( $sensor->{current_temp}, 26, 'STATUS10 updates temperature' );
+	is( $sensor->{current_temp}, 26, '[MQTT-Control §5] STATUS10 updates temperature' );
 }
 
 # Test RGB to HSB conversion accuracy
@@ -839,17 +839,17 @@ use constant CAP_CT               => 4;
 
 	# Test pure red
 	my ( $h, $s, $b ) = $lightbulb->_rgb_to_hsb( 255, 0, 0 );
-	is( $h, 0,   'RGB red: hue=0' );
+	is( $h, 0,   '[MQTT-Control §3.2] RGB red: hue=0' );
 	is( $s, 100, 'RGB red: saturation=100' );
 	is( $b, 100, 'RGB red: brightness=100' );
 
 	# Test pure green
 	( $h, $s, $b ) = $lightbulb->_rgb_to_hsb( 0, 255, 0 );
-	is( $h, 120, 'RGB green: hue=120' );
+	is( $h, 120, '[MQTT-Control §3.2] RGB green: hue=120' );
 
 	# Test pure blue
 	( $h, $s, $b ) = $lightbulb->_rgb_to_hsb( 0, 0, 255 );
-	is( $h, 240, 'RGB blue: hue=240' );
+	is( $h, 240, '[MQTT-Control §3.2] RGB blue: hue=240' );
 
 	# Test white (no saturation)
 	( $h, $s, $b ) = $lightbulb->_rgb_to_hsb( 255, 255, 255 );
