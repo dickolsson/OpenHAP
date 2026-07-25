@@ -53,13 +53,31 @@ jobs:
             openhvf-state-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
             'deps/OpenBSD.txt', 'scripts/vm_provision.sh') }}
 
+      - name: Generate ephemeral SSH key for the VM
+        # The harness installs an authorized_keys entry on the guest and
+        # then uses key-based auth for every later `openhvf ssh`/`scp`.
+        # Developers configure this in ~/.openhvfrc; CI has no key, so
+        # mint a throwaway one per run. Write the public half to the
+        # GLOBAL rc (~/.openhvfrc) rather than the project .openhvfrc so
+        # the disk-cache key (which hashes the project file) stays stable.
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keygen -t ed25519 -N '' -C openhvf-ci -f ~/.ssh/id_ed25519
+          printf 'ssh_pubkey "%s"\n' "$(cat ~/.ssh/id_ed25519.pub)" \
+            > ~/.openhvfrc
+
       - name: Run integration tests
         env:
           # Expect-script step timeout and post-boot SSH wait, both far
           # beyond the defaults to accommodate TCG emulation
           OPENHVF_TIMEOUT: 1800
           OPENHVF_WAIT_TIMEOUT: 1800
-        run: make integration
+        run: |
+          # `openhvf ssh` authenticates via the SSH agent; load the key
+          # so the harness and the test scripts can reach the guest.
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_ed25519
+          make integration
 
       - name: Show VM diagnostics on failure
         if: failure()

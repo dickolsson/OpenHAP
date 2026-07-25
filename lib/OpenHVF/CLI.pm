@@ -221,9 +221,11 @@ sub cmd_ssh ( $self, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 
-	# Uses SSH agent for authentication
+	# Uses SSH agent for authentication. Connect over IPv4: QEMU
+	# forwards the guest SSH port on 127.0.0.1 only, but 'localhost'
+	# resolves to ::1 first on dual-stack hosts (e.g. CI runners).
 	my $ssh = OpenHVF::SSH->new(
-		host => 'localhost',
+		host => '127.0.0.1',
 		port => $vm->ssh_port,
 		user => 'root',
 	);
