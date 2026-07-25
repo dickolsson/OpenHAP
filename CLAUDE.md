@@ -42,9 +42,9 @@ make integration    # provision OpenBSD VM and run integration tests
   (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`), config
   (`Config.pm`, `Storage.pm`), integration (`MQTT.pm`, `MDNS.pm`,
   `DeviceLoader.pm`), devices (`Tasmota/*.pm`)
-- `t/openhap/`, `t/fugulib/`, `t/openhvf/` — unit tests;
-  `t/conformance/` — spec-cited conformance tests (see `t/CLAUDE.md`);
-  `t/openhap/integration/` — integration tests, run inside the OpenBSD VM
+- `t/openhap/`, `t/fugulib/`, `t/openhvf/` — unit tests; `t/conformance/` —
+  spec-cited conformance tests (see `t/CLAUDE.md`); `t/openhap/integration/` —
+  integration tests, run inside the OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/openhvf/` — `openhvf.1` (development-only, not
   installed)

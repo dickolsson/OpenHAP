@@ -49,21 +49,21 @@ done_testing();
 
 ## Paired behavior
 
-Testing anything behind pair-verify (authenticated endpoints, events,
-encrypted framing) goes through `OpenHAP::Test::Controller` (API in
-`lib/OpenHAP/Test/Controller.pod`): complete `pair_setup`/`pair_verify`
-in setup, use `request`/`next_event`, and `remove_pairing` in teardown so
-the shared daemon is never left paired between files.
+Testing anything behind pair-verify (authenticated endpoints, events, encrypted
+framing) goes through `OpenHAP::Test::Controller` (API in
+`lib/OpenHAP/Test/Controller.pod`): complete `pair_setup`/`pair_verify` in
+setup, use `request`/`next_event`, and `remove_pairing` in teardown so the
+shared daemon is never left paired between files.
 
 ## Ordering and state
 
-- `scripts/integration.sh` runs the files as an explicit ordered list
-  with `environment.t` always first.
-- Files own their pairing lifecycle: call `$env->ensure_unpaired` in
-  setup, pair via the controller if needed, and unpair in teardown. The
-  shared daemon is never left paired between files.
-- `lib/OpenHAP/Test/` and `t/lib/` ship to the VM alongside the tests;
-  `prove` runs with `-It/lib`.
+- `scripts/integration.sh` runs the files as an explicit ordered list with
+  `environment.t` always first.
+- Files own their pairing lifecycle: call `$env->ensure_unpaired` in setup, pair
+  via the controller if needed, and unpair in teardown. The shared daemon is
+  never left paired between files.
+- `lib/OpenHAP/Test/` and `t/lib/` ship to the VM alongside the tests; `prove`
+  runs with `-It/lib`.
 
 ## References
 
