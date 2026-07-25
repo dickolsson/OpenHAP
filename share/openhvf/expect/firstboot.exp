@@ -5,7 +5,17 @@
 # Usage: firstboot.exp <host> <port> [root_password]
 #
 
-set timeout 120
+# Use OPENHVF_TIMEOUT from the environment when it exceeds the
+# script default (slow hosts, e.g. TCG emulation in CI)
+proc env_timeout {default} {
+    global env
+    if {[info exists env(OPENHVF_TIMEOUT)] && $env(OPENHVF_TIMEOUT) > $default} {
+        return $env(OPENHVF_TIMEOUT)
+    }
+    return $default
+}
+
+set timeout [env_timeout 120]
 
 if {[llength $argv] < 2} {
     puts stderr "Usage: firstboot.exp <host> <port> \[root_password\]"

@@ -80,8 +80,11 @@ as the project root instead of auto-discovering it.
 .It Fl q , Fl Fl quiet
 Suppress informational output.
 .It Fl Fl emulate
-Force TCG emulation instead of hardware acceleration,
-for testing on aarch64 hosts.
+Force TCG software emulation instead of hardware acceleration.
+Without this flag the accelerator is chosen automatically:
+HVF on macOS, KVM on aarch64 Linux hosts with
+.Pa /dev/kvm ,
+and TCG everywhere else.
 .It Fl h , Fl Fl help
 Display usage information.
 .El

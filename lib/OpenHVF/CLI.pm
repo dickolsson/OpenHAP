@@ -75,7 +75,8 @@ sub new ( $class, %opts )
 	my $self = bless {
 		vm_name => $opts{vm} // 'default',
 		project => $opts{project},
-		quiet   => $opts{quiet} // 0,
+		quiet   => $opts{quiet}   // 0,
+		emulate => $opts{emulate} // 0,
 		log     => $log,
 	}, $class;
 
@@ -131,7 +132,7 @@ sub run ( $class, @argv )
 		$self->{config} = OpenHVF::Config->new($project_root);
 		$self->{state} =
 		    OpenHVF::State->new( $self->{config}->state_dir,
-			$self->{vm_name}, emulate => $opts{emulate} // 0, );
+			$self->{vm_name} );
 		if ( !defined $self->{state} ) {
 			$self->{log}->error(
 "Cannot initialize state for VM '$self->{vm_name}'"
@@ -152,9 +153,10 @@ sub _load_vm ($self)
 	}
 
 	return OpenHVF::VM->new(
-		config => $vm_config,
-		state  => $self->{state},
-		log    => $self->{log},
+		config  => $vm_config,
+		state   => $self->{state},
+		log     => $self->{log},
+		emulate => $self->{emulate},
 	);
 }
 

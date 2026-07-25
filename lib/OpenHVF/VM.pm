@@ -43,18 +43,22 @@ use constant {
 	EXIT_VM_NOT_RUNNING => 6,
 	EXIT_TIMEOUT        => 7,
 
-	# Fixed configuration for OpenBSD on Apple Silicon
+	# Fixed configuration for OpenBSD arm64 guests
 	QEMU_BINARY    => 'qemu-system-aarch64',
 	MEMORY_DEFAULT => '1G',
 	CPU_COUNT      => 2,
+
+	# Guest CPU model under TCG emulation (no host passthrough)
+	TCG_CPU => 'cortex-a57',
 };
 
 sub new ( $class, %args )
 {
 	my $self = bless {
-		config => $args{config},
-		state  => $args{state},
-		log    => $args{log},
+		config  => $args{config},
+		state   => $args{state},
+		log     => $args{log},
+		emulate => $args{emulate} // 0,
 	}, $class;
 
 	return $self;
@@ -721,10 +725,9 @@ sub _start_qemu ( $self, $boot_image = undef )
 
 	my @cmd = (QEMU_BINARY);
 
-	# Machine type for arm64 with HVF acceleration
-	push @cmd, '-M',     'virt,highmem=off';
-	push @cmd, '-cpu',   'host';
-	push @cmd, '-accel', 'hvf';
+	# Machine type for arm64, acceleration by host capability
+	push @cmd, '-M', 'virt,highmem=off';
+	push @cmd, $self->_accel_args;
 
 	# Memory and CPU
 	push @cmd, '-m',   $config->{memory} // MEMORY_DEFAULT;
@@ -811,11 +814,50 @@ sub _start_qemu ( $self, $boot_image = undef )
 	return;
 }
 
+# $self->_accel_args():
+#	Pick the QEMU accelerator for the host: HVF on macOS, KVM on
+#	aarch64 Linux hosts with /dev/kvm, TCG software emulation
+#	otherwise or when --emulate was given. Host CPU passthrough is
+#	only valid with hardware acceleration; TCG needs a named model.
+sub _accel_args ($self)
+{
+	my $accel;
+	if ( $self->{emulate} ) {
+		$accel = 'tcg';
+	}
+	elsif ( $^O eq 'darwin' ) {
+		$accel = 'hvf';
+	}
+	elsif ( $^O eq 'linux' && -w '/dev/kvm' && _host_arch() eq 'aarch64' ) {
+		$accel = 'kvm';
+	}
+	else {
+		$accel = 'tcg';
+	}
+
+	$self->{log}->debug("Using QEMU accelerator: $accel")
+	    if $self->{log};
+
+	return ( '-accel', $accel, '-cpu', $accel eq 'tcg' ? TCG_CPU : 'host' );
+}
+
+# _host_arch():
+#	Host machine architecture from uname
+sub _host_arch ()
+{
+	require POSIX;
+	my @uname = POSIX::uname();
+	return $uname[4] // '';
+}
+
 sub _find_efi_firmware ($self)
 {
 	my @paths = (
 		'/opt/homebrew/share/qemu/edk2-aarch64-code.fd',
 		'/usr/local/share/qemu/edk2-aarch64-code.fd',
+		'/usr/share/qemu-efi-aarch64/QEMU_EFI.fd',
+		'/usr/share/AAVMF/AAVMF_CODE.fd',
+		'/usr/share/qemu/edk2-aarch64-code.fd',
 	);
 
 	for my $path (@paths) {

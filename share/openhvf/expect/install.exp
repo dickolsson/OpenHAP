@@ -5,7 +5,17 @@
 # Usage: install.exp <host> <port> [root_password] [proxy_url]
 #
 
-set timeout 300
+# Use OPENHVF_TIMEOUT from the environment when it exceeds the
+# script default (slow hosts, e.g. TCG emulation in CI)
+proc env_timeout {default} {
+    global env
+    if {[info exists env(OPENHVF_TIMEOUT)] && $env(OPENHVF_TIMEOUT) > $default} {
+        return $env(OPENHVF_TIMEOUT)
+    }
+    return $default
+}
+
+set timeout [env_timeout 300]
 
 if {[llength $argv] < 2} {
     puts stderr "Usage: install.exp <host> <port> \[root_password\] \[proxy_url\]"
@@ -154,7 +164,7 @@ expect "Set name(s)?" {
 expect "Set name(s)?" { respond "done" }
 
 # Wait for sets to install and prompt for more sets
-set timeout 900
+set timeout [env_timeout 900]
 expect {
     "Continue without verification?" { 
         respond "yes" 
@@ -168,7 +178,7 @@ expect {
 }
 
 # Time confirmation (may or may not appear)
-set timeout 60
+set timeout [env_timeout 60]
 expect {
     "Time appears wrong" { 
         respond "yes"

@@ -31,4 +31,29 @@ use_ok('OpenHVF::VM');
 	is(OpenHVF::VM::EXIT_TIMEOUT(), 7, 'EXIT_TIMEOUT is 7');
 }
 
+# Accelerator selection
+{
+	# --emulate always forces TCG with a named CPU model
+	my $emulated = OpenHVF::VM->new(emulate => 1);
+	my %args = ($emulated->_accel_args);
+	is($args{'-accel'}, 'tcg', '--emulate forces TCG');
+	is($args{'-cpu'}, OpenHVF::VM::TCG_CPU(),
+	    'TCG uses a named CPU model, not host passthrough');
+
+	# Auto-selection returns a consistent accel/cpu pair
+	my $auto = OpenHVF::VM->new;
+	%args = ($auto->_accel_args);
+	like($args{'-accel'}, qr/^(hvf|kvm|tcg)$/, 'known accelerator');
+	if ($args{'-accel'} eq 'tcg') {
+		is($args{'-cpu'}, OpenHVF::VM::TCG_CPU(),
+		    'software emulation pairs with a named CPU');
+	} else {
+		is($args{'-cpu'}, 'host',
+		    'hardware acceleration pairs with host CPU');
+	}
+
+	# Host arch helper returns a non-empty machine string
+	ok(length(OpenHVF::VM::_host_arch()), 'host arch detected');
+}
+
 done_testing();
