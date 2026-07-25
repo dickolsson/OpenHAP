@@ -77,7 +77,8 @@ sub compute_verifier ( $self, $salt = undef, $password = undef )
 	my $x       = Math::BigInt->from_hex( unpack( 'H*', $x_bytes ) );
 
 	# v = g^x mod N
-	my $v = $self->{g}->bmodpow( $x, $self->{N} );
+	# bmodpow mutates its invocant, so work on a copy of g
+	my $v = $self->{g}->copy->bmodpow( $x, $self->{N} );
 
 	$self->{v} = $v;
 	return $v;
@@ -99,8 +100,10 @@ sub generate_server_public ($self)
 	my $k        = Math::BigInt->from_hex( unpack( 'H*', $k_bytes ) );
 
 	# B = (k*v + g^b) mod N
+	# bmodpow mutates its invocant, so work on a copy of g
 	my $B =
-	    ( $k * $self->{v} + $self->{g}->bmodpow( $self->{b}, $self->{N} ) )
+	    ( $k * $self->{v} +
+		    $self->{g}->copy->bmodpow( $self->{b}, $self->{N} ) )
 	    % $self->{N};
 
 	$self->{B} = $B;
@@ -119,15 +122,17 @@ sub compute_session_key ( $self, $A_bytes )
 	$self->{A} = $A;
 
 	# u = H(PAD(A) | PAD(B)) - Both A and B must be padded to N_LEN
-	# per HAP-Pairing.md and SRP-6a spec (see HAP-python hsrp.py)
-	my $A_bytes = _bigint_to_bytes( $self->{A}, N_LEN );
-	my $B_bytes = _bigint_to_bytes( $self->{B}, N_LEN );
-	my $u_bytes = sha512( $A_bytes . $B_bytes );
-	my $u       = Math::BigInt->from_hex( unpack( 'H*', $u_bytes ) );
+	# per HAP-Pairing.md §2.6 and SRP-6a spec
+	my $A_padded = _bigint_to_bytes( $self->{A}, N_LEN );
+	my $B_padded = _bigint_to_bytes( $self->{B}, N_LEN );
+	my $u_bytes  = sha512( $A_padded . $B_padded );
+	my $u        = Math::BigInt->from_hex( unpack( 'H*', $u_bytes ) );
 
 	# S = (A * v^u)^b mod N
+	# bmodpow mutates its invocant, so work on a copy of v; the
+	# multiplication result is a fresh object, safe to mutate
 	my $S =
-	    ( $self->{A} * $self->{v}->bmodpow( $u, $self->{N} ) )
+	    ( $self->{A} * $self->{v}->copy->bmodpow( $u, $self->{N} ) )
 	    ->bmodpow( $self->{b}, $self->{N} );
 
 	$self->{S} = $S;
@@ -143,9 +148,11 @@ sub verify_client_proof ( $self, $M1_client )
 {
 
 	# M1 = H(H(N) XOR H(g) | H(username) | salt | A | B | K)
+	# use the string xor operator: v5.36 enables the 'bitwise'
+	# feature, under which plain ^ is numeric-only
 	my $N_hash = sha512( _bigint_to_bytes( $self->{N} ) );
 	my $g_hash = sha512( _bigint_to_bytes( $self->{g} ) );
-	my $xor    = $N_hash ^ $g_hash;
+	my $xor    = $N_hash ^. $g_hash;
 
 	my $user_hash = sha512( $self->{username} );
 
