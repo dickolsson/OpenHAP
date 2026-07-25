@@ -32,4 +32,8 @@ Accessory Protocol:
 - HKDF-SHA-512 key derivation
 - SRP-6a parameters
 
+=head1 SEE ALSO
+
+F<spec/HAP-Pairing.md>, F<spec/HAP-Encryption.md>
+
 =cut

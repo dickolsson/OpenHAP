@@ -87,6 +87,9 @@ specification easier to navigate and maintain.
   controller, accessory, etc.)
 - Gives a high-level protocol overview
 - Links to the topic-specific files for detailed information
+- Records provenance near the top: the extraction date and the commit of each
+  source repository used (`git -C external/<name> rev-parse --short HEAD`), so
+  staleness against upstream can be checked later
 
 **Topic files:** Break out detailed content into separate `spec/HAP-*.md` files.
 Let the natural structure of the content guide the split — for example, large

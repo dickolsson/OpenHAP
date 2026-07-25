@@ -83,6 +83,9 @@ Create `spec/IMPLEMENTATIONS.md` documenting what you learned. Organize the
 content around the questions above, but let the structure emerge from your
 findings. Include:
 
+- A provenance note near the top: the extraction date and the commit of each
+  implementation studied (`git -C external/<name> rev-parse --short HEAD`), so
+  staleness against upstream can be checked later
 - Concrete details (actual constants, specific algorithms, exact formats)
 - Code snippets where they illuminate a pattern
 - Comparisons showing how different projects solve the same problem

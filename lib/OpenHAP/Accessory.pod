@@ -20,4 +20,8 @@ OpenHAP::Accessory - Base class for HAP accessories
 This module provides the base class for HomeKit accessories with
 required Accessory Information service.
 
+=head1 SEE ALSO
+
+L<OpenHAP::Service>, F<spec/HAP.md>
+
 =cut

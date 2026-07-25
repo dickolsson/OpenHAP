@@ -22,4 +22,8 @@ This module manages the encrypted session state for HAP connections,
 including ChaCha20-Poly1305 encryption/decryption with proper nonce
 management and frame handling.
 
+=head1 SEE ALSO
+
+L<OpenHAP::Crypto>, F<spec/HAP-Encryption.md>
+
 =cut

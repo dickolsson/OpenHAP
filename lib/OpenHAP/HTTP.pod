@@ -41,4 +41,8 @@ Builds an HTTP response. Arguments:
 - headers: Hashref of headers
 - body: Response body
 
+=head1 SEE ALSO
+
+F<spec/HAP-HTTP.md>
+
 =cut

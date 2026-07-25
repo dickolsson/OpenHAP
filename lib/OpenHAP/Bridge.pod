@@ -17,4 +17,8 @@ OpenHAP::Bridge - HAP bridge accessory
 This module represents a HAP bridge that can contain multiple
 bridged accessories.
 
+=head1 SEE ALSO
+
+L<OpenHAP::Accessory>, F<spec/HAP.md>, F<spec/HAP-Categories.md>
+
 =cut

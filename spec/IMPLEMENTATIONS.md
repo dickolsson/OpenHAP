@@ -4,6 +4,11 @@ This document captures practical knowledge extracted from studying four mature
 HAP implementations. The goal is to help developers understand _how_ real
 projects solve HAP problems, not just _what_ the protocol requires.
 
+**Provenance:** Extracted 2026-01-06 from unpinned `--depth 1` checkouts of the
+implementations listed below; the source commits were not recorded. Regenerating
+with the `implementations` skill replaces this notice with the extraction date
+and each source repository's commit.
+
 ## Source Implementations
 
 | Implementation | Language   | Location               | Notes                                                       |

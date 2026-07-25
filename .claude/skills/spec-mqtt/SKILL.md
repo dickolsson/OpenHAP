@@ -1,18 +1,18 @@
 ---
 name: spec-mqtt
 description:
-  Extract the Tasmota MQTT protocol from external/Tasmota-Docs into
-  spec/MQTT.md. Use when asked to generate, regenerate, or update the MQTT spec
-  document. Requires external/ to be populated.
+  Extract the Tasmota MQTT protocol from external/Tasmota-Docs into spec/MQTT.md
+  plus topic files spec/MQTT-*.md. Use when asked to generate, regenerate, or
+  update the MQTT spec documents. Requires external/ to be populated.
 ---
 
 # Extract Tasmota MQTT Protocol
 
 ## Objective
 
-Produce `spec/MQTT.md` documenting how Tasmota devices communicate over MQTT.
-OpenHAP bridges Tasmota to HomeKit, so this document should enable accurate
-translation between the two protocols.
+Produce `spec/MQTT.md` plus topic files `spec/MQTT-*.md` documenting how Tasmota
+devices communicate over MQTT. OpenHAP bridges Tasmota to HomeKit, so these
+documents should enable accurate translation between the two protocols.
 
 ## Preconditions
 
@@ -103,13 +103,35 @@ configuration relevant to HomeKit bridging.
 **Exclude:** Web UI, console commands, OTA updates, rules, scripting, Zigbee,
 RF, IR, and other functionality not needed for basic device control.
 
-## Output
+## Output Structure
 
-Create `spec/MQTT.md` as a comprehensive protocol reference.
+Create the MQTT protocol specification as **multiple focused files** in `spec/`
+rather than one monolithic document. This avoids context limits and makes the
+specification easier to navigate and maintain.
 
-Include a **Glossary** section early in the document defining key terms (e.g.,
-FullTopic, prefix, topic, telemetry, LWT, retained message) to ensure consistent
-terminology throughout.
+**Required:** Create `spec/MQTT.md` as an index/overview that:
+
+- Provides a glossary defining key terms (e.g., FullTopic, prefix, topic,
+  telemetry, LWT, retained message) to ensure consistent terminology throughout
+- Gives a high-level protocol overview
+- Links to the topic-specific files for detailed information
+- Carries the cross-cutting quick references (HomeKit mapping, essential
+  commands and subscriptions)
+- Records provenance near the top: the extraction date and the source
+  repository's commit (`git -C external/Tasmota-Docs rev-parse --short HEAD`),
+  so staleness against upstream can be checked later
+
+**Topic files:** Break out detailed content into separate `spec/MQTT-*.md`
+files. Split along the code's own boundaries — transport concerns (topics,
+command/response, configuration, errors, timing) serve the MQTT client module,
+while device-class concerns (control commands, state reporting, sensors) serve
+the per-device Tasmota modules. Let the natural structure of the content guide
+the exact split.
+
+Each topic file should be self-contained enough to be useful on its own, but can
+cross-reference other files in the spec.
+
+## Formatting Guidelines
 
 Use:
 
@@ -125,5 +147,5 @@ Aim for depth over brevity — document all payload variations, edge cases in
 value ranges, and timing considerations. Include complete JSON examples showing
 all fields that may appear in responses.
 
-The document should enable someone to write code that correctly sends commands
-to and receives state from Tasmota devices.
+The specification should enable someone to write code that correctly sends
+commands to and receives state from Tasmota devices.

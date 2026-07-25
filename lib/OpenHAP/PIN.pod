@@ -105,7 +105,7 @@ cryptographic operations.
 
 =head1 SEE ALSO
 
-L<OpenHAP::SRP>, L<OpenHAP::Pairing>, L<openhapd.conf(5)>
+L<OpenHAP::SRP>, L<OpenHAP::Pairing>, L<openhapd.conf(5)>, F<spec/HAP-Pairing.md>
 
 =head1 STANDARDS
 
