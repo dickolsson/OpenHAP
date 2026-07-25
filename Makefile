@@ -1,4 +1,4 @@
-.PHONY: all build check clean clean-man deps deps-develop deps-test install install-man integration lint man package prettier prettier-fix test tidy tidy-fix uninstall upgrade vm-provision vm-up
+.PHONY: all build check clean clean-man deps deps-develop deps-test install install-man integration lint man package prettier prettier-fix spec-coverage test tidy tidy-fix uninstall upgrade vm-provision vm-up
 
 # Filesystem configuration
 PREFIX			?= /usr/local
@@ -106,6 +106,9 @@ prettier:
 
 prettier-fix:
 	npx prettier --write '**/*.md' '**/*.json' '**/*.yml'
+
+spec-coverage:
+	@perl scripts/spec-coverage --quiet
 
 %.cat1: %.1
 	$(MANDOC) -Tascii $< > $@

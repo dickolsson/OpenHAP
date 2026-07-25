@@ -22,6 +22,8 @@ make check          # tidy + lint + test; MUST pass before every commit
 make test           # prove -l -v t/openhvf/*.t t/fugulib/*.t t/openhap/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
+make spec-coverage  # spec/ section coverage + stale-citation check
+
 make tidy           # check perltidy formatting
 make tidy-fix       # auto-fix Perl formatting
 make prettier       # check Markdown/JSON/YAML formatting
