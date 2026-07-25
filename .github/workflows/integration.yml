@@ -92,16 +92,12 @@ jobs:
 
       - name: Shut down VM
         # A clean shutdown before the cache post-step keeps the cached
-        # qcow2 consistent, but graceful shutdown talks to the guest
-        # over SSH/ACPI and a wedged guest (common after a failed test
-        # run under TCG) can make it block indefinitely. This step runs
-        # `if: always()`, so bound it hard: try a graceful `down`, fall
-        # back to a force stop, then guarantee the QEMU process is gone.
-        # Leftover sockets cannot be archived and are removed.
+        # qcow2 consistent. `openhvf down` is internally bounded (its
+        # guest interactions are time-limited and it force-stops the
+        # QEMU process as a last resort), so it cannot hang the job even
+        # when the guest is wedged. Leftover sockets cannot be archived
+        # and are removed.
         if: always()
         run: |
-          timeout 120 ./bin/openhvf down \
-            || timeout 30 ./bin/openhvf stop --force \
-            || true
-          pkill -9 -f qemu-system-aarch64 2>/dev/null || true
+          ./bin/openhvf down || true
           find .openhvf -type s -delete 2>/dev/null || true

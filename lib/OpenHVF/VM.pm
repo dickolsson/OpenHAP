@@ -36,6 +36,8 @@ use OpenHVF::Util;
 use OpenHVF::QMP;
 use OpenHVF::QGA;
 
+use FuguLib::Process;
+
 use constant {
 	EXIT_SUCCESS        => 0,
 	EXIT_ERROR          => 1,
@@ -277,7 +279,7 @@ sub down ($self)
 		"Graceful shutdown failed, force stopping (risk of corruption)"
 	);
 	$state->mark_unclean_shutdown;
-	$self->_qmp_quit;
+	$self->_force_stop;
 	$state->clear_vm_pid;
 	$log->info("VM stopped");
 
@@ -365,7 +367,7 @@ sub stop ( $self, $force = 0 )
 		$log->warning(
 			"Force stopping VM (filesystem may be corrupted)");
 		$state->mark_unclean_shutdown;
-		$self->_qmp_quit;
+		$self->_force_stop;
 		$state->clear_vm_pid;
 		$log->info("VM stopped");
 		return EXIT_SUCCESS;
@@ -385,7 +387,7 @@ sub stop ( $self, $force = 0 )
 "Graceful shutdown timed out, force stopping (risk of corruption)"
 	);
 	$state->mark_unclean_shutdown;
-	$self->_qmp_quit;
+	$self->_force_stop;
 	$state->clear_vm_pid;
 	$log->info("VM stopped");
 	return EXIT_SUCCESS;
@@ -594,39 +596,33 @@ sub _graceful_shutdown ($self)
 	my $config = $self->{config};
 	my $log    = $self->{log};
 
-	# Method 1: SSH sync + ACPI powerdown
-	# First sync filesystems via SSH, then use QMP to send ACPI power button
-	# This avoids the problem of SSH connection being killed by halt
-	my $ssh = OpenHVF::SSH->new(
-		host => '127.0.0.1',
-		port => $config->{ssh_port},
-		user => 'root',
-	);
+	# Best-effort filesystem sync over SSH before pulling the power.
+	# Hard-bounded: a wedged guest must never stall shutdown, and
+	# libssh2 does not reliably honor its own timeout on the connect
+	# and handshake. A failure or timeout here is fine - the ACPI
+	# powerdown below runs the guest's own orderly shutdown (which
+	# syncs), and a force stop is the ultimate fallback.
+	$self->_bounded(
+		OpenHVF::SSH::DEFAULT_TIMEOUT + 5,
+		sub {
+			my $ssh = OpenHVF::SSH->new(
+				host => '127.0.0.1',
+				port => $config->{ssh_port},
+				user => 'root',
+			);
+			return $ssh->run_command('sync; sync; sync');
+		} );
 
-	# Try to sync filesystems via SSH (non-blocking command)
-	my $sync_result = $ssh->run_command('sync; sync; sync');
-
-	if ( $sync_result->{exit_code} == 0 ) {
-
-		# Synced successfully, now use ACPI powerdown via QMP
-		if ( $self->_qmp_powerdown ) {
-			if ( $self->_wait_exit(60) ) {
-				$log->info(
-					"Shutdown via SSH sync + ACPI powerdown"
-				);
-				return 1;
-			}
-		}
+	# Ask the guest to power off via the ACPI power button, then wait.
+	if ( $self->_qmp_powerdown && $self->_wait_exit(60) ) {
+		$log->info("Shutdown via ACPI powerdown");
+		return 1;
 	}
 
-	# Method 2: Try QGA shutdown (if guest agent is available)
+	# Guest-agent shutdown, if the agent is available.
 	my $qga = $self->_qga_connect;
 	if ($qga) {
-
-		# Sync filesystems first
 		$qga->sync;
-
-		# Request shutdown via guest agent
 		$qga->shutdown('powerdown');
 		$qga->disconnect;
 
@@ -636,15 +632,41 @@ sub _graceful_shutdown ($self)
 		}
 	}
 
-	# Method 3: Try direct ACPI powerdown as last resort
-	if ( $self->_qmp_powerdown ) {
-		if ( $self->_wait_exit(30) ) {
-			$log->info("Shutdown via ACPI powerdown");
-			return 1;
-		}
-	}
-
 	return 0;
+}
+
+# $self->_bounded($seconds, $code):
+#	Run $code under a hard wall-clock deadline so a blocking guest
+#	interaction cannot stall the caller. Returns $code's return value,
+#	or undef if the deadline elapsed. Mirrors the alarm guard used for
+#	the MQTT connect in OpenHAP::MQTT.
+sub _bounded ( $self, $seconds, $code )
+{
+	my $result;
+	my $ok = eval {
+		local $SIG{ALRM} = sub { die "timeout\n" };
+		alarm $seconds;
+		$result = $code->();
+		alarm 0;
+		1;
+	};
+	alarm 0;
+	return $result if $ok;
+
+	$self->{log}->warning("Guest did not respond within ${seconds}s");
+	return;
+}
+
+# $self->_force_stop:
+#	Terminate the QEMU process deterministically: SIGTERM (QEMU exits
+#	and flushes its disk caches), escalating to SIGKILL if it lingers.
+#	Unlike a QMP 'quit', this cannot hang on an unresponsive monitor
+#	socket, so it is a safe last resort.
+sub _force_stop ($self)
+{
+	my $pid = $self->{state}->get_vm_pid;
+	return 1 if !defined $pid;
+	return FuguLib::Process->terminate( $pid, grace_period => 5 );
 }
 
 # QGA methods
