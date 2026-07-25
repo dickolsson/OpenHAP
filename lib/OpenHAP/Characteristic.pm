@@ -73,7 +73,7 @@ sub new ( $class, %args )
 
 	my $self = bless {
 		type   => $uuid,
-		iid    => $args{iid}    // die "Instance ID required",
+		iid    => $args{iid}    // die('Instance ID required'),
 		format => $args{format} // 'string',
 		perms  => $args{perms}  // ['pr'],
 
