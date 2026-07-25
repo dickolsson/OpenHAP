@@ -1,0 +1,72 @@
+name: Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Integration tests (OpenBSD VM)
+    # arm64 runner: the OpenBSD guest is arm64, so the VM runs without
+    # cross-architecture translation. KVM is picked up automatically by
+    # openhvf if the runner ever exposes /dev/kvm; until then QEMU falls
+    # back to TCG software emulation, which is why the timeouts below
+    # are generous.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build version derives from `git rev-list --count HEAD`
+          fetch-depth: 0
+
+      - name: Setup Perl
+        uses: ./.github/actions/setup-perl
+
+      - name: Install development dependencies
+        run: make deps-develop
+
+      - name: Cache OpenBSD miniroot image
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/openhvf
+          key: openhvf-image-${{ hashFiles('.openhvfrc') }}
+
+      - name: Cache provisioned VM disk
+        # Saved only after a clean shutdown (see the last step), so a
+        # cache hit boots the already-installed OpenBSD system instead
+        # of reinstalling it from the miniroot on every run.
+        uses: actions/cache@v4
+        with:
+          path: .openhvf
+          key:
+            openhvf-state-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
+            'deps/OpenBSD.txt', 'scripts/vm_provision.sh') }}
+
+      - name: Run integration tests
+        env:
+          # Expect-script step timeout and post-boot SSH wait, both far
+          # beyond the defaults to accommodate TCG emulation
+          OPENHVF_TIMEOUT: 1800
+          OPENHVF_WAIT_TIMEOUT: 1800
+        run: make integration
+
+      - name: Show VM status on failure
+        if: failure()
+        run: ./bin/openhvf status || true
+
+      - name: Shut down VM
+        # A clean shutdown before the cache post-step saves .openhvf
+        # keeps the qcow2 disk image consistent; leftover sockets
+        # cannot be archived and are removed.
+        if: always()
+        run: |
+          ./bin/openhvf down || true
+          find .openhvf -type s -delete 2>/dev/null || true
