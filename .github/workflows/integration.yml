@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual runs against any branch, e.g. to test workflow changes
+  # before merging
+  workflow_dispatch:
 
 concurrency:
   group: integration-${{ github.ref }}
