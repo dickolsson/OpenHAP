@@ -76,10 +76,16 @@ install: install-man
 	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
 	install -m 644 lib/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
 	install -m 644 lib/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
-	[ ! -e lib/OpenHAP/Test/*.pm ] || install -m 644 lib/OpenHAP/Test/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Test/
-	[ ! -e lib/OpenHAP/Test/*.pod ] || install -m 644 lib/OpenHAP/Test/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Test/
-	[ ! -e lib/OpenHAP/Test/Controller/*.pm ] || install -m 644 lib/OpenHAP/Test/Controller/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/
-	[ ! -e lib/OpenHAP/Test/Controller/*.pod ] || install -m 644 lib/OpenHAP/Test/Controller/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/
+	# Test helper modules ship only in the packaged tree; the glob
+	# loops handle zero, one, or many matches without stderr noise
+	for f in lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod; do \
+		[ -e "$$f" ] || continue; \
+		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/; \
+	done
+	for f in lib/OpenHAP/Test/Controller/*.pm lib/OpenHAP/Test/Controller/*.pod; do \
+		[ -e "$$f" ] || continue; \
+		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/; \
+	done
 	install -m 644 lib/FuguLib/*.pm $(DESTDIR)$(LIBDIR)/FuguLib/
 	install -m 644 lib/FuguLib/*.pod $(DESTDIR)$(LIBDIR)/FuguLib/
 	# Install rc.d script

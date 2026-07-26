@@ -29,7 +29,10 @@ fi
 echo "Using tarball: ${TARBALL}"
 
 echo "==> Installing cpanm..."
+# Guest heredocs run under set -e so a failed pkg_add/cpan/make cannot
+# report a provisioned guest.
 vm_run <<'EOF'
+set -e
 pkg_add -u 2>/dev/null || true
 
 # Install cpanm if not already present
@@ -44,6 +47,7 @@ vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
 
 echo "==> Installing OpenHAP..."
 vm_run <<'EOF'
+set -e
 cd /tmp && rm -rf openhap && tar xzf openhap.tar.gz
 
 # Uninstall existing version if present
@@ -85,9 +89,10 @@ rm -f /var/db/openhapd/pairings.db /var/db/openhapd/auth_attempts
 # Clean up
 cd /tmp && rm -rf openhap-* openhap.tar.gz
 
-# Enable and start services
+# Enable and start services (start fails when already running, e.g.
+# on a warm-cached disk where rc started it at boot)
 rcctl enable mosquitto
-rcctl start mosquitto
+rcctl check mosquitto >/dev/null || rcctl start mosquitto
 
 # Configure and start mdnsd on the primary network interface. mdnsd
 # needs an interface for multicast DNS; started without one it exits
@@ -135,7 +140,7 @@ fi
 
 if [ -x /etc/rc.d/openhapd ]; then
 	rcctl enable openhapd
-	rcctl start openhapd
+	rcctl check openhapd >/dev/null || rcctl start openhapd
 fi
 
 sleep 2
