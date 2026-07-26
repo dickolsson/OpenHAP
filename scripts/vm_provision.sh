@@ -104,13 +104,25 @@ if rcctl get mdnsd >/dev/null 2>&1; then
 		rcctl set mdnsd flags "${IFACE}"
 		rcctl enable mdnsd
 		rcctl restart mdnsd || true
-		if ! rcctl check mdnsd; then
+		# Settle-then-verify: an immediate point-in-time check
+		# races green when mdnsd starts and then exits shortly
+		# after. Require it to stay up across the window.
+		mdnsd_up=1
+		for probe in 1 2 3; do
+			sleep 2
+			if ! rcctl check mdnsd >/dev/null; then
+				mdnsd_up=0
+				break
+			fi
+		done
+		if [ "${mdnsd_up}" -ne 1 ]; then
 			# Surface why mdnsd would not stay up so the mDNS
 			# integration tests are diagnosable from CI logs
 			# instead of just reporting a missing daemon.
-			echo "WARNING: mdnsd did not start on ${IFACE}; diagnostics:"
+			echo "WARNING: mdnsd did not stay up on ${IFACE}; diagnostics:"
 			rcctl get mdnsd || true
 			ifconfig "${IFACE}" || true
+			tail -100 /var/log/daemon | grep mdnsd | tail -20 || true
 			echo "-- mdnsd foreground start (2s) --"
 			timeout 2 /usr/local/sbin/mdnsd -d "${IFACE}" 2>&1 |
 				head -n 20 || true

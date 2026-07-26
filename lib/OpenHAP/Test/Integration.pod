@@ -44,6 +44,11 @@ Integration tests require:
 
 =item * Data directory /var/db/openhapd
 
+=item * mosquitto(8) installed and startable via rcctl (MQTT tests)
+
+=item * mdnsd(8) and mdnsctl(8) installed, with mdnsd's flags set to a
+usable network interface and startable via rcctl (mDNS tests)
+
 =back
 
 =head1 METHODS
@@ -159,6 +164,16 @@ Ensure openhapd is stopped.
     $env->ensure_mqtt_running or die "MQTT required";
 
 Ensure MQTT broker is running.
+
+=head2 ensure_mdnsd_running
+
+    $env->ensure_mdnsd_running or die "mdnsd required";
+
+Ensure mdnsd is running and stays running: start it if needed, then
+re-check across a settle window, because a point-in-time probe races
+green when mdnsd starts and then exits shortly after. On failure,
+captured diagnostics (rcctl state, process list, recent syslog lines)
+are emitted as warnings.
 
 =head2 get_log_lines
 

@@ -325,6 +325,52 @@ sub ensure_daemon_stopped ($self)
 	return system('rcctl check openhapd >/dev/null 2>&1') != 0;
 }
 
+# $self->ensure_mdnsd_running():
+#	Ensure mdnsd is running and stays running: start it if needed,
+#	then re-check across a settle window, because a point-in-time
+#	probe races green when mdnsd starts and then exits shortly
+#	after. On failure, captured diagnostics are emitted so a dead
+#	mdnsd is diagnosable from the test output instead of failing
+#	bare.
+sub ensure_mdnsd_running ($self)
+{
+	my $check = 'rcctl check mdnsd >/dev/null 2>&1';
+
+	unless ( system($check) == 0 ) {
+		system('rcctl enable mdnsd >/dev/null 2>&1');
+		system('rcctl start mdnsd >/dev/null 2>&1');
+	}
+
+	for my $probe ( 1 .. 3 ) {
+		sleep 1;
+		next if system($check) == 0;
+		$self->_warn_mdnsd_diagnostics(
+			"mdnsd not running at settle probe $probe/3");
+		return;
+	}
+
+	return 1;
+}
+
+# $self->_warn_mdnsd_diagnostics($reason):
+#	Emit captured mdnsd state - rcctl views, the process list, and
+#	recent syslog lines - as warnings for the failure diagnostics.
+sub _warn_mdnsd_diagnostics ( $self, $reason )
+{
+	my $syslog = SYSLOG_FILE;
+
+	warn "$reason\n";
+	warn 'rcctl get mdnsd: ' . `rcctl get mdnsd 2>&1`;
+	warn 'mdnsd processes: '
+	    . ( `ps -axo pid,command 2>/dev/null | grep -w mdnsd | grep -v grep`
+		    || "none\n" );
+	warn "recent mdnsd syslog lines:\n"
+	    . (        `tail -200 $syslog 2>/dev/null | grep mdnsd | tail -20`
+		    || "none\n" );
+
+	return;
+}
+
 sub ensure_mqtt_running ($self)
 {
 	# Check if already running

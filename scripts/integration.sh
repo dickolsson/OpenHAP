@@ -31,8 +31,14 @@ cd /tmp && tar xzf tests.tar.gz
 # shared mocks in t/lib) over the installed copies
 cp -R lib/OpenHAP/Test /usr/local/libdata/perl5/site_perl/OpenHAP/
 
-# Clean up any orphaned processes from previous test runs
-# This ensures a known-good state before running tests
+# Clean up any orphaned processes from previous test runs, gracefully:
+# a SIGKILLed mdnsctl leaves mdnsd holding a dead client socket, which
+# is a suspected cause of mdnsd exiting under client churn. TERM first,
+# KILL only stragglers.
+rcctl stop openhapd >/dev/null 2>&1 || true
+pkill -f 'perl.*openhapd' 2>/dev/null || true
+pkill mdnsctl 2>/dev/null || true
+sleep 2
 pkill -9 -f 'perl.*openhapd' 2>/dev/null || true
 pkill -9 mdnsctl 2>/dev/null || true
 sleep 1
