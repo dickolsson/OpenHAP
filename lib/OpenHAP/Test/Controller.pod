@@ -20,7 +20,7 @@ OpenHAP::Test::Controller - minimal HomeKit controller for tests
         '{"characteristics":[{"aid":2,"iid":11,"value":true}]}',
         { 'Content-Type' => 'application/hap+json' });
 
-    my $event = $c->next_event(5);
+    my $event = $c->next_event;
 
     $c->remove_pairing;    # cleanup for test teardown
 
@@ -70,11 +70,15 @@ Perform one HTTP request over the session, encrypted once pair-verify
 has completed. Returns a hash ref with C<status>, C<headers> (lower
 cased names) and C<body>.
 
-=head2 next_event($timeout)
+=head2 next_event($timeout?)
 
-Wait up to $timeout seconds for an EVENT/1.0 message, decrypt and
-parse it. Returns a hash ref with C<status>, C<headers> and C<body>,
-or undef on timeout. Requires a socket connection.
+Wait for an EVENT/1.0 message, decrypt and parse it. Returns a hash
+ref with C<status>, C<headers> and C<body>, or undef on timeout.
+Without an explicit $timeout the wait is bounded by the session
+timeout, which honors OPENHAP_TEST_TIMEOUT - pass a literal only for
+short negative probes ("no event arrives"). Event frames split across
+socket reads are reassembled without desynchronizing the session nonce
+counter. Requires a socket connection.
 
 =head2 add_pairing($identifier, $ltpk, $permissions)
 

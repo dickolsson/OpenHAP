@@ -515,6 +515,15 @@ Exceptions (immediate delivery):
 
 From `Accessory.ts` (`handleCharacteristicChangeEvent`).
 
+**Delivery Scope:**
+
+An event is broadcast to every connection subscribed to the characteristic
+except the connection whose request caused the change — the originator never
+receives an event for its own write. The reference implementations agree:
+HAP-NodeJS excludes the `originator` connection from the broadcast
+(`eventedhttp.ts:215-218`), and HAP-python skips `sender_client_addr` when
+publishing an event (`accessory_driver.py:580`).
+
 **Subscription Persistence:**
 
 Subscriptions are per-connection. When the connection closes, all subscriptions

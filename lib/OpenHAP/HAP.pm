@@ -14,6 +14,7 @@ use OpenHAP::Pairing;
 use OpenHAP::Storage;
 use OpenHAP::Crypto;
 use OpenHAP::Bridge;
+use OpenHAP::Characteristic;
 use OpenHAP::PIN qw(normalize_pin);
 
 sub new ( $class, %args )
@@ -73,6 +74,29 @@ sub _initialize ($self)
 
 	# Initialize bridge
 	$self->{bridge} = OpenHAP::Bridge->new( name => $self->{name}, );
+
+	# Deliver device-side changes as EVENT/1.0 notifications: the
+	# bridge forwards each bridged accessory's notify_change with
+	# the device aid preserved (HAP-HTTP.md §14)
+	$self->{bridge}->add_event_callback(
+		sub ( $aid, $iid ) {
+			$self->_queue_change_event( $aid, $iid );
+		} );
+}
+
+# $self->_queue_change_event($aid, $iid):
+#	Queue an event carrying the characteristic's current value
+sub _queue_change_event ( $self, $aid, $iid )
+{
+	my $accessory = $self->{bridge}->get_accessory($aid);
+	return unless $accessory;
+
+	my $char = $accessory->get_characteristic($iid);
+	return unless $char;
+
+	$self->queue_event( $aid, $iid, $char->json_value );
+
+	return;
 }
 
 sub add_accessory ( $self, $accessory )
@@ -229,6 +253,7 @@ sub _handle_client ( $self, $sock, $select )
 		# session held it, so an aborted pair-setup cannot lock
 		# out pairing until restart
 		OpenHAP::Pairing->clear_pairing_state($session);
+		$self->_purge_event_subscriptions($session);
 		$OpenHAP::logger->info( 'Client disconnected from %s',
 			$sock->peerhost );
 		$select->remove($sock);
@@ -247,6 +272,7 @@ sub _handle_client ( $self, $sock, $select )
 			$OpenHAP::logger->warning(
 				'Decryption failed for client session');
 			OpenHAP::Pairing->clear_pairing_state($session);
+			$self->_purge_event_subscriptions($session);
 			$select->remove($sock);
 			delete $self->{sessions}{$sock};
 			$sock->close();
@@ -539,6 +565,11 @@ sub _handle_characteristics_put ( $self, $request, $session )
 				$has_errors = 1;
 				next;
 			}
+
+			# Notify subscribers on other connections; the
+			# originating session is excluded (HAP-HTTP.md §14)
+			$self->queue_event( $aid, $iid, $char->json_value,
+				$session );
 		}
 
 		# Enable/disable events
@@ -876,18 +907,36 @@ sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 		$key );
 }
 
-# Characteristic UUIDs for button events (require immediate delivery)
-# ProgrammableSwitchEvent (0x73), ButtonEvent (0x126)
+# $self->_purge_event_subscriptions($session):
+#	Drop every subscription held by a disconnecting session -
+#	subscriptions are per-connection (HAP-HTTP.md §14)
+sub _purge_event_subscriptions ( $self, $session )
+{
+	for my $subs ( values %{ $self->{event_subscriptions} } ) {
+		delete $subs->{$session};
+	}
+
+	return;
+}
+
+# Characteristic types exempt from coalescing (HAP-HTTP.md §14):
+# ProgrammableSwitchEvent (0x73), ButtonEvent (0x126),
+# MotionDetected (0x22), ContactSensorState (0x6A)
 use constant IMMEDIATE_EVENT_TYPES => {
 	'73'  => 1,
 	'126' => 1,
+	'22'  => 1,
+	'6A'  => 1,
 };
 
 # Event coalescing delay in seconds (HAP-HTTP.md §14)
 use constant EVENT_COALESCE_DELAY => 0.250;
 
-# Queue an event for delivery, with coalescing for non-button events
-sub queue_event ( $self, $aid, $iid, $value )
+# Queue an event for delivery, with coalescing for all but the
+# immediate-delivery characteristic types. The optional $originator is
+# the session whose request caused the change; it never receives the
+# event (HAP-HTTP.md §14)
+sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 {
 	my $accessory = $self->{bridge}->get_accessory($aid);
 	return unless $accessory;
@@ -895,23 +944,22 @@ sub queue_event ( $self, $aid, $iid, $value )
 	my $char = $accessory->get_characteristic($iid);
 	return unless $char;
 
-	# Get characteristic type (short form UUID)
-	my $char_type = $char->{type} // '';
-	$char_type =~ s/^0+//;    # Strip leading zeros
-
-	# Button events get immediate delivery
+	# Immediate types bypass coalescing
+	my $char_type =
+	    OpenHAP::Characteristic::_uuid_to_short( $char->{type} // '' );
 	if ( IMMEDIATE_EVENT_TYPES->{$char_type} ) {
-		$self->send_event( $aid, $iid, $value );
+		$self->send_event( $aid, $iid, $value, $originator );
 		return;
 	}
 
 	# Queue event for coalescing
 	my $key = "$aid.$iid";
 	$self->{event_queue}{$key} = {
-		aid       => $aid,
-		iid       => $iid,
-		value     => $value,
-		timestamp => Time::HiRes::time(),
+		aid        => $aid,
+		iid        => $iid,
+		value      => $value,
+		originator => $originator,
+		timestamp  => Time::HiRes::time(),
 	};
 
 	# Schedule flush if not already scheduled
@@ -931,8 +979,9 @@ sub flush_events ($self)
 
 	# Send all queued events
 	for my $event ( values %{ $self->{event_queue} } ) {
-		$self->send_event( $event->{aid}, $event->{iid},
-			$event->{value} );
+		$self->send_event(
+			$event->{aid},   $event->{iid},
+			$event->{value}, $event->{originator} );
 	}
 
 	# Clear queue
@@ -940,8 +989,9 @@ sub flush_events ($self)
 	$self->{event_flush_scheduled} = undef;
 }
 
-# Send EVENT/1.0 notification to subscribed sessions
-sub send_event ( $self, $aid, $iid, $value )
+# Send EVENT/1.0 notification to subscribed sessions, excluding the
+# originating session if one is given (HAP-HTTP.md §14)
+sub send_event ( $self, $aid, $iid, $value, $originator = undef )
 {
 	my $key  = "$aid.$iid";
 	my $subs = $self->{event_subscriptions}{$key} // {};
@@ -960,6 +1010,7 @@ sub send_event ( $self, $aid, $iid, $value )
 
 	for my $session ( values %$subs ) {
 		next unless $session && $session->is_encrypted();
+		next if defined $originator && $session == $originator;
 
 		my $encrypted = $session->encrypt($event_msg);
 		my $socket    = $session->{socket};

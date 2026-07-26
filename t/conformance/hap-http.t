@@ -522,63 +522,169 @@ subtest '[HAP-HTTP §16][HAP-HTTP §16.3] event subscription via ev:true' =>
 		'[HAP-HTTP §12] notification-not-supported is -70406' );
 };
 
-subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
-	my $hap = make_hap();
+# encrypted_session($sock, $id): verified session with test session keys
+my $EVENT_KEY = pack( 'H*', '11' x 32 );
 
-	# Two encrypted sessions with mock sockets; only one subscribes
-	my $key_a = pack( 'H*', '11' x 32 );
-	my $key_b = pack( 'H*', '22' x 32 );
+sub encrypted_session ( $sock, $id )
+{
+	my $session = OpenHAP::Session->new( socket => $sock );
+	$session->set_verified($id);
+	$session->set_encryption( $EVENT_KEY, pack( 'H*', '22' x 32 ) );
+	return $session;
+}
 
-	my $sub_sock = MockSocket->new;
-	my $sub_sess = OpenHAP::Session->new( socket => $sub_sock );
-	$sub_sess->set_verified('subscriber');
-	$sub_sess->set_encryption( $key_a, $key_b );
-
-	my $other_sock = MockSocket->new;
-	my $other_sess = OpenHAP::Session->new( socket => $other_sock );
-	$other_sess->set_verified('bystander');
-	$other_sess->set_encryption( $key_a, $key_b );
-
-	$hap->_register_event_subscription( $sub_sess, 2, 10 );
-	$hap->send_event( 2, 10, 1 );
-
-	ok( length( $sub_sock->{written} ) > 0,
-		'subscribed session receives event' );
-	is( $other_sock->{written}, '',
-		'subscriptions are per-connection: bystander receives nothing'
-	);
-
-	# Decrypt the frame and check the EVENT/1.0 message format
-	my $frame  = $sub_sock->{written};
+# decrypt_event($sock, $counter): decrypt one event frame written to a
+# mock socket and return the plaintext EVENT/1.0 message
+sub decrypt_event ( $sock, $counter = 0 )
+{
+	my $frame  = $sock->{written};
 	my $aad    = substr( $frame, 0, 2 );
 	my $length = unpack( 'v', $aad );
 	require OpenHAP::Crypto;
-	my $plain = OpenHAP::Crypto::chacha20_poly1305_decrypt(
-		$key_a,
-		pack( 'x[4]Q<', 0 ),
+	return OpenHAP::Crypto::chacha20_poly1305_decrypt(
+		$EVENT_KEY,
+		pack( 'x[4]Q<', $counter ),
 		substr( $frame, 2, $length ),
 		substr( $frame, 2 + $length, 16 ), $aad
 	);
+}
+
+# flush_until($hap, $sock): run the coalescing flush until the socket
+# has data or the deadline passes (resilient to timing variations)
+sub flush_until ( $hap, $sock )
+{
+	require Time::HiRes;
+	my $deadline = Time::HiRes::time() + 5;
+	while ( !length( $sock->{written} )
+		&& Time::HiRes::time() < $deadline )
+	{
+		Time::HiRes::sleep(0.05);
+		$hap->flush_events;
+	}
+	return;
+}
+
+subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
+	my $hap = make_hap();
+	my ( undef, undef, $acc_body ) =
+	    dispatch( $hap, 'GET', '/accessories' );
+	my ( $aid, $iid ) = find_char( $json->decode($acc_body), '25' );
+
+	# Three encrypted sessions: a subscriber, the writer (also
+	# subscribed), and a bystander that never subscribes
+	my $sub_sock    = MockSocket->new;
+	my $sub_sess    = encrypted_session( $sub_sock, 'subscriber' );
+	my $writer_sock = MockSocket->new;
+	my $writer_sess = encrypted_session( $writer_sock, 'writer' );
+	my $other_sock  = MockSocket->new;
+	my $other_sess  = encrypted_session( $other_sock, 'bystander' );
+
+	my $subscribe = $json->encode( { characteristics =>
+		    [ { aid => $aid, iid => $iid, ev => \1 } ] } );
+	for my $sess ( $sub_sess, $writer_sess ) {
+		my ( $status, undef, undef ) = dispatch( $hap, 'PUT',
+			'/characteristics', $subscribe, $sess );
+		is( $status, 204, 'subscription accepted' );
+	}
+
+	# A write through the PUT handler queues an event; the On type
+	# is not exempt from coalescing, so delivery happens on the
+	# post-window flush
+	my $put = $json->encode( { characteristics =>
+		    [ { aid => $aid, iid => $iid, value => \1 } ] } );
+	my ( $status, undef, undef ) =
+	    dispatch( $hap, 'PUT', '/characteristics', $put, $writer_sess );
+	is( $status, 204, 'value write accepted' );
+	flush_until( $hap, $sub_sock );
+
+	ok( length( $sub_sock->{written} ) > 0,
+		'write via PUT handler delivers an event to the subscriber' );
+	is( $other_sock->{written}, '',
+		'subscriptions are per-connection: bystander receives nothing'
+	);
+	is( $writer_sock->{written}, '',
+		'originating connection receives no event for its own write' );
+
+	# Decrypt the frame and check the EVENT/1.0 message format
+	my $plain = decrypt_event($sub_sock);
 	like( $plain, qr{^EVENT/1\.0 200 OK\r\n},
 		'event starts with EVENT/1.0 200 OK' );
 	like( $plain, qr{Content-Type: application/hap\+json\r\n},
 		'event content type is application/hap+json' );
 	my ($event_body) = $plain =~ /\r\n\r\n(.*)$/s;
 	my $data = $json->decode($event_body);
-	is( $data->{characteristics}[0]{aid}, 2, 'event has aid' );
-	is( $data->{characteristics}[0]{iid}, 10, 'event has iid' );
-	is( $data->{characteristics}[0]{value}, 1, 'event has new value' );
+	is( $data->{characteristics}[0]{aid}, $aid, 'event has aid' );
+	is( $data->{characteristics}[0]{iid}, $iid, 'event has iid' );
+	ok( $data->{characteristics}[0]{value},
+		'event carries the new value (true)' );
 
-	# Unsubscribe stops delivery
+	# Unsubscribing via ev:false stops delivery
 	$sub_sock->{written} = '';
-	$hap->_unregister_event_subscription( $sub_sess, 2, 10 );
-	$hap->send_event( 2, 10, 0 );
+	my $unsubscribe = $json->encode( { characteristics =>
+		    [ { aid => $aid, iid => $iid, ev => \0 } ] } );
+	dispatch( $hap, 'PUT', '/characteristics', $unsubscribe, $sub_sess );
+	$put = $json->encode( { characteristics =>
+		    [ { aid => $aid, iid => $iid, value => \0 } ] } );
+	dispatch( $hap, 'PUT', '/characteristics', $put, $writer_sess );
+	$hap->flush_events;
+	require Time::HiRes;
+	Time::HiRes::sleep( 2 * OpenHAP::HAP::EVENT_COALESCE_DELAY() );
+	$hap->flush_events;
 	is( $sub_sock->{written}, '',
 		'unsubscribed session receives nothing' );
+
+	# A disconnecting session loses all its subscriptions
+	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
+	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{$sub_sess},
+		'session re-subscribed' );
+	$hap->_purge_event_subscriptions($sub_sess);
+	ok( !exists $hap->{event_subscriptions}{"$aid.$iid"}{$sub_sess},
+		'subscriptions purged on disconnect' );
 
 	# Event coalescing delay is 250ms
 	is( OpenHAP::HAP::EVENT_COALESCE_DELAY(),
 		0.250, 'coalescing delay is 250ms' );
+};
+
+subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
+    => sub {
+	my $hap  = OpenHAP::HAP->new(
+		port         => 51827,
+		pin          => '123-45-678',
+		name         => 'Conformance Bridge',
+		storage_path => tempdir( CLEANUP => 1 ),
+	);
+	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $heater = OpenHAP::Tasmota::Heater->new(
+		aid         => 2,
+		name        => 'Test Heater',
+		mqtt_topic  => 'heater',
+		mqtt_client => $mqtt,
+	);
+	$hap->add_accessory($heater);
+	$heater->subscribe_mqtt;
+
+	my $sub_sock = MockSocket->new;
+	my $sub_sess = encrypted_session( $sub_sock, 'subscriber' );
+	my $subscribe = $json->encode( { characteristics =>
+		    [ { aid => 2, iid => 11, ev => \1 } ] } );
+	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
+
+	# A Tasmota state report reaches the subscriber as an event
+	# carrying the device aid, not the bridge's
+	$mqtt->simulate_message( 'stat/heater/POWER', 'ON' );
+	flush_until( $hap, $sub_sock );
+
+	ok( length( $sub_sock->{written} ) > 0,
+		'MQTT state change delivers an event' );
+	my $plain = decrypt_event($sub_sock);
+	my ($event_body) = ( $plain // '' ) =~ /\r\n\r\n(.*)$/s;
+	my $data = $json->decode( $event_body // '{}' );
+	is( $data->{characteristics}[0]{aid}, 2,
+		'event carries the device aid' );
+	is( $data->{characteristics}[0]{iid}, 11,
+		'event carries the changed iid' );
+	ok( $data->{characteristics}[0]{value}, 'event value is true' );
 };
 
 done_testing();

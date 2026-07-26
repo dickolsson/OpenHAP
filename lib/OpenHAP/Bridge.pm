@@ -53,10 +53,12 @@ sub add_bridged_accessory ( $self, $accessory )
 		$accessory->{aid}, $accessory->{name} );
 	push @{ $self->{bridged_accessories} }, $accessory;
 
-	# Forward event callbacks
+	# Forward event callbacks, preserving the device aid
 	$accessory->add_event_callback(
 		sub ( $aid, $iid ) {
-			$self->notify_change($iid);
+			for my $callback ( @{ $self->{event_callbacks} } ) {
+				$callback->( $aid, $iid );
+			}
 		} );
 }
 
