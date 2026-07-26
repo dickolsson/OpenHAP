@@ -46,6 +46,8 @@ use constant {
 	DB_PATH           => '/var/db/openhapd',
 };
 
+use constant PAIRINGS_FILE => DB_PATH . '/pairings.db';
+
 sub new ( $class, %options )
 {
 	my $self = bless {
@@ -102,10 +104,7 @@ sub teardown ($self)
 	$self->{controllers} = [];
 
 	# Close any open sockets
-	for my $socket ( @{ $self->{sockets} } ) {
-		$socket->close if defined $socket;
-	}
-	$self->{sockets} = [];
+	$self->close_sockets;
 
 	# Disconnect MQTT if connected
 	if ( defined $self->{mqtt} ) {
@@ -135,21 +134,86 @@ sub get_controller ( $self, %args )
 }
 
 # $self->ensure_unpaired():
-#	Guarantee the daemon starts unpaired: when stored pairings
-#	exist, stop the daemon, wipe the pairing state (keeping the
-#	accessory identity), and start it again.
+#	Guarantee the daemon is verifiably unpaired: when stored
+#	pairings exist, stop the daemon, wipe the pairing state
+#	(keeping the accessory identity), and start it again. The
+#	post-condition is probed with POST /identify, which succeeds
+#	only while unpaired (HAP-HTTP.md §3).
 sub ensure_unpaired ($self)
 {
-	my $pairings_file = DB_PATH . '/pairings';
-	return 1 unless -s $pairings_file;
+	if ( $self->_has_pairings ) {
+		$self->ensure_daemon_stopped or return;
 
-	$self->ensure_daemon_stopped or return;
+		for my $file ( PAIRINGS_FILE, DB_PATH . '/auth_attempts' ) {
+			next unless -e $file;
+			unlink $file or do {
+				warn "Cannot remove $file: $!\n";
+				return;
+			};
+		}
 
-	unlink $pairings_file
-	    or do { warn "Cannot remove $pairings_file: $!\n"; return; };
-	unlink DB_PATH . '/auth_attempts';
+		$self->ensure_daemon_running or return;
+	}
 
-	$self->ensure_daemon_running or return;
+	return $self->_verify_unpaired;
+}
+
+# $self->_has_pairings():
+#	True when the pairings database holds at least one entry. The
+#	daemon leaves comment headers in the file after its first save,
+#	so a size check cannot tell paired from unpaired - parse for
+#	non-comment lines instead.
+sub _has_pairings ($self)
+{
+	open my $fh, '<', PAIRINGS_FILE or return 0;
+	while (<$fh>) {
+		next if /^#/ || /^\s*$/;
+		close $fh;
+		return 1;
+	}
+	close $fh;
+
+	return 0;
+}
+
+# $self->_verify_unpaired():
+#	Probe the pairing state with POST /identify: 204 only when
+#	unpaired, 400 with {"status":-70401} when still paired
+#	(HAP-HTTP.md §3). Fails loudly on the paired answer. The probe
+#	socket is closed immediately rather than left registered with
+#	the daemon until teardown.
+sub _verify_unpaired ($self)
+{
+	my $before   = scalar @{ $self->{sockets} };
+	my $response = $self->http_request( 'POST', '/identify' );
+	for my $socket ( splice @{ $self->{sockets} }, $before ) {
+		$socket->close if defined $socket;
+	}
+
+	unless ( defined $response ) {
+		warn "No response to identify probe\n";
+		return;
+	}
+
+	my ($status) = parse_http_response($response);
+	return 1 if defined $status && $status == 204;
+
+	warn sprintf "Daemon not unpaired: identify returned %s\n",
+	    $status // 'no status';
+
+	return;
+}
+
+# $self->close_sockets():
+#	Close and forget every raw socket opened by http_request, so a
+#	probe connection is not left registered with the daemon until
+#	teardown.
+sub close_sockets ($self)
+{
+	for my $socket ( @{ $self->{sockets} } ) {
+		$socket->close if defined $socket;
+	}
+	$self->{sockets} = [];
 
 	return 1;
 }
@@ -259,6 +323,52 @@ sub ensure_daemon_stopped ($self)
 	sleep 1;
 
 	return system('rcctl check openhapd >/dev/null 2>&1') != 0;
+}
+
+# $self->ensure_mdnsd_running():
+#	Ensure mdnsd is running and stays running: start it if needed,
+#	then re-check across a settle window, because a point-in-time
+#	probe races green when mdnsd starts and then exits shortly
+#	after. On failure, captured diagnostics are emitted so a dead
+#	mdnsd is diagnosable from the test output instead of failing
+#	bare.
+sub ensure_mdnsd_running ($self)
+{
+	my $check = 'rcctl check mdnsd >/dev/null 2>&1';
+
+	unless ( system($check) == 0 ) {
+		system('rcctl enable mdnsd >/dev/null 2>&1');
+		system('rcctl start mdnsd >/dev/null 2>&1');
+	}
+
+	for my $probe ( 1 .. 3 ) {
+		sleep 1;
+		next if system($check) == 0;
+		$self->_warn_mdnsd_diagnostics(
+			"mdnsd not running at settle probe $probe/3");
+		return;
+	}
+
+	return 1;
+}
+
+# $self->_warn_mdnsd_diagnostics($reason):
+#	Emit captured mdnsd state - rcctl views, the process list, and
+#	recent syslog lines - as warnings for the failure diagnostics.
+sub _warn_mdnsd_diagnostics ( $self, $reason )
+{
+	my $syslog = SYSLOG_FILE;
+
+	warn "$reason\n";
+	warn 'rcctl get mdnsd: ' . `rcctl get mdnsd 2>&1`;
+	warn 'mdnsd processes: '
+	    . ( `ps -axo pid,command 2>/dev/null | grep -w mdnsd | grep -v grep`
+		    || "none\n" );
+	warn "recent mdnsd syslog lines:\n"
+	    . (        `tail -200 $syslog 2>/dev/null | grep mdnsd | tail -20`
+		    || "none\n" );
+
+	return;
 }
 
 sub ensure_mqtt_running ($self)

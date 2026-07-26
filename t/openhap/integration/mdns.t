@@ -25,13 +25,9 @@ die "mdnsctl required for mDNS integration tests\n" unless $mdnsctl_available;
 my $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
 ok($daemon_running, 'OpenHAP daemon is running');
 
-# Test 3: mdnsd daemon is running (start it if needed)
-unless (system('rcctl check mdnsd >/dev/null 2>&1') == 0) {
-	system('rcctl enable mdnsd >/dev/null 2>&1');
-	system('rcctl start mdnsd >/dev/null 2>&1');
-	sleep 1;
-}
-my $mdnsd_available = system('rcctl check mdnsd >/dev/null 2>&1') == 0;
+# Test 3: mdnsd daemon is running and stays running (started if
+# needed; failure emits captured diagnostics)
+my $mdnsd_available = $env->ensure_mdnsd_running;
 ok($mdnsd_available, 'mdnsd daemon is running');
 
 die "mdnsd required for mDNS integration tests\n" unless $mdnsd_available;

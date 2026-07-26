@@ -51,7 +51,31 @@ Common causes:
   user exists, and `/var/db/openhapd` permissions.
 - MQTT tests fail — mosquitto not installed or not started
   (`rcctl start mosquitto`).
-- mDNS tests fail — mdnsd not installed or not started (`rcctl start mdnsd`).
+- mDNS tests fail — mdnsd not installed, not started, or its flags name a
+  nonexistent interface (the openmdns package defaults to `em0`; mdnsd exits
+  fatally on an unknown interface). Check `rcctl get mdnsd` and set the flags to
+  the guest's real interface — `rcctl enable mdnsd` first, since rcctl refuses
+  to set flags on a disabled daemon. The test helpers emit captured rcctl/syslog
+  diagnostics when mdnsd will not stay up.
+
+## CI verification procedure
+
+The Integration workflow (`.github/workflows/integration.yml`) runs the suite in
+an OpenBSD VM on pushes to main, PRs, a weekly schedule, and `workflow_dispatch`
+against any branch. "Green" means repetition, not one run: **three consecutive
+green workflow runs, at least one cold-cache and one warm-cache**, with wall
+clock recorded against the job's 180-minute budget.
+
+Producing each cache state on demand:
+
+- **Cold cache** (fresh OpenBSD install from the miniroot): bump the `v<N>`
+  suffix in the `openhvf-state-*` cache key in the workflow, or delete the cache
+  with `gh cache delete` (or the repository's Actions → Caches UI), then
+  dispatch a run.
+- **Warm cache** (reused provisioned disk): re-run after a green run. The disk
+  cache saves only when the job succeeds, so no warm cache exists until the
+  suite first passes end-to-end; a re-run of that green run then boots the
+  cached disk.
 
 ## References
 

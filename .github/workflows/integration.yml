@@ -30,6 +30,9 @@ on:
   # Manual runs against any branch, e.g. to test workflow changes
   # before merging
   workflow_dispatch:
+  # Weekly run so regressions surface between pushes
+  schedule:
+    - cron: "30 5 * * 1"
 
 concurrency:
   group: integration-${{ github.ref }}
@@ -65,14 +68,17 @@ jobs:
           key: openhvf-image-${{ hashFiles('.openhvfrc') }}
 
       - name: Cache provisioned VM disk
-        # Saved only after a clean shutdown (see the last step), so a
-        # cache hit boots the already-installed OpenBSD system instead
-        # of reinstalling it from the miniroot on every run.
+        # The cache post-step saves only when the job succeeds; the
+        # clean-shutdown step below keeps the archived qcow2 consistent.
+        # A cache hit boots the already-installed OpenBSD system instead
+        # of reinstalling it from the miniroot on every run. Bump the
+        # v<N> suffix in the key to force a cold-cache run (see the
+        # integration-tests skill).
         uses: actions/cache@v4
         with:
           path: .openhvf
           key:
-            openhvf-state-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
+            openhvf-state-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
             'deps/OpenBSD.txt', 'scripts/vm_provision.sh') }}
 
       - name: Generate ephemeral SSH key for the VM
@@ -102,7 +108,9 @@ jobs:
           make integration
 
       - name: Show VM diagnostics on failure
-        if: failure()
+        # Not plain failure(): a timeout-minutes cancellation must
+        # still show the diagnostics
+        if: always() && !success()
         run: |
           echo "==> openhvf status"
           ./bin/openhvf status || true

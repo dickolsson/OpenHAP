@@ -14,13 +14,9 @@ my $env = OpenHAP::Test::Integration->new;
 $env->setup;
 
 # mdnsd must be running for openhapd to spawn mdnsctl publishers
-unless (system('rcctl check mdnsd >/dev/null 2>&1') == 0) {
-	system('rcctl enable mdnsd >/dev/null 2>&1');
-	system('rcctl start mdnsd >/dev/null 2>&1');
-	sleep 1;
-}
+# (started if needed; failure emits captured diagnostics)
 die "mdnsd required for mDNS cleanup tests\n"
-    unless system('rcctl check mdnsd >/dev/null 2>&1') == 0;
+    unless $env->ensure_mdnsd_running;
 
 # Restart openhapd so it registers with the running mdnsd
 system('rcctl restart openhapd >/dev/null 2>&1');

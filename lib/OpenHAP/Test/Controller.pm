@@ -66,6 +66,7 @@ sub new ( $class, %args )
 
 		socket     => undef,
 		inbuf      => '',
+		rawbuf     => '',
 		last_error => undef,
 	}, $class;
 
@@ -116,6 +117,7 @@ sub close ($self)
 	}
 	$self->{encrypted} = 0;
 	$self->{inbuf}     = '';
+	$self->{rawbuf}    = '';
 	return 1;
 }
 
@@ -622,13 +624,18 @@ sub list_pairings ($self)
 
 # --- events -------------------------------------------------------------
 
-# $self->next_event($timeout):
+# $self->next_event($timeout?):
 #	Wait for an EVENT/1.0 message on the socket, decrypt and parse
 #	it. Returns { status, headers, body } or undef on timeout.
-#	Requires a socket connection (not an injected transport).
-sub next_event ( $self, $timeout = 5 )
+#	Without an explicit $timeout the wait is bounded by the session
+#	timeout (which honors OPENHAP_TEST_TIMEOUT); pass a literal only
+#	for short negative probes. Requires a socket connection (not an
+#	injected transport).
+sub next_event ( $self, $timeout = undef )
 {
 	return unless $self->{socket};
+
+	$timeout //= $self->{timeout};
 
 	my $select = IO::Select->new( $self->{socket} );
 	my $end    = time + $timeout;
@@ -663,11 +670,48 @@ sub next_event ( $self, $timeout = 5 )
 		my $bytes = $self->{socket}->sysread( my $chunk, 65535 );
 		return unless $bytes;
 
-		my $plain =
-		    $self->{encrypted} ? $self->_decrypt($chunk) : $chunk;
+		unless ( $self->{encrypted} ) {
+			$self->{inbuf} .= $chunk;
+			next;
+		}
+
+		# A frame may arrive split across reads: accumulate raw
+		# bytes and decrypt only complete frames, leaving a
+		# partial tail buffered so the nonce counter stays in
+		# sync with the accessory
+		$self->{rawbuf} .= $chunk;
+		my $plain = $self->_drain_frames;
 		return unless defined $plain;
 		$self->{inbuf} .= $plain;
 	}
+}
+
+# $self->_drain_frames():
+#	Decrypt and consume every complete frame at the front of the
+#	raw receive buffer; a trailing partial frame stays buffered for
+#	the next read. Returns the decrypted plaintext (possibly
+#	empty), or undef on an authentication failure.
+sub _drain_frames ($self)
+{
+	my $out = '';
+	while ( length( $self->{rawbuf} ) >= 2 ) {
+		my $length = unpack( 'v', substr( $self->{rawbuf}, 0, 2 ) );
+		return if $length > MAX_FRAME;
+		last   if length( $self->{rawbuf} ) < 2 + $length + 16;
+
+		my $frame = substr( $self->{rawbuf}, 0, 2 + $length + 16, '' );
+		my $aad        = substr( $frame, 0,           2 );
+		my $ciphertext = substr( $frame, 2,           $length );
+		my $tag        = substr( $frame, 2 + $length, 16 );
+
+		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
+		my $plain =
+		    OpenHAP::Crypto::chacha20_poly1305_decrypt(
+			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
+		return unless defined $plain;
+		$out .= $plain;
+	}
+	return $out;
 }
 
 1;

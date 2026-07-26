@@ -44,6 +44,11 @@ Integration tests require:
 
 =item * Data directory /var/db/openhapd
 
+=item * mosquitto(8) installed and startable via rcctl (MQTT tests)
+
+=item * mdnsd(8) and mdnsctl(8) installed, with mdnsd's flags set to a
+usable network interface and startable via rcctl (mDNS tests)
+
 =back
 
 =head1 METHODS
@@ -93,16 +98,28 @@ passed through to the controller constructor.
 
     $env->ensure_unpaired or die 'cannot unpair';
 
-Guarantee the daemon starts unpaired. When stored pairings exist, the
-daemon is stopped, the pairing state under /var/db/openhapd is wiped
-(the accessory identity is kept), and the daemon is started again.
-Every integration test file starts unpaired unless it pairs itself.
+Guarantee the daemon is verifiably unpaired. When the pairings database
+(/var/db/openhapd/pairings.db) holds any entry, the daemon is stopped,
+the pairing state is wiped - pairings.db and auth_attempts, keeping the
+accessory identity - and the daemon is started again. The post-condition
+is then probed with POST /identify, which returns 204 only while
+unpaired; a paired answer fails the call. Returns true on a verified
+unpaired daemon, false otherwise. Every integration test file starts
+unpaired unless it pairs itself.
 
 =head2 http_request
 
     my $response = $env->http_request($method, $path, $body, $headers);
 
-Make an HTTP request to the HAP server.
+Make an HTTP request to the HAP server. The connection stays open and
+registered until C<teardown> (or C<close_sockets>).
+
+=head2 close_sockets
+
+    $env->close_sockets;
+
+Close and forget every raw socket opened by C<http_request>, so a probe
+connection is not left registered with the daemon until teardown.
 
 =head2 parse_http_response
 
@@ -147,6 +164,16 @@ Ensure openhapd is stopped.
     $env->ensure_mqtt_running or die "MQTT required";
 
 Ensure MQTT broker is running.
+
+=head2 ensure_mdnsd_running
+
+    $env->ensure_mdnsd_running or die "mdnsd required";
+
+Ensure mdnsd is running and stays running: start it if needed, then
+re-check across a settle window, because a point-in-time probe races
+green when mdnsd starts and then exits shortly after. On failure,
+captured diagnostics (rcctl state, process list, recent syslog lines)
+are emitted as warnings.
 
 =head2 get_log_lines
 

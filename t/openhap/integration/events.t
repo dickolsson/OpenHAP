@@ -67,13 +67,21 @@ $result = $bystander->request('PUT', '/characteristics',
 	{ 'Content-Type' => 'application/hap+json' });
 is($result->{status}, 204, 'value changed from the second connection');
 
-my $event = $subscriber->next_event(5);
-ok(defined $event, '[HAP-HTTP §14] EVENT/1.0 message received');
-is($event->{headers}{'content-type'}, 'application/hap+json',
-   '[HAP-HTTP §14] event content type');
-my $payload = decode_json($event->{body});
+# Positive wait: bounded by the session timeout (OPENHAP_TEST_TIMEOUT)
+my $event = $subscriber->next_event;
+ok(defined $event, '[HAP-HTTP §14] EVENT/1.0 message received')
+    or diag('no event; buffered plaintext: '
+	. unpack('H*', $subscriber->{inbuf} // '')
+	. ' raw: ' . unpack('H*', $subscriber->{rawbuf} // ''));
+
+# Decode only a received event so a miss stays a normal failure and the
+# unpair teardown below still runs
+is($event ? $event->{headers}{'content-type'} : undef,
+   'application/hap+json', '[HAP-HTTP §14] event content type');
+my $payload = $event ? eval { decode_json($event->{body}) } : undef;
+diag("event body undecodable: $@") if $event && !$payload;
 my ($change) = grep { $_->{aid} == $aid && $_->{iid} == $iid }
-    @{ $payload->{characteristics} };
+    @{ $payload ? $payload->{characteristics} : [] };
 ok($change, '[HAP-HTTP §14] event carries the changed characteristic');
 
 # Test 3: Subscriptions are per-connection - the unsubscribed

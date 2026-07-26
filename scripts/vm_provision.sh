@@ -29,7 +29,10 @@ fi
 echo "Using tarball: ${TARBALL}"
 
 echo "==> Installing cpanm..."
+# Guest heredocs run under set -e so a failed pkg_add/cpan/make cannot
+# report a provisioned guest.
 vm_run <<'EOF'
+set -e
 pkg_add -u 2>/dev/null || true
 
 # Install cpanm if not already present
@@ -44,6 +47,7 @@ vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
 
 echo "==> Installing OpenHAP..."
 vm_run <<'EOF'
+set -e
 cd /tmp && rm -rf openhap && tar xzf openhap.tar.gz
 
 # Uninstall existing version if present
@@ -78,35 +82,58 @@ chown _openhap:_openhap /var/db/openhapd
 # Copy example config if no config exists
 [ -f /etc/openhapd.conf ] || cp /etc/examples/openhapd.conf /etc/openhapd.conf
 
+# Start every run unpaired, even on a reused (cached) disk that carries
+# the previous run's pairing state. Keep the accessory identity keys.
+rm -f /var/db/openhapd/pairings.db /var/db/openhapd/auth_attempts
+
 # Clean up
 cd /tmp && rm -rf openhap-* openhap.tar.gz
 
-# Enable and start services
+# Enable and start services (start fails when already running, e.g.
+# on a warm-cached disk where rc started it at boot)
 rcctl enable mosquitto
-rcctl start mosquitto
+rcctl check mosquitto >/dev/null || rcctl start mosquitto
 
-# Configure and start mdnsd on the primary network interface. mdnsd
-# needs an interface for multicast DNS; started without one it exits
-# immediately, which later surfaces as failing mDNS integration tests.
+# Configure and start mdnsd on the primary network interface. The
+# openmdns package ships an rc script whose default flags name an
+# interface this guest does not have (em0), and mdnsd exits fatally
+# on an unknown interface - so the flags must always be set to a real
+# interface here. Guard on the rc script, NOT on 'rcctl get': its exit
+# status reflects whether the service is enabled, which is false on
+# every fresh disk and silently skipped this whole block.
 # Prefer the default-route interface, fall back to the first UP, non
 # loopback interface, and verify the daemon actually came up.
-if rcctl get mdnsd >/dev/null 2>&1; then
+if [ -x /etc/rc.d/mdnsd ]; then
 	IFACE=$(route -n show -inet 2>/dev/null |
 		awk '/^default/ { print $NF; exit }')
 	[ -n "${IFACE}" ] || IFACE=$(ifconfig -a |
 		awk -F: '/^[a-z].*<UP,/ && !/^(lo|enc|pflog)/ { print $1; exit }')
 
 	if [ -n "${IFACE}" ]; then
-		rcctl set mdnsd flags "${IFACE}"
+		# Enable first: rcctl refuses to set flags on a
+		# disabled daemon ("rcctl: mdnsd is not enabled")
 		rcctl enable mdnsd
+		rcctl set mdnsd flags "${IFACE}"
 		rcctl restart mdnsd || true
-		if ! rcctl check mdnsd; then
+		# Settle-then-verify: an immediate point-in-time check
+		# races green when mdnsd starts and then exits shortly
+		# after. Require it to stay up across the window.
+		mdnsd_up=1
+		for probe in 1 2 3; do
+			sleep 2
+			if ! rcctl check mdnsd >/dev/null; then
+				mdnsd_up=0
+				break
+			fi
+		done
+		if [ "${mdnsd_up}" -ne 1 ]; then
 			# Surface why mdnsd would not stay up so the mDNS
 			# integration tests are diagnosable from CI logs
 			# instead of just reporting a missing daemon.
-			echo "WARNING: mdnsd did not start on ${IFACE}; diagnostics:"
+			echo "WARNING: mdnsd did not stay up on ${IFACE}; diagnostics:"
 			rcctl get mdnsd || true
 			ifconfig "${IFACE}" || true
+			tail -100 /var/log/daemon | grep mdnsd | tail -20 || true
 			echo "-- mdnsd foreground start (2s) --"
 			timeout 2 /usr/local/sbin/mdnsd -d "${IFACE}" 2>&1 |
 				head -n 20 || true
@@ -119,7 +146,7 @@ fi
 
 if [ -x /etc/rc.d/openhapd ]; then
 	rcctl enable openhapd
-	rcctl start openhapd
+	rcctl check openhapd >/dev/null || rcctl start openhapd
 fi
 
 sleep 2

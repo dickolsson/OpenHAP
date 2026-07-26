@@ -20,6 +20,14 @@ OpenHAP::HAP - Main HAP server
 This module implements the main HAP server with HTTP endpoints,
 pairing, and accessory management.
 
+Characteristic changes - whether written over HTTP or reported by a
+device - are delivered to subscribed connections as EVENT/1.0
+notifications, coalesced over a 250 ms window except for the
+immediate-delivery characteristic types (see F<spec/HAP-HTTP.md>
+section 14). The connection whose request caused a change never
+receives an event for its own write, and a connection's subscriptions
+end when it closes.
+
 =head1 SEE ALSO
 
 F<spec/HAP.md>, F<spec/HAP-HTTP.md>

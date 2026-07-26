@@ -189,20 +189,8 @@ use_ok('OpenHAP::Pairing');
         '[HAP-mDNS §8] advertised sf=1 when pairing removed');
 }
 
-# Test IMMEDIATE_EVENT_TYPES constant ([HAP-HTTP §14] event coalescing)
-{
-    # Constants are defined in the package, access via method
-    my $temp_dir = tempdir(CLEANUP => 1);
-    my $hap = OpenHAP::HAP->new(
-        port         => 51833,
-        pin          => '123-45-678',
-        storage_path => $temp_dir,
-    );
-
-    # Test that queue_event method exists (uses the constants internally)
-    ok($hap->can('queue_event'), '[HAP-HTTP §14] queue_event method exists');
-    ok($hap->can('flush_events'), 'flush_events method exists');
-    ok($hap->can('send_event'), 'send_event method exists');
-}
+# Event emission behavior ([HAP-HTTP §14]) is covered end-to-end by
+# t/conformance/hap-http.t, which drives the PUT handler and the MQTT
+# device path against subscribed mock sessions.
 
 done_testing();
