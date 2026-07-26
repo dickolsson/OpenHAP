@@ -94,12 +94,16 @@ cd /tmp && rm -rf openhap-* openhap.tar.gz
 rcctl enable mosquitto
 rcctl check mosquitto >/dev/null || rcctl start mosquitto
 
-# Configure and start mdnsd on the primary network interface. mdnsd
-# needs an interface for multicast DNS; started without one it exits
-# immediately, which later surfaces as failing mDNS integration tests.
+# Configure and start mdnsd on the primary network interface. The
+# openmdns package ships an rc script whose default flags name an
+# interface this guest does not have (em0), and mdnsd exits fatally
+# on an unknown interface - so the flags must always be set to a real
+# interface here. Guard on the rc script, NOT on 'rcctl get': its exit
+# status reflects whether the service is enabled, which is false on
+# every fresh disk and silently skipped this whole block.
 # Prefer the default-route interface, fall back to the first UP, non
 # loopback interface, and verify the daemon actually came up.
-if rcctl get mdnsd >/dev/null 2>&1; then
+if [ -x /etc/rc.d/mdnsd ]; then
 	IFACE=$(route -n show -inet 2>/dev/null |
 		awk '/^default/ { print $NF; exit }')
 	[ -n "${IFACE}" ] || IFACE=$(ifconfig -a |
