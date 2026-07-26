@@ -51,7 +51,12 @@ Common causes:
   user exists, and `/var/db/openhapd` permissions.
 - MQTT tests fail — mosquitto not installed or not started
   (`rcctl start mosquitto`).
-- mDNS tests fail — mdnsd not installed or not started (`rcctl start mdnsd`).
+- mDNS tests fail — mdnsd not installed, not started, or its flags name a
+  nonexistent interface (the openmdns package defaults to `em0`; mdnsd exits
+  fatally on an unknown interface). Check `rcctl get mdnsd` and set the flags to
+  the guest's real interface — `rcctl enable mdnsd` first, since rcctl refuses
+  to set flags on a disabled daemon. The test helpers emit captured rcctl/syslog
+  diagnostics when mdnsd will not stay up.
 
 ## CI verification procedure
 

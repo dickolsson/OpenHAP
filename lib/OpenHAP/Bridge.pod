@@ -19,6 +19,11 @@ bridged accessories. The bridge accessory carries the mandatory
 AccessoryInformation and ProtocolInformation services; bridged
 accessories carry only AccessoryInformation.
 
+Change notifications from bridged accessories are forwarded to the
+bridge's own event callbacks with the originating accessory's aid
+preserved, so the server can deliver EVENT/1.0 notifications for
+device-side changes.
+
 =head1 SEE ALSO
 
 L<OpenHAP::Accessory>, F<spec/HAP.md>, F<spec/HAP-Categories.md>
