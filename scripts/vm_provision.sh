@@ -110,8 +110,10 @@ if [ -x /etc/rc.d/mdnsd ]; then
 		awk -F: '/^[a-z].*<UP,/ && !/^(lo|enc|pflog)/ { print $1; exit }')
 
 	if [ -n "${IFACE}" ]; then
-		rcctl set mdnsd flags "${IFACE}"
+		# Enable first: rcctl refuses to set flags on a
+		# disabled daemon ("rcctl: mdnsd is not enabled")
 		rcctl enable mdnsd
+		rcctl set mdnsd flags "${IFACE}"
 		rcctl restart mdnsd || true
 		# Settle-then-verify: an immediate point-in-time check
 		# races green when mdnsd starts and then exits shortly
