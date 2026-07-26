@@ -102,11 +102,13 @@ sub subscribe ( $self, $topic, $callback )
 	return unless $self->{connected} && $self->{client};
 
 	# Net::MQTT::Simple uses a different subscription model
-	# We register topics and poll for messages in tick()
+	# We register topics and poll for messages in tick().
+	# Since 1.33 it passes a retain flag as a third argument;
+	# accept and ignore any extra arguments.
 	eval {
 		$self->{client}->subscribe(
 			$topic,
-			sub ( $topic_received, $payload ) {
+			sub ( $topic_received, $payload, @ ) {
 				push @{ $self->{pending_messages} },
 				    [ $topic_received, $payload ];
 			} );
@@ -275,7 +277,7 @@ sub resubscribe ($self)
 		eval {
 			$self->{client}->subscribe(
 				$topic,
-				sub ( $topic_received, $payload ) {
+				sub ( $topic_received, $payload, @ ) {
 					push @{ $self->{pending_messages} },
 					    [ $topic_received, $payload ];
 				} );

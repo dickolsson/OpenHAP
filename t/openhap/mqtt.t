@@ -228,9 +228,51 @@ SKIP: {
 # Test tick when not connected
 {
     my $mqtt = OpenHAP::MQTT->new();
-    
+
     my $result = $mqtt->tick();
     is($result, 0, 'tick returns 0 when not connected');
+}
+
+# The internal buffer callback registered with Net::MQTT::Simple must
+# tolerate extra arguments: since 1.33 the library passes a retain flag
+# as a third argument, and a two-argument signature dies on every
+# incoming message (regression from the integration suite)
+{
+    package StubMQTTClient;
+
+    sub new($class) { bless { callbacks => {} }, $class }
+
+    sub subscribe($self, $topic, $callback)
+    {
+        $self->{callbacks}{$topic} = $callback;
+    }
+
+    package main;
+
+    my $mqtt = OpenHAP::MQTT->new();
+    my $stub = StubMQTTClient->new;
+    $mqtt->{client}    = $stub;
+    $mqtt->{connected} = 1;
+
+    $mqtt->subscribe('stat/device/POWER', sub($topic, $payload) { });
+    my $internal = $stub->{callbacks}{'stat/device/POWER'};
+    ok(defined $internal, 'internal callback registered with the client');
+
+    my $lived = eval { $internal->('stat/device/POWER', 'ON', 1); 1 };
+    ok($lived, 'internal callback accepts a third (retain) argument')
+        or diag($@);
+    is_deeply($mqtt->{pending_messages},
+        [['stat/device/POWER', 'ON']],
+        'message buffered without the retain flag');
+
+    # resubscribe re-registers callbacks with the same tolerance
+    $mqtt->{pending_messages} = [];
+    $stub->{callbacks}        = {};
+    $mqtt->resubscribe();
+    $internal = $stub->{callbacks}{'stat/device/POWER'};
+    $lived = eval { $internal->('stat/device/POWER', 'OFF', 0); 1 };
+    ok($lived, 'resubscribed callback accepts a third argument')
+        or diag($@);
 }
 
 # Test disconnect clears pending messages
