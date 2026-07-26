@@ -78,6 +78,10 @@ chown _openhap:_openhap /var/db/openhapd
 # Copy example config if no config exists
 [ -f /etc/openhapd.conf ] || cp /etc/examples/openhapd.conf /etc/openhapd.conf
 
+# Start every run unpaired, even on a reused (cached) disk that carries
+# the previous run's pairing state. Keep the accessory identity keys.
+rm -f /var/db/openhapd/pairings.db /var/db/openhapd/auth_attempts
+
 # Clean up
 cd /tmp && rm -rf openhap-* openhap.tar.gz
 

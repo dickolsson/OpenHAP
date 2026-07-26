@@ -31,6 +31,10 @@ my $hex = unpack('H*', $body);
 unlike($hex, qr/03..0130783078/,
     '[HAP-Pairing §2.4] M2 public key does not contain ASCII "0x" prefix');
 
+# Close the raw M1 probe's connection now instead of leaving it
+# registered with the daemon until teardown
+$env->close_sockets;
+
 # Restart cleanly so the M1 probe above does not hold the pairing lock
 $env->ensure_daemon_stopped or die "Cannot stop daemon\n";
 $env->ensure_daemon_running or die "Cannot start daemon\n";
