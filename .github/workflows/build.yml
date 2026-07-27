@@ -2,9 +2,11 @@ name: Build
 
 on:
   workflow_run:
-    # Gate releases on the test suite. The Test workflow only runs when
-    # production code changed, so docs-only merges produce no release;
-    # the commit-count-derived tag simply skips ahead on the next one.
+    # Gate releases on the test suite, which is also what filters this
+    # workflow: workflow_run takes no paths of its own. Test declares an
+    # explicit include list of the sources a release is built from, so a
+    # merge that touches nothing on that list produces no release; the
+    # commit-count-derived tag simply skips ahead on the next one.
     workflows: ["Test"]
     types:
       - completed

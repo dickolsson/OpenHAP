@@ -1,32 +1,80 @@
 name: Integration
 
+# This job boots an OpenBSD guest under TCG emulation and can run for
+# hours, so its trigger set is the narrowest in the repository: only an
+# edit that can change what runs inside the VM, or how the VM is built,
+# belongs here.  Explicit includes, never excludes - a new top-level
+# directory must not silently start costing three hours a push.
+#
+# Everything hashed into the image cache key below also appears here.
+# That is deliberate: an input that can rotate the cache key but cannot
+# start a run would be rebuilt on the next unrelated push instead of the
+# one that changed it.
+#
+# Anything left out - unit tests, docs, man pages, the website, spec/,
+# plans/ - is still reachable through workflow_dispatch and the weekly
+# schedule.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "**.pod"
-      - "spec/**"
-      - "plans/**"
-      - "man/**"
-      - ".claude/**"
-      - ".devcontainer/**"
-      - ".prettierrc"
-      - ".gitignore"
-      - "LICENSE"
+    paths:
+      # The daemon, library and files installed into the guest
+      - "bin/hapctl"
+      - "bin/openhapd"
+      - "lib/FuguLib/*.pm"
+      - "lib/OpenHAP/**.pm"
+      - "etc/rc.d/openhapd"
+      - "share/openhap/examples/*.sample"
+      # The suite itself and the mocks it carries over
+      - "t/openhap/integration/*.t"
+      - "t/lib/**.pm"
+      # The harness that installs the guest, provisions it and drives
+      # the run
+      - "bin/openhvf"
+      - "lib/OpenHVF/**.pm"
+      - ".openhvfrc"
+      - "share/openhvf/cache-generation"
+      - "share/openhvf/expect/*.exp"
+      - "scripts/deps.sh"
+      - "scripts/deps_key.sh"
+      - "scripts/ftp.sh"
+      - "scripts/integration.sh"
+      - "scripts/vm_provision.sh"
+      - "scripts/vm_up.sh"
+      # Guest dependencies, and the package and install rules that put
+      # the checkout on the guest
+      - "cpanfile"
+      - "deps/OpenBSD.txt"
+      - "Makefile"
+      - ".github/actions/setup-perl/action.yml"
+      - ".github/workflows/integration.yml"
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "**.md"
-      - "**.pod"
-      - "spec/**"
-      - "plans/**"
-      - "man/**"
-      - ".claude/**"
-      - ".devcontainer/**"
-      - ".prettierrc"
-      - ".gitignore"
-      - "LICENSE"
+    paths:
+      - "bin/hapctl"
+      - "bin/openhapd"
+      - "lib/FuguLib/*.pm"
+      - "lib/OpenHAP/**.pm"
+      - "etc/rc.d/openhapd"
+      - "share/openhap/examples/*.sample"
+      - "t/openhap/integration/*.t"
+      - "t/lib/**.pm"
+      - "bin/openhvf"
+      - "lib/OpenHVF/**.pm"
+      - ".openhvfrc"
+      - "share/openhvf/cache-generation"
+      - "share/openhvf/expect/*.exp"
+      - "scripts/deps.sh"
+      - "scripts/deps_key.sh"
+      - "scripts/ftp.sh"
+      - "scripts/integration.sh"
+      - "scripts/vm_provision.sh"
+      - "scripts/vm_up.sh"
+      - "cpanfile"
+      - "deps/OpenBSD.txt"
+      - "Makefile"
+      - ".github/actions/setup-perl/action.yml"
+      - ".github/workflows/integration.yml"
   # Manual runs against any branch, e.g. to test workflow changes
   # before merging
   workflow_dispatch:
