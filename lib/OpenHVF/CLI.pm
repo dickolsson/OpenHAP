@@ -44,24 +44,29 @@ use constant {
 	EXIT_SSH_FAILED      => 8,
 	EXIT_EXPECT_FAILED   => 9,
 	EXIT_DOWNLOAD_FAILED => 10,
+
+	# Scriptable: lets 'snapshot restore || provision-from-scratch'
+	# tell a missing layer from a real failure
+	EXIT_SNAPSHOT_NOT_FOUND => 11,
 };
 
 my %commands = (
-	'up'      => \&cmd_up,
-	'down'    => \&cmd_down,
-	'destroy' => \&cmd_destroy,
-	'status'  => \&cmd_status,
-	'start'   => \&cmd_start,
-	'stop'    => \&cmd_stop,
-	'ssh'     => \&cmd_ssh,
-	'console' => \&cmd_console,
-	'expect'  => \&cmd_expect,
-	'wait'    => \&cmd_wait,
-	'image'   => \&cmd_image,
-	'cache'   => \&cmd_cache,
-	'disk'    => \&cmd_disk,
-	'init'    => \&cmd_init,
-	'help'    => \&cmd_help,
+	'up'       => \&cmd_up,
+	'down'     => \&cmd_down,
+	'destroy'  => \&cmd_destroy,
+	'status'   => \&cmd_status,
+	'start'    => \&cmd_start,
+	'stop'     => \&cmd_stop,
+	'ssh'      => \&cmd_ssh,
+	'console'  => \&cmd_console,
+	'expect'   => \&cmd_expect,
+	'wait'     => \&cmd_wait,
+	'image'    => \&cmd_image,
+	'cache'    => \&cmd_cache,
+	'snapshot' => \&cmd_snapshot,
+	'disk'     => \&cmd_disk,
+	'init'     => \&cmd_init,
+	'help'     => \&cmd_help,
 );
 
 sub new ( $class, %opts )
@@ -534,6 +539,218 @@ sub _format_size ( $bytes = undef )
 	    : sprintf( '%.1f%s', $size, $units[$unit] );
 }
 
+# Named snapshot layers over a cached base image
+sub cmd_snapshot ( $self, @args )
+{
+	my $action = shift @args;
+	if ( !defined $action || $action !~ /^(save|restore|list|rm)$/ ) {
+		$self->{log}->error(
+"Usage: openhvf snapshot <save|restore|rm> <name> | list"
+		);
+		return EXIT_INVALID_ARGS;
+	}
+
+	my $cache = OpenHVF::ImageCache->new( $self->{config}->cache_dir );
+
+	return $self->_snapshot_list($cache) if $action eq 'list';
+
+	my $name = shift @args;
+	if ( !$cache->valid_snapshot_name($name) ) {
+		$self->{log}->error(
+			"Invalid snapshot name: " . ( $name // '(missing)' ) );
+		return EXIT_INVALID_ARGS;
+	}
+
+	return $self->_snapshot_save( $cache, $name ) if $action eq 'save';
+	return $self->_snapshot_restore( $cache, $name )
+	    if $action eq 'restore';
+	return $self->_snapshot_remove( $cache, $name );
+}
+
+# $self->_snapshot_save($cache, $name):
+#	Flatten the stopped working disk into the cache under the base it
+#	was built on. A live overlay is not consistent, so a running VM is
+#	refused rather than copied.
+sub _snapshot_save ( $self, $cache, $name )
+{
+	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
+
+	if ( $vm->is_running ) {
+		$self->{log}->error("Stop the VM before saving a snapshot");
+		return EXIT_VM_RUNNING;
+	}
+
+	if ( !$self->{state}->disk_exists ) {
+		$self->{log}->error("No disk image. Run 'openhvf up' first.");
+		return EXIT_ERROR;
+	}
+
+	if ( !$self->{state}->is_installed ) {
+		$self->{log}->error("VM is not installed yet");
+		return EXIT_ERROR;
+	}
+
+	# The snapshot belongs under whichever base the disk actually
+	# hangs off, directly or through another snapshot - re-saving
+	# after a restore is normal.
+	my $key = $self->_disk_cache_key($cache);
+	if ( !defined $key ) {
+		$self->{log}->error(
+"This disk is not built on a cached image, so it cannot be snapshotted."
+		);
+		$self->{log}->error(
+"It was created with --no-cache or 'image_cache no'; recreate it with 'openhvf destroy' and 'openhvf up'."
+		);
+		return EXIT_ERROR;
+	}
+
+	$self->{log}->info("Saving snapshot '$name' of $key...");
+
+	my $state = $self->{state};
+	my $path  = $cache->snapshot_store(
+		$key, $name,
+		$state->disk_path,
+		{
+			installed            => 1,
+			installed_ssh_pubkey =>
+			    $state->get_installed_ssh_pubkey,
+		} );
+	if ( !defined $path ) {
+		$self->{log}->error("Failed to save snapshot '$name'");
+		return EXIT_ERROR;
+	}
+
+	$self->{log}->info("Saved snapshot '$name': $path");
+	return EXIT_SUCCESS;
+}
+
+# $self->_snapshot_restore($cache, $name):
+#	Replace the working disk with a fresh overlay on a snapshot and
+#	reseed the state that disk embodies. Works from nothing - no disk,
+#	no state - so a fresh checkout can restore before its first 'up'.
+sub _snapshot_restore ( $self, $cache, $name )
+{
+	my $vm    = $self->_load_vm or return EXIT_VM_NOT_FOUND;
+	my $state = $self->{state};
+
+	if ( $vm->is_running ) {
+		$self->{log}->error("Stop the VM before restoring a snapshot");
+		return EXIT_VM_RUNNING;
+	}
+
+	my $key = $self->_current_cache_key($cache);
+	if ( !defined $key ) {
+		$self->{log}->error("Cannot determine the current cache key");
+		return EXIT_ERROR;
+	}
+
+	my $found = $cache->snapshot_lookup( $key, $name );
+	if ( !defined $found ) {
+		$self->{log}->error("No snapshot '$name' for $key");
+		return EXIT_SNAPSHOT_NOT_FOUND;
+	}
+
+	# Disk::create returns early on an existing path, so without this
+	# a restore would report success and change nothing.
+	my $disk_path = $state->disk_path;
+	if ( -f $disk_path ) {
+		unlink $disk_path or do {
+			$self->{log}->error("Cannot remove $disk_path: $!");
+			return EXIT_ERROR;
+		};
+	}
+
+	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
+	my $disk      = OpenHVF::Disk->new( $self->{config}->state_dir );
+	my $created =
+	    $disk->create( $vm_config->{name}, undef, $found->{path}, 'qcow2' );
+	if ( !defined $created ) {
+		$self->{log}->error("Failed to overlay snapshot '$name'");
+		return EXIT_ERROR;
+	}
+
+	# Reseed what the disk embodies. A checkout whose SSH key differs
+	# from the saved one is reconciled by the next 'openhvf up'.
+	my $meta = $found->{meta};
+	$state->mark_installed;
+	$state->set_root_password( $meta->{root_password} )
+	    if defined $meta->{root_password};
+	$state->mark_ssh_key_installed( $meta->{installed_ssh_pubkey} )
+	    if defined $meta->{installed_ssh_pubkey};
+	$state->{data}{cached_from} = "$key/$name";
+	$state->save;
+
+	$self->{log}->info("Restored snapshot '$name' of $key");
+	return EXIT_SUCCESS;
+}
+
+sub _snapshot_list ( $self, $cache )
+{
+	my $key = $self->_current_cache_key($cache);
+	if ( !defined $key ) {
+		$self->{log}->error("Cannot determine the current cache key");
+		return EXIT_ERROR;
+	}
+
+	my $snapshots = $cache->snapshot_list($key);
+	if ( !@$snapshots ) {
+		$self->{log}->info("No snapshots for $key");
+		return EXIT_SUCCESS;
+	}
+
+	for my $snapshot (@$snapshots) {
+		my $created =
+		    defined $snapshot->{created_at}
+		    ? scalar localtime $snapshot->{created_at}
+		    : 'unknown';
+		$self->{log}->info(
+			sprintf( '  - %s  %s  %s',
+				$snapshot->{name},
+				_format_size( $snapshot->{size} ),
+				$created ) );
+	}
+
+	return EXIT_SUCCESS;
+}
+
+sub _snapshot_remove ( $self, $cache, $name )
+{
+	my $key = $self->_current_cache_key($cache);
+	if ( !defined $key ) {
+		$self->{log}->error("Cannot determine the current cache key");
+		return EXIT_ERROR;
+	}
+
+	if ( !defined $cache->snapshot_lookup( $key, $name ) ) {
+		$self->{log}->error("No snapshot '$name' for $key");
+		return EXIT_SNAPSHOT_NOT_FOUND;
+	}
+
+	if ( !$cache->snapshot_remove( $key, $name ) ) {
+		return EXIT_ERROR;
+	}
+
+	$self->{log}->info("Removed snapshot '$name'");
+	return EXIT_SUCCESS;
+}
+
+# $self->_disk_cache_key($cache):
+#	The cache entry the working disk is built on, whether directly on
+#	its base image or through a snapshot of it.
+sub _disk_cache_key ( $self, $cache )
+{
+	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
+	return if !defined $vm_config;
+
+	# Scalar context: backing_file returns an empty list for a
+	# standalone disk, which would reach key_for_path as no argument
+	# at all rather than as undef.
+	my $disk    = OpenHVF::Disk->new( $self->{config}->state_dir );
+	my $backing = $disk->backing_file( $vm_config->{name} );
+
+	return $cache->key_for_path($backing);
+}
+
 # Disk management
 sub cmd_disk ( $self, @args )
 {
@@ -688,6 +905,7 @@ Commands:
   wait [--timeout=N]  Wait for VM to be ready (SSH available)
   image <cmd>         Manage images (download, list)
   cache <cmd>         Manage installed images (list, clear [--stale])
+  snapshot <cmd>      Manage snapshots (save, restore, rm <name>; list)
   disk <cmd>          Manage disk (check, repair, info)
   init [dir]          Initialize .openhvf/ directory
   help                Show this help

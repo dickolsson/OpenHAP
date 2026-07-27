@@ -35,14 +35,15 @@ use OpenHVF::Expect;
 use OpenHVF::Image;
 
 use constant {
-	BASE_NAME       => 'base.qcow2',
-	META_NAME       => 'meta.json',
-	INSTALLED_DIR   => 'installed',
-	SNAPSHOT_DIR    => 'snapshots',
-	TEMP_PREFIX     => '.tmp.',
-	GENERATION_FILE => 'cache-generation',
-	INSTALL_SCRIPT  => 'install.exp',
-	KEY_HASH_LENGTH => 8,
+	BASE_NAME         => 'base.qcow2',
+	META_NAME         => 'meta.json',
+	INSTALLED_DIR     => 'installed',
+	SNAPSHOT_DIR      => 'snapshots',
+	TEMP_PREFIX       => '.tmp.',
+	GENERATION_FILE   => 'cache-generation',
+	INSTALL_SCRIPT    => 'install.exp',
+	KEY_HASH_LENGTH   => 8,
+	MAX_SNAPSHOT_NAME => 128,
 };
 
 # Temporary entry trees still being built, removed by _cleanup_temp on
@@ -259,11 +260,215 @@ sub list ($self)
 	];
 }
 
+# $self->key_for_path($path):
+#	The cache key whose entry contains $path - a base image or a
+#	snapshot - or undef when $path lies outside the cache. Lets a
+#	caller answer "which cached image is this disk built on?".
+sub key_for_path ( $self, $path )
+{
+	return if !defined $path;
+
+	my $installed = $self->installed_dir . '/';
+	return if index( $path, $installed ) != 0;
+
+	my ($key) = split m{/}, substr( $path, length $installed ), 2;
+	return if !defined $key || $key eq '';
+
+	return $key;
+}
+
+# $self->snapshot_dir($key):
+#	Directory holding an entry's named snapshot layers
+sub snapshot_dir ( $self, $key )
+{
+	return $self->entry_dir($key) . '/' . SNAPSHOT_DIR;
+}
+
+# $self->snapshot_path($key, $name):
+#	Absolute path of a named snapshot, whether or not it exists
+sub snapshot_path ( $self, $key, $name )
+{
+	return $self->snapshot_dir($key) . "/$name.qcow2";
+}
+
+# valid_snapshot_name($name):
+#	Snapshot names become file names inside the cache, so they are
+#	held to the same restrictions as VM names plus a leading
+#	alphanumeric, which keeps them clear of the cache's own dot-files.
+sub valid_snapshot_name ( $, $name )
+{
+	return 0 if !defined $name || $name eq '';
+	return 0 if length($name) > MAX_SNAPSHOT_NAME;
+	return 0 if $name !~ /^[A-Za-z0-9][\w.-]*$/;
+
+	return 1;
+}
+
+# $self->snapshot_store($key, $name, $disk_path, $meta):
+#	Publish the (stopped) working disk as the named snapshot layer of
+#	entry $key.
+#
+#	The disk is flattened onto base.qcow2 rather than copied. A copy
+#	would carry the working disk's backing-file header verbatim, which
+#	is only correct while that disk hangs directly off the base: after
+#	a restore it hangs off a snapshot, so a copy would either stack
+#	chains without bound or - when the same name is re-saved, which a
+#	normal second run does - name itself as its own backing file.
+#	Flattening also keeps every snapshot a direct child of the base,
+#	so no snapshot is ever another's parent and removing one cannot
+#	orphan another.
+#
+#	Returns the snapshot path, or undef on failure.
+sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
+{
+	if ( !$self->valid_snapshot_name($name) ) {
+		warn "Invalid snapshot name: " . ( $name // '(undef)' ) . "\n";
+		return;
+	}
+
+	my $entry = $self->lookup($key);
+	if ( !defined $entry ) {
+		warn "No cached image for $key to snapshot against\n";
+		return;
+	}
+
+	if ( !-f $disk_path ) {
+		warn "Cannot snapshot missing disk image: $disk_path\n";
+		return;
+	}
+
+	my $dir = $self->snapshot_dir($key);
+	if ( !-d $dir ) {
+		make_path($dir);
+		if ( !-d $dir ) {
+			warn "Cannot create snapshot directory: $dir\n";
+			return;
+		}
+	}
+
+	my $target   = $self->snapshot_path( $key, $name );
+	my $tmp_disk = "$target." . TEMP_PREFIX . $$;
+	my $tmp_meta = "$dir/$name.json." . TEMP_PREFIX . $$;
+
+	unlink $tmp_disk, $tmp_meta;
+
+	if ( !_convert( $disk_path, $tmp_disk, $entry->{base}, 'qcow2' ) ) {
+		unlink $tmp_disk;
+		return;
+	}
+
+	chmod 0400, $tmp_disk or do {
+		warn "Cannot set permissions on $tmp_disk: $!\n";
+		unlink $tmp_disk;
+		return;
+	};
+
+	# The root password belongs to the base image, so it is copied
+	# from there rather than trusted from the caller.
+	my %record = (
+		%$meta,
+		key           => $key,
+		name          => $name,
+		root_password => $entry->{meta}{root_password},
+		created_at    => time,
+	);
+	if ( !_write_json( $tmp_meta, \%record ) ) {
+		unlink $tmp_disk, $tmp_meta;
+		return;
+	}
+
+	# Two renames, metadata first. Re-saving a name is normal, and a
+	# reader catching the window sees the previous image with the new
+	# metadata - fields that describe the base, which has not changed.
+	if ( !rename $tmp_meta, "$dir/$name.json" ) {
+		warn "Cannot publish snapshot metadata $name: $!\n";
+		unlink $tmp_disk, $tmp_meta;
+		return;
+	}
+	if ( !rename $tmp_disk, $target ) {
+		warn "Cannot publish snapshot $name: $!\n";
+		unlink $tmp_disk;
+		return;
+	}
+
+	return $target;
+}
+
+# $self->snapshot_lookup($key, $name):
+#	Return { key, name, path, meta } for a snapshot whose image, its
+#	metadata, and its backing chain all resolve; undef otherwise. A
+#	snapshot whose base has been removed is a miss, so a caller can
+#	fall back to provisioning from scratch instead of failing hard.
+sub snapshot_lookup ( $self, $key, $name )
+{
+	return if !$self->valid_snapshot_name($name);
+
+	my $path = $self->snapshot_path( $key, $name );
+	return if !-f $path;
+
+	my $meta = _read_json( $self->snapshot_dir($key) . "/$name.json" );
+	return if !defined $meta;
+
+	my $base = $self->base_path($key);
+	return if !-f $base;
+
+	return {
+		key  => $key,
+		name => $name,
+		path => $path,
+		base => $base,
+		meta => $meta,
+	};
+}
+
+# $self->snapshot_list($key):
+#	Sorted snapshots of an entry, as { name, path, size, created_at }
+sub snapshot_list ( $self, $key )
+{
+	my @snapshots;
+
+	for my $name ( @{ $self->_snapshot_names($key) } ) {
+		my $found = $self->snapshot_lookup( $key, $name ) or next;
+		push @snapshots,
+		    {
+			name       => $name,
+			path       => $found->{path},
+			size       => ( -s $found->{path} ) // 0,
+			created_at => $found->{meta}{created_at},
+			meta       => $found->{meta},
+		    };
+	}
+
+	return \@snapshots;
+}
+
+# $self->snapshot_remove($key, $name):
+#	Delete a snapshot and its metadata. Safe in any order: snapshots
+#	are always direct children of the base, never of each other.
+sub snapshot_remove ( $self, $key, $name )
+{
+	return 0 if !$self->valid_snapshot_name($name);
+
+	my $dir  = $self->snapshot_dir($key);
+	my $path = "$dir/$name.qcow2";
+	my $meta = "$dir/$name.json";
+
+	for my $file ( $path, $meta ) {
+		next if !-e $file;
+		unlink $file or do {
+			warn "Cannot remove $file: $!\n";
+			return 0;
+		};
+	}
+
+	return 1;
+}
+
 # $self->_snapshot_names($key):
 #	Sorted names of the named snapshot layers stored under an entry
 sub _snapshot_names ( $self, $key )
 {
-	my $dir = $self->entry_dir($key) . '/' . SNAPSHOT_DIR;
+	my $dir = $self->snapshot_dir($key);
 	return [] if !-d $dir;
 
 	opendir my $dh, $dir or return [];

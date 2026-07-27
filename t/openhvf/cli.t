@@ -239,6 +239,116 @@ SKIP: {
     is($cache->lookup($key), undef, 'the entry is gone');
 }
 
+# ============================================================
+# Snapshot subcommand
+# ============================================================
+
+# Usage and name validation
+{
+    my $project = _cache_project();
+
+    local $SIG{__WARN__} = sub {};
+    is(OpenHVF::CLI->run("--project=$project", 'snapshot'), 2,
+	'snapshot without an action returns EXIT_INVALID_ARGS');
+    is(OpenHVF::CLI->run("--project=$project", 'snapshot', 'frobnicate'), 2,
+	'unknown snapshot action returns EXIT_INVALID_ARGS');
+    is(OpenHVF::CLI->run("--project=$project", 'snapshot', 'save'), 2,
+	'snapshot save without a name returns EXIT_INVALID_ARGS');
+    is(OpenHVF::CLI->run("--project=$project", 'snapshot', 'save', '../x'),
+	2, 'a name with a path separator is rejected');
+}
+
+# Missing snapshots report a distinct, scriptable exit code so callers
+# can do 'snapshot restore || provision-from-scratch'
+{
+    my $project = _cache_project();
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	11, 'restoring a missing snapshot returns EXIT_SNAPSHOT_NOT_FOUND');
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'rm', 'deps'),
+	11, 'removing a missing snapshot returns the same code');
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'list'),
+	0, 'listing with nothing cached still succeeds');
+}
+
+# Save, restore, and the refusals, over a real backing chain
+SKIP: {
+    my $has_qemu = `which qemu-img 2>/dev/null`;
+    skip 'qemu-img not installed', 12 unless $has_qemu;
+
+    my $project = _cache_project();
+    my $state_dir = "$project/.openhvf/state";
+    my $cache = OpenHVF::ImageCache->new("$project/cache");
+    my $key = $cache->key(OpenHVF::Config->new($project)->load_vm('default'));
+
+    my $source = "$project/source.qcow2";
+    system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
+	or skip 'cannot create a test disk image', 12;
+
+    # A standalone disk cannot be snapshotted: say so, do not crash
+    my $disk = OpenHVF::Disk->new($state_dir);
+    $disk->create('default', '16M');
+    my $state = OpenHVF::State->new($state_dir, 'default');
+    $state->mark_installed;
+
+    local $SIG{__WARN__} = sub {};
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'save', 'deps'),
+	1, 'a standalone disk is a diagnosed error, not a crash');
+
+    # Rebuild the disk as an overlay on a cached base
+    my $base = $cache->store($key, $source, { root_password => 'pw' });
+    unlink $disk->path('default');
+    $disk->create('default', undef, $base, 'qcow2');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'save', 'deps'),
+	0, 'save succeeds on a disk backed by a cached image');
+    ok(defined $cache->snapshot_lookup($key, 'deps'), 'the snapshot exists');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'list'),
+	0, 'list succeeds');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	0, 'restore succeeds');
+    is($disk->backing_file('default'),
+	$cache->snapshot_path($key, 'deps'),
+	'restore actually replaced the disk with an overlay on the snapshot');
+
+    # Restore from nothing: no disk, no state, as a fresh checkout has
+    unlink $disk->path('default');
+    unlink "$state_dir/default/status";
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	0, 'restore works with no disk and no state');
+
+    my $reseeded = OpenHVF::State->new($state_dir, 'default');
+    ok($reseeded->is_installed, 'restore reseeds installed state');
+    is($reseeded->get_root_password, 'pw',
+	'restore reseeds the root password from the base');
+
+    # A running VM refuses both save and restore
+    open my $pidfh, '>', "$state_dir/default/vm.pid" or die $!;
+    print $pidfh "$$\n";
+    close $pidfh;
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'save', 'deps'),
+	5, 'save refuses while the VM is running');
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	5, 'restore refuses while the VM is running');
+    unlink "$state_dir/default/vm.pid";
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'rm', 'deps'),
+	0, 'rm succeeds');
+}
+
 done_testing();
 
 # A project whose cache_dir points inside the project, so the tests

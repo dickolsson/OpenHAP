@@ -209,6 +209,45 @@ and warns when removal orphans the disk of a stopped one
 VMs in other projects sharing the same
 .Ar cache_dir
 cannot be surveyed and are not covered by either check.
+.It Cm snapshot Cm save | restore | rm Ar name
+.It Cm snapshot Cm list
+Manage named snapshot layers over the cached base image,
+for caching guest states
+.Nm
+knows nothing about
+.Pq typically the result of a provisioning script .
+See
+.Sx IMAGE CACHE .
+.Pp
+.Cm save
+flattens the working disk into the cache under the base image it is built
+on;
+.Cm restore
+replaces the working disk with a fresh overlay on
+.Ar name
+and reseeds the VM state the snapshot records.
+The VM must be stopped for both:
+a live overlay is not consistent.
+.Cm save
+additionally needs an installed VM whose disk is built on a cached image;
+a standalone disk
+.Pq from Fl Fl no-cache No or Ar image_cache no
+cannot be snapshotted.
+.Cm restore
+needs neither disk nor state and can run on a fresh checkout before the
+first
+.Cm up .
+.Pp
+A missing or unresolvable snapshot exits 11 rather than 1, so a script can
+distinguish it from a real failure:
+.Bd -literal -offset indent
+openhvf snapshot restore deps-$hash || provision_from_scratch
+.Ed
+.Pp
+.Cm list
+and
+.Cm rm
+are scoped to the cache entry the current configuration derives.
 .It Cm disk Cm check | repair | info
 Manage the VM disk image:
 verify integrity,
@@ -237,9 +276,11 @@ Entries live under
 .Ar cache_dir ,
 beside the proxy cache holding the miniroot and install sets:
 .Bd -literal -offset indent
-<cache_dir>/proxy/...                       miniroot, install sets
-<cache_dir>/installed/<key>/base.qcow2      mode 0400, compacted
-<cache_dir>/installed/<key>/meta.json       mode 0600
+<cache_dir>/proxy/...                            miniroot, install sets
+<cache_dir>/installed/<key>/base.qcow2           mode 0400, compacted
+<cache_dir>/installed/<key>/meta.json            mode 0600
+<cache_dir>/installed/<key>/snapshots/<n>.qcow2  mode 0400
+<cache_dir>/installed/<key>/snapshots/<n>.json   mode 0600
 .Ed
 .Pp
 .Ar key
@@ -274,6 +315,25 @@ Entries are immutable and write-once.
 Each is built whole in a temporary directory and published by renaming
 that directory, so a reader never sees one installation's base image
 beside another installation's metadata.
+.Pp
+A snapshot is an immutable named layer over an entry's base image,
+created by
+.Cm snapshot save
+from a stopped VM.
+Snapshots are flattened onto
+.Pa base.qcow2 ,
+so each is a direct child of the base whatever the working disk was built
+on:
+.Bd -literal -offset indent
+base.qcow2  <-  <name>.qcow2  <-  disk.qcow2
+.Ed
+.Pp
+No snapshot is therefore ever another's parent,
+and removing one cannot orphan another.
+Because snapshots live inside the entry,
+anything that invalidates a base
+.Pq a new key, or Cm cache clear
+invalidates its snapshots with it.
 .Sh FILES
 .Bl -tag -width ".openhvf/vms/name.conf" -compact
 .It Pa .openhvfrc
@@ -338,6 +398,8 @@ SSH connection failed.
 Expect script failed.
 .It 10
 Image download failed.
+.It 11
+Snapshot not found.
 .El
 .Pp
 The

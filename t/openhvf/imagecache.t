@@ -276,7 +276,138 @@ SKIP: {
 		'the overlay inherits the base virtual size' );
 }
 
+# Snapshot names become file names inside the cache
+{
+	my $tmp   = tempdir( CLEANUP => 1 );
+	my $cache = OpenHVF::ImageCache->new($tmp);
+
+	ok( $cache->valid_snapshot_name('deps-abc123'), 'a plain name' );
+	ok( $cache->valid_snapshot_name('s1'),          'short names' );
+	ok( $cache->valid_snapshot_name('a.b_c-1'),
+		'dots, underscores and dashes' );
+
+	ok( !$cache->valid_snapshot_name(undef),      'undef' );
+	ok( !$cache->valid_snapshot_name(''),         'empty' );
+	ok( !$cache->valid_snapshot_name('a/b'),      'no path separator' );
+	ok( !$cache->valid_snapshot_name("a\0b"),     'no NUL' );
+	ok( !$cache->valid_snapshot_name('.hidden'),  'no leading dot' );
+	ok( !$cache->valid_snapshot_name('-dash'),    'no leading dash' );
+	ok( !$cache->valid_snapshot_name( 'x' x 200 ), 'bounded length' );
+}
+
+# Which cache entry a path belongs to
+{
+	my $tmp   = tempdir( CLEANUP => 1 );
+	my $cache = OpenHVF::ImageCache->new($tmp);
+
+	is( $cache->key_for_path( $cache->base_path('k1') ),
+		'k1', 'a base image resolves to its key' );
+	is( $cache->key_for_path( $cache->snapshot_path( 'k1', 's1' ) ),
+		'k1', 'a snapshot resolves to the same key' );
+	is( $cache->key_for_path('/elsewhere/disk.qcow2'),
+		undef, 'a path outside the cache resolves to nothing' );
+	is( $cache->key_for_path(undef), undef, 'undef resolves to nothing' );
+}
+
+# Snapshot round-trips over a real base image
+SKIP: {
+	skip 'qemu-img not installed', 16 if !$HAS_QEMU_IMG;
+
+	require OpenHVF::Disk;
+
+	my $tmp   = tempdir( CLEANUP => 1 );
+	my $cache = OpenHVF::ImageCache->new("$tmp/cache");
+	my $key   = '7.8-arm64-5a5a5a5a';
+
+	my $source = "$tmp/source.qcow2";
+	system( 'qemu-img', 'create', '-f', 'qcow2', $source, '64M' ) == 0
+	    or skip 'cannot create a test disk image', 16;
+	my $base = $cache->store( $key, $source, { root_password => 'pw' } );
+
+	# A working overlay, the shape a snapshot is taken from
+	my $disk = OpenHVF::Disk->new("$tmp/state");
+	$disk->create( 'default', undef, $base, 'qcow2' );
+	my $disk_path = $disk->path('default');
+
+	is( $cache->snapshot_lookup( $key, 'deps' ),
+		undef, 'no snapshot before one is saved' );
+	is_deeply( $cache->snapshot_list($key), [], 'and none listed' );
+
+	my $path = $cache->snapshot_store( $key, 'deps', $disk_path,
+		{ installed => 1, installed_ssh_pubkey => 'ssh-ed25519 AAA' } );
+	ok( defined $path, 'snapshot_store publishes a layer' );
+	is( sprintf( '%04o', ( stat $path )[2] & 07777 ),
+		'0400', 'the snapshot image is read-only' );
+
+	my $found = $cache->snapshot_lookup( $key, 'deps' );
+	ok( defined $found, 'snapshot_lookup hits' );
+	is( $found->{meta}{installed_ssh_pubkey},
+		'ssh-ed25519 AAA', 'state fields round-trip' );
+	is( $found->{meta}{root_password},
+		'pw', 'the root password is taken from the base, not the caller' );
+
+	is( _backing($path), $base, 'the snapshot hangs off base.qcow2' );
+
+	is( scalar @{ $cache->snapshot_list($key) }, 1, 'snapshot_list finds it' );
+	is_deeply( $cache->list->[0]{snapshots},
+		['deps'], 'cache listing counts it' );
+
+	# Re-saving from a disk restored FROM the snapshot must not make
+	# the snapshot its own parent, nor stack chains without bound.
+	unlink $disk_path;
+	$disk->create( 'default', undef, $path, 'qcow2' );
+	is( $disk->backing_file('default'),
+		$path, 'the working disk now hangs off the snapshot' );
+
+	ok( defined $cache->snapshot_store( $key, 'deps', $disk_path, {} ),
+		're-saving the same name succeeds' );
+	is( _backing($path), $base,
+		'and the re-saved snapshot still hangs off base.qcow2' );
+	is( system("qemu-img check '$disk_path' >/dev/null 2>&1"),
+		0, 'the working disk chain still resolves' );
+
+	# Removal
+	ok( $cache->snapshot_remove( $key, 'deps' ), 'snapshot_remove' );
+	is( $cache->snapshot_lookup( $key, 'deps' ),
+		undef, 'the snapshot is gone' );
+}
+
+# A snapshot whose base is gone reads as a miss, so callers can fall
+# back to provisioning instead of failing hard
+SKIP: {
+	skip 'qemu-img not installed', 3 if !$HAS_QEMU_IMG;
+
+	my $tmp   = tempdir( CLEANUP => 1 );
+	my $cache = OpenHVF::ImageCache->new("$tmp/cache");
+	my $key   = '7.8-arm64-6b6b6b6b';
+
+	my $source = "$tmp/source.qcow2";
+	system( 'qemu-img', 'create', '-f', 'qcow2', $source, '64M' ) == 0
+	    or skip 'cannot create a test disk image', 3;
+	my $base = $cache->store( $key, $source, { root_password => 'pw' } );
+
+	ok( defined $cache->snapshot_store( $key, 'layer', $source, {} ),
+		'a snapshot exists' );
+
+	unlink $base;
+	is( $cache->snapshot_lookup( $key, 'layer' ),
+		undef, 'it reads as a miss once its base is gone' );
+
+	my $orphan = do {
+		local $SIG{__WARN__} = sub { };
+		$cache->snapshot_store( $key, 'another', $source, {} );
+	};
+	is( $orphan, undef, 'and no new snapshot can be added to it' );
+}
+
 done_testing();
+
+sub _backing ($path)
+{
+	my $out = qx{qemu-img info --output=json "$path" 2>/dev/null};
+	my $info = eval { JSON::XS::decode_json($out) };
+	return $info->{'full-backing-filename'} // $info->{'backing-filename'};
+}
 
 sub _spit ( $path, $content )
 {
