@@ -1,0 +1,141 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 27 2026 $
+.Dt FuguLib::Signal 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Signal
+.Nd signal handlers for graceful shutdown
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Signal;
+
+my $sig = FuguLib::Signal->new;
+$sig->add_cleanup(sub ($signal) { unlink $tempfile });
+$sig->setup_graceful_exit('INT', 'TERM');
+
+# or, to decide when to stop:
+$sig->setup_interrupt_flag('INT', 'TERM');
+until (FuguLib::Signal::check_interrupted()) {
+    do_some_work();
+}
+.Ed
+.Sh DESCRIPTION
+.Nm
+installs signal handlers so that a program can be interrupted without
+leaving temporary files, child processes or half-written state behind.
+.Pp
+There are two shapes.
+.Fn setup_graceful_exit
+runs the cleanup handlers and exits from inside the signal handler,
+which suits a program whose work can be abandoned at any point.
+.Fn setup_interrupt_flag
+only raises a flag,
+leaving the program to notice it and stop where stopping is safe.
+.Pp
+Either way the previous handlers are remembered and put back by
+.Fn restore ,
+which the destructor calls,
+so a scoped object leaves the process as it found it.
+.Ss new
+.Fn new
+creates a signal handler manager.
+It installs nothing on its own.
+.Ss setup_graceful_exit
+.Fn setup_graceful_exit "@signals"
+installs a handler for each named signal that sets the interrupt flag,
+runs the cleanup handlers,
+and exits with status 130.
+.Ss setup_interrupt_flag
+.Fn setup_interrupt_flag "@signals"
+installs a handler for each named signal that sets the interrupt flag and
+returns.
+Nothing else happens until the program looks at the flag.
+.Ss add_cleanup
+.Fn add_cleanup "$handler"
+adds a code reference to be called,
+with the signal name as its argument,
+before
+.Fn setup_graceful_exit
+exits.
+Handlers run in the order they were added,
+each inside an
+.Ic eval ,
+so one that dies does not stop the rest.
+.Ss restore
+.Fn restore
+puts back the handlers that were in place before this object installed
+its own.
+.Ss check_interrupted
+.Fn check_interrupted
+reports whether a handled signal has arrived.
+It is a plain function, not a method.
+.Ss reset_interrupted
+.Fn reset_interrupted
+clears the interrupt flag.
+It is a plain function, not a method.
+.Sh RETURN VALUES
+.Fn new
+returns a signal handler manager.
+.Fn setup_graceful_exit ,
+.Fn setup_interrupt_flag ,
+.Fn add_cleanup
+and
+.Fn restore
+return the object,
+so they chain.
+.Pp
+.Fn check_interrupted
+returns true if a handled signal has arrived.
+.Sh EXAMPLES
+Stop between items rather than in the middle of one:
+.Bd -literal -offset indent
+my $sig = FuguLib::Signal->new;
+$sig->setup_interrupt_flag('INT', 'TERM');
+
+for my $item (@items) {
+    last if FuguLib::Signal::check_interrupted();
+    process($item);
+}
+.Ed
+.Sh ERRORS
+No method dies.
+A cleanup handler that dies is caught and ignored.
+.Sh SEE ALSO
+.Xr perlipc 1 ,
+.Xr kill 2 ,
+.Xr sigaction 2 ,
+.Xr FuguLib::Process 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+The interrupt flag and the list of cleanup handlers are package globals,
+not per-object.
+Two managers in one process share both:
+a cleanup handler added through one runs for a signal caught by the other,
+and
+.Fn reset_interrupted
+clears the flag for both.
+.Pp
+The cleanup list is emptied once it has run,
+so a second signal after a graceful exit has begun finds nothing left to
+clean up.
+.Pp
+Handlers are ordinary Perl signal handlers and run between opcodes,
+not immediately.
+A program blocked in a system call notices the signal when the call
+returns.

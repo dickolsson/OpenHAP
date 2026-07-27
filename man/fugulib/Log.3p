@@ -1,0 +1,194 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 27 2026 $
+.Dt FuguLib::Log 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Log
+.Nd logging to syslog, standard error, or nowhere
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Log;
+
+my $log = FuguLib::Log->new(
+    mode     => 'syslog',
+    ident    => 'mydaemon',
+    level    => 'info',
+    facility => 'daemon',
+);
+
+$log->info('listening on port %d', $port);
+$log->err('cannot open %s: %s', $path, $!);
+.Ed
+.Sh DESCRIPTION
+.Nm
+gives a program one logging interface whether it is running as a daemon
+or in the foreground.
+The destination is chosen once,
+when the logger is created,
+and every call site is written the same way regardless.
+.Pp
+Messages below the configured level are discarded.
+The levels, from lowest to highest, are
+.Cm debug ,
+.Cm info ,
+.Cm notice ,
+.Cm warning ,
+.Cm error
+and
+.Cm crit .
+.Ss new
+.Fn new "%args"
+creates a logger.
+The arguments are as follows:
+.Bl -tag -width "facilityXX"
+.It Fa mode
+Where messages go.
+One of:
+.Pp
+.Bl -tag -width "syslogXX" -compact
+.It Cm syslog
+Through
+.Xr syslog 3 .
+.Xr openlog 3
+is called immediately with the
+.Cm ndelay
+and
+.Cm pid
+options.
+.It Cm stderr
+To standard error,
+one line per message,
+prefixed with a local-time stamp and the upper-cased level.
+.It Cm quiet
+Nowhere.
+Messages are discarded before the level is even considered.
+.El
+.Pp
+The default is
+.Cm stderr .
+.It Fa level
+Lowest level to emit.
+The default is
+.Cm info .
+.It Fa ident
+Program name passed to
+.Xr openlog 3 .
+The default is
+.Ql fugulib .
+Ignored unless
+.Fa mode
+is
+.Cm syslog .
+.It Fa facility
+Syslog facility,
+either a
+.Xr Sys::Syslog 3p
+constant or one of the names
+.Cm daemon ,
+.Cm user
+or
+.Cm local0
+through
+.Cm local7 .
+The default is
+.Dv LOG_DAEMON .
+.El
+.Ss debug, info, notice, warning, warn, error, err, crit
+.Bd -literal -offset indent
+$log->info($fmt, @args);
+.Ed
+.Pp
+Log one message at the level named by the method.
+When
+.Fa @args
+is non-empty the message is
+.Fa $fmt
+formatted through
+.Xr sprintf 3 ;
+otherwise
+.Fa $fmt
+is used literally.
+.Pp
+.Fn warn
+is a synonym for
+.Fn warning
+and
+.Fn err
+for
+.Fn error ,
+so that either the syslog or the English spelling reads naturally at the
+call site.
+.Ss set_level
+.Fn set_level "$level"
+changes the lowest level to emit on an existing logger.
+Anything not recognised as a level name is treated as
+.Cm info .
+.Sh RETURN VALUES
+.Fn new
+returns a logger object.
+The logging methods and
+.Fn set_level
+have no useful return value.
+.Sh EXAMPLES
+Log to standard error in the foreground and to syslog otherwise,
+without changing any call site:
+.Bd -literal -offset indent
+my $log = FuguLib::Log->new(
+    mode  => $foreground ? 'stderr' : 'syslog',
+    ident => 'mydaemon',
+    level => $verbose ? 'debug' : 'info',
+);
+.Ed
+.Sh ERRORS
+.Fn new
+dies if
+.Fa mode
+is not one of the three names above.
+An unrecognised
+.Fa level
+or
+.Fa facility
+is not an error:
+the level falls back to
+.Cm info
+and the facility to
+.Dv LOG_DAEMON .
+.Sh SEE ALSO
+.Xr syslog 3 ,
+.Xr FuguLib::Daemon 3p ,
+.Xr Sys::Syslog 3p ,
+.Xr syslog.conf 5
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+The format string is passed to
+.Xr sprintf 3
+only when arguments follow it.
+A message that happens to contain a percent sign is therefore safe on its
+own but not once an argument is added,
+so log variable text as
+.Ql %s
+rather than interpolating it into the format.
+.Pp
+A single process should create one syslog-mode logger.
+.Xr openlog 3
+and
+.Xr closelog 3
+act on process-wide state,
+so a second logger going out of scope closes the connection the first one
+is still using.
