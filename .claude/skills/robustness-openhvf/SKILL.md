@@ -1,10 +1,10 @@
 ---
 name: robustness-openhvf
 description:
-  Adversarial robustness testing of the openhvf VM harness CLI across 12 areas
-  (CLI parsing, config, filesystem, VM lifecycle, signals, concurrency, and
-  more), writing findings to a scratchpad file. Use when asked to stress-test,
-  fuzz, or try to break openhvf.
+  Adversarial robustness testing of the openhvf OpenBSD VM utility across 12
+  areas (CLI parsing, config, filesystem, VM lifecycle, signals, concurrency,
+  and more), writing findings to a scratchpad file. Use when asked to
+  stress-test, fuzz, or try to break openhvf.
 ---
 
 # Robustness Testing for openhvf
@@ -12,9 +12,10 @@ description:
 ## Objective
 
 Exercise the `openhvf` utility to find weaknesses in error handling, edge cases,
-and failure modes. Be creative and adversarial—try to break things in unexpected
-ways. For the command, option, and exit-code reference, see `openhvf(1)`
-(`man/openhvf/openhvf.1`).
+and failure modes. It is a general-purpose tool, so treat every input as coming
+from someone who is not this repository. Be creative and adversarial—try to
+break things in unexpected ways. For the command, option, and exit-code
+reference, see `openhvf(1)` (`man/openhvf/openhvf.1`).
 
 ## Philosophy
 

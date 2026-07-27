@@ -1,0 +1,53 @@
+<h1>FuguLib</h1>
+
+<p>FuguLib is the handful of things every OpenBSD daemon needs and the base
+system does not hand you in Perl: going into the background, writing a PID
+file, dropping privileges, reaping children, handling signals, and logging to
+syslog or stderr depending on how you were started.</p>
+
+<p>It is deliberately small.  Six modules, no dependencies outside core Perl,
+no framework, no configuration, and no opinion about what your daemon does.
+OpenHAP is built on it; nothing in it knows that.</p>
+
+<h2>The modules</h2>
+
+<dl>
+<dt>FuguLib::Daemon</dt>
+<dd>Fork, <code>setsid</code>, redirect the standard descriptors.  A callback
+runs in the parent before it exits, which is where the PID file gets
+written.</dd>
+
+<dt>FuguLib::Privdrop</dt>
+<dd>Drop from root to a named user and group, then verify that root cannot be
+regained &mdash; the check is the point.</dd>
+
+<dt>FuguLib::Process</dt>
+<dd>Spawn, exec, verify a child actually survived start-up, terminate with a
+grace period before <code>SIGKILL</code>, reap zombies, and wait for
+exit.</dd>
+
+<dt>FuguLib::Signal</dt>
+<dd>Register handlers for graceful shutdown or for a flag a long-running loop
+can poll, with a stack of cleanup callbacks and restoration of the previous
+handlers.</dd>
+
+<dt>FuguLib::Log</dt>
+<dd>One interface over syslog, stderr and silence, with level filtering and
+printf-style formatting, so a daemon and a CLI tool can share code.</dd>
+
+<dt>FuguLib::State</dt>
+<dd>PID file reading and writing with locking, plus stale-PID detection built
+on <code>FuguLib::Process</code>.</dd>
+</dl>
+
+<h2>Reference</h2>
+
+<p>Each module has a section 3p manual page, installed with OpenHAP &mdash; so
+<code>man FuguLib::Daemon</code> works on a machine that has it &mdash; and
+listed under <a href="manuals.html#fugulib">FuguLib in the manuals</a>.</p>
+
+<h2>Name</h2>
+
+<p><em>Fugu</em> is the pufferfish: OpenBSD&rsquo;s mascot is a pufferfish, and
+the fish is famously safe only if prepared correctly.  Both readings are
+intended.</p>

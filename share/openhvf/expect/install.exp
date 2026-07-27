@@ -190,7 +190,7 @@ expect {
 
 # The installer may ask to correct the clock before finishing; answer
 # yes if it does. The (R)eboot? prompt marks the end of the install -
-# choose halt instead of reboot so the harness can restart from the
+# choose halt instead of reboot so openhvf can restart from the
 # installed disk without the miniroot attached. A single expect block
 # handles both so a missing time prompt never stalls to the timeout.
 set timeout [env_timeout 900]
@@ -211,7 +211,7 @@ expect {
 # The install is complete once the system halts. Do NOT wait for eof:
 # OpenBSD's halt stops at the "press any key to reboot" prompt without
 # closing the console, so telnet stays connected and no eof ever
-# arrives. The harness terminates QEMU via QMP once this script
+# arrives. openhvf terminates QEMU via QMP once this script
 # returns, then restarts from the installed disk.
 set timeout [env_timeout 120]
 expect {

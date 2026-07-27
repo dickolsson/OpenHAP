@@ -1,0 +1,59 @@
+<h1>HomeKit Accessory Protocol for OpenBSD</h1>
+
+<p>OpenHAP puts MQTT-connected Tasmota devices into Apple&rsquo;s Home app.  An
+iPhone pairs with <code>openhapd</code> as if it were an accessory;
+<code>openhapd</code> speaks MQTT to the real ones.  Neither end needs to know
+the other exists.</p>
+
+<p>It is written in Perl against the base system.  There is no bridge
+appliance to buy, no cloud account, no container, and no vendor between the
+phone and the thermostat &mdash; a daemon, a configuration file, and
+<code>rcctl</code>.</p>
+
+<h2>Design</h2>
+
+<dl>
+<dt>Native to OpenBSD</dt>
+<dd>Base-system Perl and a short list of packages.  Runs as
+<code>_openhap</code>, starts from <code>rc.d</code>, and confines itself with
+<a href="https://man.openbsd.org/pledge.2">pledge(2)</a> and
+<a href="https://man.openbsd.org/unveil.2">unveil(2)</a>.</dd>
+
+<dt>The protocol, not a library binding</dt>
+<dd>Pairing and session setup are implemented directly: SRP-6a, Ed25519,
+X25519, ChaCha20-Poly1305, HKDF-SHA-512, and TLV8 carried over encrypted
+HTTP/1.1, advertised by mDNS.</dd>
+
+<dt>Devices as configuration</dt>
+<dd>Accessories are declared in <code>openhapd.conf(5)</code> and loaded at
+start-up.  Thermostats, heaters, switches, sensors, lightbulbs and dimmers are
+supported today.</dd>
+
+<dt>Small enough to read</dt>
+<dd>Every module is documented, every behaviour is tested, and the whole
+thing is a checkout you can audit in an afternoon.</dd>
+</dl>
+
+<h2>Getting started</h2>
+
+<pre><code>git clone https://github.com/dickolsson/openhap.git
+cd openhap
+make deps
+doas make install
+</code></pre>
+
+<p>That leaves a daemon that still needs a user, a configuration file and a
+running MQTT broker.  <a href="install.html">Install</a> covers all of it, and
+<a href="manuals.html">Manuals</a> is the reference for the daemon, the control
+utility and the configuration format &mdash; plus
+<a href="manuals.html#modules">a page per module</a> for anyone reading the
+source.</p>
+
+<h2>Sub-projects</h2>
+
+<p>Two pieces grew out of OpenHAP and are documented separately, because
+neither is about HomeKit:
+<a href="fugulib.html">FuguLib</a>, the OpenBSD-style daemon utilities the
+server is built on, and <a href="openhvf.html">OpenHVF</a>, which installs and
+manages OpenBSD virtual machines under QEMU &mdash; useful to anyone who needs
+an OpenBSD machine on demand, and used here to run the tests.</p>

@@ -1,0 +1,241 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 27 2026 $
+.Dt FuguLib::Process 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Process
+.Nd spawn, supervise and reap child processes
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Process;
+
+my $result = FuguLib::Process->spawn_command(
+    cmd         => [ '/usr/local/bin/mydaemon', '-f' ],
+    daemonize   => 1,
+    stdout      => '/var/log/mydaemon.log',
+    check_alive => 2,
+);
+
+FuguLib::Process->terminate($result->{pid}) if $result->{success};
+.Ed
+.Sh DESCRIPTION
+.Nm
+covers the parts of running a child process that are easy to get wrong:
+telling a child that started from one that exited immediately,
+escalating from
+.Dv SIGTERM
+to
+.Dv SIGKILL
+on a schedule,
+and reaping zombies without blocking.
+.Pp
+The module keeps no state;
+every method is a class method.
+.Ss spawn_command
+.Fn spawn_command "%args"
+forks,
+redirects the standard descriptors,
+and executes a command.
+.Pp
+The arguments are as follows:
+.Bl -tag -width "check_aliveXX"
+.It Fa cmd
+Array reference holding the command and its arguments.
+Required, and must not be empty.
+.It Fa daemonize
+If true, the child calls
+.Xr setsid 2
+before exec.
+The default is false.
+.It Fa stdin , Fa stdout , Fa stderr
+Paths for the child's standard descriptors.
+Each defaults to
+.Pa /dev/null .
+.It Fa check_alive
+Seconds to wait before confirming the child survived.
+The default is 1;
+0 skips the check and returns as soon as the fork succeeds.
+.It Fa on_success
+Code reference called with the child's process ID once the spawn is
+judged successful.
+.It Fa on_error
+Code reference called with a message when the spawn fails.
+.El
+.Pp
+When
+.Fa check_alive
+is non-zero the parent sleeps for that many seconds and then makes two
+tests: a non-blocking
+.Xr waitpid 2 ,
+which reaps the child and proves it exited,
+and
+.Xr kill 2
+with signal 0,
+which proves it is still there.
+This is what catches an exec that failed for a reason the fork could not
+report, such as a command that does not exist.
+.Ss is_alive
+.Fn is_alive "$pid"
+reports whether a process exists and is not a zombie.
+A zombie child is reaped as a side effect of the check and then reported
+as not alive.
+.Ss terminate
+.Fn terminate "$pid" "%args"
+sends
+.Dv SIGTERM ,
+waits,
+and sends
+.Dv SIGKILL
+if that was not enough.
+.Pp
+The arguments are as follows:
+.Bl -tag -width "grace_periodXX"
+.It Fa grace_period
+Seconds to wait between the two signals.
+The default is 5.
+.It Fa on_kill
+Code reference called once the process is gone.
+.El
+.Ss reap
+.Fn reap "$pid"
+reaps one zombie child without blocking.
+.Ss reap_all
+.Fn reap_all
+reaps every zombie child that is ready,
+without blocking,
+and returns how many there were.
+.Ss wait_exit
+.Fn wait_exit "$pid" "$timeout"
+polls until the process exits or the timeout expires.
+.Fa $timeout
+defaults to 30 seconds.
+.Ss spawn_perl
+.Fn spawn_perl "%args"
+runs Perl code in a child process,
+passing through the
+.Ic -I
+paths the parent picked up from
+.Ic -I ,
+.Ic use lib
+or
+.Ev PERL5LIB ,
+so the child sees the same modules.
+.Pp
+.Fa code
+is the program text and
+.Fa args
+an array reference of arguments for it;
+every other argument is handed to
+.Fn spawn_command .
+.Sh RETURN VALUES
+.Fn spawn_command
+and
+.Fn spawn_perl
+return a hash reference.
+On success it holds
+.Fa success
+set to 1 and
+.Fa pid .
+On failure
+.Fa success
+is 0 and
+.Fa error
+describes what went wrong;
+.Fa pid
+and
+.Fa exit_code
+are also present when the child was reached and died.
+.Pp
+.Fn is_alive
+returns 1 or 0.
+.Pp
+.Fn terminate
+returns 1 if the process is gone,
+0 if it survived
+.Dv SIGKILL .
+.Pp
+.Fn reap
+returns 1 if the child was reaped or was never there,
+0 if it is still running.
+.Fn reap_all
+returns a count.
+.Pp
+.Fn wait_exit
+returns 1 if the process exited within the timeout,
+0 otherwise.
+.Sh EXAMPLES
+Run a helper and stop it again:
+.Bd -literal -offset indent
+my $r = FuguLib::Process->spawn_command(
+    cmd      => [ 'mdnsctl', 'publish', $name, '_hap', 'tcp', $port ],
+    on_error => sub ($err) { $log->err('mdnsctl: %s', $err) },
+);
+
+FuguLib::Process->terminate($r->{pid}, grace_period => 10)
+    if $r->{success};
+.Ed
+.Sh ERRORS
+No method dies.
+Failures are reported through the returned hash reference or the boolean
+return value,
+and through
+.Fa on_error
+when one was supplied.
+.Sh SEE ALSO
+.Xr kill 2 ,
+.Xr setsid 2 ,
+.Xr waitpid 2 ,
+.Xr FuguLib::Log 3p ,
+.Xr FuguLib::State 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+.Fn spawn_command
+blocks the caller for
+.Fa check_alive
+seconds.
+The check is a plain
+.Xr sleep 3 ,
+so a program that spawns several children pays for each one in turn.
+.Pp
+A child that legitimately finishes inside the
+.Fa check_alive
+window is reported as a failure,
+with an
+.Fa error
+saying it completed immediately and an
+.Fa exit_code
+of 0.
+Use
+.Fa check_alive
+set to 0 for commands that are expected to be short.
+.Pp
+.Fn is_alive
+and
+.Fn reap
+call
+.Xr waitpid 2 ,
+which only ever reaps children of the calling process.
+For any other process they fall back to
+.Xr kill 2
+with signal 0,
+which cannot distinguish a live process from a zombie.
+.Pp
+Process IDs are recycled.
+Nothing here can tell the process that was asked about from a later one
+that inherited its number.

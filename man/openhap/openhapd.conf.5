@@ -1,6 +1,6 @@
 .\" $OpenBSD$
 .\"
-.\" Copyright (c) 2025 Dick Olsson <dick@aglim.se>
+.\" Copyright (c) 2025 Dick Olsson <hi@senzilla.io>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
@@ -208,11 +208,11 @@ device tasmota thermostat kitchen {
 }
 .Ed
 .Sh SEE ALSO
-.Xr openhapd 8 ,
+.Xr syslog.conf 5 ,
 .Xr hapctl 8 ,
-.Xr mosquitto 8 ,
 .Xr mdnsd 8 ,
-.Xr syslog.conf 5
+.Xr mosquitto 8 ,
+.Xr openhapd 8
 .Sh STANDARDS
 The MQTT topic structure follows the Tasmota firmware conventions.
 See
@@ -225,7 +225,7 @@ file format first appeared with
 .Xr openhapd 8
 in 2025.
 .Sh AUTHORS
-.An Dick Olsson Aq Mt dick@aglim.se
+.An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
 The
 .Ic hap_pin

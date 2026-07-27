@@ -1,6 +1,6 @@
 .\" $OpenBSD$
 .\"
-.\" Copyright (c) 2025 Dick Olsson <dick@aglim.se>
+.\" Copyright (c) 2025 Dick Olsson <hi@senzilla.io>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
@@ -145,9 +145,9 @@ A new HomeKit controller successfully completed pairing.
 An encrypted session was successfully negotiated with a paired controller.
 .El
 .Sh SEE ALSO
-.Xr hapctl 8 ,
-.Xr openhapd.conf 5 ,
 .Xr syslog 3 ,
+.Xr openhapd.conf 5 ,
+.Xr hapctl 8 ,
 .Xr rc 8 ,
 .Xr rc.conf 8
 .Pp
@@ -175,7 +175,7 @@ was written from scratch in 2025 for
 .Ox
 as a native implementation of the HomeKit Accessory Protocol.
 .Sh AUTHORS
-.An Dick Olsson Aq Mt dick@aglim.se
+.An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
 .Nm
 requires a working MQTT broker (such as

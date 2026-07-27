@@ -1,0 +1,121 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 27 2026 $
+.Dt FuguLib::Privdrop 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Privdrop
+.Nd drop root privileges permanently
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Privdrop;
+
+FuguLib::Privdrop->drop_privileges(user => '_openhap');
+.Ed
+.Sh DESCRIPTION
+.Nm
+implements the privilege drop an
+.Ox
+daemon performs once its privileged work is done:
+bind the reserved port,
+fork the helper that needs root,
+then give up root for good and run the event loop as an unprivileged user.
+.Pp
+The module keeps no state and has a single class method.
+.Ss drop_privileges
+.Fn drop_privileges "%args"
+switches the process to the given user and group and verifies that root
+cannot be regained.
+.Pp
+The arguments are as follows:
+.Bl -tag -width "groupXX"
+.It Fa user
+Name of the user to become.
+Required.
+.It Fa group
+Name of the group to become.
+Optional;
+the user's primary group is used if it is omitted.
+.El
+.Pp
+The method returns immediately if the effective user ID is not 0,
+so a program that is already unprivileged may call it unconditionally.
+Otherwise it resolves the user and group,
+calls
+.Xr setgid 2
+before
+.Xr setuid 2 ,
+assigns the real and effective IDs,
+and then confirms both that neither ID is 0 any more and that calling
+.Xr setuid 2
+with 0 does not bring root back.
+.Sh RETURN VALUES
+.Fn drop_privileges
+returns 1 on success,
+including the case where the process was already unprivileged.
+It never returns on failure.
+.Sh EXAMPLES
+Bind a reserved port as root, then run as
+.Ar _myapp :
+.Bd -literal -offset indent
+my $socket = IO::Socket::INET->new(
+    LocalPort => 80,
+    ReuseAddr => 1,
+    Listen    => SOMAXCONN,
+) or die "Cannot bind port 80: $!";
+
+FuguLib::Privdrop->drop_privileges(user => '_myapp');
+
+while (my $client = $socket->accept) {
+    handle_client($client);
+}
+.Ed
+.Sh ERRORS
+.Fn drop_privileges
+dies,
+rather than returning a failure indication,
+when
+.Fa user
+is missing,
+when the user or group cannot be resolved,
+when
+.Xr setgid 2
+or
+.Xr setuid 2
+fails,
+or when the process still holds root afterwards.
+A privilege drop that half succeeded is not something a caller can be
+allowed to continue past.
+.Sh SEE ALSO
+.Xr setgid 2 ,
+.Xr setuid 2 ,
+.Xr FuguLib::Daemon 3p ,
+.Xr FuguLib::Process 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+Supplementary groups are not changed.
+A process that was started as root keeps whatever supplementary groups
+it inherited,
+which on
+.Ox
+is how a daemon retains access to the
+.Xr mdnsd 8
+socket after dropping to its own user.
+Callers that need the groups cleared must call
+.Xr setgroups 2
+themselves before dropping.

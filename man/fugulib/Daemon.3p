@@ -1,0 +1,118 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 27 2026 $
+.Dt FuguLib::Daemon 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Daemon
+.Nd detach a Perl program from its controlling terminal
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Daemon;
+
+FuguLib::Daemon->daemonize(
+    logfile => '/var/log/mydaemon.log',
+    on_fork => sub ($pid) { $state->write_pid($pid) },
+);
+.Ed
+.Sh DESCRIPTION
+.Nm
+turns the running program into a daemon:
+it forks,
+the parent exits,
+and the child becomes a session leader with its standard descriptors
+redirected away from the terminal.
+.Pp
+The module keeps no state and has a single class method.
+.Ss daemonize
+.Fn daemonize "%args"
+forks into the background and detaches from the controlling terminal.
+.Pp
+The parent calls
+.Fa on_fork
+if one was given,
+then exits with status 0;
+.Fn daemonize
+therefore returns only in the child.
+The child calls
+.Xr setsid 2 ,
+reopens standard input from
+.Pa /dev/null ,
+appends standard output to
+.Fa logfile ,
+and duplicates standard output onto standard error.
+.Pp
+The arguments are as follows:
+.Bl -tag -width "logfileXX"
+.It Fa logfile
+Path for standard output and standard error.
+The default is
+.Pa /dev/null ,
+which is what a daemon logging through
+.Xr FuguLib::Log 3p
+in syslog mode wants.
+The file is opened for appending.
+.It Fa on_fork
+Code reference called in the parent with the child's process ID before
+the parent exits.
+This is where a PID file is written,
+because only the parent knows the child's process ID at that point.
+.El
+.Sh RETURN VALUES
+.Fn daemonize
+returns nothing in the child and never returns in the parent.
+.Sh EXAMPLES
+Daemonize, writing a PID file from the parent and logging through syslog:
+.Bd -literal -offset indent
+my $log = FuguLib::Log->new(mode => 'syslog', ident => 'mydaemon');
+my $state = FuguLib::State->new('/var/run/mydaemon.pid');
+
+FuguLib::Daemon->daemonize(
+    on_fork => sub ($pid) { $state->write_pid($pid) },
+);
+
+$log->info('started, pid %d', $$);
+.Ed
+.Sh ERRORS
+.Fn daemonize
+dies rather than returning if the fork fails,
+if
+.Xr setsid 2
+fails,
+or if any of the three standard descriptors cannot be redirected.
+These are start-up conditions a daemon cannot recover from.
+.Sh SEE ALSO
+.Xr setsid 2 ,
+.Xr daemon 3 ,
+.Xr FuguLib::Log 3p ,
+.Xr FuguLib::Privdrop 3p ,
+.Xr FuguLib::Process 3p ,
+.Xr FuguLib::State 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+Call
+.Fn daemonize
+before opening files or sockets that the daemon expects to keep:
+the standard descriptors are redirected in the child,
+but anything already open is inherited as it is.
+.Pp
+The parent exits with status 0 even if
+.Fa on_fork
+fails.
+A caller that must know whether the PID file was written has to check
+for it separately.

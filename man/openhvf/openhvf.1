@@ -1,6 +1,6 @@
 .\" $OpenBSD$
 .\"
-.\" Copyright (c) 2026 Dick Olsson <dick@aglim.se>
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm openhvf
-.Nd QEMU virtual machine harness for OpenBSD integration testing
+.Nd install and manage OpenBSD virtual machines
 .Sh SYNOPSIS
 .Nm openhvf
 .Op Fl hq
@@ -30,17 +30,31 @@
 .Op Ar argument ...
 .Sh DESCRIPTION
 .Nm
-manages QEMU virtual machines running
-.Ox ,
-used to test software in a real
+installs and manages
 .Ox
-environment from a Linux or Darwin development host.
-It downloads installation images,
-creates disk images,
-and controls the VM lifecycle,
+virtual machines under QEMU.
+It downloads the installation image,
+creates the disk image,
+answers the installer over the serial console,
+and from then on controls the machine's lifecycle,
 guest access,
 and console automation.
+Getting from nothing to a machine that accepts
+.Xr ssh 1
+is one command,
+and running it again does nothing.
 .Pp
+The host does not have to run
+.Ox .
+Anything that runs QEMU will do,
+and the accelerator is chosen to suit it,
+so a Linux or Darwin workstation can build,
+test,
+or reproduce a bug on a real
+.Ox
+system without one on the desk.
+.Pp
+Within the OpenHAP source tree,
 .Nm
 is a development tool:
 it is not installed by
@@ -437,11 +451,15 @@ $ openhvf --vm minimal up
 .Sh HISTORY
 The
 .Nm
-utility first appeared with
+utility first appeared in 2025,
+written to run the
 .Xr openhapd 8
-in 2025.
+test suite against a real
+.Ox
+guest,
+and generalised from there.
 .Sh AUTHORS
-.An Dick Olsson Aq Mt dick@aglim.se
+.An Dick Olsson Aq Mt hi@senzilla.io
 .Sh SECURITY CONSIDERATIONS
 .Nm
 generates a random root password for each installation and stores it in
