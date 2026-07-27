@@ -61,25 +61,27 @@ jobs:
       - name: Install development dependencies
         run: make deps-develop
 
-      - name: Cache OpenBSD miniroot image
+      - name: Cache OpenBSD images and provisioned VM disk
+        # ONE entry for both paths, deliberately. `.openhvf` holds a
+        # qcow2 overlay whose backing file is an absolute path into
+        # `~/.cache/openhvf/installed/<key>/`; two entries would hit,
+        # miss and get evicted independently, and an overlay restored
+        # without its base is a hard failure no later step can clear.
+        #
+        # The cache post-step saves only when the job succeeds and only
+        # on a primary-key miss; the clean-shutdown step below keeps the
+        # archived qcow2 consistent. Bump the v<N> suffix in the key to
+        # force a cold-cache run (see the integration-tests skill).
         uses: actions/cache@v4
         with:
-          path: ~/.cache/openhvf
-          key: openhvf-image-${{ hashFiles('.openhvfrc') }}
-
-      - name: Cache provisioned VM disk
-        # The cache post-step saves only when the job succeeds; the
-        # clean-shutdown step below keeps the archived qcow2 consistent.
-        # A cache hit boots the already-installed OpenBSD system instead
-        # of reinstalling it from the miniroot on every run. Bump the
-        # v<N> suffix in the key to force a cold-cache run (see the
-        # integration-tests skill).
-        uses: actions/cache@v4
-        with:
-          path: .openhvf
+          path: |
+            ~/.cache/openhvf
+            .openhvf
           key:
-            openhvf-state-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
-            'deps/OpenBSD.txt', 'scripts/vm_provision.sh') }}
+            openhvf-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
+            'share/openhvf/expect/install.exp',
+            'share/openhvf/cache-generation', 'deps/OpenBSD.txt',
+            'scripts/vm_provision.sh') }}
 
       - name: Generate ephemeral SSH key for the VM
         # The harness installs an authorized_keys entry on the guest and
@@ -87,7 +89,7 @@ jobs:
         # Developers configure this in ~/.openhvfrc; CI has no key, so
         # mint a throwaway one per run. Write the public half to the
         # GLOBAL rc (~/.openhvfrc) rather than the project .openhvfrc so
-        # the disk-cache key (which hashes the project file) stays stable.
+        # the cache key (which hashes the project file) stays stable.
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           ssh-keygen -t ed25519 -N '' -C openhvf-ci -f ~/.ssh/id_ed25519

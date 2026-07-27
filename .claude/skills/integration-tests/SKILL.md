@@ -66,16 +66,27 @@ against any branch. "Green" means repetition, not one run: **three consecutive
 green workflow runs, at least one cold-cache and one warm-cache**, with wall
 clock recorded against the job's 180-minute budget.
 
+The workflow keeps a single `actions/cache` entry covering both
+`~/.cache/openhvf` and `.openhvf`, keyed `openhvf-v<N>-<arch>-<hash>`. The two
+paths share one entry on purpose: `.openhvf` holds an overlay backed by an
+absolute path into `~/.cache/openhvf`, and separate entries could restore one
+without the other.
+
 Producing each cache state on demand:
 
 - **Cold cache** (fresh OpenBSD install from the miniroot): bump the `v<N>`
-  suffix in the `openhvf-state-*` cache key in the workflow, or delete the cache
+  suffix in the `openhvf-v<N>-*` cache key in the workflow, or delete the cache
   with `gh cache delete` (or the repository's Actions → Caches UI), then
   dispatch a run.
-- **Warm cache** (reused provisioned disk): re-run after a green run. The disk
-  cache saves only when the job succeeds, so no warm cache exists until the
-  suite first passes end-to-end; a re-run of that green run then boots the
-  cached disk.
+- **Warm cache** (reused provisioned disk): re-run after a green run. The cache
+  saves only when the job succeeds and only on a primary-key miss, so no warm
+  cache exists until the suite first passes end-to-end; a re-run of that green
+  run then boots the cached disk.
+
+Note that openhvf caches the installed OpenBSD image natively under
+`~/.cache/openhvf/installed/`, so a run whose `.openhvf` state directory is
+absent still skips the OS installation when a matching base image is cached. See
+`openhvf(1)` for the cache layout and its invalidation inputs.
 
 ## References
 

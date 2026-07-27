@@ -102,10 +102,50 @@ is(OpenHVF::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.openhvf/vms");
-    
+
     my $config = OpenHVF::Config->new($tmpdir);
     my $vm = $config->load_vm('nonexistent');
     is($vm, undef, 'load_vm returns undef for missing VM');
+}
+
+# The resolved cache_dir reaches the per-VM config, so `openhvf up`
+# writes its image cache where the cache subcommands look for it
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    make_path("$tmpdir/.openhvf/vms");
+
+    open my $fh, '>', "$tmpdir/.openhvfrc";
+    print $fh "cache_dir /var/cache/openhvf\n";
+    print $fh "vm \"test\" {\n";
+    print $fh "    memory 4096\n";
+    print $fh "}\n";
+    close $fh;
+
+    my $config = OpenHVF::Config->new($tmpdir);
+    my $vm = $config->load_vm('test');
+
+    is($vm->{cache_dir}, '/var/cache/openhvf',
+	'load_vm injects the configured cache_dir');
+    is($vm->{cache_dir}, $config->cache_dir,
+	'and it is the same value cache_dir reports');
+}
+
+# A VM without any cache_dir configured still gets the default
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $homedir = tempdir(CLEANUP => 1);
+    local $ENV{HOME} = $homedir;
+    make_path("$tmpdir/.openhvf/vms");
+
+    open my $fh, '>', "$tmpdir/.openhvfrc";
+    print $fh "vm test {\n}\n";
+    close $fh;
+
+    my $config = OpenHVF::Config->new($tmpdir);
+    my $vm = $config->load_vm('test');
+
+    is($vm->{cache_dir}, "$homedir/.cache/openhvf",
+	'default cache_dir is injected and tilde-expanded');
 }
 
 # Test ssh_pubkey from project config

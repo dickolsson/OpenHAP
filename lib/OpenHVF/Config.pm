@@ -168,6 +168,12 @@ sub load_vm ( $self, $name )
 	# Include ssh_pubkey from global/project config
 	$vm->{ssh_pubkey} //= $self->ssh_pubkey;
 
+	# Include the resolved cache_dir so VM operations (proxy cache,
+	# installed-image cache) all use the configured location. Without
+	# it 'openhvf up' would write its images under $HOME while the
+	# cache subcommands worked on a different tree.
+	$vm->{cache_dir} //= $self->cache_dir;
+
 	return $vm;
 }
 

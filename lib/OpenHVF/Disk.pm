@@ -29,7 +29,20 @@ sub new ( $class, $state_dir )
 	return $self;
 }
 
-sub create ( $self, $name, $size, $backing_image = undef )
+# $self->create($name, $size, $backing_image, $backing_format):
+#	Create the VM disk image. $size may be undef for an overlay, which
+#	then inherits the virtual size of $backing_image. $backing_format
+#	names the format of $backing_image ('qcow2' for cached base images
+#	and snapshots, 'raw' otherwise).
+#
+#	Returns early when the path already exists, so callers replacing a
+#	disk with an overlay must unlink it first.
+sub create (
+	$self, $name,
+	$size           = undef,
+	$backing_image  = undef,
+	$backing_format = 'raw'
+    )
 {
 	my $path = $self->path($name);
 	my $dir  = dirname($path);
@@ -41,10 +54,11 @@ sub create ( $self, $name, $size, $backing_image = undef )
 	my @cmd = ( 'qemu-img', 'create', '-f', 'qcow2' );
 
 	if ( defined $backing_image ) {
-		push @cmd, '-b', $backing_image, '-F', 'raw';
+		push @cmd, '-b', $backing_image, '-F', $backing_format;
 	}
 
-	push @cmd, $path, $size;
+	push @cmd, $path;
+	push @cmd, $size if defined $size;
 
 # Suppress qemu-img's verbose "Formatting..." output by redirecting to /dev/null
 # We use shell redirection since system() doesn't provide output control
@@ -92,6 +106,28 @@ sub info ( $self, $name )
 
 	require JSON::XS;
 	return eval { JSON::XS::decode_json($output) };
+}
+
+# $self->backing_file($name):
+#	Absolute path of the image the disk is backed by, or undef when
+#	the disk is standalone or cannot be inspected. qemu-img reports a
+#	backing reference even when the file it names is gone, which is
+#	what makes a broken chain diagnosable.
+sub backing_file ( $self, $name )
+{
+	my $info = $self->info($name);
+	return if !defined $info;
+
+	my $backing = $info->{'full-backing-filename'}
+	    // $info->{'backing-filename'};
+	return if !defined $backing || $backing eq '';
+
+	# Relative references resolve against the disk's own directory
+	if ( $backing !~ m{^/} ) {
+		$backing = dirname( $self->path($name) ) . "/$backing";
+	}
+
+	return $backing;
 }
 
 # P5: Check disk image integrity

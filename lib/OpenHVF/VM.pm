@@ -29,6 +29,7 @@ use POSIX       qw(setsid);
 use Time::HiRes qw(usleep);
 
 use OpenHVF::Image;
+use OpenHVF::ImageCache;
 use OpenHVF::Disk;
 use OpenHVF::SSH;
 use OpenHVF::Expect;
@@ -86,6 +87,15 @@ sub up ($self)
 		return EXIT_SUCCESS;
 	}
 
+	# Verify the disk's backing chain before anything else looks at the
+	# disk. A base image missing from the cache is not corruption, and
+	# the unclean-shutdown check below would report it as such and
+	# recommend 'openhvf disk repair' - which cannot recreate a missing
+	# backing file.
+	if ( $state->disk_exists && !$self->_verify_backing_chain ) {
+		return EXIT_ERROR;
+	}
+
 	# Check for unclean shutdown and verify disk integrity
 	if ( $state->was_unclean_shutdown ) {
 		$log->warning("Detected unclean shutdown, checking disk...");
@@ -99,6 +109,18 @@ sub up ($self)
 			return EXIT_ERROR;
 		}
 		$state->clear_shutdown_state;
+	}
+
+	# Derive the installed-image cache key exactly once, before the
+	# installer runs: key() hashes install.exp at call time, so a key
+	# re-derived after a tens-of-minutes install would publish the
+	# image the OLD installer produced under the NEW digest.
+	my $cache     = $self->_image_cache;
+	my $cache_key = defined $cache ? $cache->key($config) : undef;
+
+	# Restore from the installed-image cache when there is no disk yet
+	if ( !$state->disk_exists && defined $cache_key ) {
+		$self->_cache_restore( $cache, $cache_key );
 	}
 
 	# Start caching proxy for VM installation (packages downloaded by VM)
@@ -116,21 +138,27 @@ sub up ($self)
 			"Proxy not available, VM downloads will not be cached");
 	}
 
-	# Ensure image is available (download via proxy if needed)
-	$log->info("Checking OpenBSD image...");
-	my $image      = OpenHVF::Image->new( $cache_dir, $proxy );
-	my $image_path = $image->ensure( $config->{version} );
+	# Ensure the miniroot is available (download via proxy if needed).
+	# Only the installer boots it: an installed system - freshly
+	# installed or restored from the image cache - boots its own disk,
+	# and must not fail here because the miniroot has been pruned.
+	my $image_path;
 
-	if ( !defined $image_path ) {
-		my $url = $image->url( $config->{version} );
-		$log->error(
+	if ( !$state->is_installed ) {
+		$log->info("Checking OpenBSD image...");
+		my $image = OpenHVF::Image->new( $cache_dir, $proxy );
+		$image_path = $image->ensure( $config->{version} );
+
+		if ( !defined $image_path ) {
+			my $url = $image->url( $config->{version} );
+			$log->error(
 "Failed to download image for OpenBSD $config->{version}"
-		);
-		$log->error("URL: $url");
-		$log->error("Try downloading manually: curl -fLO $url");
-		return EXIT_ERROR;
-	}
-	else {
+			);
+			$log->error("URL: $url");
+			$log->error("Try downloading manually: curl -fLO $url");
+			return EXIT_ERROR;
+		}
+
 		$log->info("Using cached image: $image_path");
 	}
 
@@ -194,11 +222,37 @@ sub up ($self)
 		$state->mark_installed;
 		$log->info("Installation complete");
 
-		# Stop VM via QMP (graceful)
+		# Stop VM via QMP (graceful). The image cache captures the
+		# disk at exactly this point - installed, pristine, before
+		# the per-checkout SSH key goes in - so the capture must
+		# know that QEMU is really gone, not assume it.
 		$log->info("Stopping installation VM...");
 		$self->_qmp_quit;
-		$self->_wait_exit(5);
+		my $clean_exit = $self->_wait_exit(30);
+
+		if ( !$clean_exit ) {
+			$log->warning(
+"Installation VM did not exit on request, force stopping"
+			);
+			$self->_force_stop;
+			$self->_wait_exit(10);
+		}
 		$state->clear_vm_pid;
+
+		# Publish the installed disk as a cached base image. A VM
+		# that had to be killed may have left the disk mid-write,
+		# so that capture is skipped rather than published.
+		if ( defined $cache_key ) {
+			if ($clean_exit) {
+				$self->_cache_store( $cache, $cache_key,
+					$root_password );
+			}
+			else {
+				$log->warning(
+"Skipping image cache: installation VM was force stopped"
+				);
+			}
+		}
 
 		# Restart VM without install media
 		$log->info("Restarting installed system...");
@@ -244,6 +298,153 @@ sub up ($self)
 
 	$log->info("VM ready");
 	return EXIT_SUCCESS;
+}
+
+# $self->_image_cache:
+#	Installed-image cache for this VM's configured cache_dir
+sub _image_cache ($self)
+{
+	return OpenHVF::ImageCache->new( $self->_cache_dir );
+}
+
+# $self->_verify_backing_chain:
+#	Confirm that the working disk's backing image, if it has one, is
+#	present. Returns true when the chain resolves; on a break, logs
+#	the missing file and a remedy and returns false, so a pruned or
+#	evicted cache entry fails with an explanation rather than an
+#	opaque QEMU open error at boot.
+sub _verify_backing_chain ($self)
+{
+	my $config = $self->{config};
+	my $state  = $self->{state};
+	my $log    = $self->{log};
+
+	my $disk    = OpenHVF::Disk->new( $state->{state_dir} );
+	my $backing = $disk->backing_file( $config->{name} );
+	return 1 if !defined $backing;
+	return 1 if -f $backing;
+
+	$log->error("Backing image missing: $backing");
+
+	my $cache_dir = $self->_cache_dir;
+	if ( index( $backing, "$cache_dir/" ) == 0 ) {
+		$log->error(
+"The image cache no longer holds this disk's base image."
+		);
+	}
+	$log->error(
+		"Run 'openhvf destroy' and 'openhvf up' to rebuild the VM.");
+
+	return 0;
+}
+
+# $self->_cache_restore($cache, $key):
+#	Create the working disk as an overlay on a cached base image and
+#	seed the state the installation would have written. Returns true
+#	on a cache hit, false on a miss or any failure - both of which
+#	simply leave the caller to install from scratch.
+sub _cache_restore ( $self, $cache, $key )
+{
+	my $config = $self->{config};
+	my $state  = $self->{state};
+	my $log    = $self->{log};
+
+	my $hit = $cache->lookup($key);
+	if ( !defined $hit ) {
+		$log->info("No cached image for $key, installing");
+		return 0;
+	}
+
+	my $disk = OpenHVF::Disk->new( $state->{state_dir} );
+	my $path =
+	    $disk->create( $config->{name}, undef, $hit->{base}, 'qcow2' );
+	if ( !defined $path ) {
+		$log->warning(
+			"Cannot overlay cached image $key, installing instead");
+		return 0;
+	}
+
+	# The base was captured from an installed system, so the state
+	# the installer would have written comes from its metadata. The
+	# root password is what the later SSH key install authenticates
+	# with, and it is baked into the image.
+	$state->mark_installed;
+	my $password = $hit->{meta}{root_password};
+	$state->set_root_password($password) if defined $password;
+	$state->{data}{cached_from} = $key;
+	$state->save;
+
+	$log->info("Using cached image $key");
+	return 1;
+}
+
+# $self->_cache_store($cache, $key, $root_password):
+#	Publish the freshly installed disk as a cached base image and
+#	replace the working disk with an overlay on it. Best effort: any
+#	failure leaves the standalone disk in place and warns, because
+#	'up' must never fail because caching failed.
+sub _cache_store ( $self, $cache, $key, $root_password )
+{
+	my $config = $self->{config};
+	my $state  = $self->{state};
+	my $log    = $self->{log};
+
+	$log->info("Caching installed image as $key...");
+
+	my $base = $cache->store(
+		$key,
+		$state->disk_path,
+		{
+			root_password => $root_password,
+			version       => $config->{version},
+			disk_size     => $config->{disk_size},
+		} );
+	if ( !defined $base ) {
+		$log->warning("Could not cache installed image, continuing");
+		return 0;
+	}
+
+	if ( !$self->_reparent_disk($base) ) {
+		$log->warning(
+			"Cached image saved but disk left standalone: $base");
+		return 0;
+	}
+
+	$log->info("Cached installed image: $base");
+	return 1;
+}
+
+# $self->_reparent_disk($base):
+#	Replace the working disk with a fresh overlay backed by $base.
+#	The old disk is moved aside rather than deleted, so a failure to
+#	create the overlay cannot leave the VM without a disk.
+sub _reparent_disk ( $self, $base )
+{
+	my $config = $self->{config};
+	my $state  = $self->{state};
+	my $log    = $self->{log};
+
+	my $disk_path = $state->disk_path;
+	my $saved     = "$disk_path.replaced";
+
+	unlink $saved if -f $saved;
+	rename $disk_path, $saved or do {
+		$log->warning("Cannot move $disk_path aside: $!");
+		return 0;
+	};
+
+	# Disk::create returns early on an existing path, so the rename
+	# above is what makes this actually create the overlay.
+	my $disk = OpenHVF::Disk->new( $state->{state_dir} );
+	my $path = $disk->create( $config->{name}, undef, $base, 'qcow2' );
+	if ( !defined $path ) {
+		rename $saved, $disk_path
+		    or $log->error("Cannot restore $disk_path: $!");
+		return 0;
+	}
+
+	unlink $saved or $log->warning("Cannot remove $saved: $!");
+	return 1;
 }
 
 sub down ($self)
@@ -964,8 +1165,15 @@ sub _find_efi_firmware ($self)
 	return;
 }
 
+# $self->_cache_dir:
+#	Configured cache directory, injected into the per-VM config by
+#	OpenHVF::Config::load_vm. The fallback only serves VM objects
+#	built without a configuration.
 sub _cache_dir ($self)
 {
+	my $configured = $self->{config}{cache_dir};
+	return $configured if defined $configured && $configured ne '';
+
 	my $home = $ENV{HOME} // '/root';
 	return "$home/.cache/openhvf";
 }
