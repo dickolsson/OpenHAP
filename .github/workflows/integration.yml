@@ -35,12 +35,12 @@ on:
       - ".openhvfrc"
       - "share/openhvf/cache-generation"
       - "share/openhvf/expect/*.exp"
-      - "scripts/deps.sh"
-      - "scripts/deps_key.sh"
-      - "scripts/ftp.sh"
-      - "scripts/integration.sh"
-      - "scripts/vm_provision.sh"
-      - "scripts/vm_up.sh"
+      - "scripts/deps"
+      - "scripts/deps-key"
+      - "scripts/ftp"
+      - "scripts/integration"
+      - "scripts/vm-provision"
+      - "scripts/vm-up"
       # Guest dependencies, and the package and install rules that put
       # the checkout on the guest
       - "cpanfile"
@@ -64,12 +64,12 @@ on:
       - ".openhvfrc"
       - "share/openhvf/cache-generation"
       - "share/openhvf/expect/*.exp"
-      - "scripts/deps.sh"
-      - "scripts/deps_key.sh"
-      - "scripts/ftp.sh"
-      - "scripts/integration.sh"
-      - "scripts/vm_provision.sh"
-      - "scripts/vm_up.sh"
+      - "scripts/deps"
+      - "scripts/deps-key"
+      - "scripts/ftp"
+      - "scripts/integration"
+      - "scripts/vm-provision"
+      - "scripts/vm-up"
       - "cpanfile"
       - "deps/OpenBSD.txt"
       - "Makefile"
@@ -117,7 +117,7 @@ jobs:
         # run's state.
         #
         # The key hashes every input that either openhvf's own cache key
-        # or scripts/deps_key.sh derives from. That is a constraint, not
+        # or scripts/deps-key derives from. That is a constraint, not
         # a courtesy: the post-step saves only on a primary-key MISS, so
         # an input this key cannot see would rotate a cached name,
         # rebuild it, and then discard the result on every single run.
@@ -137,8 +137,7 @@ jobs:
             openhvf-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
             'share/openhvf/expect/install.exp',
             'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'cpanfile',
-            'scripts/deps.sh', 'scripts/deps_key.sh', 'scripts/vm_provision.sh')
-            }}
+            'scripts/deps', 'scripts/deps-key', 'scripts/vm-provision') }}
           # A key rotation still restores the miniroot and any base
           # image openhvf's own keying still considers valid, so only
           # the parts that actually changed are rebuilt.

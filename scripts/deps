@@ -1,7 +1,7 @@
 #!/bin/sh
 # Cross-platform dependency installer
 # Handles both OS packages and CPAN modules from deps/*.txt
-# Usage: deps.sh <environment>
+# Usage: deps <environment>
 #   environment: runtime, test, or develop
 
 set -e

@@ -1,8 +1,8 @@
 #!/bin/sh
 # ex:ts=8 sw=4:
-# OpenHAP Integration Test Suite
+# Bring up the OpenBSD VM, restoring the cached deps layer if there is one
 #
-# Usage: ./integration-test.sh [--fresh]
+# Usage: ./vm-up [--fresh]
 
 set -e
 
@@ -54,10 +54,10 @@ fi
 # away local state.
 #
 # A miss is normal - it exits 11 - so absorb it here rather than let
-# set -e abort; vm_provision.sh then installs the deps layer and saves
+# set -e abort; vm-provision then installs the deps layer and saves
 # it for next time.
 if [ "$(vm_status disk_exists)" != "1" ]; then
-	DEPS_SNAPSHOT="deps-$("${SCRIPT_DIR}/deps_key.sh")"
+	DEPS_SNAPSHOT="deps-$("${SCRIPT_DIR}/deps-key")"
 	if ! "${OPENHVF}" snapshot restore "${DEPS_SNAPSHOT}"; then
 		echo "==> No cached ${DEPS_SNAPSHOT} layer, will provision"
 	fi

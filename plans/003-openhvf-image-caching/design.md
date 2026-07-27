@@ -39,7 +39,7 @@ invalidation logic.
 3. Cached bases are pristine and immutable: written once at a known-clean point,
    never mutated by later runs, shared by any number of VMs.
 4. `openhvf destroy && openhvf up` becomes a cheap factory reset.
-5. A generic, named snapshot layer lets scripts (e.g. `vm_provision.sh`) cache
+5. A generic, named snapshot layer lets scripts (e.g. `vm-provision`) cache
    states openhvf knows nothing about, such as "guest packages installed".
 6. The Integration workflow shrinks to one `actions/cache` step over
    `~/.cache/openhvf` and stops archiving `.openhvf` entirely.
@@ -52,7 +52,7 @@ invalidation logic.
 - Cross-machine or content-addressed image distribution beyond what
   `actions/cache` already provides.
 - Caching OpenHAP provisioning policy inside openhvf; the snapshot verb is the
-  mechanism, `scripts/vm_provision.sh` keeps the policy.
+  mechanism, `scripts/vm-provision` keeps the policy.
 - Multi-architecture images (`OpenHVF::Image::ARCH` stays `arm64`).
 
 ## Architecture
@@ -147,12 +147,12 @@ location, and a caller-supplied path would move invalidation back to the caller.
 
 One cache step over `~/.cache/openhvf`, keyed on the same inputs openhvf hashes
 (`share/openhvf/cache-generation` included) plus the provisioning inputs
-(`deps/OpenBSD.txt`, `scripts/deps.sh`, `scripts/vm_provision.sh`), with a
+(`deps/OpenBSD.txt`, `scripts/deps`, `scripts/vm-provision`), with a
 `restore-keys` prefix fallback so a key rotation still restores the still-valid
 miniroot and any still-matching bases; `openhvf cache clear --stale` bounds
 growth before the post-job save. The `.openhvf` cache step and its socket
 cleanup disappear; the archived root password does not, it moves into
-`meta.json` inside the image cache. `vm_provision.sh` caches its expensive
+`meta.json` inside the image cache. `vm-provision` caches its expensive
 `make deps` result as snapshot `deps-<hash>` via the snapshot verb.
 
 A working overlay and the base it references must never live in separate cache
@@ -193,7 +193,7 @@ Four independently shippable phases:
 3. **Named snapshots** — the generic `openhvf snapshot` verb over the same
    backing-chain mechanism.
 4. **CI adoption** — single-cache workflow, `.openhvf` never archived,
-   `vm_provision.sh` snapshots its `make deps` result.
+   `vm-provision` snapshots its `make deps` result.
 
 Once a phase lands, the code, tests, and man page are the source of truth; this
 document records intent at the time of writing.

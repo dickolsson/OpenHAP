@@ -1,6 +1,6 @@
 #!/bin/sh
 # Cross-platform file downloader
-# Usage: ftp.sh output_file url
+# Usage: ftp output_file url
 
 OS=$(uname)
 

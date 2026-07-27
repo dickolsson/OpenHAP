@@ -24,7 +24,7 @@ on:
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps.sh"
+      - "scripts/deps"
   pull_request:
     branches: [main]
     paths:
@@ -39,7 +39,7 @@ on:
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps.sh"
+      - "scripts/deps"
 
 jobs:
   tidy:

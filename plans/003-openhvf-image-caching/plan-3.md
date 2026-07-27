@@ -1,9 +1,9 @@
 # Phase 3 — Named snapshots
 
 A generic layer verb over the same backing-chain mechanism, so scripts can cache
-states openhvf knows nothing about — the motivating consumer is
-`vm_provision.sh` caching its `make deps` result (wired up in phase 4).
-Mechanism lives here; policy stays in the scripts.
+states openhvf knows nothing about — the motivating consumer is `vm-provision`
+caching its `make deps` result (wired up in phase 4). Mechanism lives here;
+policy stays in the scripts.
 
 ## Model
 

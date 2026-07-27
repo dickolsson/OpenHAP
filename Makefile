@@ -30,8 +30,8 @@ PRETTIER		= npx prettier@3.9.6
 
 # OS detection
 UNAME			!= uname
-FTP				= scripts/ftp.sh
-DEPS			= scripts/deps.sh
+FTP				= scripts/ftp
+DEPS			= scripts/deps
 
 # Man pages.  FuguLib sources drop the FuguLib:: prefix because a colon
 # cannot appear in a make target; install-man puts it back.
@@ -137,7 +137,7 @@ install-man:
 	install -m 644 $(MAN8) $(DESTDIR)$(MANDIR)/man8/
 
 integration: vm-provision
-	@./scripts/integration.sh
+	@./scripts/integration
 
 lint:
 	perl -MPerl::Critic::Command -e 'Perl::Critic::Command::run()' -- --severity 4 --verbose 8 lib/ bin/openhapd bin/hapctl
@@ -151,7 +151,7 @@ prettier-fix:
 	$(PRETTIER) --write '**/*.md' '**/*.json' '**/*.yml'
 
 spec-coverage:
-	@perl scripts/spec-coverage --quiet
+	@./scripts/spec-coverage --quiet
 
 %.cat1: %.1
 	$(MANDOC) -Tascii $< > $@
@@ -192,8 +192,8 @@ package: clean
 	cp $(MAN3P) build/$(PACKAGE)/man/fugulib/
 	cp $(MAN5) $(MAN8) build/$(PACKAGE)/man/openhap/
 	# Scripts for dependency management
-	cp scripts/ftp.sh scripts/deps.sh build/$(PACKAGE)/scripts/
-	chmod +x build/$(PACKAGE)/scripts/*.sh
+	cp scripts/ftp scripts/deps build/$(PACKAGE)/scripts/
+	chmod +x build/$(PACKAGE)/scripts/*
 	# Dependency files
 	cp deps/*.txt build/$(PACKAGE)/deps/
 	# Makefile and cpanfile for installation
@@ -247,10 +247,10 @@ upgrade:
 	@echo "==> Upgrade by running:\n    make uninstall\n    cd ../$(PACKAGE)\n    make install"
 
 vm-provision: vm-up
-	@./scripts/vm_provision.sh
+	@./scripts/vm-provision
 
 vm-up:
-	@./scripts/vm_up.sh
+	@./scripts/vm-up
 
 web:
 	@command -v $(LOWDOWN) >/dev/null 2>&1 || \

@@ -55,8 +55,7 @@ In preference order, based on 3.1:
    which always restarts explicitly).
 2. **Client hygiene**, if 3.1 shows churn kills the daemon: withdraw
    registrations gracefully instead of kill/respawn on TXT updates in
-   `OpenHAP::MDNS`, and drop the `pkill -9 mdnsctl` from
-   `scripts/integration.sh`.
+   `OpenHAP::MDNS`, and drop the `pkill -9 mdnsctl` from `scripts/integration`.
 3. **Network backend change — separately planned last resort**: only if 3.1
    proves an in-guest multicast-loopback deficit (mdnsd cannot hear its own
    answers). This is phase-sized, not a task: every host→guest path assumes

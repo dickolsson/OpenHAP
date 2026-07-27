@@ -182,7 +182,7 @@ rest.
 ## Dependencies
 
 `deps/{OpenBSD,Linux,Darwin}.txt` are authoritative, installed by `make deps`
-via `scripts/deps.sh`; one line each, `<environment> <type> <name>`, where
+via `scripts/deps`; one line each, `<environment> <type> <name>`, where
 `<environment>` is `runtime`, `test`, or `develop` and `<type>` is `pkg` or
 `cpan`.
 

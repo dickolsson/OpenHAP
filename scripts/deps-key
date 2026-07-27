@@ -3,8 +3,8 @@
 # Print the provisioning key: a short digest over everything that
 # determines the guest's installed dependencies.
 #
-# scripts/vm_up.sh restores the snapshot named after this key, and
-# scripts/vm_provision.sh saves it, so both must derive it identically.
+# scripts/vm-up restores the snapshot named after this key, and
+# scripts/vm-provision saves it, so both must derive it identically.
 # Whatever this hashes must also be hashed into the CI cache key, or a
 # change here would rotate the snapshot name without letting the runner
 # persist the result.
@@ -14,7 +14,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# The deps layer of vm_provision.sh only, not the whole file: the
+# The deps layer of vm-provision only, not the whole file: the
 # OpenHAP layer runs on every provision and never enters the snapshot,
 # so editing it must not invalidate the cached dependencies.
 # The markers sit inside an 'else' block, so they are indented: anchor
@@ -23,15 +23,15 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # left every edit to the layer unable to invalidate its cached snapshot.
 deps_layer() {
 	sed -n '/^[[:space:]]*# BEGIN deps layer$/,/^[[:space:]]*# END deps layer$/p' \
-		"${PROJECT_ROOT}/scripts/vm_provision.sh"
+		"${PROJECT_ROOT}/scripts/vm-provision"
 }
 
 # Fail closed: a digest over silently-missing inputs is worse than no
 # digest, because it looks valid and caches a stale layer forever.
 require_deps_layer() {
 	if [ "$(deps_layer | wc -l)" -lt 2 ]; then
-		echo "deps_key: cannot find the deps layer markers in" \
-			"scripts/vm_provision.sh" >&2
+		echo "deps-key: cannot find the deps layer markers in" \
+			"scripts/vm-provision" >&2
 		exit 1
 	fi
 }
@@ -56,8 +56,8 @@ require_deps_layer
 	# silently produce the same digest
 	echo "== deps/OpenBSD.txt"
 	cat "${PROJECT_ROOT}/deps/OpenBSD.txt"
-	echo "== scripts/deps.sh"
-	cat "${PROJECT_ROOT}/scripts/deps.sh"
+	echo "== scripts/deps"
+	cat "${PROJECT_ROOT}/scripts/deps"
 	echo "== cpanfile"
 	[ -f "${PROJECT_ROOT}/cpanfile" ] && cat "${PROJECT_ROOT}/cpanfile"
 	echo "== deps layer"

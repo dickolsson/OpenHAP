@@ -23,7 +23,7 @@ on:
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps.sh"
+      - "scripts/deps"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/test.yml"
   pull_request:
@@ -38,7 +38,7 @@ on:
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps.sh"
+      - "scripts/deps"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/test.yml"
 

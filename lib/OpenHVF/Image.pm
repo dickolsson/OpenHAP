@@ -23,7 +23,7 @@ package OpenHVF::Image;
 #
 # This module provides access to OpenBSD miniroot images. Images are
 # automatically downloaded when needed and stored in the proxy cache for reuse.
-# Downloads use the ftp.sh script (curl/wget/ftp fallbacks) and files are
+# Downloads use the scripts/ftp helper (curl/wget/ftp fallbacks) and files are
 # stored via the Proxy::Cache module for consistent caching.
 
 use constant {
@@ -66,6 +66,26 @@ sub ensure ( $self, $version )
 	return $self->download($version);
 }
 
+# _ftp_script():
+#	Absolute path to the scripts/ftp helper, resolved from this
+#	module's own location: lib/OpenHVF/Image.pm is two directories
+#	below the project root.  Factored out of download so a test can
+#	assert the path still resolves - download only warns when it does
+#	not, so a rename would otherwise degrade silently to "no download"
+#	instead of failing.
+sub _ftp_script ()
+{
+	require File::Basename;
+	require File::Spec;
+
+	my $module_dir =
+	    File::Basename::dirname( File::Spec->rel2abs(__FILE__) );
+	my $project_root =
+	    File::Basename::dirname( File::Basename::dirname($module_dir) );
+
+	return File::Spec->catfile( $project_root, 'scripts', 'ftp' );
+}
+
 # $self->download($version):
 #	Download miniroot image for version via proxy cache
 #	Returns path on success, undef on failure
@@ -78,30 +98,21 @@ sub download ( $self, $version )
 
 	my $url = $self->url($version);
 
-	# Download using ftp.sh script (uses curl/wget/ftp)
+	# Download using the scripts/ftp helper (uses curl/wget/ftp)
 	# Then store in proxy cache
 	require File::Temp;
-	require File::Basename;
-	require File::Spec;
-	require Cwd;
 	my $tmp      = File::Temp->new( SUFFIX => '.img' );
 	my $tmp_path = $tmp->filename;
 
-	# Find ftp.sh script relative to this module
-	# Module is at lib/OpenHVF/Image.pm, script is at scripts/ftp.sh
-	my $module_file = File::Spec->rel2abs(__FILE__);
-	my $module_dir  = File::Basename::dirname($module_file);
-	my $project_root =
-	    File::Basename::dirname( File::Basename::dirname($module_dir) );
-	my $ftp_sh = File::Spec->catfile( $project_root, 'scripts', 'ftp.sh' );
+	my $ftp = _ftp_script();
 
-	if ( !-x $ftp_sh ) {
-		warn "Cannot find ftp.sh script at $ftp_sh\n";
+	if ( !-x $ftp ) {
+		warn "Cannot find the ftp helper at $ftp\n";
 		return;
 	}
 
 	# Download to temp file
-	my $result = system( $ftp_sh, $tmp_path, $url );
+	my $result = system( $ftp, $tmp_path, $url );
 	if ( $result != 0 ) {
 		warn "Download failed: exit code $result\n";
 		return;

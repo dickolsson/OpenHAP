@@ -13,7 +13,7 @@ Follows the integration rules: real interfaces, no SKIP, no log parsing.
   from `/etc/openhapd.conf`), `ensure_unpaired` (removes stored pairings via the
   controller, or resets `/var/db/openhapd` state through `rcctl` stop/start when
   unpairable), and socket tracking for controller connections in `teardown`.
-- `scripts/integration.sh`: ship `lib/OpenHAP/Test/` (and `t/lib/`) to the VM
+- `scripts/integration`: ship `lib/OpenHAP/Test/` (and `t/lib/`) to the VM
   alongside `t/openhap/integration/`; keep the explicit file order with
   `environment.t` first and a new `zz-unpair.t`-style guarantee replaced by
   per-file `ensure_unpaired` in setup — every file starts unpaired unless it
@@ -66,12 +66,12 @@ Follows the integration rules: real interfaces, no SKIP, no log parsing.
 - Document in `t/openhap/integration/CLAUDE.md`: files own their pairing
   lifecycle (pair in setup if needed, unpair in teardown); the shared daemon is
   never left paired between files; `prove` runs the explicit ordered list from
-  `scripts/integration.sh`.
+  `scripts/integration`.
 
 ## Deliverables
 
 - New: `t/openhap/integration/characteristics.t`, `events.t`.
-- Modified: `OpenHAP::Test::Integration` (+`.pod`), `scripts/integration.sh`,
+- Modified: `OpenHAP::Test::Integration` (+`.pod`), `scripts/integration`,
   integration `pairing.t`, `accessories.t`, `tasmota-protocol.t`, `mdns.t`,
   `t/openhap/integration/CLAUDE.md`.
 

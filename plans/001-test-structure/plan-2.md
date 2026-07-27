@@ -9,7 +9,7 @@ users).
 ### 2.1 `scripts/spec-coverage`
 
 A Perl script (v5.36, base-system modules only, OpenBSD style like
-`scripts/deps.sh` peers):
+`scripts/deps` peers):
 
 - **Section inventory**: parse `spec/*.md` headings (`##`, `###`) and extract
   numbered anchors (`§N`, `§N.M`) per file. Files without numbering

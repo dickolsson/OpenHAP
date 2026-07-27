@@ -26,7 +26,7 @@ SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLeve
 vm_run() { "${OPENHVF}" ssh "$@"; }
 vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
 
-DEPS_KEY="$("${SCRIPT_DIR}/deps_key.sh")"
+DEPS_KEY="$("${SCRIPT_DIR}/deps-key")"
 DEPS_SNAPSHOT="deps-${DEPS_KEY}"
 DEPS_MARKER="/var/db/openhvf-deps-${DEPS_KEY}"
 
@@ -43,7 +43,7 @@ fi
 echo "Using tarball: ${TARBALL}"
 
 # make deps only exists inside the extracted tarball, along with deps/
-# and scripts/deps.sh which it reads relative to cwd. So the package has
+# and scripts/deps which it reads relative to cwd. So the package has
 # to reach the guest before the deps layer runs, not with make install
 # after it.
 copy_and_extract() {
@@ -55,7 +55,7 @@ EOF
 }
 
 # The guest itself says whether the deps layer is already present. A
-# host-side flag could not: vm_up.sh and vm_provision.sh are sibling
+# host-side flag could not: vm-up and vm-provision are sibling
 # make recipes in separate shells, so nothing can be handed over. The
 # marker travels inside the snapshot, which also answers the local case
 # where nothing was restored but the working disk already carries the
@@ -68,7 +68,7 @@ else
 
 	# BEGIN deps layer
 	# Everything between these markers is hashed into DEPS_KEY by
-	# scripts/deps_key.sh: editing it invalidates the cached layer.
+	# scripts/deps-key: editing it invalidates the cached layer.
 	# Guest heredocs run under set -e so a failed pkg_add/cpan/make
 	# cannot report a provisioned guest.
 	#
