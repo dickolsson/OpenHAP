@@ -21,7 +21,7 @@
 # Parses the numbered ##/### headings of spec/*.md into a section
 # inventory, scans t/ for [<spec-stem> §<section>] citations, and prints
 # a coverage matrix. Exits non-zero iff a citation points at a section
-# that does not exist (stale after spec regeneration). Low coverage is
+# that does not exist (stale after a spec edit). Low coverage is
 # informative, never fatal. See t/CLAUDE.md for the citation convention.
 
 use v5.36;

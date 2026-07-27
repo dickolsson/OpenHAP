@@ -8,10 +8,9 @@ particular implementation.
 
 **Excluded:** Bluetooth LE, Thread, cameras, HomeKit Secure Video, Matter.
 
-**Provenance:** Extracted 2026-01-06 from unpinned `--depth 1` checkouts of the
-sources listed in section 7; the source commits were not recorded. Regenerating
-with the `spec-hap` skill replaces this notice with the extraction date and each
-source repository's commit.
+**Provenance:** First extracted 2026-01-06 from the sources listed in section 7
+and curated by hand since. Individual values and behaviors cite the source file
+they came from.
 
 ---
 

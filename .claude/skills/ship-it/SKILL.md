@@ -25,7 +25,8 @@ If the branch carries unrelated changes, stop and ask before including them.
 
 ## Workflow
 
-1. Commit and push any remaining work (use the `commit-push` skill).
+1. Commit and push any remaining work: run `make check`, then group the changes
+   into Conventional Commits as the root `CLAUDE.md` describes.
 2. Open a PR from the current branch to `main`, titled like its main commit,
    with a short body summarizing the change.
 3. Watch the PR's CI checks.

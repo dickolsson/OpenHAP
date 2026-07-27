@@ -73,8 +73,15 @@ jobs:
         # a courtesy: the post-step saves only on a primary-key MISS, so
         # an input this key cannot see would rotate a cached name,
         # rebuild it, and then discard the result on every single run.
-        # Bump the v<N> suffix to force a cold-cache run (see the
-        # integration-tests skill).
+        #
+        # To force a cold-cache run (a fresh OpenBSD install from the
+        # miniroot), bump the v<N> suffix below or delete the cache from
+        # Actions -> Caches. A warm cache exists only after a green run:
+        # the post-step saves on success. On a warm run the log must show
+        # `Guest dependencies already present` rather than a re-run of
+        # `make deps` — provisioning is idempotent, so a broken cache
+        # still yields a green suite, just a slow one. Check wall clock
+        # against the job's timeout.
         uses: actions/cache@v4
         with:
           path: ~/.cache/openhvf

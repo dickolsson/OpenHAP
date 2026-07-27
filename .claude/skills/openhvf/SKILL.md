@@ -80,4 +80,4 @@ the commands are not specific to that use.
 - `openhvf(1)` — full command, option, and exit-code reference:
   `mandoc man/openhvf/openhvf.1 | less`
 - `bin/openhvf help` — quick usage
-- `integration-tests` skill — running the integration suite in the VM
+- `t/openhap/integration/CLAUDE.md` — running the integration suite in the VM

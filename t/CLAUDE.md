@@ -25,7 +25,7 @@ One `.t` per normative spec topic file, named after the lowercased stem
   loops citing `/<row>`; wire examples from the spec are replayed byte-exactly;
   crypto known-answer vectors live under the algorithm sections.
 - Host-side, `Test::More` + `subtest`, `skip_all` on missing CPAN dependencies.
-- Data tables and vectors live inline — no network, no `external/`.
+- Data tables and vectors live inline — no network, no external checkouts.
 - Shared mocks live in `t/lib/` (e.g. `OpenHAP::TestMock::MQTT`), loaded with
   `use lib "$RealBin/../lib"`.
 - The index files (`HAP.md`, `MQTT.md`) and `IMPLEMENTATIONS.md` get no test
@@ -62,6 +62,6 @@ do not cite a section the test merely mentions.
 Coverage of `spec/` and stale-citation detection are computed by
 `make spec-coverage` (`scripts/spec-coverage`).
 
-Spec citations replace references to audit findings ("Finding N") and compliance
-IDs: audit scratchpads are gitignored and ephemeral, so tests must cite the spec
-sections directly.
+Cite spec sections, never audit findings ("Finding N") or compliance IDs: audit
+scratchpads are gitignored and ephemeral, so the spec is the only durable
+anchor.
