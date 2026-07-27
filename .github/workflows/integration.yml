@@ -45,6 +45,11 @@ on:
       # the checkout on the guest
       - "cpanfile"
       - "deps/OpenBSD.txt"
+      # Host dependencies: QEMU, expect and telnet are what boots and
+      # drives the guest, and setup-perl hashes this file into its own
+      # cache key - so by the rule above it has to be able to start a
+      # run of its own
+      - "deps/Linux.txt"
       - "Makefile"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/integration.yml"
@@ -72,6 +77,7 @@ on:
       - "scripts/vm-up"
       - "cpanfile"
       - "deps/OpenBSD.txt"
+      - "deps/Linux.txt"
       - "Makefile"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/integration.yml"
@@ -105,9 +111,8 @@ jobs:
 
       - name: Setup Perl
         uses: ./.github/actions/setup-perl
-
-      - name: Install development dependencies
-        run: make deps-develop
+        with:
+          dependencies: develop
 
       - name: Cache OpenBSD and provisioning images
         # The only cached artifact. `.openhvf` is fully ephemeral: the

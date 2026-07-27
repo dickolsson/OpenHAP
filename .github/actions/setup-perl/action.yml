@@ -1,17 +1,66 @@
 name: "Setup Perl with dependencies"
-description: "Install system dependencies and set up Perl for OpenHAP"
+description:
+  "Install OpenHAP's dependencies for one environment, with the CPAN tree cached"
+
+# Linux only: the bootstrap below drives apt-get, and the cache key hashes
+# deps/Linux.txt.  Every runner this repository uses is Ubuntu, x86_64 or
+# arm64; the guest's dependencies are installed inside the VM by
+# scripts/vm-provision, never here.
+
+inputs:
+  dependencies:
+    description:
+      "Dependency environment to install: runtime, test or develop.  Names the
+      environment column of deps/Linux.txt, so it is also the make target:
+      runtime is `make deps`, the other two `make deps-<name>`."
+    required: false
+    default: "test"
+
+outputs:
+  cache-hit:
+    description:
+      "true when the CPAN tree was restored from an exact key match, i.e. when
+      nothing had to be built"
+    value: ${{ steps.restore.outputs.cache-hit }}
 
 runs:
   using: "composite"
   steps:
-    - name: Install system dependencies and Perl toolchain
+    - name: Resolve the dependency environment
+      id: env
+      shell: bash
+      env:
+        DEPENDENCIES: ${{ inputs.dependencies }}
+      run: |
+        # Fail closed, and fail first: an unrecognised environment
+        # selects nothing, and `make deps-typo` would then either be a
+        # no-op or an error many minutes into the job.
+        case "$DEPENDENCIES" in
+        runtime)
+          echo "target=deps" >> "$GITHUB_OUTPUT"
+          ;;
+        test|develop)
+          echo "target=deps-$DEPENDENCIES" >> "$GITHUB_OUTPUT"
+          ;;
+        *)
+          echo "setup-perl: unknown dependencies '$DEPENDENCIES'" \
+            "(expected runtime, test or develop)" >&2
+          exit 1
+          ;;
+        esac
+
+    - name: Install the Perl toolchain
       shell: bash
       run: |
+        # Only the bootstrap: everything else comes from
+        # deps/Linux.txt via `make deps*` below, which is the single
+        # authoritative list.  cpanminus is installed from a package
+        # rather than left to scripts/deps, which would otherwise fetch
+        # and build App::cpanminus from cpanmin.us on every run.
         sudo apt-get update
         sudo apt-get install -y \
           cpanminus \
-          liblocal-lib-perl \
-          libssh2-1-dev
+          liblocal-lib-perl
 
     - name: Configure local::lib environment
       shell: bash
@@ -22,3 +71,77 @@ runs:
         echo "PERL_MB_OPT=--install_base ${{ github.workspace }}/local" >> $GITHUB_ENV
         echo "PERL_MM_OPT=INSTALL_BASE=${{ github.workspace }}/local" >> $GITHUB_ENV
         echo "${{ github.workspace }}/local/bin" >> $GITHUB_PATH
+
+    - name: Compute the cache key
+      id: cache
+      shell: bash
+      run: |
+        # Computed once and read by both the restore and the save step
+        # below: the cache API rejects a write to an existing key, so two
+        # copies of this expression that drifted apart would miss on
+        # every run and then fail to store the result.
+        #
+        # The key covers exactly what decides the contents of the tree:
+        # the environment, the interpreter, the manifest that names the
+        # modules and the script that installs them.  Nothing else - the
+        # Makefile changes for unrelated reasons every other week and
+        # hashing it would rebuild the tree from source each time.
+        # cpanfile is not read on Linux (scripts/deps reads
+        # deps/Linux.txt) and the documented workflow keeps the two in
+        # sync, so a module added to one rotates this key through the
+        # other.
+        #
+        # The tree holds compiled XS - CryptX, Net::SSH2,
+        # Math::BigInt::GMP - so it is only valid for the perl that built
+        # it.  archname carries the OS, the CPU and the threading model,
+        # so a runner image that bumps perl, or an arm64 runner, gets its
+        # own cache rather than a tree of unloadable .so files.
+        #
+        # To force a cold rebuild, bump the v<N> below or delete the
+        # cache from Actions -> Caches.
+        perl=$(perl -MConfig -e \
+          'print "perl$Config{version}-$Config{archname}"')
+
+        # Same environment only, so that a develop tree is never
+        # restored for a test run and then saved back under the test key,
+        # growing it with modules that run never needs.
+        prefix="openhap-cpan-v1-${{ inputs.dependencies }}-$perl-"
+
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "key=$prefix${{ hashFiles('deps/Linux.txt', 'scripts/deps') }}" \
+          >> "$GITHUB_OUTPUT"
+
+    - name: Restore the CPAN tree
+      id: restore
+      # local/ is the whole of what cpanm installs: scripts/deps passes
+      # --local-lib=$PERL_LOCAL_LIB_ROOT, so nothing lands in the system
+      # perl.  The OS packages are deliberately not cached - apt's
+      # archive directory is root-owned, which the cache post-step could
+      # not restore into, and the win would be the download only, never
+      # dpkg's unpack.
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/local
+        key: ${{ steps.cache.outputs.key }}
+        # A near miss still restores a tree built by the same perl from
+        # an older manifest; the install below reconciles it and the save
+        # step stores the result under the new key.
+        restore-keys: ${{ steps.cache.outputs.prefix }}
+
+    - name: Install dependencies
+      shell: bash
+      # Unconditional, cache hit or not: the OS packages are not cached,
+      # and cpanm over an already-complete tree is a version check per
+      # module rather than a build.  scripts/deps is idempotent, so this
+      # is also what verifies that a restored tree is actually usable.
+      run: make ${{ steps.env.outputs.target }}
+
+    - name: Save the CPAN tree
+      # Only on a miss - an exact hit has nothing new to store, and the
+      # cache API rejects a write to an existing key.  No `always()`:
+      # a failed install must not be cached as the tree for this key.
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.workspace }}/local
+        key: ${{ steps.cache.outputs.key }}
