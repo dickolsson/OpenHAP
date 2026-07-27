@@ -217,6 +217,7 @@ test:
 	prove -l -v t/fugulib/*.t
 	prove -l -v t/openhap/*.t
 	prove -l -v t/conformance/*.t
+	prove -l -v t/scripts/*.t
 	prove -l -v t/web/*.t
 
 tidy:

@@ -48,7 +48,7 @@ only uncovered sections, for gap-planning).
 
 ### 2.3 Tool tests
 
-- `t/openhap/spec-coverage.t` (host-side unit test, skip-friendly): run the
+- `t/scripts/spec-coverage.t` (host-side unit test, skip-friendly): run the
   script against a fixture tree (`File::Temp` spec dir + test dir) covering:
   citation parsed, row-suffix parsed, stale citation detected with non-zero
   exit, unnumbered spec file tolerated, `--uncovered` output.
@@ -62,7 +62,7 @@ only uncovered sections, for gap-planning).
 
 ## Deliverables
 
-- New: `scripts/spec-coverage`, `t/openhap/spec-coverage.t`.
+- New: `scripts/spec-coverage`, `t/scripts/spec-coverage.t`.
 - Modified: `Makefile`, `CLAUDE.md`, `.github/workflows/check.yml`.
 
 ## Acceptance criteria
