@@ -28,6 +28,15 @@ PERLTIDY		= perl -MPerl::Tidy -e 'Perl::Tidy::perltidy()'
 # Pinned so local runs and CI agree on formatting
 PRETTIER		= npx prettier@3.9.6
 
+# Every Perl source in the tree: modules by extension, executables by
+# shebang.  bin/ and scripts/ carry no extension - a tool's name does not
+# encode its language - so the shebang is what identifies them, which is
+# also how Perl::Critic selects files.  lint and tidy therefore cover the
+# same set, with no list to keep true.
+PERLSRC			= find lib bin scripts -type f \( -name '*.pm' -o \
+			  -exec sh -c 'head -1 "$$1" | grep -q "^\#!.*perl"' \
+			  _ {} \; \) -print
+
 # OS detection
 UNAME			!= uname
 FTP				= scripts/ftp
@@ -140,7 +149,7 @@ integration: vm-provision
 	@./scripts/integration
 
 lint:
-	perl -MPerl::Critic::Command -e 'Perl::Critic::Command::run()' -- --severity 4 --verbose 8 lib/ bin/openhapd bin/hapctl
+	@$(PERLSRC) | xargs perl -MPerl::Critic::Command -e 'Perl::Critic::Command::run()' -- --severity 4 --verbose 8
 
 man: $(CATMAN1) $(CATMAN3P) $(CATMAN5) $(CATMAN8)
 
@@ -211,12 +220,12 @@ test:
 	prove -l -v t/web/*.t
 
 tidy:
-	@find lib bin -name '*.pm' -o -name 'openhapd' -o -name 'hapctl' | while read f; do \
+	@$(PERLSRC) | while read f; do \
 		$(PERLTIDY) -- --standard-output "$$f" | diff -q "$$f" - >/dev/null 2>&1 || echo "$$f"; \
 	done | grep . && echo "Run 'make tidy-fix' to fix formatting" && exit 1 || echo "All files formatted correctly"
 
 tidy-fix:
-	@find lib bin -name '*.pm' -o -name 'openhapd' -o -name 'hapctl' | while read f; do \
+	@$(PERLSRC) | while read f; do \
 		$(PERLTIDY) -- -b -bext='/' "$$f"; \
 	done
 
