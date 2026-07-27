@@ -58,10 +58,11 @@ use constant {
 sub new ( $class, %args )
 {
 	my $self = bless {
-		config  => $args{config},
-		state   => $args{state},
-		log     => $args{log},
-		emulate => $args{emulate} // 0,
+		config   => $args{config},
+		state    => $args{state},
+		log      => $args{log},
+		emulate  => $args{emulate}  // 0,
+		no_cache => $args{no_cache} // 0,
 	}, $class;
 
 	return $self;
@@ -301,9 +302,18 @@ sub up ($self)
 }
 
 # $self->_image_cache:
-#	Installed-image cache for this VM's configured cache_dir
+#	Installed-image cache for this VM's configured cache_dir, or undef
+#	when caching is switched off - by 'up --no-cache' for a single
+#	invocation, or by 'image_cache no' in the configuration. Both
+#	suppress restore and save together: a half-cached run would leave
+#	an overlay whose base nothing published.
 sub _image_cache ($self)
 {
+	return if $self->{no_cache};
+
+	my $enabled = $self->{config}{image_cache};
+	return if defined $enabled && !$enabled;
+
 	return OpenHVF::ImageCache->new( $self->_cache_dir );
 }
 

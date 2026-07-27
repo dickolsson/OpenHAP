@@ -26,6 +26,7 @@ use FuguLib::Log;
 use OpenHVF::Config;
 use OpenHVF::State;
 use OpenHVF::Image;
+use OpenHVF::ImageCache;
 use OpenHVF::Disk;
 use OpenHVF::VM;
 use OpenHVF::SSH;
@@ -57,6 +58,7 @@ my %commands = (
 	'expect'  => \&cmd_expect,
 	'wait'    => \&cmd_wait,
 	'image'   => \&cmd_image,
+	'cache'   => \&cmd_cache,
 	'disk'    => \&cmd_disk,
 	'init'    => \&cmd_init,
 	'help'    => \&cmd_help,
@@ -144,7 +146,7 @@ sub run ( $class, @argv )
 	return $commands{$command}->( $self, @argv );
 }
 
-sub _load_vm ($self)
+sub _load_vm ( $self, %opts )
 {
 	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
 	if ( !defined $vm_config ) {
@@ -153,17 +155,25 @@ sub _load_vm ($self)
 	}
 
 	return OpenHVF::VM->new(
-		config  => $vm_config,
-		state   => $self->{state},
-		log     => $self->{log},
-		emulate => $self->{emulate},
+		config   => $vm_config,
+		state    => $self->{state},
+		log      => $self->{log},
+		emulate  => $self->{emulate},
+		no_cache => $opts{no_cache} // 0,
 	);
 }
 
 # Idempotent: ensure VM is running
 sub cmd_up ( $self, @args )
 {
-	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
+	my $no_cache = 0;
+	my $parser   = Getopt::Long::Parser->new;
+	$parser->configure('bundling');
+	$parser->getoptionsfromarray( \@args, 'no-cache' => \$no_cache )
+	    or return EXIT_INVALID_ARGS;
+
+	my $vm = $self->_load_vm( no_cache => $no_cache )
+	    or return EXIT_VM_NOT_FOUND;
 	return $vm->up;
 }
 
@@ -345,6 +355,185 @@ sub cmd_image ( $self, @args )
 	return EXIT_SUCCESS;
 }
 
+# Installed-image cache management
+sub cmd_cache ( $self, @args )
+{
+	my $action = shift @args;
+	if ( !defined $action || $action !~ /^(list|clear)$/ ) {
+		$self->{log}
+		    ->error("Usage: openhvf cache <list|clear [--stale]>");
+		return EXIT_INVALID_ARGS;
+	}
+
+	my $cache = OpenHVF::ImageCache->new( $self->{config}->cache_dir );
+
+	return $self->_cache_list($cache) if $action eq 'list';
+	return $self->_cache_clear( $cache, @args );
+}
+
+# $self->_cache_list($cache):
+#	One line per cached entry, marking the one the invoked VM's
+#	configuration currently derives.
+sub _cache_list ( $self, $cache )
+{
+	my $entries = $cache->list;
+	if ( !@$entries ) {
+		$self->{log}->info("No cached images");
+		return EXIT_SUCCESS;
+	}
+
+	my $current = $self->_current_cache_key($cache);
+
+	for my $entry (@$entries) {
+		my $created =
+		    defined $entry->{created_at}
+		    ? scalar localtime $entry->{created_at}
+		    : 'unknown';
+		my $marker = defined $current
+		    && $entry->{key} eq $current ? ' (current)' : '';
+
+		$self->{log}->info(
+			sprintf(
+				'  - %s  %s  %s  snapshots: %d%s',
+				$entry->{key},
+				_format_size( $entry->{size} ),
+				$created,
+				scalar @{ $entry->{snapshots} },
+				$marker
+			) );
+	}
+
+	return EXIT_SUCCESS;
+}
+
+# $self->_cache_clear($cache, @args):
+#	Remove cached entries. Bare 'clear' removes them all; --stale
+#	keeps the one the VM named by --vm derives. Because the key inputs
+#	'version' and 'disk_size' are per-VM, --stale run for one VM does
+#	prune bases another VM would have hit.
+sub _cache_clear ( $self, $cache, @args )
+{
+	my $stale  = 0;
+	my $parser = Getopt::Long::Parser->new;
+	$parser->configure('bundling');
+	$parser->getoptionsfromarray( \@args, 'stale' => \$stale )
+	    or return EXIT_INVALID_ARGS;
+
+	# Interrupted stores leave partial trees behind whichever form ran
+	my $swept = $cache->sweep_temp;
+	$self->{log}->info("Removed $swept incomplete cache entries")
+	    if $swept;
+
+	my $keep = $stale ? $self->_current_cache_key($cache) : undef;
+	if ( $stale && !defined $keep ) {
+		$self->{log}->error(
+"Cannot determine the current cache key; refusing to prune"
+		);
+		return EXIT_ERROR;
+	}
+
+	my $removed = 0;
+	for my $entry ( @{ $cache->list } ) {
+		next if defined $keep && $entry->{key} eq $keep;
+
+		my $users   = $self->_disks_backed_by( $entry->{dir} );
+		my @running = grep { $_->{running} } @$users;
+		if (@running) {
+			$self->{log}->error(
+				sprintf(
+"Cannot remove %s: VM '%s' is running on it",
+					$entry->{key}, $running[0]{vm} ) );
+			return EXIT_VM_RUNNING;
+		}
+
+		# A stopped disk can be rebuilt with 'openhvf destroy', so
+		# this is a warning. It cannot cover checkouts other than
+		# this one, which share cache_dir but not state_dir.
+		for my $user (@$users) {
+			$self->{log}->warning(
+				sprintf(
+"Removing %s orphans the disk of VM '%s'; run 'openhvf destroy' for it",
+					$entry->{key}, $user->{vm} ) );
+		}
+
+		if ( !$cache->remove( $entry->{key} ) ) {
+			return EXIT_ERROR;
+		}
+		$self->{log}->info("Removed $entry->{key}");
+		$removed++;
+	}
+
+	$self->{log}->info(
+		$removed
+		? "Removed $removed cached images"
+		: "No cached images removed"
+	);
+	return EXIT_SUCCESS;
+}
+
+# $self->_current_cache_key($cache):
+#	The key the invoked VM's configuration derives, or undef when the
+#	VM or one of the key inputs cannot be resolved.
+sub _current_cache_key ( $self, $cache )
+{
+	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
+	return if !defined $vm_config;
+
+	return $cache->key($vm_config);
+}
+
+# $self->_disks_backed_by($entry_dir):
+#	Every VM in this checkout whose working disk hangs off an image in
+#	$entry_dir, as [ { vm => name, running => bool } ]. Enumerated
+#	from the state directory rather than the configuration, so a disk
+#	counts whether or not a 'vm' block still declares it.
+sub _disks_backed_by ( $self, $entry_dir )
+{
+	my $state_dir = $self->{config}->state_dir;
+	return [] if !-d $state_dir;
+
+	opendir my $dh, $state_dir or return [];
+	my @names =
+	    sort grep { !/^\./ && -f "$state_dir/$_/disk.qcow2" } readdir $dh;
+	closedir $dh;
+
+	my $disk = OpenHVF::Disk->new($state_dir);
+	my @users;
+
+	for my $name (@names) {
+		my $backing = $disk->backing_file($name);
+		next if !defined $backing;
+		next if index( $backing, "$entry_dir/" ) != 0;
+
+		my $state = OpenHVF::State->new( $state_dir, $name );
+		push @users,
+		    {
+			vm      => $name,
+			running => $state && $state->is_vm_running ? 1 : 0,
+		    };
+	}
+
+	return \@users;
+}
+
+sub _format_size ( $bytes = undef )
+{
+	return '?' if !defined $bytes;
+
+	my @units = ( 'B', 'K', 'M', 'G', 'T' );
+	my $size  = $bytes;
+	my $unit  = 0;
+
+	while ( $size >= 1024 && $unit < $#units ) {
+		$size /= 1024;
+		$unit++;
+	}
+
+	return $unit == 0
+	    ? sprintf( '%d%s',   $size, $units[$unit] )
+	    : sprintf( '%.1f%s', $size, $units[$unit] );
+}
+
 # Disk management
 sub cmd_disk ( $self, @args )
 {
@@ -487,7 +676,7 @@ sub cmd_help ( $, @ )
 Usage: openhvf [--vm <name>] <command> [options]
 
 Commands:
-  up                  Ensure VM is running (download, create, start)
+  up [--no-cache]     Ensure VM is running (download, create, start)
   down                Stop VM gracefully
   destroy             Stop VM and delete disk image
   status              Show VM status
@@ -498,6 +687,7 @@ Commands:
   expect <script>     Run expect script against console
   wait [--timeout=N]  Wait for VM to be ready (SSH available)
   image <cmd>         Manage images (download, list)
+  cache <cmd>         Manage installed images (list, clear [--stale])
   disk <cmd>          Manage disk (check, repair, info)
   init [dir]          Initialize .openhvf/ directory
   help                Show this help

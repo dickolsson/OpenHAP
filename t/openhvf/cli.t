@@ -5,6 +5,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
+use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Cwd qw(getcwd);
 
@@ -141,12 +142,139 @@ SKIP: {
 # Init command is idempotent
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    
+
     my $result1 = OpenHVF::CLI->run('init', $tmpdir);
     is($result1, 0, 'first init returns success');
-    
+
     my $result2 = OpenHVF::CLI->run('init', $tmpdir);
     is($result2, 0, 'second init (idempotent) returns success');
 }
 
+# ============================================================
+# Installed-image cache subcommand
+# ============================================================
+
+# Usage errors match the style of the other subcommands
+{
+    my $project = _cache_project();
+
+    local $SIG{__WARN__} = sub {};
+    is(OpenHVF::CLI->run("--project=$project", 'cache', 'frobnicate'), 2,
+	'unknown cache action returns EXIT_INVALID_ARGS');
+    is(OpenHVF::CLI->run("--project=$project", 'cache'), 2,
+	'cache without an action returns EXIT_INVALID_ARGS');
+    is(OpenHVF::CLI->run("--project=$project", 'cache', 'clear', '--bogus'),
+	2, 'unknown cache clear option returns EXIT_INVALID_ARGS');
+}
+
+# Listing an empty cache mirrors 'image list'
+{
+    my $project = _cache_project();
+    is(OpenHVF::CLI->run("--project=$project", '--quiet', 'cache', 'list'),
+	0, 'cache list on an empty cache succeeds');
+}
+
+# clear removes everything; clear --stale keeps the invoked VM's key
+{
+    my $project = _cache_project();
+    my $cache = OpenHVF::ImageCache->new("$project/cache");
+    my $current = $cache->key(
+	OpenHVF::Config->new($project)->load_vm('default'));
+    ok(defined $current, 'the configured VM derives a cache key');
+
+    _fake_entry($cache, $current);
+    _fake_entry($cache, '7.7-arm64-00000000');
+    make_path($cache->installed_dir . '/.tmp.999.abcdef');
+
+    is(scalar @{ $cache->list }, 2, 'two entries before pruning');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'cache', 'clear', '--stale'),
+	0, 'cache clear --stale succeeds');
+
+    my $left = $cache->list;
+    is(scalar @$left, 1, '--stale keeps exactly one entry');
+    is($left->[0]{key}, $current, 'and it is the invoked VM\'s key');
+    ok(!-e $cache->installed_dir . '/.tmp.999.abcdef',
+	'--stale also sweeps interrupted store trees');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	0, 'bare cache clear succeeds');
+    is(scalar @{ $cache->list }, 0, 'bare clear removes everything');
+}
+
+# clear refuses while a VM whose disk is backed by the entry is running
+SKIP: {
+    my $has_qemu = `which qemu-img 2>/dev/null`;
+    skip 'qemu-img not installed', 4 unless $has_qemu;
+
+    my $project = _cache_project();
+    my $cache = OpenHVF::ImageCache->new("$project/cache");
+    my $key = '7.8-arm64-cafebabe';
+
+    my $source = "$project/source.qcow2";
+    system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
+	or skip 'cannot create a test disk image', 4;
+    my $base = $cache->store($key, $source, { root_password => 'pw' });
+
+    # A working disk in this checkout, backed by the cached entry
+    my $state_dir = "$project/.openhvf/state";
+    OpenHVF::Disk->new($state_dir)->create('default', undef, $base, 'qcow2');
+
+    # This test process stands in for a live QEMU
+    make_path("$state_dir/default");
+    open my $pidfh, '>', "$state_dir/default/vm.pid" or die $!;
+    print $pidfh "$$\n";
+    close $pidfh;
+
+    local $SIG{__WARN__} = sub {};
+    is(OpenHVF::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	5, 'clear refuses with EXIT_VM_RUNNING while the VM runs');
+    ok(defined $cache->lookup($key), 'the entry survives the refusal');
+
+    # Stopped: removal is allowed, with a warning about the orphan
+    unlink "$state_dir/default/vm.pid";
+    is(OpenHVF::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	0, 'clear proceeds once the VM is stopped');
+    is($cache->lookup($key), undef, 'the entry is gone');
+}
+
 done_testing();
+
+# A project whose cache_dir points inside the project, so the tests
+# never touch the developer's real ~/.cache/openhvf
+sub _cache_project
+{
+    my $project = tempdir(CLEANUP => 1);
+    make_path("$project/.openhvf/vms", "$project/.openhvf/state");
+
+    open my $fh, '>', "$project/.openhvfrc" or die $!;
+    print $fh "cache_dir $project/cache\n";
+    print $fh "state_dir .openhvf/state\n";
+    print $fh "default_vm default\n";
+    print $fh "vm \"default\" {\n";
+    print $fh "\tversion 7.8\n";
+    print $fh "\tdisk_size 8G\n";
+    print $fh "}\n";
+    close $fh;
+
+    return $project;
+}
+
+# A complete-looking cache entry without the cost of a real image
+sub _fake_entry
+{
+    my ($cache, $key) = @_;
+    my $dir = $cache->entry_dir($key);
+    make_path($dir);
+
+    open my $bh, '>', "$dir/base.qcow2" or die $!;
+    print $bh 'not a real image';
+    close $bh;
+
+    open my $mh, '>', "$dir/meta.json" or die $!;
+    print $mh qq({"key":"$key","created_at":1,"root_password":"pw"});
+    close $mh;
+
+    return $dir;
+}

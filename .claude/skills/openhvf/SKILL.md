@@ -56,8 +56,14 @@ provisioning, ad-hoc commands, and troubleshooting.
   auto-discovered via `.openhvfrc`) or pass `--project`.
 - SSH failures after an unclean shutdown — `bin/openhvf disk check`, then
   `bin/openhvf disk repair` with the VM stopped.
-- Start over from a clean slate: `bin/openhvf destroy && make vm-provision`
-  (destroy deletes the disk image; the cached installation image is kept).
+- Start over from a clean slate: `bin/openhvf destroy && make vm-provision`.
+  `destroy` deletes the working disk only; the next `up` rebuilds it from the
+  cached installed image, so this is a cheap factory reset rather than a
+  reinstall.
+- To force a real reinstall — when debugging the installer itself, or when a
+  cached base is suspect — use `bin/openhvf up --no-cache`, or drop the cached
+  bases with `bin/openhvf cache clear`. `bin/openhvf cache list` shows what is
+  cached and which entry the current configuration uses.
 - On aarch64 hosts without hardware acceleration, pass `--emulate`.
 
 ## References

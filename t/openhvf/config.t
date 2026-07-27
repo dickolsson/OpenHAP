@@ -130,6 +130,84 @@ is(OpenHVF::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 	'and it is the same value cache_dir reports');
 }
 
+# image_cache: default on, project overrides global, and every
+# spelling an OpenBSD-style switch accepts
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $homedir = tempdir(CLEANUP => 1);
+    local $ENV{HOME} = $homedir;
+    make_path("$tmpdir/.openhvf/vms");
+
+    open my $fh, '>', "$tmpdir/.openhvfrc";
+    print $fh "vm test {\n}\n";
+    close $fh;
+
+    my $config = OpenHVF::Config->new($tmpdir);
+    is($config->image_cache, 1, 'image_cache defaults to on');
+    is($config->load_vm('test')->{image_cache}, 1,
+	'and the default reaches the per-VM config');
+
+    open my $gh, '>', "$homedir/.openhvfrc";
+    print $gh "image_cache no\n";
+    close $gh;
+    $config = OpenHVF::Config->new($tmpdir);
+    is($config->image_cache, 0, 'global image_cache no switches it off');
+
+    open $fh, '>', "$tmpdir/.openhvfrc";
+    print $fh "image_cache yes\n";
+    print $fh "vm test {\n}\n";
+    close $fh;
+    $config = OpenHVF::Config->new($tmpdir);
+    is($config->image_cache, 1, 'project image_cache wins over global');
+    is($config->load_vm('test')->{image_cache}, 1,
+	'and reaches the per-VM config');
+
+    for my $off (qw(no false off 0)) {
+	open $fh, '>', "$tmpdir/.openhvfrc";
+	print $fh "image_cache $off\n";
+	close $fh;
+	is(OpenHVF::Config->new($tmpdir)->image_cache, 0,
+	    "image_cache $off is off");
+    }
+
+    for my $on (qw(yes true on 1 YES)) {
+	open $fh, '>', "$tmpdir/.openhvfrc";
+	print $fh "image_cache $on\n";
+	close $fh;
+	is(OpenHVF::Config->new($tmpdir)->image_cache, 1,
+	    "image_cache $on is on");
+    }
+
+    # An unrecognized value must not silently mean its opposite
+    open $fh, '>', "$tmpdir/.openhvfrc";
+    print $fh "image_cache maybe\n";
+    close $fh;
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    is(OpenHVF::Config->new($tmpdir)->image_cache, 1,
+	'an unparseable image_cache falls back to the default');
+    ok(scalar @warnings, 'and warns about it');
+}
+
+# image_cache inside a vm block is normalized like the global directive
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $homedir = tempdir(CLEANUP => 1);
+    local $ENV{HOME} = $homedir;
+    make_path("$tmpdir/.openhvf/vms");
+
+    open my $fh, '>', "$tmpdir/.openhvfrc";
+    print $fh "image_cache yes\n";
+    print $fh "vm test {\n";
+    print $fh "    image_cache no\n";
+    print $fh "}\n";
+    close $fh;
+
+    my $vm = OpenHVF::Config->new($tmpdir)->load_vm('test');
+    is($vm->{image_cache}, 0,
+	'a VM block switches its own image cache off, as a number');
+}
+
 # A VM without any cache_dir configured still gets the default
 {
     my $tmpdir = tempdir(CLEANUP => 1);

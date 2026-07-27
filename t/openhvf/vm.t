@@ -88,6 +88,24 @@ use_ok('OpenHVF::VM');
 	    'a config without cache_dir falls back to the default');
 }
 
+# Switching the cache off suppresses restore and save together: `up`
+# derives no key at all, so it can neither look one up nor publish one.
+{
+	my $off = OpenHVF::VM->new(
+		config => { cache_dir => '/var/cache/hvf', image_cache => 0 });
+	is($off->_image_cache, undef, 'image_cache no disables the cache');
+
+	my $flag = OpenHVF::VM->new(
+		config   => { cache_dir => '/var/cache/hvf' },
+		no_cache => 1,
+	);
+	is($flag->_image_cache, undef, '--no-cache disables the cache');
+
+	my $on = OpenHVF::VM->new(
+		config => { cache_dir => '/var/cache/hvf', image_cache => 1 });
+	ok(defined $on->_image_cache, 'image_cache yes leaves it enabled');
+}
+
 # Installed-image cache: restore, chain verification, and reparenting.
 # These are the parts of `up` that do not need a running QEMU.
 SKIP: {
