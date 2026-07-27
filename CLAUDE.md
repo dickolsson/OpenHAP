@@ -87,6 +87,11 @@ sub method($self, $param)
   multiple related packages per file are fine; constants via `use constant`
 - New files start with the `# ex:ts=8 sw=4:` modeline and ISC copyright header —
   copy from an existing file in `lib/`
+- `Class->new`, never indirect object notation; code refs always with
+  parentheses (except delegation); no old-style prototypes unless creating
+  syntax
+- Simple string operations over regex where they suffice; `wantarray()` only as
+  an optimization, never to change semantics
 
 ## Error handling and security
 
@@ -100,10 +105,9 @@ sub method($self, $param)
 - Security by default: randomness from `/dev/urandom`, design for
   pledge(2)/unveil(2), drop privileges early, fail closed, never trust external
   input
-- Fail cleanly: reject invalid input with a human-readable diagnostic rather
-  than a stack trace, leave no partial files, orphaned processes, or corrupt
-  state behind, and make an operation that claims to be repeatable truly
-  idempotent
+- Fail cleanly: diagnose invalid input in a human-readable message, never a
+  stack trace; leave no partial files, orphaned processes, or corrupt state
+  behind; make repeatable operations truly idempotent
 
 ## Testing
 
@@ -130,19 +134,17 @@ placement top-down — first match wins:
 | 6   | a procedure — "how to do X" on demand           | a skill in `.claude/skills/<name>/SKILL.md`                                                                   |
 | 7   | none of the above                               | nowhere — delete it                                                                                           |
 
-`web/` is not a fourth place for any of this. The site _presents_ `README.md`,
-`INSTALL.md`, `man/` and the `.pod` sidecars by rendering them; it never
-restates them. Only site-specific framing — what the project is, why you might
-want it — is written by hand, in `web/*.body.html`. See `web/CLAUDE.md`.
-
-Rows 2 and 3 split along a real seam. FuguLib is a library meant to be reused
-outside OpenHAP, so it is documented where a library is documented: section 3p
-manuals, installed with the product, found by `man FuguLib::Daemon`. OpenHAP and
-OpenHVF modules are internal to this repository and keep their sidecars. No
-module has both.
+`web/` is not another place for any of this: the site renders `README.md`,
+`INSTALL.md`, `man/` and the `.pod` sidecars, never restating them. Only
+site-specific framing is hand-written, in `web/*.body.html` — see
+`web/CLAUDE.md`.
 
 Corollaries:
 
+- Rows 2 and 3 are exclusive: FuguLib is meant for reuse outside OpenHAP, so it
+  is documented as a library is — installed 3p manuals, found by
+  `man FuguLib::Daemon`. OpenHAP and OpenHVF modules are internal and keep
+  sidecars. No module has both.
 - No `README.md` anywhere except the repository root
 - Skills and `CLAUDE.md` files may point to man pages, `.pod` files, `spec/`, or
   each other, but never restate their content
@@ -170,30 +172,26 @@ Larger efforts are planned before they are implemented, under
 Plans describe intent at the time of writing; the code, tests, and regular
 documentation remain the source of truth once a phase has landed.
 
-Always review a `design.md` or `plan-N.md` with a workflow of cold sub-agents —
-never from the context that wrote it. Fan out several reviewers, each attacking
-the document from a different angle (correctness of the contracts, sequencing
-and phase independence, security and privilege boundaries, testability, OpenBSD
-fit, what the document leaves unsaid), and prompt each to refute rather than
-confirm. Every finding must then be independently confirmed by at least two
-other sub-agents before it reaches the user; findings that fail that vote are
-dropped, not reported as maybes.
+Review every `design.md` and `plan-N.md` with a workflow of cold sub-agents,
+never from the context that wrote it: fan several reviewers out on different
+angles — contracts, phase independence, security boundaries, testability,
+OpenBSD fit, what is left unsaid — each prompted to refute rather than confirm.
+Report only findings that two other sub-agents independently confirm; drop the
+rest.
 
 ## Dependencies
 
 `deps/{OpenBSD,Linux,Darwin}.txt` are authoritative, installed by `make deps`
-via `scripts/deps.sh`. One dependency per line, `<environment> <type> <name>`,
-where `<environment>` is `runtime`, `test`, or `develop` and `<type>` is `pkg`
-or `cpan`.
+via `scripts/deps.sh`; one line each, `<environment> <type> <name>`, where
+`<environment>` is `runtime`, `test`, or `develop` and `<type>` is `pkg` or
+`cpan`.
 
-- Question the need first, prefer the Perl base system, and load optional
-  dependencies with `require` so they stay optional
+- Justify the need first: prefer base-system Perl, and `require` optional
+  dependencies so they stay optional
 - Prefer `pkg` over `cpan` — OS packages are vetted, binary, and upgraded with
   the system (on OpenBSD the native `p5-*` packages)
-- Add the line to every platform manifest that applies, and keep the `cpanfile`
-  in sync for Perl dependencies; it exists for development convenience only
-- Verify with `make deps`, `make deps-test`, or `make deps-develop`, and commit
-  with the `build` type
+- Add the line to every platform manifest that applies, keep the `cpanfile` in
+  sync, then verify with `make deps` and commit with the `build` type
 
 ## Commits
 
@@ -218,17 +216,3 @@ sweeping commit.
   there is no VERSION file
 - Use `explore/` (gitignored) for scratch scripts and experiments, never `/tmp`
 - Audit findings go to `SCRATCHPAD-<N>.md` files (gitignored)
-
-## What NOT to do
-
-- `eval` for flow control
-- Ignore return values of system calls
-- Regex when simple string operations suffice
-- Features without tests
-- Indirect object notation (`new Class` instead of `Class->new`)
-- Code that fails `make lint`
-- Dependencies without justification
-- Threads (use `IO::Select` for multiplexing)
-- Code refs without parentheses (except delegation)
-- Old-style function prototypes unless creating syntax
-- `wantarray()` to change semantics (optimization only)
