@@ -240,7 +240,38 @@ fi
 
 if [ -x /etc/rc.d/openhapd ]; then
 	rcctl enable openhapd
-	rcctl check openhapd >/dev/null || rcctl start openhapd
+
+	# rc.subr gives a daemon 30 seconds to background itself.
+	# openhapd generates its accessory identity keys on first start,
+	# and the 3072-bit SRP work behind that is slow enough under TCG
+	# emulation to blow that budget on a fresh disk.  A warm disk
+	# already carries the keys and starts immediately, which is why
+	# this only bites on the run after the deps layer is rebuilt -
+	# rare enough to look like a flake and stay unfixed.
+	# scripts/integration raises OPENHAP_TEST_TIMEOUT for the same
+	# reason; this is the same allowance at the rc layer.
+	rcctl set openhapd timeout 300
+
+	if ! rcctl check openhapd >/dev/null && ! rcctl start openhapd; then
+		# Say why.  A bare "openhapd(timeout)" is indistinguishable
+		# from a config error, a missing module and a slow start,
+		# and provisioning dies here before the test step's own
+		# diagnostics can run.  Same reasoning as mdnsd above.
+		echo "WARNING: openhapd would not start; diagnostics:"
+		rcctl get openhapd || true
+		echo "-- config test --"
+		/usr/local/bin/openhapd -n -c /etc/openhapd.conf 2>&1 |
+			head -n 20 || true
+		echo "-- daemon log --"
+		tail -100 /var/log/daemon | grep openhap | tail -20 || true
+		tail -20 /var/log/openhapd.log 2>/dev/null || true
+		echo "-- state directory --"
+		ls -l /var/db/openhapd || true
+		echo "-- openhapd foreground start (60s) --"
+		timeout 60 /usr/local/bin/openhapd -f -v -c /etc/openhapd.conf 2>&1 |
+			head -n 30 || true
+		exit 1
+	fi
 fi
 
 sleep 2
