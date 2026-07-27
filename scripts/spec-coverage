@@ -39,10 +39,11 @@ GetOptions(
 	'uncovered'  => \$uncovered,
 	'spec-dir=s' => \$spec_dir,
 	'test-dir=s' => \$test_dir,
-) or die "usage: spec-coverage [--quiet] [--uncovered] "
+    )
+    or die "usage: spec-coverage [--quiet] [--uncovered] "
     . "[--spec-dir dir] [--test-dir dir]\n";
 
-my $root = dirname(dirname(__FILE__));
+my $root = dirname( dirname(__FILE__) );
 $spec_dir //= "$root/spec";
 $test_dir //= "$root/t";
 
@@ -106,17 +107,18 @@ sub _scan_citations ($dir)
 		    or die "spec-coverage: open $path: $!\n";
 		while ( my $line = <$fh> ) {
 			while ( $line =~
-			    /\[((?:HAP|MQTT)[A-Za-z0-9-]*) §([0-9][0-9.]*)(?:\/([^\]]+))?\]/g
+/\[((?:HAP|MQTT)[A-Za-z0-9-]*) §([0-9][0-9.]*)(?:\/([^\]]+))?\]/g
 			    )
 			{
 				my ( $stem, $section, $row ) = ( $1, $2, $3 );
 				$section =~ s/\.+$//;
-				push @citations, {
+				push @citations,
+				    {
 					stem    => $stem,
 					section => $section,
 					row     => $row,
 					site    => "$path:$.",
-				};
+				    };
 			}
 		}
 		close $fh;
@@ -187,8 +189,7 @@ for my $stem ( sort keys %inventory ) {
 	}
 }
 
-my $pct =
-    $total_sections ? int( 100 * $total_cited / $total_sections ) : 0;
+my $pct = $total_sections ? int( 100 * $total_cited / $total_sections ) : 0;
 printf "TOTAL: %d/%d numbered sections cited (%d%%)\n",
     $total_cited, $total_sections, $pct;
 

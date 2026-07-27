@@ -9,12 +9,18 @@ Applies when working on files under `t/`.
 | Conformance | `t/conformance/`          | spec requirements, wire formats, KAT | `make test` (host) |
 | Module      | `t/openhap/` `t/fugulib/` | Perl API behavior, error paths       | `make test` (host) |
 | Module      | `t/openhvf/`              | the OpenBSD VM utility               | `make test` (host) |
+| Tooling     | `t/scripts/` `t/web/`     | what `scripts/` and `web/` produce   | `make test` (host) |
 | Integration | `t/openhap/integration/`  | real daemon, full protocol flow      | `make integration` |
 
 Module tests follow the unit-test rules in the root `CLAUDE.md` (skip gracefully
 on missing dependencies) and need no citations. Integration tests follow the
 stricter rules in `t/openhap/integration/CLAUDE.md` (never skip, no log
 parsing).
+
+Tooling tests are named after what they cover — `t/scripts/deps.t` for
+`scripts/deps` — and drive it as a subprocess rather than loading a module, so
+they assert on exit status and output. `t/scripts/conventions.t` covers the
+directory as a whole: exec bits, shebangs, and that every Perl script compiles.
 
 ## Conformance tier
 

@@ -8,8 +8,8 @@ only cached artifact is `~/.cache/openhvf`.
 
 ### 4.1 Provisioning snapshot in the scripts
 
-- `scripts/vm_provision.sh` computes a provisioning key — a short SHA-256 over
-  `deps/OpenBSD.txt`, `scripts/deps.sh`, the `cpanfile` if present, and the
+- `scripts/vm-provision` computes a provisioning key — a short SHA-256 over
+  `deps/OpenBSD.txt`, `scripts/deps`, the `cpanfile` if present, and the
   provisioning sections of the script itself — and splits its guest work:
   1. **Deps layer (cacheable):** `pkg_add -u`, cpanm bootstrap, `make deps`.
      Attempted first via `openhvf snapshot restore deps-<hash>`; on a miss, run
@@ -18,28 +18,28 @@ only cached artifact is `~/.cache/openhvf`.
      dependencies actually changed.
   2. **OpenHAP layer (never cached):** `make install`, user/service setup —
      unchanged, runs every time.
-- `scripts/deps.sh` must be in the key: `make deps` is driven by it, and today's
+- `scripts/deps` must be in the key: `make deps` is driven by it, and today's
   workflow key omits it too, so editing it currently leaves the cached guest
   stale — the same incomplete-invalidation class this plan exists to fix.
 - **Tarball first.** `make deps` only exists inside the extracted tarball
-  (`Makefile:55-56`, `DEPS = scripts/deps.sh`, and `deps.sh` reads
-  `deps/${OS}.txt` relative to cwd); all three reach the guest via the package.
-  So building, scp'ing and extracting the tarball must happen BEFORE the deps
-  layer, not with `make install` after it — otherwise layer 1's
-  `cd /tmp/openhap-*` matches nothing and aborts under `set -e` on every run.
-  Copying only `Makefile`, `scripts/deps.sh` and `deps/` for that layer is an
-  equally valid split; pick one and say which.
+  (`Makefile:55-56`, `DEPS = scripts/deps`, and `deps` reads `deps/${OS}.txt`
+  relative to cwd); all three reach the guest via the package. So building,
+  scp'ing and extracting the tarball must happen BEFORE the deps layer, not with
+  `make install` after it — otherwise layer 1's `cd /tmp/openhap-*` matches
+  nothing and aborts under `set -e` on every run. Copying only `Makefile`,
+  `scripts/deps` and `deps/` for that layer is an equally valid split; pick one
+  and say which.
 - **Leave no versioned tree in the snapshot.** `TAG` derives from
-  `git rev-list --count HEAD`, and `vm_provision.sh` currently removes only
+  `git rev-list --count HEAD`, and `vm-provision` currently removes only
   `openhap`, not `openhap-*`. A snapshot that bakes in `/tmp/openhap-<TAG>/`
   makes the later `cd /tmp/openhap-*` multi-match on the next commit and abort
   under `set -e`. `rm -rf /tmp/openhap-*` before `snapshot save`, or widen the
   existing cleanup.
-- **No handoff variable.** `vm_up.sh` and `vm_provision.sh` are sibling make
-  recipes in separate shells (`Makefile:208-212`, no `.ONESHELL`, no
+- **No handoff variable.** `vm-up` and `vm-provision` are sibling make recipes
+  in separate shells (`Makefile:208-212`, no `.ONESHELL`, no
   `.EXPORT_ALL_VARIABLES`), so an exported flag cannot reach the consumer — it
   would always read "not restored", making every warm run redo `make deps` and
-  the stop/start, silently, with the suite still green. Let `vm_provision.sh`
+  the stop/start, silently, with the suite still green. Let `vm-provision`
   decide from evidence in its own process: a guest-side marker written as the
   last step of the deps layer, before `openhvf down`, e.g.
   `vm_run 'test -f /var/db/openhvf-deps-<hash>'`. Guest-side rather than
@@ -47,7 +47,7 @@ only cached artifact is `~/.cache/openhvf`.
   answers the local case where nothing was restored but the working disk already
   carries the deps. `snapshot list` is a cross-check only — a snapshot existing
   in the cache says nothing about what the current disk is backed by.
-- The restore attempt still belongs in `scripts/vm_up.sh` before `openhvf up`,
+- The restore attempt still belongs in `scripts/vm-up` before `openhvf up`,
   guarded to run only when no working disk exists yet. Keep the split simple and
   legible — the scripts own this policy, openhvf only provides the verbs.
 - Both `snapshot restore` and `snapshot save` run under `set -e` while a
@@ -65,7 +65,7 @@ In `.github/workflows/integration.yml`:
 - Drop `.openhvf` from the merged cache step phase 1 created, leaving a single
   step caching `~/.cache/openhvf` alone:
   - `key`: runner arch + the manual `v<N>` lever +
-    `hashFiles('.openhvfrc', 'share/openhvf/expect/install.exp', 'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'scripts/deps.sh', 'scripts/vm_provision.sh')`
+    `hashFiles('.openhvfrc', 'share/openhvf/expect/install.exp', 'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'scripts/deps', 'scripts/vm-provision')`
   - `restore-keys`: the arch-scoped prefix, so a key rotation still restores the
     miniroot, still-valid bases, and lets openhvf's own keying decide what is
     reusable.
@@ -101,7 +101,7 @@ In `.github/workflows/integration.yml`:
 
 ## Deliverables
 
-- Changes to `scripts/vm_up.sh`, `scripts/vm_provision.sh`,
+- Changes to `scripts/vm-up`, `scripts/vm-provision`,
   `.github/workflows/integration.yml`
 
 ## Acceptance criteria
@@ -115,7 +115,7 @@ In `.github/workflows/integration.yml`:
   criterion the handoff bug would have satisfied vacuously — every step is
   idempotent and the suite stays green either way — so check the log, not the
   exit status.
-- A run after touching `deps/OpenBSD.txt` or `scripts/deps.sh` re-runs only the
+- A run after touching `deps/OpenBSD.txt` or `scripts/deps` re-runs only the
   deps layer (new snapshot), not the OS install; a run after touching
   `install.exp` or `share/openhvf/cache-generation` re-runs the OS install (new
   base key).

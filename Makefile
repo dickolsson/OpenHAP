@@ -28,10 +28,19 @@ PERLTIDY		= perl -MPerl::Tidy -e 'Perl::Tidy::perltidy()'
 # Pinned so local runs and CI agree on formatting
 PRETTIER		= npx prettier@3.9.6
 
+# Every Perl source in the tree: modules by extension, executables by
+# shebang.  bin/ and scripts/ carry no extension - a tool's name does not
+# encode its language - so the shebang is what identifies them, which is
+# also how Perl::Critic selects files.  lint and tidy therefore cover the
+# same set, with no list to keep true.
+PERLSRC			= find lib bin scripts -type f \( -name '*.pm' -o \
+			  -exec sh -c 'head -1 "$$1" | grep -q "^\#!.*perl"' \
+			  _ {} \; \) -print
+
 # OS detection
 UNAME			!= uname
-FTP				= scripts/ftp.sh
-DEPS			= scripts/deps.sh
+FTP				= scripts/ftp
+DEPS			= scripts/deps
 
 # Man pages.  FuguLib sources drop the FuguLib:: prefix because a colon
 # cannot appear in a make target; install-man puts it back.
@@ -137,10 +146,10 @@ install-man:
 	install -m 644 $(MAN8) $(DESTDIR)$(MANDIR)/man8/
 
 integration: vm-provision
-	@./scripts/integration.sh
+	@./scripts/integration
 
 lint:
-	perl -MPerl::Critic::Command -e 'Perl::Critic::Command::run()' -- --severity 4 --verbose 8 lib/ bin/openhapd bin/hapctl
+	@$(PERLSRC) | xargs perl -MPerl::Critic::Command -e 'Perl::Critic::Command::run()' -- --severity 4 --verbose 8
 
 man: $(CATMAN1) $(CATMAN3P) $(CATMAN5) $(CATMAN8)
 
@@ -151,7 +160,7 @@ prettier-fix:
 	$(PRETTIER) --write '**/*.md' '**/*.json' '**/*.yml'
 
 spec-coverage:
-	@perl scripts/spec-coverage --quiet
+	@./scripts/spec-coverage --quiet
 
 %.cat1: %.1
 	$(MANDOC) -Tascii $< > $@
@@ -192,8 +201,8 @@ package: clean
 	cp $(MAN3P) build/$(PACKAGE)/man/fugulib/
 	cp $(MAN5) $(MAN8) build/$(PACKAGE)/man/openhap/
 	# Scripts for dependency management
-	cp scripts/ftp.sh scripts/deps.sh build/$(PACKAGE)/scripts/
-	chmod +x build/$(PACKAGE)/scripts/*.sh
+	cp scripts/ftp scripts/deps build/$(PACKAGE)/scripts/
+	chmod +x build/$(PACKAGE)/scripts/*
 	# Dependency files
 	cp deps/*.txt build/$(PACKAGE)/deps/
 	# Makefile and cpanfile for installation
@@ -208,15 +217,16 @@ test:
 	prove -l -v t/fugulib/*.t
 	prove -l -v t/openhap/*.t
 	prove -l -v t/conformance/*.t
+	prove -l -v t/scripts/*.t
 	prove -l -v t/web/*.t
 
 tidy:
-	@find lib bin -name '*.pm' -o -name 'openhapd' -o -name 'hapctl' | while read f; do \
+	@$(PERLSRC) | while read f; do \
 		$(PERLTIDY) -- --standard-output "$$f" | diff -q "$$f" - >/dev/null 2>&1 || echo "$$f"; \
 	done | grep . && echo "Run 'make tidy-fix' to fix formatting" && exit 1 || echo "All files formatted correctly"
 
 tidy-fix:
-	@find lib bin -name '*.pm' -o -name 'openhapd' -o -name 'hapctl' | while read f; do \
+	@$(PERLSRC) | while read f; do \
 		$(PERLTIDY) -- -b -bext='/' "$$f"; \
 	done
 
@@ -247,10 +257,10 @@ upgrade:
 	@echo "==> Upgrade by running:\n    make uninstall\n    cd ../$(PACKAGE)\n    make install"
 
 vm-provision: vm-up
-	@./scripts/vm_provision.sh
+	@./scripts/vm-provision
 
 vm-up:
-	@./scripts/vm_up.sh
+	@./scripts/vm-up
 
 web:
 	@command -v $(LOWDOWN) >/dev/null 2>&1 || \

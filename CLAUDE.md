@@ -20,7 +20,7 @@ The repo contains three Perl namespaces with distinct concerns:
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/{openhvf,fugulib,openhap,conformance}/*.t
+make test           # prove -l -v t/{openhvf,fugulib,openhap,conformance,scripts,web}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check
@@ -45,7 +45,8 @@ make integration    # provision OpenBSD VM and run integration tests
   (`Config.pm`, `Storage.pm`), integration (`MQTT.pm`, `MDNS.pm`,
   `DeviceLoader.pm`), devices (`Tasmota/*.pm`)
 - `t/openhap/`, `t/fugulib/`, `t/openhvf/` — unit tests; `t/conformance/` —
-  spec-cited conformance tests (see `t/CLAUDE.md`); `t/openhap/integration/` —
+  spec-cited conformance tests; `t/scripts/`, `t/web/` — tooling tests, named
+  after what they drive (see `t/CLAUDE.md`); `t/openhap/integration/` —
   integration tests, run inside the OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/fugulib/` — `<Module>.3p`, one per `lib/FuguLib/`
@@ -66,7 +67,8 @@ match OpenBSD style; do not "fix" code toward generic Perl::Critic defaults.
 
 Rules the tools cannot enforce:
 
-- Always `use v5.36` (enables strict, warnings, say, signatures)
+- Always `use v5.36` (enables strict, warnings, say, signatures) — the only
+  exception is the two bootstrap scripts, see Dependencies
 - Object-oriented style with signatures; object is `$self`; internal methods
   prefixed with `_`; do not name unused parameters: `sub foo($, $) { }`
 - Function brace on its own line, control-structure brace on the same line:
@@ -182,9 +184,15 @@ rest.
 ## Dependencies
 
 `deps/{OpenBSD,Linux,Darwin}.txt` are authoritative, installed by `make deps`
-via `scripts/deps.sh`; one line each, `<environment> <type> <name>`, where
+via `scripts/deps`; one line each, `<environment> <type> <name>`, where
 `<environment>` is `runtime`, `test`, or `develop` and `<type>` is `pkg` or
 `cpan`.
+
+`scripts/deps` and `scripts/deps-key` are the one exception to `use v5.36`: they
+run before anything is installed, and macOS still ships perl 5.34, so requiring
+5.36 would mean installing a perl with the script that installs things. They use
+`use v5.34` plus explicit `use warnings` and core modules only. Do not "fix"
+them up to 5.36.
 
 - Justify the need first: prefer base-system Perl, and `require` optional
   dependencies so they stay optional

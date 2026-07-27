@@ -7,8 +7,11 @@ on:
   push:
     branches: [main]
     paths:
-      # Perl that tidy, lint and the syntax sweep read
+      # Perl that tidy, lint and the syntax sweep read.  bin/ and
+      # scripts/ are extensionless, so a glob over the directory is the
+      # only way to name all of it.
       - "bin/*"
+      - "scripts/*"
       - "lib/**.pm"
       - ".perlcriticrc"
       - ".perltidyrc"
@@ -24,11 +27,11 @@ on:
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps.sh"
   pull_request:
     branches: [main]
     paths:
       - "bin/*"
+      - "scripts/*"
       - "lib/**.pm"
       - ".perlcriticrc"
       - ".perltidyrc"
@@ -39,7 +42,6 @@ on:
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps.sh"
 
 jobs:
   tidy:

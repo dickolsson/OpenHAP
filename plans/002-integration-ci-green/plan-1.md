@@ -62,7 +62,7 @@ review has settled why; this phase fixes it and locks the fix in.
 - Provisioning removes `/etc/openhapd.conf` "to ensure fresh installation for
   testing" but preserves `/var/db/openhapd` (as does `make uninstall`), so a
   warm-cached disk carries the previous run's pairing state into file 1. Have
-  `scripts/vm_provision.sh` remove the pairing state (`pairings.db`,
+  `scripts/vm-provision` remove the pairing state (`pairings.db`,
   `auth_attempts` — keep the accessory identity keys) so every run starts
   unpaired even on a reused disk.
 - `pairing.t` hygiene: close the raw M1 probe's socket right after test 2
@@ -72,7 +72,7 @@ review has settled why; this phase fixes it and locks the fix in.
 ## Deliverables
 
 - Fixes in `lib/OpenHAP/Test/Integration.pm` (+ its `.pod`),
-  `scripts/vm_provision.sh`, and `t/openhap/integration/pairing.t`.
+  `scripts/vm-provision`, and `t/openhap/integration/pairing.t`.
 - Root-cause note in the commit body distinguishing the harness bug (the no-op
   wipe) from the seeding test bug (`events.t` dying before teardown, owned by
   phase 2).

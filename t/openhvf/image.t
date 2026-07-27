@@ -16,6 +16,12 @@ is(OpenHVF::Image::CDN_HOST(), 'cdn.openbsd.org',
 is(OpenHVF::Image::ARCH(), 'arm64',
     'ARCH is correct');
 
+# download() only warns when the helper is missing, so a rename would
+# degrade silently to "no download" instead of failing.  Assert the path
+# still resolves.
+ok(-x OpenHVF::Image::_ftp_script(),
+    'the ftp helper resolves to an executable');
+
 # Test object creation
 {
     my $tmpdir = tempdir(CLEANUP => 1);

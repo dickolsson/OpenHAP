@@ -27,18 +27,17 @@ verifies "green" — repeatably, on cold and warm caches.
   first) that `Math::BigInt->config->{lib}` is the GMP backend, updating its
   `tests =>` plan (10 → 11). `make check` on hosts without GMP is unaffected:
   the integration tier is not part of `make test`.
-- Close the delivery hole: the guest heredocs in `scripts/vm_provision.sh` and
-  `scripts/integration.sh` run without `set -e`, so a failed
-  `pkg_add`/`make deps` still reports a provisioned guest. Make them fail fast
-  and loudly.
+- Close the delivery hole: the guest heredocs in `scripts/vm-provision` and
+  `scripts/integration` run without `set -e`, so a failed `pkg_add`/`make deps`
+  still reports a provisioned guest. Make them fail fast and loudly.
 
 ### 4.3 Repair and trim diagnostics
 
-- `scripts/integration.sh`: the failure log-capture block after the test heredoc
-  is unreachable today — `set -e` aborts the script at the failing `vm_run`
-  before `result=$?` runs. Restructure so the capture executes on failure, and
-  extend it to include `/var/db/openhapd` contents (pairing state) and
-  mdnsd/rcctl status alongside the daemon log.
+- `scripts/integration`: the failure log-capture block after the test heredoc is
+  unreachable today — `set -e` aborts the script at the failing `vm_run` before
+  `result=$?` runs. Restructure so the capture executes on failure, and extend
+  it to include `/var/db/openhapd` contents (pairing state) and mdnsd/rcctl
+  status alongside the daemon log.
 - `.github/workflows/integration.yml`: gate the VM diagnostics step on
   `always() && !success()` so a `timeout-minutes` cancellation still runs it;
   correct the disk-cache comment (saving is gated on job success, not on the

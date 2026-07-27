@@ -57,7 +57,7 @@ shared daemon is never left paired between files.
 
 ## Ordering and state
 
-- `scripts/integration.sh` runs the files as an explicit ordered list with
+- `scripts/integration` runs the files as an explicit ordered list with
   `environment.t` always first.
 - Files own their pairing lifecycle: call `$env->ensure_unpaired` in setup, pair
   via the controller if needed, and unpair in teardown. The shared daemon is

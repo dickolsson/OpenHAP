@@ -125,10 +125,10 @@ contains an overlay whose absolute backing reference points into
 `actions/cache` steps is not sufficient — it makes them _rotate_ together, not
 be _present_ together. They are separate entries that hit, miss and get
 LRU-evicted independently. Restore `.openhvf` without `~/.cache/openhvf` and the
-new chain check fails the job, `scripts/vm_up.sh` runs under `set -e`, no step
-runs the `openhvf destroy` the message asks for, and the cache post-step does
-not save on a failed job — so every rerun fails identically until someone
-deletes the entry out of band.
+new chain check fails the job, `scripts/vm-up` runs under `set -e`, no step runs
+the `openhvf destroy` the message asks for, and the cache post-step does not
+save on a failed job — so every rerun fails identically until someone deletes
+the entry out of band.
 
 In `.github/workflows/integration.yml`:
 
@@ -136,7 +136,7 @@ In `.github/workflows/integration.yml`:
   (`~/.cache/openhvf` and `.openhvf`) under one key, so presence is atomic and
   an overlay is never restored without its base.
 - Key it on `runner.arch` plus
-  `hashFiles('.openhvfrc', 'share/openhvf/expect/install.exp', 'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'scripts/vm_provision.sh')`,
+  `hashFiles('.openhvfrc', 'share/openhvf/expect/install.exp', 'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'scripts/vm-provision')`,
   keeping the manual `v<N>` suffix as the documented cold-cache lever. Hashing
   the generation file keeps a bump observable in CI during phases 1-3, where a
   restored `.openhvf` means `ImageCache::key` is never called at all.

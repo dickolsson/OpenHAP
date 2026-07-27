@@ -35,8 +35,8 @@ Per `t/openhap/integration/CLAUDE.md` (no SKIP, no log parsing):
   diagnostics, matching `mqtt.t`'s existing die-on-missing pattern.
 - `mdns.t`: replace `get_log_lines` assertions with `mdnsctl browse`-based
   checks.
-- `scripts/integration.sh`: make `environment.t` run first under `prove` too
-  (pass an explicit file list), not only in the shell fallback.
+- `scripts/integration`: make `environment.t` run first under `prove` too (pass
+  an explicit file list), not only in the shell fallback.
 
 ### 1.4 Minor rule fixes
 
@@ -61,7 +61,7 @@ Per `t/openhap/integration/CLAUDE.md` (no SKIP, no log parsing):
 
 ## Deliverables
 
-- Modified: `Makefile`, `CLAUDE.md`, `scripts/integration.sh`, the test files
+- Modified: `Makefile`, `CLAUDE.md`, `scripts/integration`, the test files
   listed above.
 - New: `t/CLAUDE.md`.
 
