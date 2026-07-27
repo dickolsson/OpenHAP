@@ -1,6 +1,11 @@
 #!/bin/sh
 # ex:ts=8 sw=4:
 # Provision OpenHAP in the OpenBSD VM
+#
+# Two layers. The deps layer installs the guest's packages and Perl
+# modules and is cached as an openhvf snapshot, because under TCG
+# emulation it costs as much as the OS install itself. The OpenHAP layer
+# installs this checkout and runs every time.
 
 set -e
 
@@ -8,13 +13,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OPENHVF="${PROJECT_ROOT}/bin/openhvf"
 
-# Get SSH port from openhvf status
-SSH_PORT=$(${OPENHVF} status 2>/dev/null | grep ssh_port | awk '{print $2}')
+# Read a field from 'openhvf status'. openhvf logs to stderr, so stderr
+# has to be folded in for the value to be readable at all.
+vm_status() {
+	"${OPENHVF}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
+}
+
+SSH_PORT="$(vm_status ssh_port)"
 SSH_PORT="${SSH_PORT:-2222}"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
 vm_run() { "${OPENHVF}" ssh "$@"; }
 vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
+
+DEPS_KEY="$("${SCRIPT_DIR}/deps_key.sh")"
+DEPS_SNAPSHOT="deps-${DEPS_KEY}"
+DEPS_MARKER="/var/db/openhvf-deps-${DEPS_KEY}"
 
 echo "==> Building package..."
 cd "${PROJECT_ROOT}"
@@ -28,27 +42,110 @@ if [ ! -f "${TARBALL}" ]; then
 fi
 echo "Using tarball: ${TARBALL}"
 
-echo "==> Installing cpanm..."
-# Guest heredocs run under set -e so a failed pkg_add/cpan/make cannot
-# report a provisioned guest.
-vm_run <<'EOF'
+# make deps only exists inside the extracted tarball, along with deps/
+# and scripts/deps.sh which it reads relative to cwd. So the package has
+# to reach the guest before the deps layer runs, not with make install
+# after it.
+copy_and_extract() {
+	vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
+	vm_run <<'EOF'
 set -e
-pkg_add -u 2>/dev/null || true
+cd /tmp && rm -rf openhap openhap-* && tar xzf openhap.tar.gz
+EOF
+}
+
+# The guest itself says whether the deps layer is already present. A
+# host-side flag could not: vm_up.sh and vm_provision.sh are sibling
+# make recipes in separate shells, so nothing can be handed over. The
+# marker travels inside the snapshot, which also answers the local case
+# where nothing was restored but the working disk already carries the
+# dependencies.
+if vm_run "test -f ${DEPS_MARKER}"; then
+	echo "==> Guest dependencies already present (${DEPS_SNAPSHOT}), skipping"
+else
+	echo "==> Installing guest dependencies (${DEPS_SNAPSHOT})..."
+	copy_and_extract
+
+	# BEGIN deps layer
+	# Everything between these markers is hashed into DEPS_KEY by
+	# scripts/deps_key.sh: editing it invalidates the cached layer.
+	# Guest heredocs run under set -e so a failed pkg_add/cpan/make
+	# cannot report a provisioned guest.
+	#
+	# Every command here that might read stdin needs </dev/null. The
+	# remote shell reads THIS SCRIPT from stdin, so a command that reads
+	# stdin consumes the rest of the script as its own input: cpan(1)
+	# answering its configuration prompts swallowed 'make deps', the
+	# cleanup and the marker below, and the truncated block still exited
+	# 0 - so set -e never fired, the layer was cached without any
+	# dependencies in it, and provisioning failed much later on
+	# 'rcctl enable mosquitto'.
+	vm_run <<EOF
+set -e
+pkg_add -u </dev/null 2>/dev/null || true
 
 # Install cpanm if not already present
 if ! command -v cpanm >/dev/null 2>&1; then
 	echo "Installing cpanm..."
-	cpan -T App::cpanminus
+	cpan -T App::cpanminus </dev/null
 fi
+
+cd /tmp/openhap-*
+make deps </dev/null
+
+# Leave no versioned tree in the snapshot. TAG derives from the commit
+# count, so a baked-in /tmp/openhap-<TAG> would make the next run's
+# 'cd /tmp/openhap-*' match two directories and abort under set -e.
+cd /tmp && rm -rf openhap openhap-* openhap.tar.gz
+
+# Written last, so the marker can only exist once everything above
+# has succeeded
+mkdir -p /var/db
+touch ${DEPS_MARKER}
 EOF
+	# END deps layer
+
+	# The layer has to have finished, not merely exited 0: the marker
+	# is its last statement, so its absence means the block was cut
+	# short. Check before snapshotting, or an incomplete layer enters
+	# the cache and every later run restores it.
+	if ! vm_run "test -f ${DEPS_MARKER}"; then
+		echo "Error: deps layer did not complete; not caching" >&2
+		exit 1
+	fi
+
+	# The snapshot verbs run under set -e, and a base-image cache
+	# miss legitimately leaves a standalone disk that cannot be
+	# snapshotted. Guard them here rather than softening the verb: a
+	# cache miss must not abort provisioning.
+	echo "==> Caching guest dependencies as ${DEPS_SNAPSHOT}..."
+	"${OPENHVF}" down
+	if "${OPENHVF}" snapshot save "${DEPS_SNAPSHOT}"; then
+		# Safe to prune: snapshots are flattened onto the base
+		# image, so no deps-* layer is another one's parent.
+		for old in $("${OPENHVF}" snapshot list --names || true); do
+			case "${old}" in
+			deps-*)
+				if [ "${old}" != "${DEPS_SNAPSHOT}" ]; then
+					"${OPENHVF}" snapshot rm "${old}" ||
+						true
+				fi
+				;;
+			esac
+		done
+	else
+		echo "WARNING: could not cache ${DEPS_SNAPSHOT}; continuing" >&2
+	fi
+	"${OPENHVF}" up
+	"${OPENHVF}" wait --timeout "${OPENHVF_WAIT_TIMEOUT:-120}"
+fi
 
 echo "==> Copying to VM..."
-vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
+copy_and_extract
 
 echo "==> Installing OpenHAP..."
 vm_run <<'EOF'
 set -e
-cd /tmp && rm -rf openhap && tar xzf openhap.tar.gz
 
 # Uninstall existing version if present
 if [ -f /etc/rc.d/openhapd ]; then
@@ -61,9 +158,6 @@ fi
 
 # Change to extracted directory
 cd /tmp/openhap-*
-
-# Install dependencies
-make deps
 
 # Run make install
 make install

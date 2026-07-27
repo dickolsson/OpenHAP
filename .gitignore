@@ -15,6 +15,9 @@ explore/
 .idea/
 .vscode/
 
+# macOS
+.DS_Store
+
 # Devcontainer
 .devcontainer/bash_history
 
@@ -28,6 +31,7 @@ explore/
 
 # Agent files
 SCRATCHPAD*.md
+.claude/worktrees/
 
 # External projects
 external/

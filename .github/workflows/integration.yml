@@ -61,33 +61,44 @@ jobs:
       - name: Install development dependencies
         run: make deps-develop
 
-      - name: Cache OpenBSD miniroot image
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/openhvf
-          key: openhvf-image-${{ hashFiles('.openhvfrc') }}
-
-      - name: Cache provisioned VM disk
-        # The cache post-step saves only when the job succeeds; the
-        # clean-shutdown step below keeps the archived qcow2 consistent.
-        # A cache hit boots the already-installed OpenBSD system instead
-        # of reinstalling it from the miniroot on every run. Bump the
-        # v<N> suffix in the key to force a cold-cache run (see the
+      - name: Cache OpenBSD and provisioning images
+        # The only cached artifact. `.openhvf` is fully ephemeral: the
+        # installed OpenBSD image and the provisioning layer both live
+        # in ~/.cache/openhvf, and openhvf rebuilds the state directory
+        # from them on every run. Nothing here depends on a previous
+        # run's state.
+        #
+        # The key hashes every input that either openhvf's own cache key
+        # or scripts/deps_key.sh derives from. That is a constraint, not
+        # a courtesy: the post-step saves only on a primary-key MISS, so
+        # an input this key cannot see would rotate a cached name,
+        # rebuild it, and then discard the result on every single run.
+        # Bump the v<N> suffix to force a cold-cache run (see the
         # integration-tests skill).
         uses: actions/cache@v4
         with:
-          path: .openhvf
+          path: ~/.cache/openhvf
           key:
-            openhvf-state-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
-            'deps/OpenBSD.txt', 'scripts/vm_provision.sh') }}
+            openhvf-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
+            'share/openhvf/expect/install.exp',
+            'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'cpanfile',
+            'scripts/deps.sh', 'scripts/deps_key.sh', 'scripts/vm_provision.sh')
+            }}
+          # A key rotation still restores the miniroot and any base
+          # image openhvf's own keying still considers valid, so only
+          # the parts that actually changed are rebuilt.
+          restore-keys: |
+            openhvf-v1-${{ runner.arch }}-
 
       - name: Generate ephemeral SSH key for the VM
         # The harness installs an authorized_keys entry on the guest and
         # then uses key-based auth for every later `openhvf ssh`/`scp`.
         # Developers configure this in ~/.openhvfrc; CI has no key, so
         # mint a throwaway one per run. Write the public half to the
-        # GLOBAL rc (~/.openhvfrc) rather than the project .openhvfrc so
-        # the disk-cache key (which hashes the project file) stays stable.
+        # GLOBAL rc (~/.openhvfrc) rather than the project .openhvfrc,
+        # which the cache key hashes and which must therefore stay
+        # stable. A restored image carries the previous run's key; the
+        # harness reinstalls this one over the guest's root password.
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           ssh-keygen -t ed25519 -N '' -C openhvf-ci -f ~/.ssh/id_ed25519
@@ -120,14 +131,21 @@ jobs:
           ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm"
           qemu-system-aarch64 --version 2>/dev/null | head -1 || true
 
-      - name: Shut down VM
-        # A clean shutdown before the cache post-step keeps the cached
-        # qcow2 consistent. `openhvf down` is internally bounded (its
-        # guest interactions are time-limited and it force-stops the
-        # QEMU process as a last resort), so it cannot hang the job even
-        # when the guest is wedged. Leftover sockets cannot be archived
-        # and are removed.
+      - name: Shut down VM and bound cache growth
+        # A clean shutdown keeps the qcow2 consistent for the snapshot
+        # machinery. `openhvf down` is internally bounded (its guest
+        # interactions are time-limited and it force-stops the QEMU
+        # process as a last resort), so it cannot hang the job even when
+        # the guest is wedged.
+        #
+        # Every command here is guarded. This step is `if: always()` and
+        # `run:` blocks are `bash -e`, while the cache post-step is
+        # `post-if: success()` - so a non-zero exit here would discard
+        # the cache this run just populated. No cleanup command may
+        # determine job status. The prune stays unconditional rather
+        # than gated on success, because a red run is exactly when the
+        # cache grows.
         if: always()
         run: |
           ./bin/openhvf down || true
-          find .openhvf -type s -delete 2>/dev/null || true
+          ./bin/openhvf cache clear --stale || true

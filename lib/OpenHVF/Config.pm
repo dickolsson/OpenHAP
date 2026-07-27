@@ -168,6 +168,19 @@ sub load_vm ( $self, $name )
 	# Include ssh_pubkey from global/project config
 	$vm->{ssh_pubkey} //= $self->ssh_pubkey;
 
+	# Include the resolved cache_dir so VM operations (proxy cache,
+	# installed-image cache) all use the configured location. Without
+	# it 'openhvf up' would write its images under $HOME while the
+	# cache subcommands worked on a different tree.
+	$vm->{cache_dir} //= $self->cache_dir;
+
+	# Normalize the installed-image cache switch, whether it came from
+	# the VM block or the enclosing configuration
+	$vm->{image_cache} =
+	    defined $vm->{image_cache}
+	    ? _parse_bool( $vm->{image_cache}, 1 )
+	    : $self->image_cache;
+
 	return $vm;
 }
 
@@ -180,6 +193,42 @@ sub cache_dir ($self)
 	$dir =~ s/^~/$ENV{HOME}/;
 
 	return $dir;
+}
+
+# $self->image_cache:
+#	Whether 'openhvf up' may use the installed-image cache. Project
+#	configuration wins over global; the default is on.
+sub image_cache ($self)
+{
+	my $value = $self->{project}{image_cache}
+	    // $self->{global}{image_cache};
+	return 1 if !defined $value;
+
+	return _parse_bool( $value, 1 );
+}
+
+# _parse_bool($value, $default):
+#	Accept the spellings an OpenBSD-style configuration file uses for
+#	a switch. An unrecognized value warns and falls back rather than
+#	silently meaning its opposite.
+sub _parse_bool ( $value, $default )
+{
+	my $normalized = lc $value;
+	$normalized =~ s/^\s+|\s+$//g;
+
+	return 1
+	    if $normalized eq 'yes'
+	    || $normalized eq 'true'
+	    || $normalized eq 'on'
+	    || $normalized eq '1';
+	return 0
+	    if $normalized eq 'no'
+	    || $normalized eq 'false'
+	    || $normalized eq 'off'
+	    || $normalized eq '0';
+
+	warn "Not a yes/no value: $value\n";
+	return $default;
 }
 
 sub state_dir ($self)

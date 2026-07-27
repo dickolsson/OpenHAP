@@ -15,8 +15,13 @@
 #
 ssh_pubkey ssh-ed25519 AAAA... user@host
 
-# Optional: shared cache directory for downloaded OpenBSD images
+# Optional: shared cache directory for downloaded OpenBSD images and
+# cached installed-image bases
 # cache_dir ~/.cache/openhvf
+
+# Optional: reuse cached installed images instead of reinstalling
+# OpenBSD on every fresh disk (default: yes). See openhvf(1).
+# image_cache yes
 
 # Optional: default VM name when not specified
 # default_vm default

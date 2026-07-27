@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 23 2026 $
+.Dd $Mdocdate: July 27 2026 $
 .Dt OPENHVF 1
 .Os
 .Sh NAME
@@ -108,12 +108,31 @@ subdirectories,
 and a default VM configuration.
 Idempotent:
 does nothing if the project is already initialized.
-.It Cm up
+.It Cm up Op Fl Fl no-cache
 Ensure the VM is running.
 Downloads the installation image,
 creates the disk image,
 and starts the VM as needed.
 Idempotent.
+.Pp
+Unless the installed-image cache is disabled,
+.Cm up
+takes both sides of that cache:
+with no disk image present it creates one as an overlay on a matching
+cached base and boots the installed system directly,
+skipping the miniroot download and the installer entirely;
+after an installation it publishes the freshly installed disk as a new
+cached base.
+Caching is best effort:
+a failure warns and the VM comes up anyway,
+installing from scratch or keeping a standalone disk.
+.Pp
+.Fl Fl no-cache
+skips both the restore and the save for this invocation,
+forcing a fresh installation and leaving the cache untouched.
+It overrides the
+.Ar image_cache
+directive and is meant for debugging the installer itself.
 .It Cm down
 Stop the VM gracefully.
 .It Cm destroy
@@ -158,6 +177,82 @@ shows the cache path or download URL for
 .Ar version
 (default: 7.8).
 Images are downloaded via the built-in proxy when the VM boots.
+.It Cm cache Cm list | clear Op Fl Fl stale
+Manage the installed-image cache described in
+.Sx IMAGE CACHE .
+.Cm list
+prints one line per cached entry
+.Pq key, size, creation time, snapshot count ,
+marking the entry the invoked VM's configuration currently derives.
+.Cm clear
+removes every entry;
+.Fl Fl stale
+keeps only that one entry and removes the rest.
+Both forms also sweep temporary trees left by an interrupted save.
+.Pp
+The scope of
+.Fl Fl stale
+is one VM,
+the one named by
+.Fl Fl vm .
+The key inputs
+.Ar version
+and
+.Ar disk_size
+are per-VM,
+so pruning for one VM removes bases another VM would have hit.
+.Pp
+.Cm clear
+refuses to remove an entry while a VM in this project is running on it,
+and warns when removal orphans the disk of a stopped one
+.Pq rebuild it with Cm destroy No and Cm up .
+VMs in other projects sharing the same
+.Ar cache_dir
+cannot be surveyed and are not covered by either check.
+.It Cm snapshot Cm save | restore | rm Ar name
+.It Cm snapshot Cm list Op Fl Fl names
+Manage named snapshot layers over the cached base image,
+for caching guest states
+.Nm
+knows nothing about
+.Pq typically the result of a provisioning script .
+See
+.Sx IMAGE CACHE .
+.Pp
+.Cm save
+flattens the working disk into the cache under the base image it is built
+on;
+.Cm restore
+replaces the working disk with a fresh overlay on
+.Ar name
+and reseeds the VM state the snapshot records.
+The VM must be stopped for both:
+a live overlay is not consistent.
+.Cm save
+additionally needs an installed VM whose disk is built on a cached image;
+a standalone disk
+.Pq from Fl Fl no-cache No or Ar image_cache no
+cannot be snapshotted.
+.Cm restore
+needs neither disk nor state and can run on a fresh checkout before the
+first
+.Cm up .
+.Pp
+A missing or unresolvable snapshot exits 11 rather than 1, so a script can
+distinguish it from a real failure:
+.Bd -literal -offset indent
+openhvf snapshot restore deps-$hash || provision_from_scratch
+.Ed
+.Pp
+.Cm list
+and
+.Cm rm
+are scoped to the cache entry the current configuration derives.
+.Cm list Fl Fl names
+writes bare snapshot names to standard output, one per line, for
+scripts;
+without it the listing goes to standard error like all other
+informational output.
 .It Cm disk Cm check | repair | info
 Manage the VM disk image:
 verify integrity,
@@ -167,13 +262,91 @@ or show image details.
 .It Cm help
 Display usage information.
 .El
+.Sh IMAGE CACHE
+Installing
+.Ox
+under software emulation costs tens of minutes.
+.Nm
+therefore keeps the result:
+a pristine, compacted copy of the disk taken the moment the installer
+finished, which later runs use as the backing image of a throwaway
+overlay.
+A warm cache turns
+.Cm destroy
+followed by
+.Cm up
+into a cheap factory reset.
+.Pp
+Entries live under
+.Ar cache_dir ,
+beside the proxy cache holding the miniroot and install sets:
+.Bd -literal -offset indent
+<cache_dir>/proxy/...                            miniroot, install sets
+<cache_dir>/installed/<key>/base.qcow2           mode 0400, compacted
+<cache_dir>/installed/<key>/meta.json            mode 0600
+<cache_dir>/installed/<key>/snapshots/<n>.qcow2  mode 0400
+<cache_dir>/installed/<key>/snapshots/<n>.json   mode 0600
+.Ed
+.Pp
+.Ar key
+is
+.Ar version Ns - Ns Ar arch Ns - Ns Ar hash ,
+where
+.Ar hash
+is a truncated SHA-256 over everything that shapes an installed disk:
+the
+.Ox
+version,
+the architecture,
+.Ar disk_size ,
+the contents of the
+.Pa install.exp
+installer script,
+and the contents of
+.Pa share/openhvf/cache-generation .
+Memory and port settings do not shape the disk and are excluded,
+so changing them still hits the same entry.
+.Pp
+.Pa share/openhvf/cache-generation
+is a generation counter.
+Bump the number in it when the way the installer is driven changes
+outside
+.Pa install.exp ,
+so existing cached images are invalidated.
+Keep it to the bare number:
+the whole file is hashed.
+.Pp
+Entries are immutable and write-once.
+Each is built whole in a temporary directory and published by renaming
+that directory, so a reader never sees one installation's base image
+beside another installation's metadata.
+.Pp
+A snapshot is an immutable named layer over an entry's base image,
+created by
+.Cm snapshot save
+from a stopped VM.
+Snapshots are flattened onto
+.Pa base.qcow2 ,
+so each is a direct child of the base whatever the working disk was built
+on:
+.Bd -literal -offset indent
+base.qcow2  <-  <name>.qcow2  <-  disk.qcow2
+.Ed
+.Pp
+No snapshot is therefore ever another's parent,
+and removing one cannot orphan another.
+Because snapshots live inside the entry,
+anything that invalidates a base
+.Pq a new key, or Cm cache clear
+invalidates its snapshots with it.
 .Sh FILES
 .Bl -tag -width ".openhvf/vms/name.conf" -compact
 .It Pa .openhvfrc
 Project configuration:
 .Ar cache_dir ,
 .Ar state_dir ,
-.Ar default_vm .
+.Ar default_vm ,
+.Ar image_cache .
 .It Pa .openhvf/vms/ Ns Ar name Ns Pa .conf
 Per-VM configuration:
 .Ar name , version , memory , disk_size , ssh_port , console_port .
@@ -181,8 +354,26 @@ Per-VM configuration:
 Runtime state
 .Pq PID files, sockets, disk images .
 .It Pa ~/.cache/openhvf/
-Default installation image cache.
+Default cache directory:
+downloaded installation images and installed-image cache.
+.It Pa share/openhvf/cache-generation
+Installed-image cache generation counter.
 .El
+.Pp
+.Ar image_cache Cm yes | no
+.Pq default Cm yes
+switches the installed-image cache on or off.
+It is read from the project
+.Pa .openhvfrc
+or the global
+.Pa ~/.openhvfrc ,
+project first, and may also appear inside a
+.Ar vm
+block.
+.Fl Fl no-cache
+on
+.Cm up
+overrides all of them.
 .Sh EXIT STATUS
 .Nm
 exits with one of the following values:
@@ -212,6 +403,8 @@ SSH connection failed.
 Expect script failed.
 .It 10
 Image download failed.
+.It 11
+Snapshot not found.
 .El
 .Pp
 The
@@ -249,3 +442,27 @@ utility first appeared with
 in 2025.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt dick@aglim.se
+.Sh SECURITY CONSIDERATIONS
+.Nm
+generates a random root password for each installation and stores it in
+the VM state directory,
+and, when the installed image is cached, in that entry's
+.Pa meta.json
+.Pq mode 0600 .
+Caching lengthens the secret's life:
+it survives
+.Cm destroy
+and rotates only when the base key does.
+.Pp
+This is not a localhost-only secret.
+The guest permits password root login,
+and QEMU is given
+.Ar ssh_port
+and
+.Ar console_port
+with no bind address,
+so the forwarded SSH port and the telnet serial console listen on every
+host interface.
+Treat a running VM, and a populated
+.Ar cache_dir ,
+as reachable by anyone who can reach the host.

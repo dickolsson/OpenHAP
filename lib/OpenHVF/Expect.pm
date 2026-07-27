@@ -59,6 +59,16 @@ sub run_script ( $self, $script, @args )
 	return $result == 0;
 }
 
+# $class_or_self->script_path($script_name):
+#	Path of a shipped expect script, or undef when it cannot be
+#	found. Callable on the class: OpenHVF::ImageCache hashes the
+#	installer script into its cache key and must resolve it the same
+#	way run_install does.
+sub script_path ( $self, $script_name )
+{
+	return $self->_find_script($script_name);
+}
+
 sub _find_script ( $self, $script_name )
 {
 	my @search_paths = (

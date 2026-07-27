@@ -35,6 +35,13 @@ provisioning, ad-hoc commands, and troubleshooting.
    make vm-provision
    ```
 
+   Provisioning is two layers. The guest's packages and Perl modules
+   (`make deps`) are cached as the openhvf snapshot `deps-<hash>`, keyed on
+   `deps/OpenBSD.txt`, `scripts/deps.sh`, the `cpanfile`, and the deps layer of
+   `scripts/vm_provision.sh`; the OpenHAP install runs every time. A warm run
+   prints `Guest dependencies already present` instead of re-running
+   `make deps`. Print the key with `scripts/deps_key.sh`.
+
 3. Run ad-hoc commands in the VM:
 
    ```sh
@@ -56,8 +63,14 @@ provisioning, ad-hoc commands, and troubleshooting.
   auto-discovered via `.openhvfrc`) or pass `--project`.
 - SSH failures after an unclean shutdown — `bin/openhvf disk check`, then
   `bin/openhvf disk repair` with the VM stopped.
-- Start over from a clean slate: `bin/openhvf destroy && make vm-provision`
-  (destroy deletes the disk image; the cached installation image is kept).
+- Start over from a clean slate: `bin/openhvf destroy && make vm-provision`.
+  `destroy` deletes the working disk only; the next `up` rebuilds it from the
+  cached installed image, so this is a cheap factory reset rather than a
+  reinstall.
+- To force a real reinstall — when debugging the installer itself, or when a
+  cached base is suspect — use `bin/openhvf up --no-cache`, or drop the cached
+  bases with `bin/openhvf cache clear`. `bin/openhvf cache list` shows what is
+  cached and which entry the current configuration uses.
 - On aarch64 hosts without hardware acceleration, pass `--emulate`.
 
 ## References

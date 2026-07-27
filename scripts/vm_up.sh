@@ -16,6 +16,12 @@ if [ ! -x "${OPENHVF}" ]; then
 	exit 1
 fi
 
+# Read a field from 'openhvf status'. openhvf logs to stderr, so stderr
+# has to be folded in for the value to be readable at all.
+vm_status() {
+	"${OPENHVF}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
+}
+
 # Parse arguments
 FRESH=0
 for arg in "$@"; do
@@ -39,6 +45,22 @@ done
 if [ ${FRESH} -eq 1 ]; then
 	echo "==> Destroying existing VM..."
 	"${OPENHVF}" destroy 2>/dev/null || true
+fi
+
+# Restore the cached provisioning layer before the VM is created, so a
+# warm cache boots straight into a guest that already has its packages
+# and Perl modules. Only when there is no working disk yet: an existing
+# disk already carries whatever it carries, and replacing it would throw
+# away local state.
+#
+# A miss is normal - it exits 11 - so absorb it here rather than let
+# set -e abort; vm_provision.sh then installs the deps layer and saves
+# it for next time.
+if [ "$(vm_status disk_exists)" != "1" ]; then
+	DEPS_SNAPSHOT="deps-$("${SCRIPT_DIR}/deps_key.sh")"
+	if ! "${OPENHVF}" snapshot restore "${DEPS_SNAPSHOT}"; then
+		echo "==> No cached ${DEPS_SNAPSHOT} layer, will provision"
+	fi
 fi
 
 # Bring up VM (idempotent). Under TCG emulation (e.g. CI runners

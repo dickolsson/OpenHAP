@@ -66,16 +66,38 @@ against any branch. "Green" means repetition, not one run: **three consecutive
 green workflow runs, at least one cold-cache and one warm-cache**, with wall
 clock recorded against the job's 180-minute budget.
 
+The workflow caches exactly one path, `~/.cache/openhvf`, keyed
+`openhvf-v<N>-<arch>-<hash>`. `.openhvf` is ephemeral — openhvf rebuilds the
+state directory from the cache on every run, so nothing depends on a previous
+run's state. Two things live in that cache:
+
+- the **installed OpenBSD image**, invalidated by `.openhvfrc`, `install.exp`
+  and `share/openhvf/cache-generation`;
+- the **provisioning layer** (`make deps` inside the guest), saved as snapshot
+  `deps-<hash>` and invalidated by `deps/OpenBSD.txt`, `scripts/deps.sh`, the
+  `cpanfile`, and the deps layer of `scripts/vm_provision.sh`.
+
+The workflow key hashes all of those. That is required, not tidy: the cache
+post-step saves only on a primary-key **miss**, so an input the workflow key
+cannot see would rotate a cached name, rebuild it, and discard the result on
+every run.
+
 Producing each cache state on demand:
 
 - **Cold cache** (fresh OpenBSD install from the miniroot): bump the `v<N>`
-  suffix in the `openhvf-state-*` cache key in the workflow, or delete the cache
+  suffix in the `openhvf-v<N>-*` cache key in the workflow, or delete the cache
   with `gh cache delete` (or the repository's Actions → Caches UI), then
   dispatch a run.
-- **Warm cache** (reused provisioned disk): re-run after a green run. The disk
-  cache saves only when the job succeeds, so no warm cache exists until the
-  suite first passes end-to-end; a re-run of that green run then boots the
-  cached disk.
+- **Warm cache**: re-run after a green run. The cache saves only when the job
+  succeeds, so no warm cache exists until the suite first passes end-to-end.
+
+On a warm run the log must show `Guest dependencies already present`, not a
+re-run of `make deps`. Check the log, not the exit status: every provisioning
+step is idempotent, so a broken cache still produces a green suite — just a slow
+one. Compare job wall clock against the 180-minute budget.
+
+See `openhvf(1)` for the cache layout, its invalidation inputs, and the `cache`
+and `snapshot` subcommands.
 
 ## References
 
