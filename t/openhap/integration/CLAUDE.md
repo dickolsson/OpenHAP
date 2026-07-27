@@ -65,7 +65,42 @@ shared daemon is never left paired between files.
 - `lib/OpenHAP/Test/` and `t/lib/` ship to the VM alongside the tests; `prove`
   runs with `-It/lib`.
 
+## Running the suite
+
+`make integration` provisions the VM, installs the current tree, and runs every
+file. To iterate on one file without re-provisioning:
+
+```sh
+bin/openhvf ssh 'cd /tmp && export OPENHAP_INTEGRATION_TEST=1 && \
+    prove -I/usr/local/libdata/perl5/site_perl -v t/openhap/integration/daemon.t'
+```
+
+On an OpenBSD host with OpenHAP installed, skip the VM entirely:
+`OPENHAP_INTEGRATION_TEST=1 prove -l -v t/openhap/integration/`.
+
+## Debugging failures
+
+```sh
+bin/openhvf ssh 'rcctl check openhapd && echo running || echo stopped'
+bin/openhvf ssh 'tail -50 /var/log/daemon | grep openhapd'
+bin/openhvf ssh 'hapctl -c /etc/openhapd.conf check'
+```
+
+Usual causes, in order of likelihood:
+
+- `OPENHAP_INTEGRATION_TEST` not exported.
+- The daemon will not start — check `/etc/openhapd.conf` validity, that the
+  `_openhap` user exists, and `/var/db/openhapd` permissions.
+- MQTT failures — mosquitto not installed or not started
+  (`rcctl start mosquitto`).
+- mDNS failures — mdnsd not installed, not started, or its flags name a
+  nonexistent interface (the openmdns package defaults to `em0`, and mdnsd exits
+  fatally on an unknown interface). `rcctl enable mdnsd` before setting flags;
+  rcctl refuses to set flags on a disabled daemon. The helpers emit captured
+  rcctl and syslog diagnostics when mdnsd will not stay up.
+
 ## References
 
-- Running and debugging the suite: `integration-tests` skill
+- Test helper API: `lib/OpenHAP/Test/Integration.pod`,
+  `lib/OpenHAP/Test/Controller.pod`
 - VM lifecycle: `openhvf` skill
