@@ -1,7 +1,7 @@
 # ex:ts=8 sw=4:
 # $OpenBSD$
 #
-# Copyright (c) 2024 Author Name <email@example.org>
+# Copyright (c) 2024 Dick Olsson <hi@senzilla.io>
 #
 # Permission to use, copy, modify, and distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -930,7 +930,7 @@ Global Options:
   --vm <name>     VM to operate on (default: "default")
   --project <dir> Project root (default: auto-discover)
   --quiet, -q     Suppress informational output
-  --emulate       Force TCG emulation (for testing on aarch64 hosts)
+  --emulate       Force TCG emulation instead of hardware acceleration
   --help, -h      Show help
 
 Examples:

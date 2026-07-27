@@ -8,7 +8,7 @@ Applies when working on files under `t/`.
 | ----------- | ------------------------- | ------------------------------------ | ------------------ |
 | Conformance | `t/conformance/`          | spec requirements, wire formats, KAT | `make test` (host) |
 | Module      | `t/openhap/` `t/fugulib/` | Perl API behavior, error paths       | `make test` (host) |
-| Module      | `t/openhvf/`              | test VM harness                      | `make test` (host) |
+| Module      | `t/openhvf/`              | the OpenBSD VM utility               | `make test` (host) |
 | Integration | `t/openhap/integration/`  | real daemon, full protocol flow      | `make integration` |
 
 Module tests follow the unit-test rules in the root `CLAUDE.md` (skip gracefully

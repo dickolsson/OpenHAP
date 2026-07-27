@@ -1,18 +1,20 @@
 ---
 name: openhvf
 description:
-  Operate the openhvf QEMU VM harness used for OpenBSD integration testing:
-  bring the VM up or down, provision it, run commands over SSH, watch logs,
-  and troubleshoot. Use when starting, provisioning, debugging, or scripting
-  the test VM, or when an openhvf command fails.
+  Drive openhvf, the utility that installs and manages OpenBSD VMs under QEMU:
+  bring a VM up or down, provision it, run commands over SSH, watch logs, and
+  troubleshoot. Use when starting, provisioning, debugging, or scripting an
+  OpenBSD VM, or when an openhvf command fails.
 ---
 
-# Operate the Test VM
+# Operate an OpenBSD VM
 
 ## Objective
 
-Drive the OpenBSD test VM with `bin/openhvf` during development: lifecycle,
-provisioning, ad-hoc commands, and troubleshooting.
+Drive an OpenBSD VM with `bin/openhvf`: lifecycle, provisioning, ad-hoc
+commands, and troubleshooting. In this repository the VM defined in `.openhvfrc`
+is the one the integration suite runs against, so the workflow below uses it;
+the commands are not specific to that use.
 
 ## Workflow
 
@@ -28,8 +30,8 @@ provisioning, ad-hoc commands, and troubleshooting.
    bin/openhvf up && bin/openhvf wait --timeout=300
    ```
 
-2. Install the current tree into the VM (build, copy, `make install`, enable
-   services):
+2. Install the current OpenHAP tree into the VM (build, copy, `make install`,
+   enable services):
 
    ```sh
    make vm-provision
