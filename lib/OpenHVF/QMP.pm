@@ -24,12 +24,15 @@ use v5.36;
 
 package OpenHVF::QMP;
 
+use IO::Select;
 use IO::Socket::UNIX;
 use JSON::XS;
+use Time::HiRes qw(time);
 
 use constant {
 	CONNECT_TIMEOUT => 5,
 	READ_TIMEOUT    => 10,
+	READ_CHUNK      => 4096,
 };
 
 sub new ( $class, $socket_path )
@@ -38,6 +41,7 @@ sub new ( $class, $socket_path )
 		socket_path => $socket_path,
 		sock        => undef,
 		connected   => 0,
+		buffer      => '',
 	}, $class;
 }
 
@@ -80,6 +84,7 @@ sub disconnect ($self)
 		$self->{sock} = undef;
 	}
 	$self->{connected} = 0;
+	$self->{buffer}    = '';
 	return $self;
 }
 
@@ -102,17 +107,8 @@ sub run_command ( $self, $command, $arguments = undef )
 
 sub _read_response ($self)
 {
-	my $sock = $self->{sock};
-	return if !$sock;
-
-	# Set read timeout
-	$sock->timeout(READ_TIMEOUT);
-
-	my $line = <$sock>;
-	return if !defined $line;
-
-	chomp $line;
-	return if $line eq '';
+	my $line = $self->_read_line(READ_TIMEOUT);
+	return if !defined $line || $line eq '';
 
 	my $response;
 	eval { $response = decode_json($line); };
@@ -122,6 +118,43 @@ sub _read_response ($self)
 	}
 
 	return $response;
+}
+
+# $self->_read_line($timeout):
+#	One line without its terminator, or undef on timeout, EOF or read
+#	error. Bounded with IO::Select against a wall-clock deadline:
+#	IO::Socket's timeout() governs only its own connect and accept, so a
+#	bare readline here blocks forever whenever QEMU stops answering on
+#	an otherwise open socket.
+#
+#	Bytes past the newline stay buffered for the next call, so a reply
+#	that arrives in the same segment as the following one is not lost.
+sub _read_line ( $self, $timeout )
+{
+	my $sock = $self->{sock};
+	return if !$sock;
+
+	my $deadline = time + $timeout;
+	my $select   = IO::Select->new($sock);
+
+	while (1) {
+		my $nl = index $self->{buffer}, "\n";
+		if ( $nl >= 0 ) {
+			my $line = substr $self->{buffer}, 0, $nl;
+			substr $self->{buffer}, 0, $nl + 1, '';
+			return $line;
+		}
+
+		my $remaining = $deadline - time;
+		return if $remaining <= 0;
+		return if !$select->can_read($remaining);
+
+		my $chunk = '';
+		my $read  = sysread $sock, $chunk, READ_CHUNK;
+		return if !defined $read || $read == 0;
+
+		$self->{buffer} .= $chunk;
+	}
 }
 
 # High-level commands
