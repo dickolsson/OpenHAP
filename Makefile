@@ -52,9 +52,10 @@ WEBMAN			= $(WEBOUT)/.man
 MKPAGE			= web/mkpage.sh
 MKINDEX			= web/mkindex.sh
 # The .pod sidecars are found, never listed: one added without a Makefile
-# line would otherwise never be published.  LC_ALL=C so the order of the
-# index does not depend on the builder's locale.
-FINDPOD			= find lib/OpenHAP -name '*.pod' | LC_ALL=C sort
+# line would otherwise never be published, and an exclusion list would be
+# one more thing to keep true.  LC_ALL=C so the order of the index does
+# not depend on the builder's locale.
+FINDPOD			= find lib -name '*.pod' | LC_ALL=C sort
 # mandoc resolves .Xr against the working directory: a page named %N.%S
 # there becomes a local link, anything else goes to man.openbsd.org.
 # The './' matters: a module page is FuguLib::Daemon.3p.html, and a relative

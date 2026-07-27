@@ -24,12 +24,12 @@ output so the deploy artifact always carries it. Change both together.
 Every source format is reduced to one HTML **body fragment** and wrapped in the
 shared chrome:
 
-| Source                 | Renderer                        |
-| ---------------------- | ------------------------------- |
-| `web/*.body.html`      | none — the fragment is the file |
-| `INSTALL.md`           | `lowdown -Thtml`                |
-| `man/*/*.1 .3p .5 .8`  | `mandoc -Thtml -O fragment`     |
-| `lib/OpenHAP/**/*.pod` | `pod2man` then the same mandoc  |
+| Source                | Renderer                        |
+| --------------------- | ------------------------------- |
+| `web/*.body.html`     | none — the fragment is the file |
+| `INSTALL.md`          | `lowdown -Thtml`                |
+| `man/*/*.1 .3p .5 .8` | `mandoc -Thtml -O fragment`     |
+| `lib/**/*.pod`        | `pod2man` then the same mandoc  |
 
 - `web/mkpage.sh <title>` reads a fragment on stdin, substitutes `@TITLE@` into
   `head.html`, and appends `foot.html`. Titles are substituted with `sed`, so

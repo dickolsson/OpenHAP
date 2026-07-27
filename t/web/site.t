@@ -90,7 +90,7 @@ File::Find::find(
 
 		$POD{$rel} = "$name.3p.html";
 	},
-	"$ROOT/lib/OpenHAP"
+	"$ROOT/lib"
 );
 
 ok( scalar keys %POD, 'POD sidecars found under lib/OpenHAP' );
@@ -192,10 +192,12 @@ for my $page (@PAGES) {
 	}
 }
 
-# The module reference covers every sidecar and nothing else
+# The module reference covers every sidecar and nothing else.  FuguLib is
+# documented in mdoc, so its pages are not counted here.
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
-	my @module_pages = grep { /^OpenHAP::.*\.3p\.html$/ } readdir $dh;
+	my @module_pages =
+	    grep { /^(?:OpenHAP|OpenHVF)::.*\.3p\.html$/ } readdir $dh;
 	closedir $dh;
 
 	is( scalar @module_pages, scalar keys %POD,
