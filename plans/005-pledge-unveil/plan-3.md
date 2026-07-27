@@ -1,108 +1,130 @@
-# Phase 3 — unveil(2)
+# Phase 3 — `FuguLib::Sandbox` and pledge(2)
 
-Restrict the filesystem view. Depends on phase 2 for `FuguLib::Sandbox`, which
-already carries the `unveil` and `unveil_lock` API; this phase only builds the
-path inventory and calls them. At the end of this phase the claims in
-`README.md` and `web/index.body.html` are true.
+Build the platform abstraction and apply the pledge. Depends on phase 2: while
+`openhapd` spawns `mdnsctl`, the promise set would need `proc exec` and the
+exercise would be close to pointless.
 
 ## Tasks
 
-### 3.1 The path inventory
+### 3.1 `FuguLib::Sandbox`
 
-Assembled in `bin/openhapd` from configuration, not hardcoded — `$config_file`,
-`$db_path` and the log path are all variable.
+One module, both mechanisms, three platforms. The whole point is that callers
+never write `if ($^O eq 'openbsd')`.
 
-| path                    | perms | needed for                            |
-| ----------------------- | ----- | ------------------------------------- |
-| `$config_file`          | `r`   | re-read after a future SIGHUP reload  |
-| `$db_path`              | `rwc` | pairings, device state (`Storage.pm`) |
-| `/var/log/openhapd.log` | `w`   | daemon-mode log (`Daemon::daemonize`) |
-| `/var/run/mdnsd.sock`   | `rw`  | `connect(2)` needs `w` on the path    |
-| `/dev/urandom`          | `r`   | `Crypto.pm:35`                        |
-| `/etc/resolv.conf`      | `r`   | resolver, on MQTT reconnect           |
-| `/etc/hosts`            | `r`   | resolver, on MQTT reconnect           |
-| each `@INC` directory   | `r`   | lazy `require` of pure-Perl modules   |
+```perl
+FuguLib::Sandbox->is_supported;                 # 1 on OpenBSD, '' elsewhere
+FuguLib::Sandbox->pledge(promises => $string);  # 1, or die
+FuguLib::Sandbox->unveil(paths => \@pairs);     # 1, or die
+FuguLib::Sandbox->unveil_lock;                  # 1, or die
+```
 
-Notes that matter:
+- On OpenBSD, `OpenBSD::Pledge` and `OpenBSD::Unveil` are loaded at compile
+  time. They are base-system modules; failing to load them there means a broken
+  Perl, so that is fatal at `use` time rather than a runtime fallback to "no
+  protection".
+- Off OpenBSD every method is a no-op returning 1, and logs **once** at debug
+  (`'sandbox: %s is a no-op on %s'`). Once, not per call, so a daemon that
+  re-pledges does not flood the log; and at debug rather than silence so a test
+  reading logs can tell enforcement from emulation.
+- `pledge` and `unveil` failures `die` with the promise string or path and `$!`.
+  Fail closed: there is no `force => 0` and no warn-and-continue mode. A daemon
+  that cannot restrict itself must not start.
+- `unveil(paths => [[$path, $perms], ...])` applies pairs in order and reports
+  which pair failed. `$path` that does not exist is a failure, not a skip — a
+  typo'd path silently accepted is the failure mode that makes unveil useless.
+- `unveil_lock` calls `OpenBSD::Unveil::unveil()` with no arguments.
+- Keep it stateless: class methods, no object. It wraps two syscalls that are
+  themselves process-global.
 
-- **`@INC` read-only is a deliberate choice**, and the design says why: Perl's
-  lazy loading makes "prove nothing loads late" a claim no test can hold over
-  time, while unveiling the library tree read-only is one line and cannot
-  regress. The comment in the code must say this, or someone will "tighten" it
-  and break pairing three months later.
-- Skip `@INC` entries that are not directories (`.`, code refs from any future
-  loader hooks) rather than failing on them.
-- `/var/log/openhapd.log` is already an open fd by unveil time, so this entry
-  exists for log rotation and reopen, not for the current write path. Keep it —
-  the cost is one line and the alternative is a surprise later.
-- `/etc/resolv.conf` and `/etc/hosts` are only needed when `mqtt_host` is a
-  name. Unveil them unconditionally: conditionally-restricted is harder to
-  reason about than uniformly-restricted, and neither file is sensitive to this
-  daemon.
-- No `x` anywhere. Phase 1 removed the only `exec`, and an unveil that grants
-  `x` while pledge withholds `exec` is a confusing contradiction in the source.
+Ships with `man/fugulib/Sandbox.3p`, a `MAN3P` entry, and `t/fugulib/sandbox.t`.
 
-### 3.2 Call site and ordering
+The test must be meaningful on both kinds of platform, which needs care:
 
-In `bin/openhapd`, between the mDNS advertisement and the pledge from phase 2:
+- Everywhere: `is_supported` agrees with `$^O`; a no-op platform returns 1 from
+  every method and does not die.
+- On OpenBSD only: fork a child, `pledge('stdio')` in it, have it attempt
+  `socket(AF_INET)`, and assert it dies of `SIGABRT` — pledge violations abort,
+  they do not return `EPERM`. Assert in the **child**, never the parent, or the
+  test process pledges itself and takes the rest of the suite down.
+- On OpenBSD only: a child that unveils `$tmpdir` read-only, locks, and then
+  fails to open a file outside it.
+- A bogus promise string dies rather than being accepted.
 
-1. Preload (phase 2, task 2.2) — before unveil, because it reads from `@INC` and
-   `dlopen`s.
-2. `FuguLib::Sandbox->unveil(paths => \@paths)`.
-3. `FuguLib::Sandbox->unveil_lock`.
-4. `FuguLib::Sandbox->pledge(promises => ...)`.
+Guard the OpenBSD-only cases with `plan skip_all` at the file level only if the
+whole file is OpenBSD-specific; here it is not, so guard per-subtest and make
+the skip message name the reason.
 
-All four after privdrop. Unveil only removes reachability — it grants nothing —
-so applying it as `_openhap` is correct, and it keeps the root-only `chown` loop
-at `bin/openhapd:118-137` untouched. `Storage` has already run `make_path` on
-`$db_path` (`Storage.pm:14`) via `HAP->new`, so the directory exists by the time
-we unveil it; a `$db_path` that still does not exist is a hard failure, and
-correctly so.
+### 3.2 Preload everything that would `dlopen` later
 
-Add a short comment block naming the four steps and their order, because the
-ordering is load-bearing and not locally obvious.
+`prot_exec` stays out of the promise set, so no shared object may be opened
+after the pledge. Two known offenders load lazily (see the design), and both are
+handled in `bin/openhapd` before pledging:
 
-### 3.3 Tests
+- Explicitly `use`/`require` the XS runtime dependencies: `Crypt::Ed25519`,
+  `Crypt::Curve25519`, `Crypt::AuthEnc::ChaCha20Poly1305`,
+  `Crypt::KeyDerivation`, `Digest::SHA`, `JSON::XS`, `Net::MQTT::Simple`,
+  `Sys::Syslog`.
+- Force `Math::BigInt` to load its GMP backend by performing one modular
+  exponentiation. `Math::BigInt::GMP` is pulled in on first use, and first use
+  is otherwise during SRP at pairing time — long after the pledge.
+- Call `localtime` once so the zone file is cached.
 
-`t/openhap/openhapd.t`-style coverage cannot exercise unveil without running the
-daemon, so split the work:
+Put this in one clearly commented block — a `_preload` sub in `bin/openhapd` —
+with a comment saying _why_, because the next person to read it will otherwise
+delete it as redundant `use` statements. Note in the comment that adding an XS
+dependency means adding it here.
 
-- `t/fugulib/sandbox.t` (extended from phase 2): on OpenBSD, a forked child
-  unveils a temp directory `r`, locks, then fails to read a file outside it and
-  succeeds inside it. Also assert that unveiling a nonexistent path dies.
-- A unit test for the inventory builder: factor path assembly into a small
-  testable sub (or `FuguLib::Sandbox` helper) that takes the config values and
-  returns the pair list, so the `@INC` filtering and the config-derived paths
-  can be asserted on any platform without unveiling anything.
-- Integration (phase 4 expands this): the daemon runs, pairs, and serves with
-  unveil active.
+### 3.3 Apply the pledge in `bin/openhapd`
+
+After the mDNS advertisement is established and before the signal handlers and
+`$hap->run()`:
+
+```
+stdio rpath wpath cpath fattr flock inet dns unix
+```
+
+Derivation is in the design; the code carries a comment per promise so a future
+reader can shrink the set safely. Also:
+
+- Both `-f`/foreground and daemon mode pledge identically. Foreground differs
+  only in where the log goes, which is already an open fd by then.
+- `-n`/`--check` exits at `bin/openhapd:34-37`, before any of this. Leave it
+  alone; a config check is not a long-running process.
+- Log at info that the pledge was applied, naming the promise set. On a no-op
+  platform, log nothing at info — the debug line from 2.1 is enough — so the
+  absence of that info line is itself a signal.
 
 ### 3.4 Documentation
 
-- `man/openhap/openhapd.8`: list the unveiled paths in the FILES section, and
-  note that `openhapd` cannot read anything else — an operator debugging "why
-  can't it read my file" needs this to be findable.
-- `man/fugulib/Sandbox.3p`: document `unveil`'s die-on-missing-path behaviour
-  and the lock semantics.
-- `README.md`, `CLAUDE.md`, `web/`: unchanged. As of this phase they are
-  accurate.
+- `man/fugulib/Sandbox.3p` is the API reference for the module (FuguLib is
+  documented in man3p, not in sidecars).
+- `man/openhap/openhapd.8`: state the promise set and that OpenBSD is the only
+  platform where it is enforced. The full SECURITY section lands in phase 5,
+  once unveil is in place; here, one accurate paragraph.
+- Do not touch `README.md`, `CLAUDE.md`, or `web/` — their claims become fully
+  true at the end of phase 4, and hedging them for one phase then unhedging them
+  is churn.
 
 ## Deliverables
 
-- Changes to `bin/openhapd` (inventory, unveil, lock, ordering comment)
-- Possibly a small helper in `lib/FuguLib/Sandbox.pm` for `@INC` filtering
-- Extended `t/fugulib/sandbox.t`, new inventory unit test
-- `man/openhap/openhapd.8` FILES section, `man/fugulib/Sandbox.3p` updates
+- `lib/FuguLib/Sandbox.pm`, `man/fugulib/Sandbox.3p`, `Makefile` `MAN3P` entry
+- `t/fugulib/sandbox.t`
+- Changes to `bin/openhapd` (preload block, pledge call)
+- `man/openhap/openhapd.8` paragraph
 
 ## Acceptance criteria
 
-- On OpenBSD, `openhapd` completes a full pairing, serves characteristic reads
-  and writes, publishes and updates mDNS, and reconnects to a restarted MQTT
-  broker, all with unveil locked. The MQTT restart is the sharpest test: it is
-  the path that touches the resolver files and lazily `require`s
-  `Net::MQTT::Simple`.
-- A file outside the unveiled set is unreadable by the running daemon, verified
-  from inside the VM rather than asserted in prose.
-- Unveiling a nonexistent path is fatal at startup with the path in the message.
-- `make check` green on Linux and Darwin, behaviour unchanged.
+- On OpenBSD, `openhapd` starts, pairs, serves characteristics, publishes mDNS,
+  and survives an MQTT broker restart — all under the pledge. The MQTT case
+  matters most: reconnection is the one code path that resolves names and loads
+  `Net::MQTT::Simple` after the pledge point, and it is the likeliest thing to
+  abort in production rather than in a test.
+- A full SRP pairing completes under the pledge, proving the `Math::BigInt::GMP`
+  preload works. Without it this aborts, and only at pairing time.
+- `t/fugulib/sandbox.t` proves a pledge violation aborts a child process on
+  OpenBSD, and proves the no-op contract elsewhere.
+- `make check` green on Linux and Darwin with behaviour byte-identical to
+  before.
+- `kdump`/`ktrace` of a running `openhapd` shows no `pledge` violation and no
+  `mmap` with `PROT_EXEC` after startup.
 - `mandoc -Tlint -W warning` clean.

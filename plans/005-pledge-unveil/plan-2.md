@@ -1,130 +1,177 @@
-# Phase 2 — `FuguLib::Sandbox` and pledge(2)
+# Phase 2 — mDNS client without exec
 
-Build the platform abstraction and apply the pledge. Depends on phase 1: while
-`openhapd` spawns `mdnsctl`, the promise set would need `proc exec` and the
-exercise would be close to pointless.
+Replace the `mdnsctl publish` child with a native client speaking imsg over
+`/var/run/mdnsd.sock`, implemented against the phase 1 spec. This phase changes
+no security posture on its own; it removes the only `exec` in the daemon, which
+is what lets phase 3 pledge without `proc exec`. Independently shippable: it
+deletes a child process, a log file, and a kill-on-shutdown path.
+
+Depends on phase 1 for `spec/MDNS-Imsg.md` and `spec/MDNS-Control.md` — the
+measured `struct mdns_service` layout, the `imsg_type` ordinals, and the
+byte-exact publish conversation all come from there, and the conformance tests
+cite it.
 
 ## Tasks
 
-### 2.1 `FuguLib::Sandbox`
+### 2.1 `FuguLib::Imsg`
 
-One module, both mechanisms, three platforms. The whole point is that callers
-never write `if ($^O eq 'openbsd')`.
+Framing only, no mdnsd knowledge:
 
-```perl
-FuguLib::Sandbox->is_supported;                 # 1 on OpenBSD, '' elsewhere
-FuguLib::Sandbox->pledge(promises => $string);  # 1, or die
-FuguLib::Sandbox->unveil(paths => \@pairs);     # 1, or die
-FuguLib::Sandbox->unveil_lock;                  # 1, or die
-```
+- `new(fh => $fh)` over an already-connected handle, so tests can use a
+  `socketpair` and the module never opens anything itself.
+- `send(type => $n, data => $bytes)` — 16-byte native-endian header (`type` u32,
+  `len` u16 **including** the header, `flags` u16 zero, `peerid` u32 zero, `pid`
+  u32 `$$`) followed by payload. Refuse payloads that would exceed
+  `MAX_IMSGSIZE` (16384) rather than truncating.
+- `recv(timeout => $seconds)` — buffered, returns `{ type, data }` for one whole
+  message, `undef` on timeout or clean EOF; short reads accumulate across calls.
+  `IO::Select` for the timeout, never `alarm`.
+- No fd passing (`SCM_RIGHTS`): the mdnsd group protocol does not use it, and
+  omitting it keeps `sendfd`/`recvfd` out of the promise set.
 
-- On OpenBSD, `OpenBSD::Pledge` and `OpenBSD::Unveil` are loaded at compile
-  time. They are base-system modules; failing to load them there means a broken
-  Perl, so that is fatal at `use` time rather than a runtime fallback to "no
-  protection".
-- Off OpenBSD every method is a no-op returning 1, and logs **once** at debug
-  (`'sandbox: %s is a no-op on %s'`). Once, not per call, so a daemon that
-  re-pledges does not flood the log; and at debug rather than silence so a test
-  reading logs can tell enforcement from emulation.
-- `pledge` and `unveil` failures `die` with the promise string or path and `$!`.
-  Fail closed: there is no `force => 0` and no warn-and-continue mode. A daemon
-  that cannot restrict itself must not start.
-- `unveil(paths => [[$path, $perms], ...])` applies pairs in order and reports
-  which pair failed. `$path` that does not exist is a failure, not a skip — a
-  typo'd path silently accepted is the failure mode that makes unveil useless.
-- `unveil_lock` calls `OpenBSD::Unveil::unveil()` with no arguments.
-- Keep it stateless: class methods, no object. It wraps two syscalls that are
-  themselves process-global.
+Ships with `man/fugulib/Imsg.3p`, a `MAN3P` entry in the `Makefile`, and
+`t/fugulib/imsg.t`. The module test is platform-independent — round-trip over a
+`socketpair`, an oversized payload rejection, a truncated-header read, and a
+two-messages-in-one-read case. Byte-exact header assertions belong in the
+conformance test (2.3), not here; module tests verify API behaviour and error
+paths, the conformance tier verifies the wire format.
 
-Ships with `man/fugulib/Sandbox.3p`, a `MAN3P` entry, and `t/fugulib/sandbox.t`.
+The man page documents the API. It does not restate the framing — that is
+`spec/MDNS-Imsg.md`'s job — and points there instead.
 
-The test must be meaningful on both kinds of platform, which needs care:
+### 2.2 `FuguLib::MDNS`
 
-- Everywhere: `is_supported` agrees with `$^O`; a no-op platform returns 1 from
-  every method and does not die.
-- On OpenBSD only: fork a child, `pledge('stdio')` in it, have it attempt
-  `socket(AF_INET)`, and assert it dies of `SIGABRT` — pledge violations abort,
-  they do not return `EPERM`. Assert in the **child**, never the parent, or the
-  test process pledges itself and takes the rest of the suite down.
-- On OpenBSD only: a child that unveils `$tmpdir` read-only, locks, and then
-  fails to open a file outside it.
-- A bogus promise string dies rather than being accepted.
+The mdnsd group protocol, OpenHAP-agnostic:
 
-Guard the OpenBSD-only cases with `plan skip_all` at the file level only if the
-whole file is OpenBSD-specific; here it is not, so guard per-subtest and make
-the skip message name the reason.
+- Constants for the `imsg_type` enum values used here. The enum is positional,
+  so pin all of `IMSG_NONE`(0) through `IMSG_CTL_GROUP_PUBLISHED`(17) in order,
+  taken from `spec/MDNS-Control.md` rather than re-read from the header, with a
+  comment citing the section.
+- `new(socket_path => ..., group => ...)` defaulting to `/var/run/mdnsd.sock`.
+- `connect()` — `IO::Socket::UNIX` `SOCK_STREAM`; returns `undef` with a warning
+  when the socket is missing or unreadable, matching how `MDNS.pm:70` treats a
+  missing `mdnsctl` today.
+- `publish_service(name =>, app =>, proto =>, port =>, txt =>)` — `GROUP_ADD`,
+  `GROUP_ADD_SERVICE`, `GROUP_COMMIT`, then read replies with a bounded timeout
+  (2s) until `GROUP_PUBLISHED`, an error type, or timeout. `GROUP_PROBING` and
+  `GROUP_ANNOUNCING` are logged at debug and are not terminal.
+- `update_txt(txt => ...)` — `GROUP_RESET`, `GROUP_ADD_SERVICE`, `GROUP_COMMIT`
+  on the **same** socket. No reconnect, no withdraw-and-republish.
+- `withdraw()` — close the socket; that is the entire operation.
+- `is_published()`.
+- TXT records join with `.`, per the encoding section of `spec/MDNS-Control.md`;
+  the man page points at that section so the `pv=1` workaround at `HAP.pm:1087`
+  has something to cite.
+- Group-name and instance-name inputs longer than the field are an error, not a
+  silent truncation.
+- The `struct mdns_service` field offsets and size come from the spec, as named
+  constants in one place, so an openmdns change is a one-line edit next to a
+  citation.
 
-### 2.2 Preload everything that would `dlopen` later
+Ships with `man/fugulib/MDNS.3p`, a `MAN3P` entry, and `t/fugulib/mdns.t`. The
+module test stands up a temporary `AF_UNIX` listener as a fake mdnsd and drives
+the reply paths — `PUBLISHED`, `ERR_COLLISION`, `ERR_DOUBLE_ADD`, EOF
+mid-conversation, a reply timeout, and an over-length name — on Linux and Darwin
+unchanged, which is where CI exercises it.
 
-`prot_exec` stays out of the promise set, so no shared object may be opened
-after the pledge. Two known offenders load lazily (see the design), and both are
-handled in `bin/openhapd` before pledging:
+### 2.3 Conformance tests
 
-- Explicitly `use`/`require` the XS runtime dependencies: `Crypt::Ed25519`,
-  `Crypt::Curve25519`, `Crypt::AuthEnc::ChaCha20Poly1305`,
-  `Crypt::KeyDerivation`, `Digest::SHA`, `JSON::XS`, `Net::MQTT::Simple`,
-  `Sys::Syslog`.
-- Force `Math::BigInt` to load its GMP backend by performing one modular
-  exponentiation. `Math::BigInt::GMP` is pulled in on first use, and first use
-  is otherwise during SRP at pairing time — long after the pledge.
-- Call `localtime` once so the zone file is cached.
+Per `t/CLAUDE.md`, one `.t` per normative topic file, named after the lowercased
+stem: `t/conformance/mdns-imsg.t` and `t/conformance/mdns-control.t`. This is
+the tier that closes the loop opened in phase 1 — the spec records what the
+protocol is, these assert our encoder produces it.
 
-Put this in one clearly commented block — a `_preload` sub in `bin/openhapd` —
-with a comment saying _why_, because the next person to read it will otherwise
-delete it as redundant `use` statements. Note in the comment that adding an XS
-dependency means adding it here.
+Both follow the conformance rules: every subtest name starts with a citation,
+wire examples are replayed byte-exactly, vectors live inline with no network and
+no `external/`, `Test::More` + `subtest`, `skip_all` on missing CPAN
+dependencies.
 
-### 2.3 Apply the pledge in `bin/openhapd`
+- `mdns-imsg.t` — header encoding field by field against `[MDNS-Imsg §…]`: byte
+  order, `len` counting the header, `MAX_IMSGSIZE` refusal, message-boundary
+  handling on a split read.
+- `mdns-control.t` — the `imsg_type` ordinals; `struct mdns_service` encoded
+  byte-exactly, including the zeroed `LIST_ENTRY`, the internal padding, and NUL
+  padding of each fixed field; TXT `.` joining; the full publish conversation
+  from the spec's worked example, replayed byte-for-byte; and the reply/error
+  type meanings.
 
-After the mDNS advertisement is established and before the signal handlers and
-`$hap->run()`:
+The struct assertion is the one that matters most: it is the only thing standing
+between an openmdns layout change and a daemon that silently advertises garbage.
+Assert the whole 864-byte buffer against a literal, not field by field — a
+field-by-field check passes even when the total size or padding is wrong.
 
-```
-stdio rpath wpath cpath fattr flock inet dns unix
-```
+`make spec-coverage` should now report real coverage for both topic files where
+it reported 0 in phase 1.
 
-Derivation is in the design; the code carries a comment per promise so a future
-reader can shrink the set safely. Also:
+### 2.4 Rewire `openhapd` and delete `OpenHAP::MDNS`
 
-- Both `-f`/foreground and daemon mode pledge identically. Foreground differs
-  only in where the log goes, which is already an open fd by then.
-- `-n`/`--check` exits at `bin/openhapd:34-37`, before any of this. Leave it
-  alone; a config check is not a long-running process.
-- Log at info that the pledge was applied, naming the promise set. On a no-op
-  platform, log nothing at info — the debug line from 2.1 is enough — so the
-  absence of that info line is itself a signal.
+- `bin/openhapd`: replace the `OpenHAP::MDNS->new(...)` construction
+  (`:108-112`) with `FuguLib::MDNS`, and `register_service` (`:157`) with
+  `connect` + `publish_service`, passing `hap`/`tcp` and
+  `$hap->get_mdns_txt_records` from the call site.
+- `OpenHAP::HAP`: `set_mdns` keeps its signature; `update_txt_records`
+  (`HAP.pm:148`) calls `update_txt`.
+- The shutdown cleanup (`bin/openhapd:166-176`) calls `withdraw` instead of
+  `unregister_service`.
+- Delete `lib/OpenHAP/MDNS.pm`, `lib/OpenHAP/MDNS.pod`, and `t/openhap/mdns.t`
+  (or move whatever coverage in it is not mdnsctl-specific).
+- Remove the `$db_path/mdnsctl.log` machinery and the now-unused `log_dir`
+  plumbing. Check whether `FuguLib::Process` retains any other caller; if
+  `spawn_command`/`terminate` become dead code, say so in the commit message and
+  leave removal to a separate change — `FuguLib` is a library and its API is not
+  ours to prune on the way past.
 
-### 2.4 Documentation
+### 2.5 Ordering, privileges, and documentation
 
-- `man/fugulib/Sandbox.3p` is the API reference for the module (FuguLib is
-  documented in man3p, not in sidecars).
-- `man/openhap/openhapd.8`: state the promise set and that OpenBSD is the only
-  platform where it is enforced. The full SECURITY section lands in phase 4,
-  once unveil is in place; here, one accurate paragraph.
-- Do not touch `README.md`, `CLAUDE.md`, or `web/` — their claims become fully
-  true at the end of phase 3, and hedging them for one phase then unhedging them
-  is churn.
+- `/var/run/mdnsd.sock` is root:wheel, so the existing requirement that
+  `_openhap` be in `wheel` (`bin/openhapd:116`) still holds, and the connection
+  can still be made after privdrop. Keep the current ordering — privdrop, then
+  advertise — and update the stale comment at `:115-117` that explains it in
+  terms of killing a child process.
+- `man/openhap/openhapd.8`: the daemon no longer spawns a child, no longer
+  writes `mdnsctl.log`, and needs `mdnsd(8)` running rather than `mdnsctl(8)`
+  installed. Add `mdnsd(8)` to SEE ALSO.
+- `deps/OpenBSD.txt` keeps `openmdns` — the daemon is still required; only the
+  CLI is no longer invoked.
+- `.claude/skills/openhapd/SKILL.md`: update any procedure that greps for the
+  `mdnsctl` child or reads `mdnsctl.log`.
+
+### 2.6 Integration coverage
+
+Extend `t/openhap/integration/` (which never skips — see
+`t/openhap/integration/CLAUDE.md`) to assert, inside the VM:
+
+- `mdnsctl browse _hap._tcp` sees the advertised service after `openhapd`
+  starts.
+- No `mdnsctl` process is a child of `openhapd`, and no `mdnsctl.log` is
+  created.
+- The TXT record changes after a pairing state change (`sf` flips).
+- The advertisement disappears within a few seconds of `openhapd` exiting, which
+  is the socket-close contract.
 
 ## Deliverables
 
-- `lib/FuguLib/Sandbox.pm`, `man/fugulib/Sandbox.3p`, `Makefile` `MAN3P` entry
-- `t/fugulib/sandbox.t`
-- Changes to `bin/openhapd` (preload block, pledge call)
-- `man/openhap/openhapd.8` paragraph
+- `lib/FuguLib/Imsg.pm`, `lib/FuguLib/MDNS.pm`
+- `man/fugulib/Imsg.3p`, `man/fugulib/MDNS.3p`, `Makefile` `MAN3P` entries
+- `t/fugulib/imsg.t`, `t/fugulib/mdns.t`
+- `t/conformance/mdns-imsg.t`, `t/conformance/mdns-control.t`
+- New integration assertions in `t/openhap/integration/`
+- Changes to `bin/openhapd`, `lib/OpenHAP/HAP.pm`, `man/openhap/openhapd.8`
+- Deleted: `lib/OpenHAP/MDNS.pm`, `lib/OpenHAP/MDNS.pod`, `t/openhap/mdns.t`
 
 ## Acceptance criteria
 
-- On OpenBSD, `openhapd` starts, pairs, serves characteristics, publishes mDNS,
-  and survives an MQTT broker restart — all under the pledge. The MQTT case
-  matters most: reconnection is the one code path that resolves names and loads
-  `Net::MQTT::Simple` after the pledge point, and it is the likeliest thing to
-  abort in production rather than in a test.
-- A full SRP pairing completes under the pledge, proving the `Math::BigInt::GMP`
-  preload works. Without it this aborts, and only at pairing time.
-- `t/fugulib/sandbox.t` proves a pledge violation aborts a child process on
-  OpenBSD, and proves the no-op contract elsewhere.
-- `make check` green on Linux and Darwin with behaviour byte-identical to
-  before.
-- `kdump`/`ktrace` of a running `openhapd` shows no `pledge` violation and no
-  `mmap` with `PROT_EXEC` after startup.
-- `mandoc -Tlint -W warning` clean.
+- `t/conformance/mdns-control.t` asserts the whole encoded `struct mdns_service`
+  against a literal and replays the spec's publish conversation byte-for-byte;
+  changing any offset constant makes it fail.
+- `make spec-coverage` reports non-zero coverage for `MDNS-Imsg` and
+  `MDNS-Control`, and exits zero — no stale citations.
+- `mdnsctl browse` in the VM sees the service, its TXT updates on pairing state
+  change, and it disappears when the daemon exits.
+- `openhapd` spawns no child process at all: `pgrep -P $(pgrep openhapd)` is
+  empty.
+- A missing or unreachable `/var/run/mdnsd.sock` logs a warning and leaves the
+  HAP server serving, exactly as a missing `mdnsctl` does today.
+- `make check` green on Linux (tests use `socketpair`/`AF_UNIX` and need no
+  mdnsd); `make integration` green on OpenBSD.
+- `mandoc -Tlint -W warning` clean for both new man pages.

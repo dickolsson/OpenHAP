@@ -27,8 +27,10 @@ is open, and openhapd can hold that socket itself.
    no-op on Linux and Darwin, so `make check` behaves identically everywhere.
 3. mDNS advertisement speaks to `mdnsd(8)` over `/var/run/mdnsd.sock` directly:
    no child process, no `mdnsctl.log`, no kill-on-shutdown.
-4. Failures fail closed: an unappliable restriction on OpenBSD is fatal.
-5. The restrictions are proven by tests that fail if they are silently absent.
+4. The mdnsd protocol we implement is documented in `spec/` and covered by
+   conformance tests citing it, like every other protocol in the tree.
+5. Failures fail closed: an unappliable restriction on OpenBSD is fatal.
+6. The restrictions are proven by tests that fail if they are silently absent.
 
 ## Non-goals
 
@@ -38,10 +40,12 @@ is open, and openhapd can hold that socket itself.
 - **Privilege separation** into helper processes (`TODO.md:489`), and **pledging
   `hapctl`** — both follow-ups, the latter cheap once `FuguLib::Sandbox` exists.
 - **Weakening the documentation.** `README.md`, `CLAUDE.md` and `web/` keep
-  their claims; phase 3 makes them true rather than the docs shrinking to fit.
+  their claims; phase 4 makes them true rather than the docs shrinking to fit.
 - **Fixing `pv=1`.** `HAP.pm:1087` sends protocol version `1`, not `1.1`,
   because mdnsd splits TXT strings on `.` with no escape. A native client hands
   mdnsd the same dot-delimited payload, so the constraint is unchanged.
+- **A full mdnsd client.** Browse, resolve and lookup are specified in phase 1
+  because they share the framing and the enum, but only publish is implemented.
 - Bonjour/Avahi backends; mDNS stays OpenBSD-only, exactly as today.
 
 ## Should the mDNS client be a fourth sub-project?
@@ -63,22 +67,46 @@ tool of its own.
 ## Architecture
 
 Three new `FuguLib` modules — `Sandbox` (pledge/unveil) and `MDNS` (the mdnsd
-group protocol) over `Imsg` (framing) — one deletion, one new call site.
+group protocol) over `Imsg` (framing) — a new `spec/MDNS*.md` family, one
+deletion, one new call site.
 
-### `FuguLib::Sandbox`
+### The mDNS protocol reference
 
-One module covering both mechanisms, because they are one decision applied at
-one point; a module named `Pledge` that also unveils would misname itself.
+Implementing a wire protocol makes this a protocol reference's job, so phase 1
+extracts one into `spec/` before any client code exists:
 
-- `is_supported()` — true only on OpenBSD.
-- `pledge(promises => $string)` — 1 on success, `die` on failure.
-- `unveil(path => $perms, ...)` — applies each pair, `die` on failure.
-- `unveil_lock()` — `unveil(undef, undef)`; no path can be added afterwards.
+- `spec/MDNS.md` — index and overview. Unhyphenated, so `scripts/spec-coverage`
+  treats it as an index and does not count its sections.
+- `spec/MDNS-Imsg.md` — the imsg framing: header layout, length semantics,
+  `MAX_IMSGSIZE`, buffering rules, and the fd-passing facility we deliberately
+  do not use.
+- `spec/MDNS-Control.md` — the control socket: path and permissions, the
+  `imsg_type` enum, the group publish sequence, the `struct mdns_service` ABI,
+  and TXT string encoding.
 
-On OpenBSD the base-system `OpenBSD::Pledge`/`OpenBSD::Unveil` load at `use`
-time and failing to load is fatal: there, their absence means a broken Perl, not
-an unsupported system. Off OpenBSD every method returns 1 having done nothing,
-logging once at debug so a misread test cannot mistake a no-op for enforcement.
+A new `spec-mdns` skill owns them, reading openmdns from `external/` plus
+measurements taken on the installed port — the same shape as `spec-hap` and
+`spec-mqtt`. Hand-writing them would make them the first hand-maintained files
+in a directory whose `CLAUDE.md` forbids exactly that.
+
+This is also the right answer to the ABI coupling, which is this design's
+principal risk. The `IMSG_CTL_GROUP_ADD_SERVICE` payload is a raw
+`struct mdns_service`, so we are bound to mdnsd's in-memory layout, padding and
+all. A spec section recording the measured offsets, plus a byte-exact
+conformance test citing it, turns a hidden assumption into a checked one.
+
+`spec/HAP-mDNS.md` is not the same document and does not absorb this: it says
+_what_ HomeKit requires be advertised — TXT keys, service type, instance naming
+— while `MDNS-*.md` says _how_ to make that advertisement happen on OpenBSD.
+Different upstreams, different owning skills, and `spec-hap` would overwrite
+anything added to the former.
+
+`scripts/spec-coverage` recognises citations matching `HAP|MQTT` only
+(`spec-coverage:109`), so phase 1 extends the pattern there and in the
+convention documented in `t/CLAUDE.md`. Without that, `MDNS-*` citations are
+invisible to both the coverage count and stale-citation detection — the files
+would sit at 0% forever and a citation rotting after regeneration would go
+unreported.
 
 ### `FuguLib::Imsg` and `FuguLib::MDNS`
 
@@ -104,16 +132,27 @@ unit-testable with no daemon present.
 `update_txt` (`GROUP_RESET` → `GROUP_ADD_SERVICE` → `GROUP_COMMIT` on the same
 socket, no reconnect), `withdraw` (close), and translation of reply types —
 including `GROUP_ERR_COLLISION`, `GROUP_ERR_NOT_FOUND`, `GROUP_ERR_DOUBLE_ADD` —
-into logged outcomes. Its payload is a raw `struct mdns_service`
-(`mdnsd/mdns.h`), which couples this code to mdnsd's ABI. That is the design's
-principal risk and is treated as one: phase 1 verifies the layout against the
-installed openmdns before writing the client, and pins the size constants in one
-place. Field offsets live in `plan-1.md`.
+into logged outcomes.
 
 `OpenHAP::MDNS` and its `.pod` are deleted. `bin/openhapd` and
 `HAP::update_txt_records` (`HAP.pm:148`) talk to `FuguLib::MDNS`; the
 HAP-specific `_hap`/`tcp`/TXT knowledge stays where it already lives, in
 `HAP::get_mdns_txt_records`.
+
+### `FuguLib::Sandbox`
+
+One module covering both mechanisms, because they are one decision applied at
+one point; a module named `Pledge` that also unveils would misname itself.
+
+- `is_supported()` — true only on OpenBSD.
+- `pledge(promises => $string)` — 1 on success, `die` on failure.
+- `unveil(path => $perms, ...)` — applies each pair, `die` on failure.
+- `unveil_lock()` — `unveil(undef, undef)`; no path can be added afterwards.
+
+On OpenBSD the base-system `OpenBSD::Pledge`/`OpenBSD::Unveil` load at `use`
+time and failing to load is fatal: there, their absence means a broken Perl, not
+an unsupported system. Off OpenBSD every method returns 1 having done nothing,
+logging once at debug so a misread test cannot mistake a no-op for enforcement.
 
 ### The promise set
 
@@ -135,7 +174,7 @@ stdio rpath wpath cpath fattr flock inet dns unix
 | `dns`         | MQTT reconnect resolving `mqtt_host` when it is a name           |
 | `unix`        | the held `/var/run/mdnsd.sock` connection                        |
 
-Deliberately absent: `proc exec` (phase 1 removes the only `exec`), `prot_exec`
+Deliberately absent: `proc exec` (phase 2 removes the only `exec`), `prot_exec`
 (see below), `getpw` and `id` (`getpwnam` and privdrop both precede pledge),
 `sendfd recvfd`. Syslog needs no promise — `Sys::Syslog` in native mode reaches
 `sendsyslog(2)`, which pledge always permits. The constraint this imposes on
@@ -163,7 +202,7 @@ Read-only for the config file, `/dev/urandom`, the resolver files and the `@INC`
 directories; read-write-create for `$db_path`; write for the daemon log;
 read-write for `/var/run/mdnsd.sock`, because `connect(2)` needs write
 permission on the path. Then `unveil_lock()`, then `pledge`; the exact inventory
-is in `plan-3.md`. Both come after privdrop: unveil only removes reachability,
+is in `plan-4.md`. Both come after privdrop: unveil only removes reachability,
 so applying it as `_openhap` is correct and keeps the root-only `chown` loop
 (`bin/openhapd:118-137`) working unchanged.
 
@@ -179,22 +218,29 @@ so applying it as `_openhap` is correct and keeps the root-only `chown` loop
 - mDNS advertisement is lost if `mdnsd` restarts and is not re-established until
   `openhapd` restarts. Parity with today — the `mdnsctl` child dies the same way
   — so it is documented, not fixed.
-- The `struct mdns_service` layout is verified by a test that fails loudly on
-  mismatch, never by silent truncation.
+- The `struct mdns_service` layout is documented in `spec/MDNS-Control.md` and
+  verified by a conformance test citing it, which fails loudly on mismatch
+  rather than truncating silently.
+- `spec/MDNS*.md` are generated, not hand-maintained: regenerating with
+  `spec-mdns` is how they change, and citations that rot are caught by
+  `make spec-coverage`.
 
 ## Strategy
 
-Four phases. Phase 1 must precede 2: `proc exec` cannot leave the promise set
+Five phases. Phases 1–2 must precede 3: `proc exec` cannot leave the promise set
 while a child is spawned.
 
-1. **mDNS without exec** — `FuguLib::Imsg`, `FuguLib::MDNS`, ABI verification,
-   `OpenHAP::MDNS` deleted, `bin/openhapd` and `HAP.pm` rewired.
-2. **`FuguLib::Sandbox` and pledge** — the platform abstraction with man page
+1. **mDNS protocol reference** — `spec/MDNS*.md`, the `spec-mdns` skill,
+   openmdns in `external/`, and `spec-coverage` citation support.
+2. **mDNS client without exec** — `FuguLib::Imsg`, `FuguLib::MDNS`, conformance
+   tests citing phase 1, `OpenHAP::MDNS` deleted, `bin/openhapd` rewired.
+3. **`FuguLib::Sandbox` and pledge** — the platform abstraction with man page
    and tests, XS/timezone preloading, and the promise set applied.
-3. **unveil** — the path inventory including `@INC`, `unveil_lock`, ordering
+4. **unveil** — the path inventory including `@INC`, `unveil_lock`, ordering
    against privdrop.
-4. **Proof and operability** — negative integration tests in the OpenBSD VM that
+5. **Proof and operability** — negative integration tests in the OpenBSD VM that
    fail if either restriction is absent, an `openhapd.8` SECURITY section, and
    the `TODO.md` items closed.
 
-Once a phase lands, the code, tests, and man pages are the source of truth.
+Once a phase lands, the code, tests, spec, and man pages are the source of
+truth.

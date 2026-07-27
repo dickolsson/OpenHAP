@@ -1,111 +1,108 @@
-# Phase 4 — Proof and operability
+# Phase 4 — unveil(2)
 
-Phases 1–3 make the daemon restricted. This phase makes the restriction
-_provable_ and _operable_: tests that fail if either mechanism silently stops
-working, and documentation an operator can act on when it bites. Depends on
-phases 2 and 3.
-
-The motivating risk is specific. `FuguLib::Sandbox` is a no-op on Linux and
-Darwin by design, which is exactly the shape of a bug that hides: if a refactor
-makes `is_supported` return false on OpenBSD, or a `pledge` call is dropped from
-`bin/openhapd`, every existing test still passes. Nothing in phases 1–3 catches
-that. Something has to.
+Restrict the filesystem view. Depends on phase 3 for `FuguLib::Sandbox`, which
+already carries the `unveil` and `unveil_lock` API; this phase only builds the
+path inventory and calls them. At the end of this phase the claims in
+`README.md` and `web/index.body.html` are true.
 
 ## Tasks
 
-### 4.1 Negative integration tests
+### 4.1 The path inventory
 
-In `t/openhap/integration/` (which never skips — see
-`t/openhap/integration/CLAUDE.md`), inside the OpenBSD VM:
+Assembled in `bin/openhapd` from configuration, not hardcoded — `$config_file`,
+`$db_path` and the log path are all variable.
 
-- **Pledge is really on.** Start `openhapd`, then confirm from outside that the
-  process is pledged. `ps -o pledge` is not available; the reliable signal is
-  that a pledge violation aborts. Two workable approaches, in order of
-  preference:
-  1. A test-only helper invocation that pledges with the production promise set
-     and then deliberately violates it, asserting `SIGABRT`. This proves the
-     promise string in the daemon is a real pledge, not an empty string.
-  2. `ktrace -p $(pgrep openhapd)` during a normal pairing and `kdump` asserting
-     no `pledge` violations — a regression net for promise-set drift, since a
-     missing promise shows up here before it shows up in production.
-- **Unveil is really on.** Assert the daemon cannot read a file outside its
-  unveiled set. Create `/tmp/openhap-unveil-probe` and drive the daemon down a
-  path that would read an operator-supplied path; if no such path exists, use
-  the helper from the pledge test to unveil the production inventory and then
-  probe.
-- **No child processes.** `pgrep -P $(pgrep openhapd)` is empty. This is phase
-  1's contract, and it is what keeps `proc exec` out of the promise set; without
-  a test it can regress the moment anyone adds a `system()` call.
-- **Startup fails closed.** With a deliberately bogus promise string or a
-  nonexistent unveil path, `openhapd` exits nonzero and logs why, rather than
-  starting unrestricted. Drive this through a test-only flag or environment
-  override — not by editing the production string — and make sure the override
-  cannot loosen anything, only break startup.
+| path                    | perms | needed for                            |
+| ----------------------- | ----- | ------------------------------------- |
+| `$config_file`          | `r`   | re-read after a future SIGHUP reload  |
+| `$db_path`              | `rwc` | pairings, device state (`Storage.pm`) |
+| `/var/log/openhapd.log` | `w`   | daemon-mode log (`Daemon::daemonize`) |
+| `/var/run/mdnsd.sock`   | `rw`  | `connect(2)` needs `w` on the path    |
+| `/dev/urandom`          | `r`   | `Crypto.pm:35`                        |
+| `/etc/resolv.conf`      | `r`   | resolver, on MQTT reconnect           |
+| `/etc/hosts`            | `r`   | resolver, on MQTT reconnect           |
+| each `@INC` directory   | `r`   | lazy `require` of pure-Perl modules   |
 
-Each of these must fail when the corresponding call is commented out of
-`bin/openhapd`. Verify that by actually commenting it out once during
-development; a test that cannot fail is not evidence.
+Notes that matter:
 
-### 4.2 `openhapd.8` SECURITY section
+- **`@INC` read-only is a deliberate choice**, and the design says why: Perl's
+  lazy loading makes "prove nothing loads late" a claim no test can hold over
+  time, while unveiling the library tree read-only is one line and cannot
+  regress. The comment in the code must say this, or someone will "tighten" it
+  and break pairing three months later.
+- Skip `@INC` entries that are not directories (`.`, code refs from any future
+  loader hooks) rather than failing on them.
+- `/var/log/openhapd.log` is already an open fd by unveil time, so this entry
+  exists for log rotation and reopen, not for the current write path. Keep it —
+  the cost is one line and the alternative is a surprise later.
+- `/etc/resolv.conf` and `/etc/hosts` are only needed when `mqtt_host` is a
+  name. Unveil them unconditionally: conditionally-restricted is harder to
+  reason about than uniformly-restricted, and neither file is sensitive to this
+  daemon.
+- No `x` anywhere. Phase 2 removed the only `exec`, and an unveil that grants
+  `x` while pledge withholds `exec` is a confusing contradiction in the source.
 
-One place an operator can read to understand the daemon's posture. Contents:
+### 4.2 Call site and ordering
 
-- The promise set, with a one-line gloss on why each promise is present, and the
-  explicit statement that `proc`, `exec`, and `prot_exec` are absent.
-- The unveiled paths and their permissions (cross-referencing FILES from phase
-  3).
-- The privilege model: starts as root, `chown`s `$db_path`, drops to `_openhap`,
-  requires `wheel` membership for `/var/run/mdnsd.sock`, then unveils and
-  pledges. Say plainly that pledge and unveil are applied _after_ the privilege
-  drop and what that does and does not buy.
-- OpenBSD-only enforcement. Linux and Darwin are development platforms and the
-  restrictions are no-ops there. An operator who reads only the README should
-  not be able to conclude that a Linux deployment is hardened.
-- What a violation looks like in practice: the process aborts, `dmesg` and
-  `/var/log/messages` carry a `pledge` line naming the syscall. This is the
-  single most useful paragraph in the section — it turns "the daemon died" into
-  a diagnosis.
+In `bin/openhapd`, between the mDNS advertisement and the pledge from phase 3:
 
-### 4.3 Close out `TODO.md`
+1. Preload (phase 3, task 3.2) — before unveil, because it reads from `@INC` and
+   `dlopen`s.
+2. `FuguLib::Sandbox->unveil(paths => \@paths)`.
+3. `FuguLib::Sandbox->unveil_lock`.
+4. `FuguLib::Sandbox->pledge(promises => ...)`.
 
-- Mark the pledge and unveil items (`TODO.md:10-20`) done, in the style the file
-  already uses for completed entries — a short "Implemented:" summary with the
-  files, as at `TODO.md:48-53`. Do not just tick the box; the file's value is
-  that finished entries say what landed.
-- The `Privilege separation` item (`TODO.md:489`) stays open, but update it: a
-  pledged monolith changes what separation would buy, and the entry should say
-  so rather than reading as though nothing has happened.
-- Add a `hapctl` pledge item. It is now cheap — `FuguLib::Sandbox` exists, and
-  `hapctl` reads config and state and prints, so `stdio rpath` plus a handful of
-  unveiled paths covers it — and leaving it undone while `openhapd` is pledged
-  is the kind of asymmetry that goes unnoticed.
-- Add an item for re-establishing the mDNS advertisement after an `mdnsd`
-  restart. Phase 1 documents this as parity with the old `mdnsctl` behaviour,
-  which makes it a known limitation rather than a bug, but "known" should mean
-  "recorded".
+All four after privdrop. Unveil only removes reachability — it grants nothing —
+so applying it as `_openhap` is correct, and it keeps the root-only `chown` loop
+at `bin/openhapd:118-137` untouched. `Storage` has already run `make_path` on
+`$db_path` (`Storage.pm:14`) via `HAP->new`, so the directory exists by the time
+we unveil it; a `$db_path` that still does not exist is a hard failure, and
+correctly so.
 
-### 4.4 Verify the aspirational docs are now accurate
+Add a short comment block naming the four steps and their order, because the
+ordering is load-bearing and not locally obvious.
 
-No rewriting — checking. `README.md:16`, `CLAUDE.md:7`, `CLAUDE.md:103`, and
-`web/index.body.html:19-20` all claim pledge/unveil support. Read each one
-against what shipped and confirm it is now true rather than merely plausible. If
-any claim overreaches — for instance implying Linux is hardened too — fix that
-specific sentence, and only that one.
+### 4.3 Tests
+
+`t/openhap/openhapd.t`-style coverage cannot exercise unveil without running the
+daemon, so split the work:
+
+- `t/fugulib/sandbox.t` (extended from phase 3): on OpenBSD, a forked child
+  unveils a temp directory `r`, locks, then fails to read a file outside it and
+  succeeds inside it. Also assert that unveiling a nonexistent path dies.
+- A unit test for the inventory builder: factor path assembly into a small
+  testable sub (or `FuguLib::Sandbox` helper) that takes the config values and
+  returns the pair list, so the `@INC` filtering and the config-derived paths
+  can be asserted on any platform without unveiling anything.
+- Integration (phase 5 expands this): the daemon runs, pairs, and serves with
+  unveil active.
+
+### 4.4 Documentation
+
+- `man/openhap/openhapd.8`: list the unveiled paths in the FILES section, and
+  note that `openhapd` cannot read anything else — an operator debugging "why
+  can't it read my file" needs this to be findable.
+- `man/fugulib/Sandbox.3p`: document `unveil`'s die-on-missing-path behaviour
+  and the lock semantics.
+- `README.md`, `CLAUDE.md`, `web/`: unchanged. As of this phase they are
+  accurate.
 
 ## Deliverables
 
-- New/extended tests in `t/openhap/integration/`
-- `man/openhap/openhapd.8` SECURITY section
-- `TODO.md` updates
-- Any narrow corrections to `README.md`, `CLAUDE.md`, `web/index.body.html`
+- Changes to `bin/openhapd` (inventory, unveil, lock, ordering comment)
+- Possibly a small helper in `lib/FuguLib/Sandbox.pm` for `@INC` filtering
+- Extended `t/fugulib/sandbox.t`, new inventory unit test
+- `man/openhap/openhapd.8` FILES section, `man/fugulib/Sandbox.3p` updates
 
 ## Acceptance criteria
 
-- Every test in 4.1 provably fails when the corresponding `bin/openhapd` call is
-  removed — demonstrated, not assumed.
-- `make integration` green on OpenBSD; `make check` green on Linux and Darwin.
-- `openhapd.8` renders clean under `mandoc -Tlint -W warning` and answers,
-  without reference to the source: what is pledged, what is unveiled, what
-  happens on violation, and where enforcement applies.
-- `TODO.md` has no remaining claim that pledge or unveil is unimplemented.
-- `make spec-coverage` unaffected (no spec citations change in this plan).
+- On OpenBSD, `openhapd` completes a full pairing, serves characteristic reads
+  and writes, publishes and updates mDNS, and reconnects to a restarted MQTT
+  broker, all with unveil locked. The MQTT restart is the sharpest test: it is
+  the path that touches the resolver files and lazily `require`s
+  `Net::MQTT::Simple`.
+- A file outside the unveiled set is unreadable by the running daemon, verified
+  from inside the VM rather than asserted in prose.
+- Unveiling a nonexistent path is fatal at startup with the path in the message.
+- `make check` green on Linux and Darwin, behaviour unchanged.
+- `mandoc -Tlint -W warning` clean.
