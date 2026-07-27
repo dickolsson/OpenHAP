@@ -349,6 +349,43 @@ SKIP: {
 	0, 'rm succeeds');
 }
 
+# --names is the scriptable listing: bare names on stdout, where a
+# shell can read them, rather than through the stderr logger
+SKIP: {
+    my $has_qemu = `which qemu-img 2>/dev/null`;
+    skip 'qemu-img not installed', 4 unless $has_qemu;
+
+    my $project = _cache_project();
+    my $cache = OpenHVF::ImageCache->new("$project/cache");
+    my $key = $cache->key(OpenHVF::Config->new($project)->load_vm('default'));
+
+    my $source = "$project/source.qcow2";
+    system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
+	or skip 'cannot create a test disk image', 4;
+    my $base = $cache->store($key, $source, { root_password => 'pw' });
+    OpenHVF::Disk->new("$project/.openhvf/state")
+	->create('default', undef, $base, 'qcow2');
+    OpenHVF::State->new("$project/.openhvf/state", 'default')->mark_installed;
+
+    is(_capture_stdout($project, 'snapshot', 'list', '--names'), '',
+	'nothing on stdout when there are no snapshots');
+
+    OpenHVF::CLI->run("--project=$project", '--quiet',
+	'snapshot', 'save', 'deps-aaa');
+    OpenHVF::CLI->run("--project=$project", '--quiet',
+	'snapshot', 'save', 'deps-bbb');
+
+    is(_capture_stdout($project, 'snapshot', 'list', '--names'),
+	"deps-aaa\ndeps-bbb\n", 'one bare name per line, sorted');
+    is(_capture_stdout($project, 'snapshot', 'list'), '',
+	'the human listing writes nothing to stdout');
+
+    local $SIG{__WARN__} = sub {};
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'list', '--bogus'),
+	2, 'an unknown list option returns EXIT_INVALID_ARGS');
+}
+
 done_testing();
 
 # A project whose cache_dir points inside the project, so the tests
@@ -369,6 +406,26 @@ sub _cache_project
     close $fh;
 
     return $project;
+}
+
+# Run a command with stdout captured, so the scriptable output can be
+# told apart from the logger's stderr
+sub _capture_stdout
+{
+    my ($project, @args) = @_;
+    my $out = '';
+
+    open my $saved, '>&', \*STDOUT or die $!;
+    close STDOUT;
+    open STDOUT, '>', \$out or die $!;
+
+    OpenHVF::CLI->run("--project=$project", '--quiet', @args);
+
+    close STDOUT;
+    open STDOUT, '>&', $saved or die $!;
+    close $saved;
+
+    return $out;
 }
 
 # A complete-looking cache entry without the cost of a real image

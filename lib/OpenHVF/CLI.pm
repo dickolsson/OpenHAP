@@ -545,14 +545,14 @@ sub cmd_snapshot ( $self, @args )
 	my $action = shift @args;
 	if ( !defined $action || $action !~ /^(save|restore|list|rm)$/ ) {
 		$self->{log}->error(
-"Usage: openhvf snapshot <save|restore|rm> <name> | list"
+"Usage: openhvf snapshot <save|restore|rm> <name> | list [--names]"
 		);
 		return EXIT_INVALID_ARGS;
 	}
 
 	my $cache = OpenHVF::ImageCache->new( $self->{config}->cache_dir );
 
-	return $self->_snapshot_list($cache) if $action eq 'list';
+	return $self->_snapshot_list( $cache, @args ) if $action eq 'list';
 
 	my $name = shift @args;
 	if ( !$cache->valid_snapshot_name($name) ) {
@@ -684,8 +684,14 @@ sub _snapshot_restore ( $self, $cache, $name )
 	return EXIT_SUCCESS;
 }
 
-sub _snapshot_list ( $self, $cache )
+sub _snapshot_list ( $self, $cache, @args )
 {
+	my $names  = 0;
+	my $parser = Getopt::Long::Parser->new;
+	$parser->configure('bundling');
+	$parser->getoptionsfromarray( \@args, 'names' => \$names )
+	    or return EXIT_INVALID_ARGS;
+
 	my $key = $self->_current_cache_key($cache);
 	if ( !defined $key ) {
 		$self->{log}->error("Cannot determine the current cache key");
@@ -693,6 +699,15 @@ sub _snapshot_list ( $self, $cache )
 	}
 
 	my $snapshots = $cache->snapshot_list($key);
+
+	# --names writes bare names to stdout, where a shell can read
+	# them. The human listing goes through the logger, which writes
+	# to stderr and prefixes every line.
+	if ($names) {
+		say $_->{name} for @$snapshots;
+		return EXIT_SUCCESS;
+	}
+
 	if ( !@$snapshots ) {
 		$self->{log}->info("No snapshots for $key");
 		return EXIT_SUCCESS;
@@ -905,7 +920,8 @@ Commands:
   wait [--timeout=N]  Wait for VM to be ready (SSH available)
   image <cmd>         Manage images (download, list)
   cache <cmd>         Manage installed images (list, clear [--stale])
-  snapshot <cmd>      Manage snapshots (save, restore, rm <name>; list)
+  snapshot <cmd>      Manage snapshots (save, restore, rm <name>;
+                      list [--names])
   disk <cmd>          Manage disk (check, repair, info)
   init [dir]          Initialize .openhvf/ directory
   help                Show this help

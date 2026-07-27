@@ -35,6 +35,13 @@ provisioning, ad-hoc commands, and troubleshooting.
    make vm-provision
    ```
 
+   Provisioning is two layers. The guest's packages and Perl modules
+   (`make deps`) are cached as the openhvf snapshot `deps-<hash>`, keyed on
+   `deps/OpenBSD.txt`, `scripts/deps.sh`, the `cpanfile`, and the deps layer of
+   `scripts/vm_provision.sh`; the OpenHAP install runs every time. A warm run
+   prints `Guest dependencies already present` instead of re-running
+   `make deps`. Print the key with `scripts/deps_key.sh`.
+
 3. Run ad-hoc commands in the VM:
 
    ```sh
