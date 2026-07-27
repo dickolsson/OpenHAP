@@ -1,65 +1,152 @@
-#!/bin/sh
+#!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Print the provisioning key: a short digest over everything that
-# determines the guest's installed dependencies.
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+# deps-key: print the provisioning key, a short digest over everything
+# that determines the guest's installed dependencies.
 #
 # scripts/vm-up restores the snapshot named after this key, and
 # scripts/vm-provision saves it, so both must derive it identically.
-# Whatever this hashes must also be hashed into the CI cache key, or a
-# change here would rotate the snapshot name without letting the runner
-# persist the result.
+# Whatever this hashes must also be hashed into the CI cache key
+# (.github/workflows/integration.yml), or a change here would rotate the
+# snapshot name without letting the runner persist the result.
+#
+# Only file contents and the fixed label strings below enter the digest -
+# never a path, the environment, or the host OS. That is what lets the
+# two callers agree wherever the checkout lives, and what makes --root
+# safe.
 
-set -e
+# The bootstrap scripts run before anything is installed, on hosts whose
+# perl predates the project's v5.36 floor - macOS still ships 5.34 - so
+# this one file stops at v5.34 and enables signatures by hand.
+use v5.34;
+use feature 'signatures';
+no warnings 'experimental::signatures';
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+use Digest::SHA    qw(sha256_hex);
+use File::Basename qw(dirname);
+use File::Spec;
+use Getopt::Long qw(GetOptions);
 
-# The deps layer of vm-provision only, not the whole file: the
-# OpenHAP layer runs on every provision and never enters the snapshot,
-# so editing it must not invalidate the cached dependencies.
-# The markers sit inside an 'else' block, so they are indented: anchor
-# on optional leading whitespace, not on '^#'. Matching '^#' extracted
-# nothing at all, which silently dropped this input from the digest and
-# left every edit to the layer unable to invalidate its cached snapshot.
-deps_layer() {
-	sed -n '/^[[:space:]]*# BEGIN deps layer$/,/^[[:space:]]*# END deps layer$/p' \
-		"${PROJECT_ROOT}/scripts/vm-provision"
+use constant KEY_LENGTH => 12;
+
+my $root;
+
+GetOptions( 'root=s' => \$root )
+    or die "usage: deps-key [--root DIR]\n";
+
+$root //= dirname( dirname( File::Spec->rel2abs(__FILE__) ) );
+-d $root or die "deps-key: no such directory: $root\n";
+
+# _slurp($path):
+#	Raw bytes of $path, or undef when it does not exist. Binary mode
+#	is explicit: the digest is over bytes, not decoded text.
+sub _slurp ($path)
+{
+	return undef unless -f $path;
+
+	open my $fh, '<:raw', $path
+	    or die "deps-key: open $path: $!\n";
+	local $/ = undef;
+	my $content = <$fh>;
+	close $fh;
+
+	return $content // '';
+}
+
+# _require($root, @path):
+#	Raw bytes of a digest input that has to be there. Dies rather
+#	than digesting a hole - see the fail-closed note below.
+sub _require ( $root, @path )
+{
+	my $path    = File::Spec->catfile( $root, @path );
+	my $content = _slurp($path);
+	defined $content
+	    or die 'deps-key: missing ' . join( '/', @path ) . "\n";
+
+	return $content;
+}
+
+# _deps_layer($path):
+#	The BEGIN..END deps layer block of scripts/vm-provision,
+#	inclusive and verbatim. Returns (text, saw_begin, saw_end).
+#
+#	The deps layer only, not the whole file: the OpenHAP layer runs
+#	on every provision and never enters the snapshot, so editing it
+#	must not invalidate the cached dependencies.
+#
+#	The markers sit inside an 'else' block, so they are indented.
+#	Anchoring on '^#' once extracted nothing at all, which silently
+#	dropped this input from the digest and left every edit to the
+#	layer unable to invalidate its cached snapshot - hence the
+#	leading whitespace is trimmed before comparing.
+sub _deps_layer ($path)
+{
+	open my $fh, '<:raw', $path
+	    or die "deps-key: open $path: $!\n";
+
+	my ( $text, $saw_begin, $saw_end ) = ( '', 0, 0 );
+	while ( my $line = <$fh> ) {
+		my $marker = $line;
+		$marker =~ s/^[[:space:]]+//;
+		chomp $marker;
+
+		$saw_begin = 1
+		    if !$saw_begin && $marker eq '# BEGIN deps layer';
+		next unless $saw_begin;
+
+		$text .= $line;
+
+		if ( $marker eq '# END deps layer' ) {
+			$saw_end = 1;
+			last;
+		}
+	}
+	close $fh;
+
+	return ( $text, $saw_begin, $saw_end );
 }
 
 # Fail closed: a digest over silently-missing inputs is worse than no
-# digest, because it looks valid and caches a stale layer forever.
-require_deps_layer() {
-	if [ "$(deps_layer | wc -l)" -lt 2 ]; then
-		echo "deps-key: cannot find the deps layer markers in" \
-			"scripts/vm-provision" >&2
-		exit 1
-	fi
+# digest, because it looks valid and caches a stale layer forever. Both
+# markers are required - the shell version counted lines instead, which
+# would have accepted a BEGIN with no END whenever the tail of the file
+# supplied two or more lines.
+my $provision = File::Spec->catfile( $root, 'scripts', 'vm-provision' );
+my ( $layer, $saw_begin, $saw_end ) = _deps_layer($provision);
+
+if ( !$saw_begin || !$saw_end ) {
+	die "deps-key: cannot find the deps layer markers in "
+	    . "scripts/vm-provision\n";
 }
 
-digest() {
-	if command -v sha256sum >/dev/null 2>&1; then
-		sha256sum
-	elif command -v shasum >/dev/null 2>&1; then
-		shasum -a 256
-	elif command -v cksum >/dev/null 2>&1; then
-		cksum -a sha256
-	else
-		echo "No sha256 tool found" >&2
-		exit 1
-	fi
-}
+# Labelled inputs, so a boundary shift between two of them cannot
+# silently produce the same digest. The labels are part of the key:
+# editing one rotates every cached snapshot.
+#
+# The cpanfile label is emitted whether or not the file exists, so an
+# absent cpanfile and an empty one agree. That is the shell version's
+# behavior and rotating the key to change it would buy nothing.
+my $cpanfile = _slurp( File::Spec->catfile( $root, 'cpanfile' ) );
 
-require_deps_layer
+my $input = join '',
+    "== deps/OpenBSD.txt\n", _require( $root, 'deps',    'OpenBSD.txt' ),
+    "== scripts/deps\n",     _require( $root, 'scripts', 'deps' ),
+    "== cpanfile\n",         $cpanfile // '',
+    "== deps layer\n",       $layer;
 
-{
-	# Named markers so a boundary shift between inputs cannot
-	# silently produce the same digest
-	echo "== deps/OpenBSD.txt"
-	cat "${PROJECT_ROOT}/deps/OpenBSD.txt"
-	echo "== scripts/deps"
-	cat "${PROJECT_ROOT}/scripts/deps"
-	echo "== cpanfile"
-	[ -f "${PROJECT_ROOT}/cpanfile" ] && cat "${PROJECT_ROOT}/cpanfile"
-	echo "== deps layer"
-	deps_layer
-} | digest | awk '{ print substr($1, 1, 12) }'
+say substr sha256_hex($input), 0, KEY_LENGTH;

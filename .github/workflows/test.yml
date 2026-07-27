@@ -19,6 +19,8 @@ on:
       # The other half of the spec-coverage cross-check
       - "spec/*.md"
       - "scripts/spec-coverage"
+      # Scripts the suite runs as subprocesses
+      - "scripts/deps-key"
       # The toolchain and dependency set the job installs
       - "Makefile"
       - "cpanfile"
@@ -35,6 +37,7 @@ on:
       - "t/lib/**.pm"
       - "spec/*.md"
       - "scripts/spec-coverage"
+      - "scripts/deps-key"
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
