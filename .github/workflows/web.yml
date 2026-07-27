@@ -1,10 +1,47 @@
 name: Website
 
+# Explicit includes, never excludes: the site is rendered from a known
+# set of sources, so anything outside that set cannot change the build.
+# The published site is derived entirely from these paths, which is what
+# makes it safe for a push to main to skip the deploy job below.
 on:
   push:
     branches: [main]
+    paths:
+      # Hand-written pages, shared chrome, assets and the two renderers
+      - "web/*.html"
+      - "web/*.css"
+      - "web/*.sh"
+      - "web/CNAME"
+      - "web/robots.txt"
+      # Everything the build renders into a page
+      - "man/**.1"
+      - "man/**.3p"
+      - "man/**.5"
+      - "man/**.8"
+      - "lib/**.pod"
+      - "INSTALL.md"
+      # The build rules and the test that checks the result
+      - "Makefile"
+      - "t/web/*.t"
+      - ".github/workflows/web.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "web/*.html"
+      - "web/*.css"
+      - "web/*.sh"
+      - "web/CNAME"
+      - "web/robots.txt"
+      - "man/**.1"
+      - "man/**.3p"
+      - "man/**.5"
+      - "man/**.8"
+      - "lib/**.pod"
+      - "INSTALL.md"
+      - "Makefile"
+      - "t/web/*.t"
+      - ".github/workflows/web.yml"
 
 # Deploying needs more than this; it is granted on the deploy job alone
 permissions:

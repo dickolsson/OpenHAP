@@ -1,10 +1,45 @@
 name: Check
 
+# Explicit includes, never excludes: a path that no job reads must not be
+# able to start this workflow just because nobody remembered to exclude it.
+# The list is the union of what the three jobs below actually consume.
 on:
   push:
     branches: [main]
+    paths:
+      # Perl that tidy, lint and the syntax sweep read
+      - "bin/*"
+      - "lib/**.pm"
+      - ".perlcriticrc"
+      - ".perltidyrc"
+      # Prettier formats every Markdown, JSON and YAML file in the tree,
+      # so this workflow has to see all of them.  The YAML glob is also
+      # what makes the workflow re-run on edits to itself and to the
+      # composite action under .github/.
+      - "**.md"
+      - "**.json"
+      - "**.yml"
+      - ".prettierrc"
+      # The toolchain the jobs install and drive
+      - "Makefile"
+      - "cpanfile"
+      - "deps/*.txt"
+      - "scripts/deps.sh"
   pull_request:
     branches: [main]
+    paths:
+      - "bin/*"
+      - "lib/**.pm"
+      - ".perlcriticrc"
+      - ".perltidyrc"
+      - "**.md"
+      - "**.json"
+      - "**.yml"
+      - ".prettierrc"
+      - "Makefile"
+      - "cpanfile"
+      - "deps/*.txt"
+      - "scripts/deps.sh"
 
 jobs:
   tidy:
