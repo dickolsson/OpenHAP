@@ -85,4 +85,48 @@ SKIP: {
 	'and the caller can see that it is gone');
 }
 
+# A running QEMU holds an exclusive lock on its disk, so inspection has
+# to ask for shared access. Without it, info() fails on exactly the VMs
+# whose chain callers most need: 'cache clear' would see no backing file
+# for a running VM and remove the base out from under it.
+SKIP: {
+    my $has_qemu_io = `which qemu-io 2>/dev/null`;
+    skip 'qemu-io not installed', 4 unless $has_qemu_io;
+
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $disk = OpenHVF::Disk->new($tmpdir);
+    my $path = $disk->create('locked', '64M');
+    my $parent = $disk->create('parent', '64M');
+
+    my $overlay_dir = tempdir(CLEANUP => 1);
+    my $overlay = OpenHVF::Disk->new($overlay_dir);
+    $overlay->create('kid', undef, $parent, 'qcow2');
+
+    # qemu-io holds the image, and its lock, while its stdin is open.
+    my $spawned = open(my $io, '|-', "qemu-io '$path' >/dev/null 2>&1");
+    my $spawned_kid =
+	open(my $io2, '|-', "qemu-io '@{[$overlay->path('kid')]}' >/dev/null 2>&1");
+    skip 'cannot spawn qemu-io', 4 unless $spawned && $spawned_kid;
+
+    # Wait for the lock, and prove it is really held: an unshared query
+    # failing here is the condition that used to break the callers.
+    my $locked = 0;
+    for (1 .. 100) {
+	`qemu-img info --output=json '$path' 2>&1`;
+	if ($? != 0) { $locked = 1; last; }
+	select(undef, undef, undef, 0.1);
+    }
+    ok($locked, 'qemu-io holds an exclusive lock on the image');
+
+    my $info = $disk->info('locked');
+    ok(defined $info, 'info still reads a locked image');
+    is($info->{'virtual-size'}, 64 * 1024 * 1024,
+	'and reports its size correctly');
+    is($overlay->backing_file('kid'), $parent,
+	'backing_file resolves the chain of a locked overlay');
+
+    close $io;
+    close $io2;
+}
+
 done_testing();

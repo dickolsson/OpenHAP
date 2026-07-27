@@ -96,12 +96,19 @@ sub remove ( $self, $name )
 	return 1;
 }
 
+# $self->info($name):
+#	qemu-img's report on the disk as a hashref, or undef when there is
+#	no disk or it cannot be read. Inspection is read-only, so it asks
+#	for shared access (-U): a running QEMU holds an exclusive lock, and
+#	without this the query fails on exactly the VMs whose backing chain
+#	callers most need to resolve - 'cache clear' skipping a running
+#	VM's disk would remove the base out from under it.
 sub info ( $self, $name )
 {
 	my $path = $self->path($name);
 	return if !-f $path;
 
-	my $output = `qemu-img info --output=json "$path" 2>/dev/null`;
+	my $output = `qemu-img info -U --output=json "$path" 2>/dev/null`;
 	return if $? != 0;
 
 	require JSON::XS;
