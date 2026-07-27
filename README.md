@@ -5,6 +5,8 @@
 OpenHAP bridges MQTT-connected Tasmota devices to Apple HomeKit, enabling
 control via the iOS Home app.
 
+Website and manuals: <https://www.openhap.org/>
+
 ## Features
 
 - **HomeKit**: Full HAP implementation with secure pairing

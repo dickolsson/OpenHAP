@@ -8,6 +8,8 @@ local/
 explore/
 
 # Man pages (compiled)
+*.cat1
+*.cat3p
 *.cat5
 *.cat8
 

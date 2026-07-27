@@ -1,6 +1,6 @@
 .\" $OpenBSD$
 .\"
-.\" Copyright (c) 2025 Dick Olsson <dick@aglim.se>
+.\" Copyright (c) 2025 Dick Olsson <hi@senzilla.io>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
@@ -77,6 +77,15 @@ Internal device identifier
 .It Cm help
 Display usage information.
 .El
+.Sh FILES
+.Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
+.It Pa /etc/openhapd.conf
+Default configuration file.
+.It Pa /var/run/openhapd.pid
+Process ID of the running daemon.
+.It Pa /var/db/openhapd/pairings
+Pairing database used for status checks.
+.El
 .Sh EXIT STATUS
 .Ex -std
 Commands exit with status 0 on success.
@@ -90,15 +99,6 @@ The
 and
 .Cm devices
 commands exit with status 0 regardless of daemon state.
-.Sh FILES
-.Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
-.It Pa /etc/openhapd.conf
-Default configuration file.
-.It Pa /var/run/openhapd.pid
-Process ID of the running daemon.
-.It Pa /var/db/openhapd/pairings
-Pairing database used for status checks.
-.El
 .Sh EXAMPLES
 Validate the configuration file:
 .Bd -literal -offset indent
@@ -155,8 +155,8 @@ will report:
 Pairing status: unknown (cannot read storage)
 .Ed
 .Sh SEE ALSO
-.Xr openhapd 8 ,
 .Xr openhapd.conf 5 ,
+.Xr openhapd 8 ,
 .Xr rc 8
 .Sh HISTORY
 The
@@ -165,7 +165,7 @@ utility first appeared with
 .Xr openhapd 8
 in 2025.
 .Sh AUTHORS
-.An Dick Olsson Aq Mt dick@aglim.se
+.An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
 .Nm
 reads the pairing database directly to determine pairing status.

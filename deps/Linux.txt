@@ -17,5 +17,7 @@ develop pkg qemu-system-arm
 develop pkg qemu-efi-aarch64
 develop pkg expect
 develop pkg telnet
+develop pkg lowdown
+develop pkg mandoc
 develop cpan HTTP::Daemon
 develop cpan LWP::UserAgent

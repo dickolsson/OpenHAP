@@ -14,3 +14,4 @@ test pkg p5-Net-SSH2
 develop pkg p5-HTTP-Daemon
 develop pkg p5-libwww
 develop pkg libssh2
+develop pkg lowdown

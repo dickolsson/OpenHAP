@@ -1,0 +1,62 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Deploying needs more than this; it is granted on the deploy job alone
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancel one that is already running
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install renderers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lowdown mandoc
+
+      - name: Build the site
+        run: make web
+
+      - name: Check the site
+        run: prove -l t/web/site.t
+
+      - name: Upload the site
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/build
+
+  # Pull requests build and check the site but deploy nothing
+  deploy:
+    name: Deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
