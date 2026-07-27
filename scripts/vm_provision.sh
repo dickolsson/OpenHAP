@@ -71,18 +71,27 @@ else
 	# scripts/deps_key.sh: editing it invalidates the cached layer.
 	# Guest heredocs run under set -e so a failed pkg_add/cpan/make
 	# cannot report a provisioned guest.
+	#
+	# Every command here that might read stdin needs </dev/null. The
+	# remote shell reads THIS SCRIPT from stdin, so a command that reads
+	# stdin consumes the rest of the script as its own input: cpan(1)
+	# answering its configuration prompts swallowed 'make deps', the
+	# cleanup and the marker below, and the truncated block still exited
+	# 0 - so set -e never fired, the layer was cached without any
+	# dependencies in it, and provisioning failed much later on
+	# 'rcctl enable mosquitto'.
 	vm_run <<EOF
 set -e
-pkg_add -u 2>/dev/null || true
+pkg_add -u </dev/null 2>/dev/null || true
 
 # Install cpanm if not already present
 if ! command -v cpanm >/dev/null 2>&1; then
 	echo "Installing cpanm..."
-	cpan -T App::cpanminus
+	cpan -T App::cpanminus </dev/null
 fi
 
 cd /tmp/openhap-*
-make deps
+make deps </dev/null
 
 # Leave no versioned tree in the snapshot. TAG derives from the commit
 # count, so a baked-in /tmp/openhap-<TAG> would make the next run's
@@ -95,6 +104,15 @@ mkdir -p /var/db
 touch ${DEPS_MARKER}
 EOF
 	# END deps layer
+
+	# The layer has to have finished, not merely exited 0: the marker
+	# is its last statement, so its absence means the block was cut
+	# short. Check before snapshotting, or an incomplete layer enters
+	# the cache and every later run restores it.
+	if ! vm_run "test -f ${DEPS_MARKER}"; then
+		echo "Error: deps layer did not complete; not caching" >&2
+		exit 1
+	fi
 
 	# The snapshot verbs run under set -e, and a base-image cache
 	# miss legitimately leaves a standalone disk that cannot be
