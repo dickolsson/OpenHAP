@@ -155,10 +155,11 @@ Corollaries:
 Larger efforts are planned before they are implemented, under
 `plans/<NNN>-<slug>/` (numbered in order of creation):
 
-- `design.md` — the **design**: a high-level architectural plan of at most 200
-  lines, defining the target state — contracts, interfaces, call graphs or
-  mermaid diagrams. It says _what_ is being built and why, not how to sequence
-  the work.
+- `design.md` — the **design**: a brief, high-level architectural plan defining
+  the target state — contracts, interfaces, call graphs or mermaid diagrams. It
+  says _what_ is being built and why, not how to sequence the work. Aim for 200
+  lines; running over is a prompt to cut, or to split the effort in two, not a
+  hard failure. Sequencing and file-by-file detail belong in `plan-N.md`.
 - `plan-N.md` — the **plans**: the implementation broken into N phases, one file
   per phase. Each phase is independently shippable and lists its tasks,
   deliverables, and acceptance criteria; phase N may depend only on phases
