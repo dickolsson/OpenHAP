@@ -17,9 +17,10 @@ on missing dependencies) and need no citations. Integration tests follow the
 stricter rules in `t/openhap/integration/CLAUDE.md` (never skip, no log
 parsing).
 
-Tooling tests are named after what they cover — `t/scripts/spec-coverage.t` for
-`scripts/spec-coverage` — and drive it as a subprocess rather than loading a
-module, so they assert on exit status and output.
+Tooling tests are named after what they cover — `t/scripts/deps.t` for
+`scripts/deps` — and drive it as a subprocess rather than loading a module, so
+they assert on exit status and output. `t/scripts/conventions.t` covers the
+directory as a whole: exec bits, shebangs, and that every Perl script compiles.
 
 ## Conformance tier
 

@@ -18,14 +18,15 @@ on:
       - "t/lib/**.pm"
       # The other half of the spec-coverage cross-check
       - "spec/*.md"
-      - "scripts/spec-coverage"
-      # Scripts the suite runs as subprocesses
-      - "scripts/deps-key"
+      # The suite runs scripts as subprocesses - spec-coverage, deps and
+      # deps-key against fixtures, and scripts.t over the directory as a
+      # whole - so it has to see all of it.  A glob because scripts/ is
+      # extensionless, same as bin/ above.
+      - "scripts/*"
       # The toolchain and dependency set the job installs
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/test.yml"
   pull_request:
@@ -36,12 +37,10 @@ on:
       - "t/**.t"
       - "t/lib/**.pm"
       - "spec/*.md"
-      - "scripts/spec-coverage"
-      - "scripts/deps-key"
+      - "scripts/*"
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"
-      - "scripts/deps"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/test.yml"
 
