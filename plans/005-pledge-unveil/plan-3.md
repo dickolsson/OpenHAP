@@ -91,7 +91,7 @@ reader can shrink the set safely. Also:
 - `-n`/`--check` exits at `bin/openhapd:34-37`, before any of this. Leave it
   alone; a config check is not a long-running process.
 - Log at info that the pledge was applied, naming the promise set. On a no-op
-  platform, log nothing at info — the debug line from 2.1 is enough — so the
+  platform, log nothing at info — the debug line from 3.1 is enough — so the
   absence of that info line is itself a signal.
 
 ### 3.4 Documentation
