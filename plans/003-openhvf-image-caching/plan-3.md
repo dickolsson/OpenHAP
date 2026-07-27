@@ -24,10 +24,18 @@ for free.
 
 ### 3.1 `OpenHVF::ImageCache` snapshot primitives
 
-- `snapshot_store($key, $name, $disk_path, $meta)` — copy the (stopped) working
-  overlay into `snapshots/`, atomically, 0400. The overlay's absolute backing
-  reference to `base.qcow2` stays valid because bases are immutable. Validate
-  `$name` like VM names (no `/`, no NUL, bounded length).
+- `snapshot_store($key, $name, $disk_path, $meta)` — flatten the (stopped)
+  working overlay into `snapshots/`, atomically, 0400, with
+  `qemu-img convert -O qcow2 -B <absolute .../base.qcow2> -F qcow2` so the
+  snapshot's parent is always `base.qcow2`. Do not plain-copy the overlay: a
+  copy carries the backing-file header verbatim, which is only correct while the
+  working disk hangs directly off the base. After a `snapshot restore` it hangs
+  off a snapshot, so a copy would either stack chains without bound or — when
+  the same name is re-saved, which phase 4's deps layer does on a normal second
+  run — publish a qcow2 that names itself as its own backing file. Flattening
+  also keeps the model above true, so no snapshot is ever another snapshot's
+  parent and `snapshot rm` cannot orphan one. Validate `$name` like VM names (no
+  `/`, no NUL, bounded length).
 - `snapshot_lookup($key, $name)`, `snapshot_list($key)`,
   `snapshot_remove($key, $name)`.
 - Snapshot metadata records the state fields the disk embodies at save time:
@@ -40,12 +48,22 @@ for free.
 
 - `openhvf snapshot save <name>` — requires an existing, installed, **stopped**
   VM (`EXIT_VM_RUNNING` otherwise; a live overlay copy is not consistent).
-  Requires the disk to be an overlay of a cached base (standalone disks from
-  `--no-cache` or pre-phase-1 states are a diagnosed error, not a crash).
-- `openhvf snapshot restore <name>` — VM stopped; replaces the working disk with
-  a fresh overlay backed by the snapshot and reseeds state from snapshot
-  metadata. Missing snapshot returns a distinct, scriptable failure so callers
-  can do `restore || provision-from-scratch`.
+  Requires the disk to resolve to a cached base, whether directly or through a
+  snapshot — re-saving after a restore is normal. Only a standalone disk (from
+  `--no-cache` or a pre-phase-1 state) is a diagnosed error, not a crash. Add
+  `EXIT_VM_RUNNING` and the missing-snapshot code to `OpenHVF::CLI`'s existing
+  exit-code set rather than inventing local numbers.
+- `openhvf snapshot restore <name>` — VM stopped; unlinks the working disk and
+  recreates it as a fresh overlay backed by the snapshot (`Disk::create` returns
+  early on an existing path, so a restore that skips the unlink reports success
+  while changing nothing), then reseeds state from snapshot metadata. Missing
+  snapshot returns a distinct, scriptable failure so callers can do
+  `restore || provision-from-scratch`. Verify the snapshot's own chain resolves
+  and report a broken snapshot as a miss, so that same idiom recovers instead of
+  failing hard.
+- Restore must also work from nothing — no working disk, no state — because
+  phase 4 calls it on a fresh checkout before `openhvf up`. Only `save` requires
+  an existing installed VM.
 - `openhvf snapshot list` / `openhvf snapshot rm <name>` — scoped to the current
   configuration's key; `cache list` gains real snapshot counts.
 
@@ -64,11 +82,18 @@ for free.
 ## Acceptance criteria
 
 - Unit tests cover: name validation, store/lookup/list/remove round-trips,
-  restore reseeding state, the running-VM and standalone-disk refusals, and the
-  scriptable missing-snapshot exit code.
+  restore reseeding state, restore into an empty state directory (no disk, no
+  state — the shape phase 4 uses), restore over an existing disk actually
+  replacing it, the running-VM and standalone-disk refusals, and the scriptable
+  missing-snapshot exit code.
+- A stored snapshot's backing file is `base.qcow2` even when it was saved from a
+  disk that had been restored from another snapshot; re-saving the same name
+  twice leaves a resolvable chain.
 - On a host with QEMU: `up` (warm base) → mutate guest → `down` →
   `snapshot save s1` → mutate guest again → `down` → `snapshot restore s1` →
   `up` shows the first mutation and not the second.
+- `destroy` (empty state directory) → `snapshot restore s1` → `up` → `ssh`
+  works, exercising the reseed-from-nothing path phase 4 depends on.
 - `openhvf ssh` works after a restore in a checkout with a different SSH key
   than the one saved (exercises reseeded password + key reinstall).
 - `make check` stays green.
