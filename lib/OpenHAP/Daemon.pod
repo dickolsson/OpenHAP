@@ -73,6 +73,6 @@ L<OpenHAP::Log>, L<daemon(3)>, L<rc.d(8)>
 
 =head1 AUTHOR
 
-Dick Olsson <hi@dickolsson.com>
+Dick Olsson <hi@senzilla.io>
 
 =cut

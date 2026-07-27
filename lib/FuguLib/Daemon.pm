@@ -1,7 +1,7 @@
 # ex:ts=8 sw=4:
 # $OpenBSD$
 #
-# Copyright (c) 2025 Dick Olsson <hi@dickolsson.com>
+# Copyright (c) 2025 Dick Olsson <hi@senzilla.io>
 #
 # Permission to use, copy, modify, and distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above

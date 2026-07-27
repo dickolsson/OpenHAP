@@ -189,6 +189,6 @@ Get MQTT client connection.
 
 =head1 AUTHOR
 
-Dick Olsson <hi@ekkis.net>
+Dick Olsson <hi@senzilla.io>
 
 =cut
