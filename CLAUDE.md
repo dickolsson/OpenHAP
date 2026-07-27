@@ -170,6 +170,15 @@ Larger efforts are planned before they are implemented, under
 Plans describe intent at the time of writing; the code, tests, and regular
 documentation remain the source of truth once a phase has landed.
 
+Always review a `design.md` or `plan-N.md` with a workflow of cold sub-agents —
+never from the context that wrote it. Fan out several reviewers, each attacking
+the document from a different angle (correctness of the contracts, sequencing
+and phase independence, security and privilege boundaries, testability, OpenBSD
+fit, what the document leaves unsaid), and prompt each to refute rather than
+confirm. Every finding must then be independently confirmed by at least two
+other sub-agents before it reaches the user; findings that fail that vote are
+dropped, not reported as maybes.
+
 ## Dependencies
 
 `deps/{OpenBSD,Linux,Darwin}.txt` are authoritative, installed by `make deps`
