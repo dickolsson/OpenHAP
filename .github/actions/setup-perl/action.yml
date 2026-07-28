@@ -107,9 +107,14 @@ runs:
         # growing it with modules that run never needs.
         prefix="openhap-cpan-v1-${{ inputs.dependencies }}-$perl-"
 
+        # Bound to its own variable first. Interpolating the expression
+        # straight after $prefix made the digest part of the variable
+        # NAME - $prefixe6c451... is unset - so the key came out empty
+        # and actions/cache rejected it.
+        hash="${{ hashFiles('deps/Linux.txt', 'scripts/deps') }}"
+
         echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
-        echo "key=$prefix${{ hashFiles('deps/Linux.txt', 'scripts/deps') }}" \
-          >> "$GITHUB_OUTPUT"
+        echo "key=$prefix$hash" >> "$GITHUB_OUTPUT"
 
     - name: Restore the CPAN tree
       id: restore

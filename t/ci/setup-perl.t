@@ -9,10 +9,15 @@
 # that is silently rebuilt and re-cached under a stale key on every run.
 #
 # Text, not YAML: a parser is not in base perl and the invariants here
-# are all about which literal strings appear, not about structure.
+# are all about which literal strings appear, not about structure - with
+# one exception, the cache key, whose shell is extracted and run.  Reading
+# it was not enough: interpolating the hashFiles expression straight after
+# $prefix made the digest part of the variable NAME, which produced an
+# empty key and failed every job at the restore step.
 
 use v5.36;
 use Test::More;
+use File::Temp qw(tempdir);
 use FindBin qw($RealBin);
 
 my $root     = "$RealBin/../..";
@@ -41,6 +46,36 @@ sub _slurp ($path)
 	close $fh;
 
 	return $content;
+}
+
+# _run_block($yml, $step_name):
+#	The `run: |` script of the named step, dedented to column zero so
+#	it can be handed to a shell. Undef when the step or its block is
+#	not there.
+sub _run_block ( $yml, $name )
+{
+	my @lines = split /\n/, $yml;
+	my ( $seen, $indent, @block );
+
+	for my $i ( 0 .. $#lines ) {
+		$seen = 1 if $lines[$i] =~ /^\s+-\s+name:\s*\Q$name\E\s*$/;
+		next unless $seen;
+
+		# A later step begins, so the block is over
+		last if @block && $lines[$i] =~ /^\s+-\s+name:/;
+
+		if ( !defined $indent ) {
+			next unless $lines[$i] =~ /^(\s+)run:\s*\|\s*$/;
+			$indent = length($1) + 2;
+			next;
+		}
+
+		last if length $lines[$i] && $lines[$i] !~ /^ {$indent}/;
+		push @block, substr $lines[$i], $indent;
+	}
+
+	return if !@block;
+	return join( "\n", @block ) . "\n";
 }
 
 my $yml = _slurp($action);
@@ -112,6 +147,46 @@ subtest 'the cache key covers what decides the tree' => sub {
 		qr/if:\s*steps\.restore\.outputs\.cache-hit\s*!=\s*'true'/,
 		'the tree is saved only on a cache miss'
 	);
+};
+
+subtest 'the cache key shell actually composes a key' => sub {
+	# The step is legal YAML and legal shell either way, so nothing
+	# above can tell a working key from an empty one. Run it: the
+	# runner interpolates the expressions before bash sees them, so do
+	# the same with stand-in values and read the outputs back.
+	my $shell = _run_block( $yml, 'Compute the cache key' );
+	ok( defined $shell, 'the key-computing step has a shell block' )
+	    or return;
+
+	my $digest = 'd' x 64;    # what hashFiles() returns
+	$shell =~ s/\$\{\{\s*inputs\.dependencies\s*\}\}/develop/g;
+	$shell =~ s/\$\{\{\s*hashFiles\([^)]*\)\s*\}\}/$digest/g;
+	unlike( $shell, qr/\$\{\{/, 'every expression had a stand-in' );
+
+	my $dir = tempdir( CLEANUP => 1 );
+	my $out = "$dir/output";
+	open my $fh, '>', "$dir/step.sh" or die "open: $!";
+	print $fh $shell;
+	close $fh;
+	open my $touch, '>', $out or die "open: $!";
+	close $touch;
+
+	my $log = `GITHUB_OUTPUT='$out' sh '$dir/step.sh' 2>&1`;
+	is( $? >> 8, 0, 'it runs clean' ) or diag($log);
+
+	my %got = map { /\A([^=]+)=(.*)\z/ ? ( $1 => $2 ) : () }
+	    split /\n/, ( _slurp($out) // '' );
+
+	ok( length( $got{prefix} // '' ), 'it emits a non-empty prefix' );
+	ok( length( $got{key}    // '' ), 'it emits a non-empty key' );
+
+	# The bug: $prefix followed by the digest read as one variable
+	# name, so key= was empty and restore-keys= was fine - which is
+	# why only the composition catches it.
+	is( $got{key}, ( $got{prefix} // '' ) . $digest,
+		'and the key is exactly the prefix plus the digest' );
+	like( $got{prefix}, qr/-develop-/, 'the environment is in the key' );
+	like( $got{prefix}, qr/\Q$]\E|perl5\./, 'so is this perl' );
 };
 
 subtest 'workflows delegate installing to the action' => sub {
