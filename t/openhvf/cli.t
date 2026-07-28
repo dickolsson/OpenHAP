@@ -18,6 +18,7 @@ BEGIN {
 }
 
 use_ok('OpenHVF::CLI');
+use_ok('OpenHVF::Proxy::Cache');
 
 # Test help command returns success
 
@@ -201,6 +202,43 @@ SKIP: {
     is(OpenHVF::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
 	0, 'bare cache clear succeeds');
     is(scalar @{ $cache->list }, 0, 'bare clear removes everything');
+}
+
+# The proxy's downloads share cache_dir with the images and nothing else
+# bounds them, so the same command prunes both: --stale keeps the OpenBSD
+# version the invoked VM installs, bare clear keeps nothing
+{
+    my $project = _cache_project();
+    my $proxy = OpenHVF::Proxy::Cache->new("$project/cache");
+
+    _fake_download($project, '7.8/arm64/base78.tgz');
+    _fake_download($project, '7.7/arm64/base77.tgz');
+    is(scalar @{ $proxy->list }, 2, 'two cached downloads before pruning');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet',
+	    'cache', 'clear', '--stale'),
+	0, 'cache clear --stale succeeds');
+
+    is_deeply([map { $_->{url} } @{ $proxy->list }],
+	['http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz'],
+	'--stale keeps the version the configured VM installs');
+
+    is(OpenHVF::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	0, 'bare cache clear succeeds');
+    is(scalar @{ $proxy->list }, 0, 'bare clear empties the proxy too');
+}
+
+# Listing reports the proxy as well, so neither half of cache_dir is
+# invisible to someone deciding whether to prune
+{
+    my $project = _cache_project();
+    _fake_download($project, '7.7/arm64/base77.tgz');
+
+    my $err = _capture_stderr($project, 'cache', 'list');
+    like($err, qr/Proxy downloads/, 'cache list reports the proxy store');
+    like($err, qr/OpenBSD 7\.7/, 'broken down by version');
+    like($err, qr/No cached images/,
+	'and still says the images are empty');
 }
 
 # clear refuses while a VM whose disk is backed by the entry is running
@@ -426,6 +464,41 @@ sub _capture_stdout
     close $saved;
 
     return $out;
+}
+
+# The logger writes to stderr, so the human listing is captured apart
+# from the scriptable output above
+sub _capture_stderr
+{
+    my ($project, @args) = @_;
+    my $err = '';
+
+    open my $saved, '>&', \*STDERR or die $!;
+    close STDERR;
+    open STDERR, '>', \$err or die $!;
+
+    OpenHVF::CLI->run("--project=$project", @args);
+
+    close STDERR;
+    open STDERR, '>&', $saved or die $!;
+    close $saved;
+
+    return $err;
+}
+
+# A cached proxy download, seeded on disk rather than through store(),
+# whose cache_path() wants URI - a develop dependency
+sub _fake_download
+{
+    my ($project, $rel) = @_;
+    my $dir = "$project/cache/proxy/cdn.openbsd.org/pub/OpenBSD/$rel";
+
+    $dir =~ m{\A(.*)/} and make_path($1);
+    open my $fh, '>', $dir or die $!;
+    print $fh 'not a real file set';
+    close $fh;
+
+    return $dir;
 }
 
 # A complete-looking cache entry without the cost of a real image

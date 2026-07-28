@@ -169,14 +169,71 @@ sub size ($self)
 	my $proxy_dir = "$self->{cache_dir}/proxy";
 	return 0 if !-d $proxy_dir;
 
-	my $total = 0;
-	$self->_walk_dir(
-		$proxy_dir,
-		sub ($file) {
-			$total += -s $file if -f $file;
-		} );
+	return $self->_dir_size($proxy_dir);
+}
 
-	return $total;
+# $self->prune(@keep):
+#	Remove the cached download tree of every OpenBSD version other
+#	than @keep. Returns [ { version, path, size } ] for what went.
+#
+#	Nothing else bounds this cache. 'openhvf cache clear --stale'
+#	prunes installed images, which live beside these downloads under
+#	the same cache_dir but are keyed by nothing in common, so a
+#	version bump used to leave the whole previous version's file sets
+#	here for good - unreadable afterwards, since every pattern
+#	is_cacheable() admits is version-scoped, and still carried by
+#	every copy of the directory a continuous-integration cache makes.
+#
+#	Whole directories, not matching files: removing the files alone
+#	would leave the empty version tree behind, and the tree is what
+#	such a copy walks.
+#
+#	A directory whose name is not a version is left alone. In
+#	practice there are none - the patterns put everything under
+#	pub/OpenBSD/<version>/ or pub/OpenBSD/syspatch/<version>/ - and a
+#	cache under $HOME is the wrong place to delete on a guess.
+sub prune ( $self, @keep )
+{
+	my $proxy_dir = "$self->{cache_dir}/proxy";
+	return [] if !-d $proxy_dir;
+
+	my %keep = map { $_ => 1 } @keep;
+	my @removed;
+
+	for my $root ( $self->_version_roots($proxy_dir) ) {
+		opendir my $dh, $root or next;
+		my @versions =
+		    sort grep { /\A[0-9]+\.[0-9]+\z/ } readdir $dh;
+		closedir $dh;
+
+		for my $version (@versions) {
+			next if $keep{$version};
+
+			my $dir = "$root/$version";
+			next if !-d $dir;
+
+			# Measured before removal, so the caller can say
+			# what the prune bought
+			my $size = $self->_dir_size($dir);
+
+			require File::Path;
+			File::Path::remove_tree( $dir, { error => \my $err } );
+			if ( $err && @$err ) {
+				my ( $file, $msg ) = %{ $err->[0] };
+				warn "Cannot remove $dir: $msg\n";
+				next;
+			}
+
+			push @removed,
+			    {
+				version => $version,
+				path    => $dir,
+				size    => $size,
+			    };
+		}
+	}
+
+	return \@removed;
 }
 
 # $self->clear:
@@ -225,6 +282,43 @@ sub list ($self)
 		} );
 
 	return \@files;
+}
+
+# $self->_version_roots($proxy_dir):
+#	Every directory under $proxy_dir whose immediate children are
+#	OpenBSD version numbers, across all cached hosts. Release trees
+#	hang off pub/OpenBSD, syspatch sets one level deeper; both are
+#	named for a version and neither outlives it.
+sub _version_roots ( $self, $proxy_dir )
+{
+	opendir my $dh, $proxy_dir or return ();
+	my @hosts = sort grep { !/\A\.\.?\z/ } readdir $dh;
+	closedir $dh;
+
+	my @roots;
+	for my $host (@hosts) {
+		my $release = "$proxy_dir/$host/pub/OpenBSD";
+		next if !-d $release;
+
+		push @roots, $release;
+		push @roots, "$release/syspatch" if -d "$release/syspatch";
+	}
+
+	return @roots;
+}
+
+# $self->_dir_size($dir):
+#	Total bytes of the regular files under $dir.
+sub _dir_size ( $self, $dir )
+{
+	my $total = 0;
+	$self->_walk_dir(
+		$dir,
+		sub ($file) {
+			$total += -s $file if -f $file;
+		} );
+
+	return $total;
 }
 
 sub _walk_dir ( $self, $dir, $callback )

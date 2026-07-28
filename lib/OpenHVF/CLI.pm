@@ -27,6 +27,7 @@ use OpenHVF::Config;
 use OpenHVF::State;
 use OpenHVF::Image;
 use OpenHVF::ImageCache;
+use OpenHVF::Proxy::Cache;
 use OpenHVF::Disk;
 use OpenHVF::VM;
 use OpenHVF::SSH;
@@ -378,13 +379,13 @@ sub cmd_cache ( $self, @args )
 
 # $self->_cache_list($cache):
 #	One line per cached entry, marking the one the invoked VM's
-#	configuration currently derives.
+#	configuration currently derives, then what the proxy holds.
 sub _cache_list ( $self, $cache )
 {
 	my $entries = $cache->list;
 	if ( !@$entries ) {
 		$self->{log}->info("No cached images");
-		return EXIT_SUCCESS;
+		return $self->_proxy_list;
 	}
 
 	my $current = $self->_current_cache_key($cache);
@@ -406,6 +407,44 @@ sub _cache_list ( $self, $cache )
 				scalar @{ $entry->{snapshots} },
 				$marker
 			) );
+	}
+
+	return $self->_proxy_list;
+}
+
+# $self->_proxy_list:
+#	What the proxy's download cache holds, one line per OpenBSD
+#	version. Reported by 'cache list' because it shares cache_dir with
+#	the images and is pruned by the same 'cache clear': a half of the
+#	directory that nothing printed was a half nobody knew to bound.
+sub _proxy_list ($self)
+{
+	my $cache = OpenHVF::Proxy::Cache->new( $self->{config}->cache_dir );
+	my $files = $cache->list;
+
+	if ( !@$files ) {
+		$self->{log}->info('No proxy downloads');
+		return EXIT_SUCCESS;
+	}
+
+	# Per version, since that is the granularity 'clear --stale'
+	# prunes at. A URL naming no version - nothing is_cacheable()
+	# admits today - is counted under '-' rather than dropped, so an
+	# unprunable entry is still visible as one.
+	my %bytes;
+	for my $file (@$files) {
+		my ($version) =
+		    $file->{url} =~ m{/pub/OpenBSD/(?:syspatch/)?([0-9.]+)/};
+		$bytes{ $version // '-' } += $file->{size};
+	}
+
+	$self->{log}->info(
+		sprintf 'Proxy downloads (%s):',
+		_format_size( $cache->size ) );
+
+	for my $version ( sort keys %bytes ) {
+		$self->{log}->info( sprintf '  - OpenBSD %s  %s',
+			$version, _format_size( $bytes{$version} ) );
 	}
 
 	return EXIT_SUCCESS;
@@ -473,6 +512,48 @@ sub _cache_clear ( $self, $cache, @args )
 		? "Removed $removed cached images"
 		: "No cached images removed"
 	);
+
+	return $self->_proxy_clear($stale);
+}
+
+# $self->_proxy_clear($stale):
+#	The other half of cache_dir: the proxy's download cache. Bare
+#	'clear' empties it, --stale keeps the OpenBSD version the invoked
+#	VM installs - the same one-VM scope the image prune above has.
+#
+#	Not reachable from the image loop, which is why this is a second
+#	pass rather than a branch inside it: the two caches share nothing
+#	but cache_dir, and the images have running-VM and orphaned-disk
+#	checks that a re-downloadable file set does not need.
+sub _proxy_clear ( $self, $stale )
+{
+	my $cache = OpenHVF::Proxy::Cache->new( $self->{config}->cache_dir );
+
+	if ( !$stale ) {
+		my $size = $cache->size;
+		if ( !$cache->clear ) {
+			$self->{log}->error("Cannot clear proxy downloads");
+			return EXIT_ERROR;
+		}
+		$self->{log}->info( sprintf 'Removed %s of proxy downloads',
+			_format_size($size) );
+
+		return EXIT_SUCCESS;
+	}
+
+	# --stale got this far, so the VM resolves; keeping its version is
+	# the point of the flag.
+	my $vm      = $self->{config}->load_vm( $self->{vm_name} );
+	my $removed = $cache->prune( $vm->{version} );
+
+	for my $entry (@$removed) {
+		$self->{log}->info(
+			sprintf 'Removed %s of downloads for OpenBSD %s',
+			_format_size( $entry->{size} ),
+			$entry->{version} );
+	}
+	$self->{log}->info('No proxy downloads removed') if !@$removed;
+
 	return EXIT_SUCCESS;
 }
 

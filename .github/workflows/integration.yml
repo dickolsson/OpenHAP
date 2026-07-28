@@ -114,12 +114,20 @@ jobs:
         with:
           dependencies: develop
 
-      - name: Cache OpenBSD and provisioning images
-        # The only cached artifact. `.openhvf` is fully ephemeral: the
-        # installed OpenBSD image and the provisioning layer both live
-        # in ~/.cache/openhvf, and openhvf rebuilds the state directory
-        # from them on every run. Nothing here depends on a previous
-        # run's state.
+      - name: Cache OpenBSD images and downloads
+        # `.openhvf` is fully ephemeral: openhvf rebuilds the state
+        # directory on every run from three things that all live in
+        # ~/.cache/openhvf - the installed OpenBSD image, the
+        # provisioning layer snapshotted over it, and the proxy's copies
+        # of everything the installer downloaded. Nothing here depends on
+        # a previous run's state.
+        #
+        # The proxy store is what makes a reinstall cheap rather than
+        # free: a rotated key restores the previous entry through
+        # restore-keys, so an install.exp edit re-runs the installer but
+        # reads the file sets off local disk. It is also the half of this
+        # directory that nothing bounded until `cache clear --stale`
+        # learned to prune it - see the cleanup step below.
         #
         # The key hashes every input that either openhvf's own cache key
         # or scripts/deps-key derives from. That is a constraint, not
@@ -196,6 +204,13 @@ jobs:
         # interactions are time-limited and it force-stops the QEMU
         # process as a last resort), so it cannot hang the job even when
         # the guest is wedged.
+        #
+        # `cache clear --stale` prunes both halves of ~/.cache/openhvf:
+        # the images whose key the current configuration no longer
+        # derives, and the proxy's downloads for every OpenBSD version
+        # other than the one .openhvfrc pins. It runs before the cache
+        # post-step, so what a version bump orphans is dropped on the run
+        # that bumped it rather than uploaded forever.
         #
         # Every command here is guarded. This step is `if: always()` and
         # `run:` blocks are `bash -e`, while the cache post-step is
