@@ -219,6 +219,7 @@ test:
 	prove -l -v t/conformance/*.t
 	prove -l -v t/scripts/*.t
 	prove -l -v t/web/*.t
+	prove -l -v t/ci/*.t
 
 tidy:
 	@$(PERLSRC) | while read f; do \

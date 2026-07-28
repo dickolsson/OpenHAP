@@ -53,9 +53,8 @@ jobs:
 
       - name: Setup Perl
         uses: ./.github/actions/setup-perl
-
-      - name: Install test dependencies
-        run: make deps-test
+        with:
+          dependencies: test
 
       - name: Check formatting
         run: make tidy
@@ -79,9 +78,8 @@ jobs:
 
       - name: Setup Perl
         uses: ./.github/actions/setup-perl
-
-      - name: Install test dependencies
-        run: make deps-test
+        with:
+          dependencies: test
 
       - name: Check lint
         run: make lint

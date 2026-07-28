@@ -4,13 +4,13 @@ Applies when working on files under `t/`.
 
 ## Test tiers
 
-| Tier        | Location                  | Verifies                             | Runs via           |
-| ----------- | ------------------------- | ------------------------------------ | ------------------ |
-| Conformance | `t/conformance/`          | spec requirements, wire formats, KAT | `make test` (host) |
-| Module      | `t/openhap/` `t/fugulib/` | Perl API behavior, error paths       | `make test` (host) |
-| Module      | `t/openhvf/`              | the OpenBSD VM utility               | `make test` (host) |
-| Tooling     | `t/scripts/` `t/web/`     | what `scripts/` and `web/` produce   | `make test` (host) |
-| Integration | `t/openhap/integration/`  | real daemon, full protocol flow      | `make integration` |
+| Tier        | Location                      | Verifies                                       | Runs via           |
+| ----------- | ----------------------------- | ---------------------------------------------- | ------------------ |
+| Conformance | `t/conformance/`              | spec requirements, wire formats, KAT           | `make test` (host) |
+| Module      | `t/openhap/` `t/fugulib/`     | Perl API behavior, error paths                 | `make test` (host) |
+| Module      | `t/openhvf/`                  | the OpenBSD VM utility                         | `make test` (host) |
+| Tooling     | `t/scripts/` `t/web/` `t/ci/` | what `scripts/`, `web/` and `.github/` produce | `make test` (host) |
+| Integration | `t/openhap/integration/`      | real daemon, full protocol flow                | `make integration` |
 
 Module tests follow the unit-test rules in the root `CLAUDE.md` (skip gracefully
 on missing dependencies) and need no citations. Integration tests follow the
@@ -21,6 +21,12 @@ Tooling tests are named after what they cover — `t/scripts/deps.t` for
 `scripts/deps` — and drive it as a subprocess rather than loading a module, so
 they assert on exit status and output. `t/scripts/conventions.t` covers the
 directory as a whole: exec bits, shebangs, and that every Perl script compiles.
+
+`t/ci/` is the exception to driving anything: nothing under `.github/` runs
+outside a runner, so these tests read the workflows and composite actions as
+text and assert the invariants that only fail in CI — that every consumer of an
+action passes it a value the action accepts, and that a cache key hashes every
+input which decides what it caches.
 
 ## Conformance tier
 

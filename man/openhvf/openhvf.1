@@ -192,17 +192,38 @@ shows the cache path or download URL for
 (default: 7.8).
 Images are downloaded via the built-in proxy when the VM boots.
 .It Cm cache Cm list | clear Op Fl Fl stale
-Manage the installed-image cache described in
-.Sx IMAGE CACHE .
+Manage everything under
+.Ar cache_dir :
+the installed-image cache described in
+.Sx IMAGE CACHE ,
+and the downloads the built-in proxy keeps for the installer.
 .Cm list
-prints one line per cached entry
+prints one line per cached image
 .Pq key, size, creation time, snapshot count ,
-marking the entry the invoked VM's configuration currently derives.
+marking the entry the invoked VM's configuration currently derives,
+then the proxy's downloads by
+.Ox
+version.
 .Cm clear
-removes every entry;
+removes every image and every download;
 .Fl Fl stale
-keeps only that one entry and removes the rest.
+keeps only the image the invoked VM derives and only the downloads for
+the
+.Ox
+.Ar version
+it installs.
 Both forms also sweep temporary trees left by an interrupted save.
+.Pp
+Pruning the downloads is the only thing that bounds them.
+They are keyed by
+.Ox
+version alone,
+share no key input with the images,
+and every pattern the proxy caches is version-scoped,
+so a
+.Ar version
+bump otherwise leaves the whole previous version's file sets behind
+unreadable.
 .Pp
 The scope of
 .Fl Fl stale
@@ -214,7 +235,10 @@ The key inputs
 and
 .Ar disk_size
 are per-VM,
-so pruning for one VM removes bases another VM would have hit.
+so pruning for one VM removes bases another VM would have hit,
+and downloads for the
+.Ox
+version another VM installs.
 .Pp
 .Cm clear
 refuses to remove an entry while a VM in this project is running on it,
