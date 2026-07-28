@@ -71,7 +71,13 @@ sub _run_block ( $yml, $name )
 		}
 
 		last if length $lines[$i] && $lines[$i] !~ /^ {$indent}/;
-		push @block, substr $lines[$i], $indent;
+
+		# A blank line inside the block is shorter than the indent
+		# and carries nothing to dedent
+		push @block,
+		    length( $lines[$i] ) > $indent
+		    ? substr( $lines[$i], $indent )
+		    : '';
 	}
 
 	return if !@block;
