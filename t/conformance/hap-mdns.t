@@ -20,7 +20,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::HAP');
-use_ok('OpenHAP::MDNS');
+use_ok('FuguLib::MDNS');
 
 sub make_hap (%extra)
 {
@@ -34,16 +34,33 @@ sub make_hap (%extra)
 }
 
 subtest '[HAP-mDNS §1] service type is hap over tcp' => sub {
-	my $mdns = OpenHAP::MDNS->new(
-		service_name => 'mDNS Bridge',
-		port         => 51827,
-	);
-	ok( defined $mdns, 'MDNS registration wrapper created' );
-	is( $mdns->{service_name}, 'mDNS Bridge', 'service name stored' );
 
-	# The mdnsctl invocation registers the hap/tcp service type;
-	# browsing _hap._tcp is asserted by the mdns integration test
-	is( $mdns->{port}, 51827, 'port carried to registration' );
+	# openhapd publishes app 'hap' over proto 'tcp'; mdnsd itself
+	# prepends the underscores to form _hap._tcp.local. Browsing
+	# _hap._tcp is asserted by the mdns integration test.
+	my $mdns = FuguLib::MDNS->new;
+	ok( !defined $mdns->publish_service(
+			name  => 'mDNS Bridge',
+			app   => 'hap',
+			proto => 'not-ip',
+			port  => 51827,
+			txt   => '',
+		),
+		'a protocol other than tcp/udp cannot be advertised'
+	);
+	like( $mdns->error, qr/tcp or udp/, 'rejected at validation' );
+
+	ok( !defined $mdns->publish_service(
+			name  => 'mDNS Bridge',
+			app   => 'hap',
+			proto => 'tcp',
+			port  => 51827,
+			txt   => '',
+		),
+		'hap/tcp fails only for the missing connection'
+	);
+	is( $mdns->error, 'not connected',
+		'the hap/tcp service type passes validation' );
 };
 
 subtest '[HAP-mDNS §2] required TXT record fields' => sub {
@@ -89,15 +106,12 @@ subtest '[HAP-mDNS §9] complete TXT record' => sub {
 subtest '[HAP-mDNS §10] bridge advertises a single service' => sub {
 
 	# One mDNS service covers the bridge and all bridged accessories;
-	# individual bridged accessories are not advertised separately
-	my $hap  = make_hap();
-	my $mdns = OpenHAP::MDNS->new(
-		service_name => $hap->{name},
-		port         => 51827,
-		txt_records  => $hap->get_mdns_txt_records,
-	);
-	ok( defined $mdns, 'single registration for the bridge' );
-	is( $mdns->{txt_records}{ci}, 2,
+	# individual bridged accessories are not advertised separately.
+	# openhapd formats exactly one TXT string for that one service.
+	my $hap = make_hap();
+	my $txt = $hap->get_mdns_txt_string;
+	ok( length($txt), 'single TXT string for the bridge' );
+	like( $txt, qr/(?:^|\.)ci=2(?:\.|$)/,
 		'advertised category is Bridge for all bridged accessories'
 	);
 };
@@ -178,20 +192,38 @@ subtest '[HAP-mDNS §4] service instance name' => sub {
 	is( $hap->get_mdns_txt_records->{md},
 		'mDNS Bridge', 'model name matches the display name' );
 
-	my $mdns = OpenHAP::MDNS->new(
-		service_name => $hap->{name},
-		port         => 51827,
-	);
-	is( $mdns->{service_name}, 'mDNS Bridge',
-		'service advertised under the display name' );
+	# The display name is the instance name openhapd publishes: it
+	# lands in the name field of the advertised service
+	my $mdns = FuguLib::MDNS->new;
+	$mdns->{service} = {
+		name  => $hap->{name},
+		app   => 'hap',
+		proto => 'tcp',
+		port  => 51827,
+		txt   => '',
+	};
+	is( unpack( 'Z*', substr( $mdns->_encode_service, 84, 256 ) ),
+		'mDNS Bridge', 'service advertised under the display name' );
 };
 
 subtest '[HAP-mDNS §6] port' => sub {
-	my $mdns = OpenHAP::MDNS->new( service_name => 'x' );
-	is( $mdns->{port}, 51827, 'default HAP port is 51827' );
 
-	my $custom = OpenHAP::MDNS->new( service_name => 'x', port => 8080 );
-	is( $custom->{port}, 8080, 'any available port can be advertised' );
+	# The advertised port is whatever openhapd listens on; it rides
+	# in the port field of the service structure
+	my $mdns = FuguLib::MDNS->new;
+	$mdns->{service} = {
+		name  => 'x',
+		app   => 'hap',
+		proto => 'tcp',
+		port  => 51827,
+		txt   => '',
+	};
+	is( unpack( 'S', substr( $mdns->_encode_service, 600, 2 ) ),
+		51827, 'default HAP port 51827 advertised' );
+
+	$mdns->{service}{port} = 8080;
+	is( unpack( 'S', substr( $mdns->_encode_service, 600, 2 ) ),
+		8080, 'any available port can be advertised' );
 };
 
 done_testing();

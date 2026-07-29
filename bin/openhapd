@@ -7,8 +7,8 @@ use lib "$RealBin/../lib";
 use OpenHAP::HAP;
 use OpenHAP::Config;
 use FuguLib::Log;
+use FuguLib::MDNS;
 use OpenHAP::MQTT;
-use OpenHAP::MDNS;
 use OpenHAP::Daemon;
 use OpenHAP::DeviceLoader;
 use FuguLib::Signal;
@@ -103,22 +103,19 @@ $loader->load_devices( $config, $hap, $mqtt );
 # Bump c# if the accessory database changed since the last run
 $hap->update_config_number();
 
-# Create mDNS handler (registration happens after privilege drop);
-# the HAP server re-advertises the TXT record on pairing changes
-my $mdns = OpenHAP::MDNS->new(
-	service_name => $hap_name,
-	port         => $hap_port,
-	txt_records  => $hap->get_mdns_txt_records(),
-);
+# Create the mDNS handle (connection and publish happen after the
+# privilege drop); the HAP server re-advertises the TXT record on
+# pairing changes
+my $mdns = FuguLib::MDNS->new;
 $hap->set_mdns($mdns);
 
-# Drop privileges before registering mDNS
-# _openhap must be in wheel group to access /var/run/mdnsd.sock
-# This ensures mdnsctl runs as _openhap and can be killed on shutdown
+# Drop privileges before talking to mdnsd, so the daemon opens and
+# holds the control socket as _openhap - the held socket is the
+# advertisement's lifetime, and it must not be a root fd
 if ( $> == 0 ) {
 
 	# Ensure db_path is owned by _openhap before dropping privileges
-	# This allows mdnsctl log and other runtime files to be written
+	# so pairings and device state stay writable
 	my ( $uid, $gid ) = ( getpwnam('_openhap') )[ 2, 3 ];
 	if ( defined $uid && -d $db_path ) {
 		chown $uid, $gid, $db_path
@@ -152,9 +149,36 @@ if ( $> == 0 ) {
 	$OpenHAP::logger->info('Dropped privileges to _openhap');
 }
 
-# Register mDNS service after privilege drop
-# mdnsctl will run as _openhap (must be in wheel group)
-$mdns->register_service();
+# Publish the mDNS advertisement after the privilege drop. The daemon
+# speaks the mdnsd control protocol directly (spec/MDNS-Control.md) and
+# keeps the socket open: closing it is what withdraws the service. A
+# missing mdnsd degrades discovery, never HAP service.
+if ( $mdns->connect ) {
+	if (
+		$mdns->publish_service(
+			name  => $hap_name,
+			app   => 'hap',
+			proto => 'tcp',
+			port  => $hap_port,
+			txt   => $hap->get_mdns_txt_string,
+		) )
+	{
+		$OpenHAP::logger->info(
+			'Registered mDNS service: %s._hap._tcp port %d',
+			$hap_name, $hap_port );
+	}
+	else {
+		$OpenHAP::logger->warning(
+			'mDNS registration failed: %s',
+			$mdns->error // 'unknown'
+		);
+	}
+}
+else {
+	$OpenHAP::logger->warning(
+		'mdnsd not available - mDNS registration unavailable (%s)',
+		$mdns->error // 'unknown' );
+}
 
 if ( !$hap->is_paired() ) {
 	$OpenHAP::logger->notice( 'Not paired - use Home app with PIN: %s',
@@ -169,8 +193,9 @@ $sig->add_cleanup(
 			'Received signal %s, shutting down gracefully',
 			$signal );
 
-		# Terminate mdnsctl child process
-		$mdns->unregister_service();
+		# Closing the mdnsd control socket withdraws the
+		# advertisement
+		$mdns->withdraw;
 
 		$OpenHAP::logger = undef;    # Close logger
 	} );

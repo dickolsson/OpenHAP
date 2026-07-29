@@ -145,10 +145,25 @@ sub _refresh_mdns ($self)
 	return if ( $self->{last_paired_state} // -1 ) == $paired;
 
 	$self->{last_paired_state} = $paired;
-	$self->{mdns}->update_txt_records( $self->get_mdns_txt_records );
-	$OpenHAP::logger->info(
-		'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
-		$paired ? 0 : 1 );
+
+	# Never drive an update onto an unpublished handle: the daemon
+	# may have started with mdnsd down, and this runs on the
+	# pairing path, where a write to a dead socket must not be
+	# reachable
+	return unless $self->{mdns}->is_published;
+
+	if ( $self->{mdns}->update_txt( txt => $self->get_mdns_txt_string ) ) {
+		$OpenHAP::logger->info(
+			'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
+			$paired ? 0 : 1
+		);
+	}
+	else {
+		$OpenHAP::logger->warning(
+			'mDNS TXT update failed: %s',
+			$self->{mdns}->error // 'unknown'
+		);
+	}
 
 	return;
 }
@@ -1103,6 +1118,18 @@ sub get_mdns_txt_records ($self)
 	}
 
 	return $records;
+}
+
+# $self->get_mdns_txt_string():
+#	the TXT records formatted for the advertisement: key=value
+#	pairs joined with '.' in sorted key order. mdnsd's TXT
+#	delimiter makes the ordering observable on the wire
+#	(MDNS-Control.md §5), so it is kept deterministic
+sub get_mdns_txt_string ($self)
+{
+	my $records = $self->get_mdns_txt_records;
+
+	return join '.', map { "$_=$records->{$_}" } sort keys %$records;
 }
 
 # _get_setup_hash() - Calculate setup hash for mDNS

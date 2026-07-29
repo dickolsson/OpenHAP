@@ -148,17 +148,48 @@ use_ok('OpenHAP::Pairing');
     is($hap3->get_mdns_txt_records->{'c#'}, 2, 'TXT c# reflects change');
 }
 
+# TXT string formatter: key=value pairs joined with '.' in sorted key
+# order - mdnsd's TXT delimiter makes the ordering observable, so it
+# must be deterministic ([HAP-mDNS §2])
+{
+    my $temp_dir = tempdir(CLEANUP => 1);
+    my $hap = OpenHAP::HAP->new(
+        port         => 51836,
+        pin          => '123-45-678',
+        storage_path => $temp_dir,
+    );
+
+    my $txt     = $hap->get_mdns_txt_string;
+    my $records = $hap->get_mdns_txt_records;
+
+    # No default value carries a '.', so the pairs split back apart
+    my @pairs = split /\./, $txt;
+    is(scalar @pairs, scalar keys %$records,
+        '[HAP-mDNS §2] every TXT record is one dot-separated pair');
+
+    my @keys = map { /^([^=]+)=/ ? $1 : () } @pairs;
+    is_deeply(\@keys, [sort keys %$records],
+        'pairs appear in sorted key order');
+
+    my %parsed = map { split /=/, $_, 2 } @pairs;
+    is_deeply(\%parsed, $records, 'formatted string carries the records');
+}
+
 # Test mDNS re-advertisement on pairing change ([HAP-mDNS §8])
 {
     package MockMDNS;
 
-    sub new($class) { bless { updates => [] }, $class }
+    sub new($class) { bless { updates => [], published => 1 }, $class }
 
-    sub update_txt_records($self, $records)
+    sub is_published($self) { return $self->{published} }
+
+    sub update_txt($self, %args)
     {
-        push @{ $self->{updates} }, $records;
+        push @{ $self->{updates} }, $args{txt};
         return 1;
     }
+
+    sub error($self) { return }
 
     package main;
 
@@ -180,13 +211,23 @@ use_ok('OpenHAP::Pairing');
     $hap->_refresh_mdns;
     is(scalar @{ $mdns->{updates} }, 1,
         '[HAP-mDNS §8] TXT re-advertised when pairing added');
-    is($mdns->{updates}[0]{sf}, 0, 'advertised sf=0 once paired');
+    like($mdns->{updates}[0], qr/(?:^|\.)sf=0(?:\.|$)/,
+        'advertised sf=0 once paired');
 
     # Pairing removed: re-advertised again with sf=1
     $hap->{storage}->remove_all_pairings;
     $hap->_refresh_mdns;
-    is($mdns->{updates}[1]{sf}, 1,
+    like($mdns->{updates}[1], qr/(?:^|\.)sf=1(?:\.|$)/,
         '[HAP-mDNS §8] advertised sf=1 when pairing removed');
+
+    # Unpublished handle: the pairing path must never drive an update
+    # onto it (the guard that used to live inside OpenHAP::MDNS)
+    $mdns->{published} = 0;
+    $hap->{storage}->save_pairing('controller', 'X' x 32, 1);
+    $hap->_refresh_mdns;
+    is(scalar @{ $mdns->{updates} }, 2,
+        'no TXT update pushed while unpublished');
+    $hap->{storage}->remove_all_pairings;
 }
 
 # Event emission behavior ([HAP-HTTP §14]) is covered end-to-end by

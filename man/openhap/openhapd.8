@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: December 26 2025 $
+.Dd $Mdocdate: July 29 2026 $
 .Dt OPENHAPD 8
 .Os
 .Sh NAME
@@ -53,6 +53,25 @@ HKDF-SHA-512 for key derivation
 .It
 mDNS service advertisement
 .El
+.Pp
+The service is advertised over mDNS by talking to
+.Xr mdnsd 8
+directly on its control socket,
+.Pa /var/run/mdnsd.sock .
+.Nm
+holds that socket open for its lifetime and spawns no helper process;
+closing it on shutdown is what withdraws the advertisement.
+.Xr mdnsd 8
+must be running when
+.Nm
+starts for the accessory to be discoverable.
+Without it the daemon still starts and serves paired controllers,
+logging a warning;
+discovery remains unavailable until
+.Nm
+is restarted with
+.Xr mdnsd 8
+running.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -148,6 +167,7 @@ An encrypted session was successfully negotiated with a paired controller.
 .Xr syslog 3 ,
 .Xr openhapd.conf 5 ,
 .Xr hapctl 8 ,
+.Xr mdnsd 8 ,
 .Xr rc 8 ,
 .Xr rc.conf 8
 .Pp
@@ -180,9 +200,12 @@ as a native implementation of the HomeKit Accessory Protocol.
 .Nm
 requires a working MQTT broker (such as
 .Xr mosquitto 8 )
-and an mDNS daemon (such as
-.Xr mdnsd 8 )
+and a running
+.Xr mdnsd 8
 to function properly.
+Without either, the daemon starts and serves what it can:
+MQTT reconnects in the background,
+while mDNS discovery stays unavailable until the daemon is restarted.
 .Pp
 The HAP PIN code is logged on first startup when the accessory is unpaired.
 Protect access to system logs accordingly.
