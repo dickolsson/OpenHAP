@@ -107,7 +107,7 @@ sub _scan_citations ($dir)
 		    or die "spec-coverage: open $path: $!\n";
 		while ( my $line = <$fh> ) {
 			while ( $line =~
-/\[((?:HAP|MQTT)[A-Za-z0-9-]*) §([0-9][0-9.]*)(?:\/([^\]]+))?\]/g
+/\[((?:HAP|MQTT|MDNS)[A-Za-z0-9-]*) §([0-9][0-9.]*)(?:\/([^\]]+))?\]/g
 			    )
 			{
 				my ( $stem, $section, $row ) = ( $1, $2, $3 );
