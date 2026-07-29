@@ -51,13 +51,7 @@ like($output, qr/\Q$hap_name\E/i,
 
 # No child processes: the daemon publishes over a socket, it does not
 # spawn a helper. pgrep -P lists children of the daemon's pid.
-my ($daemon_pid) = do {
-	open my $fh, '<', '/var/run/openhapd.pid' or die "pidfile: $!";
-	my $pid = <$fh>;
-	close $fh;
-	chomp $pid;
-	$pid;
-};
+chomp( my $daemon_pid = `pgrep -f 'perl.*openhapd' | head -1` );
 like($daemon_pid, qr/^\d+$/, 'daemon pid known');
 
 my $children = `pgrep -P $daemon_pid 2>/dev/null`;
