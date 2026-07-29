@@ -276,3 +276,87 @@ with mode 0700.
 .Nm
 currently only supports Tasmota devices.
 Additional device types and protocols may be added in future versions.
+.Sh SECURITY CONSIDERATIONS
+.Nm
+starts as root to fix the ownership of
+.Pa /var/db/openhapd ,
+drops to the
+.Dq _openhap
+user,
+publishes its mDNS advertisement,
+and only then restricts itself \(em first the filesystem view with
+.Xr unveil 2 ,
+then the syscall surface with
+.Xr pledge 2
+\(em before accepting any network connection.
+Applying the restrictions after the privilege drop means they confine
+everything that ever handles untrusted input;
+they do not, and cannot, confine the brief root phase, which handles
+none.
+.Pp
+The promise set is
+.Dq stdio rpath wpath cpath fattr flock inet dns unix :
+.Bl -tag -width "wpath cpathXX" -compact
+.It Cm stdio
+always required.
+.It Cm rpath
+.Pa /dev/urandom ,
+state reads, and the lazily loaded MQTT module.
+.It Cm wpath , cpath
+writing, creating and removing state files, and the daemon log.
+.It Cm fattr
+key material is chmodded to 0600.
+.It Cm flock
+state files are lock-protected.
+.It Cm inet
+the HAP listener and MQTT connections.
+.It Cm dns
+resolving
+.Cm mqtt_host
+when it is a name.
+.It Cm unix
+re-advertising after a pairing change reconnects to
+.Xr mdnsd 8 .
+.El
+.Pp
+The
+.Cm proc ,
+.Cm exec
+and
+.Cm prot_exec
+promises are deliberately absent:
+the daemon spawns no processes and loads no shared objects after
+startup.
+The unveiled paths and their dispositions are listed in
+.Sx FILES .
+.Pp
+The
+.Xr mdnsd 8
+control socket is created root:wheel with mode 0660,
+so the
+.Dq _openhap
+user must be able to open it read-write;
+the standard setup arranges this through wheel group membership.
+.Pp
+Enforcement is
+.Ox No only .
+Linux and Darwin are development platforms where both mechanisms are
+no-ops;
+a deployment there runs unrestricted, whatever the rest of this page
+says.
+.Pp
+A pledge violation kills the daemon immediately with
+.Dv SIGABRT ,
+and the kernel logs a line to
+.Xr dmesg 8
+and
+.Pa /var/log/messages
+naming the process and the forbidden syscall \(em if
+.Nm
+dies unexpectedly, look there before anywhere else.
+A path outside the unveiled view does not kill anything;
+the affected operation fails with
+.Er ENOENT
+or
+.Er EACCES ,
+typically surfacing as a warning in the daemon log.

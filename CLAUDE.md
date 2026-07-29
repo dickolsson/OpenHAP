@@ -11,7 +11,8 @@ The repo contains three Perl namespaces with distinct concerns:
 
 - `OpenHAP::` (`lib/OpenHAP/`) — the HAP server itself
 - `FuguLib::` (`lib/FuguLib/`) — generic OpenBSD-style daemon utilities
-  (daemonize, privilege drop, signals, logging, process, state)
+  (daemonize, privilege drop, signals, logging, process, state, pledge/unveil,
+  imsg framing, mdnsd publishing)
 - `OpenHVF::` (`lib/OpenHVF/`) — installs and manages OpenBSD VMs under QEMU,
   driven by `bin/openhvf` and `.openhvfrc`. Keep it OpenHAP-agnostic: this repo
   is its first user, not its purpose. Development-only, never shipped
