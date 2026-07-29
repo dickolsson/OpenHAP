@@ -63,6 +63,11 @@ waitpid $pid, 0;
 my $kdump = `kdump -f $trace 2>&1`;
 ok(length $kdump, 'kdump produced a trace');
 
+# kdump folds long string records at the screen width with a
+# backslash-newline-tab continuation; the 49-byte promise string folds
+# mid-word, so joined lines are what the assertions must see
+$kdump =~ s/\\\n\t//g;
+
 # The pledge syscall, with the promise-string argument exactly the
 # production set: an empty string, a typo, or a stray "proc exec"
 # all fail here. The kernel ktraces the copied-in promise string as a
