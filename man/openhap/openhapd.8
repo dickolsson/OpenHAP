@@ -134,6 +134,44 @@ Long-term public key (Ed25519 public key).
 .It Pa /var/run/openhapd.pid
 Process ID file.
 .El
+.Pp
+On
+.Ox
+the running daemon locks its filesystem view down with
+.Xr unveil 2
+and can read
+.Em nothing
+outside the list below \(em an operator wondering why
+.Nm
+cannot see a file should look here first.
+Paths marked optional may be absent without preventing startup;
+a missing required path is a fatal configuration error.
+.Bl -tag -width "/var/run/mdnsd.sockXX" -compact
+.It Pa db_path
+(required, read-write-create) the state directory above.
+.It Pa /dev/urandom
+(required, read) randomness for all key material.
+.It perl library directories
+(required, read) the interpreter's library tree, for the one lazily
+loaded module on the MQTT reconnect path.
+.It Pa config file
+(optional, read) the file named with
+.Fl c .
+.It Pa /var/log/openhapd.log
+(optional, write) the daemon-mode log; never created in
+.Fl f
+mode.
+.It Pa /var/run/mdnsd.sock
+(optional, read-write) re-advertising after a pairing change
+reconnects to
+.Xr mdnsd 8 .
+.It Pa /etc/resolv.conf , Pa /etc/hosts , Pa /etc/services , Pa /etc/protocols
+(optional, read) the resolver files, used when
+.Cm mqtt_host
+is a name rather than an address.
+.It Pa /etc/localtime
+(optional, read) timestamps.
+.El
 .Sh EXAMPLES
 Check the configuration file:
 .Bd -literal -offset indent

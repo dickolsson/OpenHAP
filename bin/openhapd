@@ -181,19 +181,46 @@ else {
 		$mdns->error // 'unknown' );
 }
 
-# Resolve the one module the daemon loads lazily, before pledge and
-# unveil restrict us. Net::MQTT::Simple is pure Perl, so this is not
-# about prot_exec - it is about its transitive dependencies (sockets,
-# and whatever getprotobyname touches) being resolved while @INC is
-# still fully reachable. It stays optional: it is the only cpan
-# runtime dependency, and openhapd keeps serving HomeKit without it,
-# so an unguarded require would turn a missing optional dependency
-# into a startup failure. If a future change introduces another
-# lazily-loaded module, it belongs here.
+# Restrict the process for good; FuguLib::Sandbox is a no-op off
+# OpenBSD. Four steps whose order is load-bearing, all after the
+# privilege drop (unveil only removes reachability, so applying it as
+# _openhap keeps the root-only chown loop above working):
+#
+#	1. resolve the lazy load - it reads from the library tree
+#	2. unveil the filesystem view
+#	3. lock the view
+#	4. pledge the syscall surface
+#
+# Step 1: Net::MQTT::Simple is pure Perl, so this is not about
+# prot_exec - it is about its transitive dependencies (sockets, and
+# whatever getprotobyname touches) being resolved while @INC is still
+# fully reachable. It stays optional: it is the only cpan runtime
+# dependency, and openhapd keeps serving HomeKit without it, so an
+# unguarded require would turn a missing optional dependency into a
+# startup failure. If a future change introduces another lazily-loaded
+# module, it belongs here.
 eval { require Net::MQTT::Simple; 1 };
 
-# Restrict the process for good; FuguLib::Sandbox is a no-op off
-# OpenBSD. One promise set, applied once, before any network input is
+# Steps 2 and 3: the inventory (with its required/optional
+# dispositions) is assembled by OpenHAP::Daemon->unveil_paths;
+# Storage's make_path already created $db_path via HAP->new, so a
+# $db_path that is still missing is a hard failure, and correctly so
+FuguLib::Sandbox->unveil(
+	paths => [
+		OpenHAP::Daemon->unveil_paths(
+			db_path     => $db_path,
+			config_file => $config_file,
+			script_lib  => "$RealBin/../lib",
+		)
+	],
+	on_skip => sub ($path) {
+		$OpenHAP::logger->debug( 'unveil: optional %s absent, skipped',
+			$path );
+	},
+);
+FuguLib::Sandbox->unveil_lock;
+
+# Step 4: one promise set, applied once, before any network input is
 # handled:
 #
 #	stdio	always

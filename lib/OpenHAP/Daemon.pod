@@ -60,6 +60,29 @@ Check if a daemon is running based on its PID file. Returns the PID if
 the process exists, undef otherwise. This method reads the PID file and
 verifies the process is still running using kill(0).
 
+=head2 unveil_paths
+
+    my @paths = $class->unveil_paths(
+        db_path     => '/var/db/openhapd',
+        config_file => '/etc/openhapd.conf',
+        script_lib  => "$RealBin/../lib",
+    );
+
+Assemble the daemon's unveil(2) inventory: an ordered list of
+C<[$path, $perms]> pairs for L<FuguLib::Sandbox>, each required or
+marked C<< { optional => 1 } >>. Required paths (the state directory,
+F</dev/urandom>, the perl library directories) are a broken install
+when absent; optional paths (the configuration file, the daemon log,
+the mdnsd control socket, the resolver files) are legitimately absent
+on a working system and must never prevent startup.
+
+The library directories are enumerated from C<%Config>, never derived
+from live C<@INC>; C<script_lib> is included read-only only when it
+contains an F<OpenHAP/> directory, so an installed layout never
+unveils F</usr/local/lib>. Pure assembly - nothing here changes the
+filesystem view - so it is unit-testable anywhere. C<perl_dirs>
+overrides the enumerated directories for tests.
+
 =head1 SECURITY CONSIDERATIONS
 
 The daemonize() method sets C<$DB::inhibit_exit = 0> after forking to
