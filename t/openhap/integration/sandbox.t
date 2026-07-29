@@ -42,10 +42,14 @@ system('rcctl stop openhapd >/dev/null 2>&1');
 sleep 1;
 
 # Run the daemon in the foreground under ktrace; -i follows any
-# children (there must be none, and that is asserted below)
+# children (there must be none, and that is asserted below). Invoke
+# perl on the script directly: the daemon's #!/usr/bin/env shebang
+# would put env in the trace, and env pledges "stdio exec" itself,
+# which would poison the promise assertions below.
 my $pid = fork // die "fork: $!";
 if ($pid == 0) {
-	exec 'ktrace', '-i', '-f', $trace, $daemon, '-f', '-c', $config_file;
+	exec 'ktrace', '-i', '-f', $trace, $^X, $daemon, '-f', '-c',
+	    $config_file;
 	die "exec ktrace: $!";
 }
 

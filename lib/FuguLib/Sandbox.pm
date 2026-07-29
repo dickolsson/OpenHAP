@@ -88,18 +88,34 @@ sub unveil ( $, %args )
 		die 'unveil entry must be [$path, $perms]'
 		    unless ref $entry eq 'ARRAY'
 		    && defined $entry->[0]
-		    && defined $entry->[1];
+		    && defined $entry->[1]
+		    && ( @$entry < 3 || ref $entry->[2] eq 'HASH' );
 	}
 
 	return 1 unless SUPPORTED;
 
+	# Settle every disposition before the first unveil(2) call: that
+	# call already hides the rest of the filesystem, so a later
+	# existence test would see nothing. The check also carries the
+	# required-path contract - unveil(2) itself succeeds on a
+	# missing final component as long as the parent exists, so the
+	# syscall alone would silently accept a typo'd required path.
+	my @apply;
 	for my $entry (@$paths) {
 		my ( $path, $perms, $opts ) = @$entry;
 
-		if ( $opts->{optional} && !-e $path ) {
-			$args{on_skip}->($path) if $args{on_skip};
-			next;
+		if ( !-e $path ) {
+			if ( $opts->{optional} ) {
+				$args{on_skip}->($path) if $args{on_skip};
+				next;
+			}
+			die "unveil($path, $perms): required path is absent";
 		}
+		push @apply, [ $path, $perms ];
+	}
+
+	for my $entry (@apply) {
+		my ( $path, $perms ) = @$entry;
 
 		OpenBSD::Unveil::unveil( $path, $perms )
 		    or die "unveil($path, $perms): $!";

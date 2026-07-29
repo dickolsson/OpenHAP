@@ -123,15 +123,20 @@ if ( $> == 0 ) {
 		    or $OpenHAP::logger->warning("Cannot chown $db_path: $!");
 
 		# Also chown any existing files in the directory
-		opendir( my $dh, $db_path ) or next;
-		while ( my $file = readdir($dh) ) {
-			next if $file =~ /^\.\.?$/;
-			my $path = "$db_path/$file";
-			chown $uid, $gid, $path
-			    or
-			    $OpenHAP::logger->warning("Cannot chown $path: $!");
+		if ( opendir( my $dh, $db_path ) ) {
+			while ( my $file = readdir($dh) ) {
+				next if $file =~ /^\.\.?$/;
+				my $path = "$db_path/$file";
+				chown $uid, $gid, $path
+				    or $OpenHAP::logger->warning(
+					"Cannot chown $path: $!");
+			}
+			closedir($dh);
 		}
-		closedir($dh);
+		else {
+			$OpenHAP::logger->warning(
+				"Cannot opendir $db_path: $!");
+		}
 	}
 
 	use FuguLib::Privdrop;

@@ -22,7 +22,10 @@ my $dir = tempdir( CLEANUP => 1 );
 # run_child($source):
 #	Run perl code in a subprocess with core dumps disabled - the
 #	SIGABRT from a pledge violation would otherwise drop perl.core
-#	into the repository root. Returns the raw wait status.
+#	into the repository root. The shell must exec perl rather than
+#	fork it: a forked child's death-by-signal is reaped by the
+#	shell and reported as exit code 134, losing the signal from
+#	the wait status this returns.
 sub run_child ($source)
 {
 	my $script = "$dir/child-$$-" . int( rand 10000 ) . '.pl';
@@ -30,7 +33,7 @@ sub run_child ($source)
 	print $fh $source;
 	close $fh;
 
-	system( 'sh', '-c', "ulimit -c 0; '$^X' -I'$lib' '$script'" );
+	system( 'sh', '-c', "ulimit -c 0; exec '$^X' -I'$lib' '$script'" );
 	unlink $script;
 
 	return $?;
