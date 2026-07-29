@@ -8,6 +8,7 @@ use OpenHAP::HAP;
 use OpenHAP::Config;
 use FuguLib::Log;
 use FuguLib::MDNS;
+use FuguLib::Sandbox;
 use OpenHAP::MQTT;
 use OpenHAP::Daemon;
 use OpenHAP::DeviceLoader;
@@ -179,6 +180,42 @@ else {
 		'mdnsd not available - mDNS registration unavailable (%s)',
 		$mdns->error // 'unknown' );
 }
+
+# Resolve the one module the daemon loads lazily, before pledge and
+# unveil restrict us. Net::MQTT::Simple is pure Perl, so this is not
+# about prot_exec - it is about its transitive dependencies (sockets,
+# and whatever getprotobyname touches) being resolved while @INC is
+# still fully reachable. It stays optional: it is the only cpan
+# runtime dependency, and openhapd keeps serving HomeKit without it,
+# so an unguarded require would turn a missing optional dependency
+# into a startup failure. If a future change introduces another
+# lazily-loaded module, it belongs here.
+eval { require Net::MQTT::Simple; 1 };
+
+# Restrict the process for good; FuguLib::Sandbox is a no-op off
+# OpenBSD. One promise set, applied once, before any network input is
+# handled:
+#
+#	stdio	always
+#	rpath	/dev/urandom (Crypto), Storage reads, lazy require
+#	wpath	Storage writes, the daemon log
+#	cpath	Storage file creation and removal, make_path
+#	fattr	chmod 0600 on stored key material (Storage)
+#	flock	Storage locking
+#	inet	the HAP listener, MQTT connects and reconnects
+#	dns	resolving mqtt_host when it is a name
+#	unix	reconnecting to mdnsd: update_txt withdraws and
+#		republishes over a fresh control socket, so socket(2)
+#		and connect(2) on the AF_UNIX path happen after this
+#		point (spec/MDNS-Control.md §8)
+#
+# proc, exec and prot_exec are deliberately absent: the daemon spawns
+# nothing, and every shared object is loaded by a compile-time use
+# before this line.
+my $promises = 'stdio rpath wpath cpath fattr flock inet dns unix';
+FuguLib::Sandbox->pledge( promises => $promises );
+$OpenHAP::logger->info( 'Pledged: %s', $promises )
+    if FuguLib::Sandbox->is_supported;
 
 if ( !$hap->is_paired() ) {
 	$OpenHAP::logger->notice( 'Not paired - use Home app with PIN: %s',

@@ -73,6 +73,24 @@ is restarted with
 .Xr mdnsd 8
 running.
 .Pp
+On
+.Ox ,
+once the daemon has dropped privileges and advertised itself,
+it restricts its own syscall surface with
+.Xr pledge 2
+to
+.Dq stdio rpath wpath cpath fattr flock inet dns unix
+before handling any network input;
+the
+.Dq proc ,
+.Dq exec
+and
+.Dq prot_exec
+promises are deliberately absent.
+.Ox
+is the only platform where this is enforced;
+on other systems the daemon runs unrestricted.
+.Pp
 The options are as follows:
 .Bl -tag -width Ds
 .It Fl c Ar file
