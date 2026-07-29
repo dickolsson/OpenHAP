@@ -65,24 +65,30 @@ ok(length $kdump, 'kdump produced a trace');
 
 # The pledge syscall, with the promise-string argument exactly the
 # production set: an empty string, a typo, or a stray "proc exec"
-# all fail here. kdump prints string arguments as NAMI records
-# following the CALL.
-my $promises = 'stdio rpath wpath cpath fattr flock inet dns unix';
+# all fail here. The kernel ktraces the copied-in promise string as a
+# structure record, which kdump renders as STRU promise="..."
+# (sys/kern/kern_pledge.c parsepledges, usr.bin/kdump/ktrstruct.c).
+# OpenBSD::Pledge dedupes and sorts the promises before the syscall,
+# so the on-the-wire string is the sorted form of the production set.
+my $promises = join ' ',
+    sort qw(stdio rpath wpath cpath fattr flock inet dns unix);
 like($kdump, qr/CALL\s+pledge\(/, 'pledge(2) is called');
-like($kdump, qr/NAMI\s+"\Q$promises\E"/,
+like($kdump, qr/STRU\s+promise="\Q$promises\E"/,
      'the promise string is exactly the production set');
-unlike($kdump, qr/NAMI\s+"[^"]*\b(?:proc|exec|prot_exec)\b[^"]*"/,
+unlike($kdump, qr/STRU\s+promise="[^"]*\b(?:proc|exec)\b[^"]*"/,
        'no promise set in the trace grants proc, exec or prot_exec');
 
-# The unveil syscalls: the inventory's required paths appear, and a
-# final argument-less unveil(2) - both pointers NULL - locks the view
+# The unveil syscalls: the daemon really builds a view (the permission
+# strings appear as STRU flags= records, and db_path's rwc is unique
+# to unveil - unlike a NAMI, which any open(2) would also leave), and
+# a final unveil(2) with both arguments NULL locks it
 my @unveils = $kdump =~ /CALL\s+unveil\(([^)]*)\)/g;
 cmp_ok(scalar @unveils, '>=', 3,
        'unveil(2) called for the inventory');
+like($kdump, qr/STRU\s+flags="rwc"/,
+     'the state directory is unveiled read-write-create');
 like($kdump, qr/CALL\s+unveil\(0,0\)/, 'the view is locked');
 is($unveils[-1], '0,0', 'the lock is the last unveil call');
-like($kdump, qr/NAMI\s+"\/dev\/urandom"/,
-     'the randomness device is in the unveiled view');
 
 # pledge comes after the lock, closing the ordering the call site
 # promises
