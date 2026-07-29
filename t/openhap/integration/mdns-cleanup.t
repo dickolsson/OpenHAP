@@ -1,9 +1,12 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Integration test: mDNS process cleanup on daemon shutdown
+# Integration test: mDNS advertisement lifetime and process hygiene.
+# The daemon speaks the mdnsd control protocol over a held socket:
+# there is no child process, no mdnsctl.log, and closing the socket
+# (daemon exit) is what withdraws the advertisement.
 
 use v5.36;
-use Test::More tests => 6;
+use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
@@ -13,68 +16,84 @@ use Time::HiRes qw(sleep);
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
 
-# mdnsd must be running for openhapd to spawn mdnsctl publishers
-# (started if needed; failure emits captured diagnostics)
-die "mdnsd required for mDNS cleanup tests\n"
+die "mdnsd required for mDNS lifetime tests\n"
     unless $env->ensure_mdnsd_running;
 
-# Restart openhapd so it registers with the running mdnsd
+my $db_path = $env->get_config_value('db_path') // '/var/db/openhapd';
+my $hap_name = $env->get_config_value('hap_name') // 'OpenHAP';
+
+# Remove any mdnsctl.log a pre-rewrite daemon left behind, so the
+# assertion below fails only if the running daemon creates one
+unlink "$db_path/mdnsctl.log";
+
+# Restart openhapd so it publishes against the running mdnsd
 system('rcctl restart openhapd >/dev/null 2>&1');
-sleep 2;
+$env->wait_for_hap_port or die "daemon not serving after restart\n";
 
-# Test 1: Daemon is running initially
-my $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
-ok($running, 'daemon is running');
+ok(system('rcctl check openhapd >/dev/null 2>&1') == 0,
+   'daemon is running');
 
-# Test 2: mdnsctl process exists while daemon is running
-sleep 1;    # Allow mdnsctl to start
-my $mdnsctl_count = count_mdnsctl_processes();
-ok($mdnsctl_count > 0,
-   "mdnsctl process running while daemon active ($mdnsctl_count found)");
-
-# Test 3: Note the mdnsctl PID(s) for later comparison
-my @initial_pids = get_mdnsctl_pids();
-ok(@initial_pids > 0, 'captured mdnsctl PID(s)');
-
-# Test 4: Stop the daemon
-system('rcctl stop openhapd >/dev/null 2>&1');
-sleep 2;    # Allow cleanup to complete
-
-my $stopped = system('rcctl check openhapd >/dev/null 2>&1') != 0;
-ok($stopped, 'daemon stopped successfully');
-
-# Test 5: mdnsctl process should be terminated
-$mdnsctl_count = count_mdnsctl_processes();
-is($mdnsctl_count, 0, 'mdnsctl process terminated after daemon stop');
-
-# Test 6: Verify the specific PIDs are gone
-my $orphans_remaining = 0;
-for my $pid (@initial_pids) {
-	if (kill(0, $pid)) {
-		$orphans_remaining++;
-	}
+# browse(): one bounded observation of the advertised services
+sub browse
+{
+	return `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
 }
-is($orphans_remaining, 0,
-   'no orphaned mdnsctl processes from initial daemon');
 
-# Restart daemon for other tests
-system('rcctl start openhapd >/dev/null 2>&1');
+# The advertisement is visible while the daemon holds its socket
+my $deadline = time + 30;
+my $output   = browse();
+while ($output !~ /\Q$hap_name\E/i && time < $deadline) {
+	sleep 1;
+	$output = browse();
+}
+like($output, qr/\Q$hap_name\E/i,
+     'service advertised while the daemon runs');
+
+# No child processes: the daemon publishes over a socket, it does not
+# spawn a helper. pgrep -P lists children of the daemon's pid.
+my ($daemon_pid) = do {
+	open my $fh, '<', '/var/run/openhapd.pid' or die "pidfile: $!";
+	my $pid = <$fh>;
+	close $fh;
+	chomp $pid;
+	$pid;
+};
+like($daemon_pid, qr/^\d+$/, 'daemon pid known');
+
+my $children = `pgrep -P $daemon_pid 2>/dev/null`;
+is($children, '', 'daemon has no child processes at all');
+
+# No mdnsctl.log: the log file existed only for the mdnsctl child
+ok(!-e "$db_path/mdnsctl.log", 'no mdnsctl.log is created');
+
+# Stopping the daemon closes the control socket, which withdraws the
+# advertisement within a few seconds - no signal, no kill, no child
+system('rcctl stop openhapd >/dev/null 2>&1');
+sleep 2;
+ok(system('rcctl check openhapd >/dev/null 2>&1') != 0,
+   'daemon stopped');
+
+$deadline = time + 30;
+$output   = browse();
+while ($output =~ /\Q$hap_name\E/i && time < $deadline) {
+	sleep 1;
+	$output = browse();
+}
+unlike($output, qr/\Q$hap_name\E/i,
+       'advertisement withdrawn after the daemon exits');
+
+# The daemon starts and serves with mdnsd stopped: discovery degrades,
+# HAP service does not
+system('rcctl stop mdnsd >/dev/null 2>&1');
 sleep 1;
+system('rcctl start openhapd >/dev/null 2>&1');
+ok($env->wait_for_hap_port, 'daemon serves HAP with mdnsd stopped');
+
+# Restore the environment for the files that run after this one
+system('rcctl stop openhapd >/dev/null 2>&1');
+die "cannot restart mdnsd\n" unless $env->ensure_mdnsd_running;
+system('rcctl start openhapd >/dev/null 2>&1');
+$env->wait_for_hap_port or die "daemon not serving after restore\n";
 
 $env->teardown;
-
-# Helper: count mdnsctl publish processes
-sub count_mdnsctl_processes
-{
-	my $output = `ps -axo pid,command | grep 'mdnsctl publish' | grep -v grep 2>/dev/null || true`;
-	my @pids = grep { /^\s*\d+/ } split /\n/, $output;
-	return scalar @pids;
-}
-
-# Helper: get mdnsctl PIDs
-sub get_mdnsctl_pids
-{
-	my $output = `ps -axo pid,command | grep 'mdnsctl publish' | grep -v grep 2>/dev/null || true`;
-	my @pids = map { /^\s*(\d+)/ ? $1 : () } split /\n/, $output;
-	return @pids;
-}
+done_testing();

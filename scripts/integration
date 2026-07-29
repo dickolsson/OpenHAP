@@ -37,16 +37,13 @@ cd /tmp && tar xzf tests.tar.gz
 # shared mocks in t/lib) over the installed copies
 cp -R lib/OpenHAP/Test /usr/local/libdata/perl5/site_perl/OpenHAP/
 
-# Clean up any orphaned processes from previous test runs, gracefully:
-# a SIGKILLed mdnsctl leaves mdnsd holding a dead client socket, which
-# is a suspected cause of mdnsd exiting under client churn. TERM first,
-# KILL only stragglers.
+# Clean up any orphaned daemon from previous test runs, gracefully:
+# TERM first, KILL only stragglers. A clean exit closes the mdnsd
+# control socket, which is what withdraws the advertisement.
 rcctl stop openhapd >/dev/null 2>&1 || true
 pkill -f 'perl.*openhapd' 2>/dev/null || true
-pkill mdnsctl 2>/dev/null || true
 sleep 2
 pkill -9 -f 'perl.*openhapd' 2>/dev/null || true
-pkill -9 mdnsctl 2>/dev/null || true
 sleep 1
 
 # Start the daemon fresh
@@ -95,7 +92,7 @@ if [ ${result} -ne 0 ]; then
 		cat /var/db/openhapd/pairings.db 2>/dev/null' || true
 	echo "-- service status --"
 	vm_run 'rcctl check openhapd; rcctl check mdnsd; rcctl get mdnsd;
-		ps -axo pid,command | grep -e mdnsd -e mdnsctl |
+		ps -axo pid,command | grep -e mdnsd |
 		grep -v grep' || true
 fi
 

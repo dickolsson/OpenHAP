@@ -46,8 +46,10 @@ Integration tests require:
 
 =item * mosquitto(8) installed and startable via rcctl (MQTT tests)
 
-=item * mdnsd(8) and mdnsctl(8) installed, with mdnsd's flags set to a
-usable network interface and startable via rcctl (mDNS tests)
+=item * mdnsd(8) installed, with its flags set to a usable network
+interface and startable via rcctl; mdnsctl(8) installed as the browsing
+tool the mDNS tests observe advertisements with (the daemon itself no
+longer invokes it)
 
 =back
 
@@ -151,7 +153,18 @@ C<id>, C<name>, and C<topic>.
 
     $env->ensure_daemon_running or die "Cannot start daemon";
 
-Ensure openhapd is running.
+Ensure openhapd is running and serving: starts it if needed, then
+waits for the HAP port, since the daemon publishes its mDNS
+advertisement before opening the listener.
+
+=head2 wait_for_hap_port
+
+    $env->wait_for_hap_port or die "daemon not serving";
+    $env->wait_for_hap_port(60);
+
+Wait until the HAP port accepts connections, polling up to the given
+number of seconds (default 30). Use this instead of a fixed sleep
+after restarting the daemon.
 
 =head2 ensure_daemon_stopped
 
