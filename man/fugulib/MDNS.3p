@@ -1,0 +1,142 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 29 2026 $
+.Dt FuguLib::MDNS 3p
+.Os
+.Sh NAME
+.Nm FuguLib::MDNS
+.Nd publish mDNS services through mdnsd
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::MDNS;
+
+my $mdns = FuguLib::MDNS->new;
+
+$mdns->connect
+    or warn 'mdnsd not running: ' . $mdns->error;
+
+$mdns->publish_service(
+    name  => 'My Bridge',
+    app   => 'hap',
+    proto => 'tcp',
+    port  => 51827,
+    txt   => 'c#=1.sf=1',
+) or warn 'publish failed: ' . $mdns->error;
+
+$mdns->update_txt(txt => 'c#=1.sf=0');
+
+$mdns->withdraw;
+.Ed
+.Sh DESCRIPTION
+.Nm
+publishes services with
+.Xr mdnsd 8
+by speaking its control protocol natively over
+.Pa /var/run/mdnsd.sock ,
+with no
+.Xr mdnsctl 8
+child process.
+The connection is the advertisement's lifetime:
+mdnsd withdraws the service when the socket closes, so a daemon keeps
+the object alive for as long as it wants to be discoverable, and
+withdrawing is nothing more than closing.
+.Pp
+The wire protocol \(em message types, payload layouts, the group state
+machine and its timing \(em is specified in
+.Pa spec/MDNS-Control.md
+in the OpenHAP source tree.
+The module never logs;
+every method returns an outcome and records the most recent failure for
+.Fn error .
+.Ss new
+.Fn new "socket_path => $path" "timeout => $seconds"
+creates a handle.
+.Fa socket_path
+defaults to
+.Pa /var/run/mdnsd.sock .
+.Fa timeout
+bounds how long the publish methods wait for mdnsd's replies and
+defaults to 10 seconds;
+a healthy mdnsd confirms publication after roughly four.
+.Ss connect
+.Fn connect
+connects to the control socket.
+Returns 1, or
+.Dv undef
+when the socket is missing or unreachable \(em mdnsd not running is a
+normal condition, and the caller decides whether it matters.
+.Ss publish_service
+.Fo publish_service
+.Fa "name => $instance"
+.Fa "app => $app"
+.Fa "proto => $proto"
+.Fa "port => $port"
+.Fa "txt => $string"
+.Fa "timeout => $seconds"
+.Fc
+advertises one service and waits for mdnsd to confirm publication.
+.Fa name
+is the service instance name;
+mdnsd also uses it as the publish group name, so the two cannot
+disagree.
+.Fa app
+is the application protocol without a leading underscore
+.Pq Dq hap , not Dq _hap ;
+.Fa proto
+must be
+.Dq tcp
+or
+.Dq udp .
+.Fa txt
+is the already-formatted TXT string:
+key=value pairs joined with
+.Ql \&. ,
+which is the delimiter
+.Xr mdnsd 8
+splits on with no escaping.
+The module does not know or care what the keys mean.
+.Pp
+Returns 1 once the service is published.
+Returns
+.Dv undef
+on over-length input (an error, never a silent truncation), on a
+missing connection, on an error reply such as a name collision, on
+end-of-file, or on timeout.
+.Ss update_txt
+.Fn update_txt "txt => $string" "timeout => $seconds"
+replaces the TXT record.
+mdnsd cannot replace records on a held connection, so this withdraws
+the advertisement and republishes over a fresh connection, reusing the
+parameters given to
+.Fn publish_service .
+While unpublished it is a successful no-op.
+.Ss withdraw
+.Fn withdraw
+closes the control socket, which withdraws the advertisement.
+Always returns 1.
+.Ss is_published
+.Fn is_published
+returns true while the service is advertised on a held connection.
+.Ss error
+.Fn error
+returns the most recent failure as a short string, for the caller to
+log.
+.Sh SEE ALSO
+.Xr FuguLib::Imsg 3p ,
+.Xr mdnsd 8
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
