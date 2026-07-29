@@ -126,6 +126,15 @@ sub publish_service ( $self, %args )
 {
 	my $service = $self->_check_service(%args) or return;
 
+	# Republishing on a held connection must go through update_txt:
+	# mdnsd silently ignores the duplicate GROUP_ADD, drops the
+	# ADD_SERVICE, and answers the COMMIT with a success-looking
+	# reply sequence for the old records [MDNS-Control §8]
+	if ( $self->{published} ) {
+		$self->{error} = 'already published';
+		return;
+	}
+
 	if ( !$self->{imsg} ) {
 		$self->{error} = 'not connected';
 		return;
@@ -220,6 +229,13 @@ sub _check_service ( $self, %args )
 	}
 	if ( $service{proto} ne 'tcp' && $service{proto} ne 'udp' ) {
 		$self->{error} = 'proto must be tcp or udp';
+		return;
+	}
+
+	# The wire field is a u16 [MDNS-Control §4]; pack would
+	# silently truncate anything wider
+	if ( $service{port} !~ /^\d+$/ || $service{port} > 65535 ) {
+		$self->{error} = 'port out of range';
 		return;
 	}
 

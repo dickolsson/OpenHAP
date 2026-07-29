@@ -224,6 +224,38 @@ subtest 'over-length fields are errors, not truncations' => sub {
 		'64-byte app is rejected' );
 	ok( !defined $mdns->publish_service( %service, txt => 'x' x 256 ),
 		'256-byte TXT string is rejected' );
+
+	# The wire port field is a u16; pack would truncate modulo 65536
+	ok( !defined $mdns->publish_service( %service, port => 70000 ),
+		'port above 65535 is rejected, not truncated' );
+	like( $mdns->error, qr/port out of range/, 'error says why' );
+};
+
+subtest 'republish on a held connection is refused' => sub {
+
+	# mdnsd ignores the duplicate GROUP_ADD, drops the ADD_SERVICE,
+	# and answers the COMMIT with a success-looking sequence for the
+	# old records - so publish_service must not be callable while
+	# published; replacement goes through update_txt
+	my ( $path, $dump, $pid ) = start_server(
+		sub ( $, $imsg, $fh ) {
+			my $msgs = dump_messages( $imsg, $fh, 3 ) or return 0;
+			my ($name) = unpack 'Z*', $msgs->[0]{data};
+			reply( $imsg, $name, 'published' );
+			drain($imsg);
+			return 0;
+		} );
+
+	my $mdns = FuguLib::MDNS->new( socket_path => $path );
+	ok( $mdns->connect,                   'connected' );
+	ok( $mdns->publish_service(%service), 'published once' );
+	ok( !defined $mdns->publish_service(%service),
+		'second publish on the live handle is refused' );
+	like( $mdns->error, qr/already published/, 'error says why' );
+	ok( $mdns->is_published, 'the original advertisement stands' );
+
+	$mdns->withdraw;
+	waitpid $pid, 0;
 };
 
 subtest 'update_txt is a no-op while unpublished' => sub {

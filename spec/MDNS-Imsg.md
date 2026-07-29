@@ -26,11 +26,13 @@ pre-7.6 descriptions of imsg.
 
 `IMSG_HEADER_SIZE` is `sizeof(struct imsg_hdr)` = 16 (`imsg.h:31`).
 
-All fields are written in the sender's native byte order (`imsg.c:407-410`
-writes the header with host-order `ibuf_set_h32`). Both ends of the control
-socket are the same host, so the wire order is the host's — little-endian on
-every platform this repository targets (OpenBSD aarch64 and amd64). There is no
-byte-order negotiation and no network-order variant.
+All fields are written in the sender's native byte order: the header is copied
+to the wire as its in-memory struct (`imsg_create`, `imsg.c:374-381`) and the
+one field patched afterwards, `len`, is written with host-order `ibuf_set_h32`
+(`imsg.c:403-410`). Both ends of the control socket are the same host, so the
+wire order is the host's — little-endian on every platform this repository
+targets (OpenBSD aarch64 and amd64). There is no byte-order negotiation and no
+network-order variant.
 
 ## 2. Length Semantics
 
@@ -52,8 +54,8 @@ byte-order negotiation and no network-order variant.
 ## 3. peerid and pid
 
 - `peerid` is free for the application. mdnsd clients send 0
-  (`mdnsctl/mdnsl.c:472-476` — `ibuf_send_imsg` passes `peerid = 0`), and mdnsd
-  does not read it.
+  (`mdnsctl/mdnsl.c:500-521` — `ibuf_send_imsg` passes `peerid = 0` to
+  `imsg_create` at `:506-507`), and mdnsd does not read it.
 - `pid` is **sender-specific**: `imsg_create` substitutes the sending process's
   pid when the caller passes 0 (`imsg.c:377-378`, `imsgbuf_init` at `imsg.c:46`
   seeds it from `getpid()`). mdnsd clients always pass 0, so the field carries
@@ -66,8 +68,9 @@ byte-order negotiation and no network-order variant.
 imsg runs over a stream socket; message boundaries exist only in the framing. A
 reader accumulates bytes until it holds 16 header bytes, masks `IMSG_FD_MARK`
 off `len`, validates it (§2), then accumulates until `len` total bytes are
-buffered; anything beyond `len` begins the next message (`imsg.c:426-455`,
-`imsgbuf_read`/`imsg_parse_hdr`). Consequences an implementation must honor:
+buffered; anything beyond `len` begins the next message (`imsgbuf_read` at
+`imsg.c:75-82`, `imsg_parse_hdr` at `imsg.c:430-455`). Consequences an
+implementation must honor:
 
 - A single `read(2)` may return a partial header, a partial payload, or several
   complete messages back to back; none of these is an error.

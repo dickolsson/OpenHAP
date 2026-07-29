@@ -62,10 +62,16 @@ happened.
 
 `IMSG_CTL_GROUP_ADD`, `GROUP_RESET`, `GROUP_COMMIT` and every group reply carry
 the same payload: a `char[MAXHOSTNAMELEN]` — exactly 256 bytes, the group name
-NUL-terminated and NUL-padded to the full width (`mdnsctl/mdnsl.c:235-248`
-zeroes the buffer and `strlcpy`s into it; `mdnsd/control.c:346-347`
-re-terminates defensively). The usable name length is therefore 255 bytes;
-`strlcpy` truncation is rejected client-side (`mdnsctl/mdnsl.c:240-242`).
+NUL-terminated. Only the exact size and the name up to its NUL are meaningful:
+the daemon re-terminates defensively and never reads past the NUL
+(`mdnsd/control.c:346-347`, `:435-436`). The reference client zeroes the buffer
+for `GROUP_ADD` and `GROUP_RESET` (`mdnsctl/mdnsl.c:235-248`, `:251-264`) but
+not for `GROUP_COMMIT` (`:279-292` has no `bzero`), whose tail bytes are
+therefore unspecified on the wire; replies are fully NUL-padded, since
+`pg->name` lives in zeroed storage (`mdnsd/mdns.c:1017-1019`). A client should
+NUL-pad all three — it is deterministic and matches what the daemon guarantees
+to ignore. The usable name length is 255 bytes; `strlcpy` truncation is rejected
+client-side (`mdnsctl/mdnsl.c:240-242`).
 
 ### 3.2 IMSG_CTL_GROUP_ADD_SERVICE
 
@@ -74,7 +80,7 @@ receipt (`mdnsd/control.c:362-392`):
 
 - An empty `target` is replaced with the daemon's own hostname — the short host
   name plus `.local` (`mdnsd/control.c:375-377`, `fetchmyname` at
-  `mdnsd/mdnsd.c:394-405`).
+  `mdnsd/mdnsd.c:188-200`).
 - The group is looked up under the **service's** `name` field, and must exist
   and still be in state `PG_STA_NEW` (added on this connection, not yet
   committed); otherwise the message is dropped with a warning
@@ -186,11 +192,12 @@ for `PUBLISHED` or an error.
 Derived from the constants and the FSM, not yet measured against a live daemon.
 The commit schedules the first probe after a random delay of up to 250 ms
 (`RANDOM_PROBETIME`, `mdnsd/mdnsd.h:49`, `mdnsd/control.c:470-475`). Three
-probes go out 250 ms apart (`INTERVAL_PROBETIME`, `mdnsd/mdnsd.h:48`);
+probes go out 250 ms apart, with one further 250 ms gap into the first
+announcement (`INTERVAL_PROBETIME`, `mdnsd/mdnsd.h:48`, `mdnsd/mdns.c:898-900`);
 announcements follow at 1 s and then 2 s spacing, and the third announcement
-reaches PUBLISHED (`mdnsd/mdns.c:858-947`). End to end, `PUBLISHED` arrives
-roughly **4 to 4.5 seconds after the commit**, and can be delayed a further
-second or more while the daemon's own address records finish announcing
+reaches PUBLISHED (`mdnsd/mdns.c:903-947`). End to end, `PUBLISHED` arrives
+**3.75 to 4 seconds after the commit**, and can be delayed a further second or
+more while the daemon's own address records finish announcing
 (`mdnsd/mdns.c:842-856`). A client timeout that means "mdnsd is broken" must
 comfortably exceed this; ten seconds is a sound default.
 
@@ -317,7 +324,9 @@ offset  bytes                                boundary
 (Payload field offsets are §4's offsets plus the 16-byte header.)
 
 Message 3 — `IMSG_CTL_GROUP_COMMIT`, 272 bytes total: identical to message 1
-except `type` = `0b 00 00 00` (11).
+except `type` = `0b 00 00 00` (11). (The zero padding after the name's NUL is
+the deterministic choice a client should make; the reference `mdnsctl` sends
+unspecified tail bytes here, which the daemon ignores — §3.1.)
 
 Replies — three messages from mdnsd, each 272 bytes, spaced per §6.2: identical
 to message 1 except `type` = `0f 00 00 00` (15, PROBING), then `10 00 00 00`
