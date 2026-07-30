@@ -45,8 +45,6 @@ Default: 51827.
 The 8-digit setup code used for pairing.
 Format: XXXX-XXXX where X is a digit 0-9.
 Dashes are for readability only and are stripped during processing.
-The PIN is validated as an 8-digit number.
-The PIN is validated as an 8-digit number.
 Certain values are invalid per the HAP specification
 (after stripping dashes):
 00000000, 11111111, 22222222, 33333333, 44444444,
@@ -238,5 +236,8 @@ or
 .Ic hap_pin
 after pairing may require re-pairing all controllers.
 .Pp
-MQTT passwords are stored in plain text.
-Consider using certificate-based authentication for production deployments.
+.Ic mqtt_pass
+is stored in plain text and is sent to the broker in the clear;
+.Xr openhapd 8
+does not speak MQTT over TLS.
+Keep the broker on the local machine or on a trusted network.

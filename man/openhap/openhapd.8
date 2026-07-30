@@ -27,8 +27,8 @@
 .Sh DESCRIPTION
 The
 .Nm
-daemon implements the HomeKit Accessory Protocol (HAP),
-enabling Apple HomeKit integration with MQTT-connected Tasmota devices
+daemon speaks the HomeKit Accessory Protocol (HAP)
+so that Apple HomeKit can control MQTT-connected Tasmota devices
 on
 .Ox .
 .Pp
@@ -38,20 +38,20 @@ and devices controlled via MQTT,
 translating HAP requests into MQTT commands and publishing device state
 changes back to HomeKit.
 .Pp
-The daemon implements the complete HAP specification including:
+Pairing and transport security follow the HAP specification:
 .Bl -bullet -compact
 .It
-Secure pairing using SRP-6a (Secure Remote Password)
+Pair-setup with SRP-6a (Secure Remote Password)
+.It
+Pair-verify with Curve25519 (X25519) key exchange
+.It
+Ed25519 signatures for accessory and controller identity
+.It
+HKDF-SHA-512 key derivation
 .It
 Session encryption with ChaCha20-Poly1305 AEAD
 .It
-Curve25519 (X25519) key exchange for session establishment
-.It
-Ed25519 digital signatures for authentication
-.It
-HKDF-SHA-512 for key derivation
-.It
-mDNS service advertisement
+Service advertisement over mDNS
 .El
 .Pp
 The service is advertised over mDNS by talking to
@@ -231,8 +231,8 @@ HomeKit Accessory Protocol Specification (Non-Commercial Version):
 .Lk https://developer.apple.com/homekit/
 .Sh STANDARDS
 .Nm
-implements the HomeKit Accessory Protocol Specification R2,
-including:
+follows the HomeKit Accessory Protocol Specification R2 for IP accessories.
+The cryptography it uses is specified in:
 .Bl -bullet -compact
 .It
 RFC 5054: Using the Secure Remote Password (SRP) Protocol for TLS Authentication
@@ -246,10 +246,9 @@ RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)
 RFC 7748: Elliptic Curves for Security (Curve25519)
 .El
 .Sh HISTORY
+The
 .Nm
-was written from scratch in 2025 for
-.Ox
-as a native implementation of the HomeKit Accessory Protocol.
+daemon first appeared in 2025.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
@@ -274,8 +273,8 @@ The directory should be owned by
 with mode 0700.
 .Sh BUGS
 .Nm
-currently only supports Tasmota devices.
-Additional device types and protocols may be added in future versions.
+only supports Tasmota devices over MQTT.
+HAP over Bluetooth Low Energy is not implemented.
 .Sh SECURITY CONSIDERATIONS
 .Nm
 starts as root to fix the ownership of
