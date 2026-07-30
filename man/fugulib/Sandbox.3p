@@ -47,15 +47,13 @@ the restrictions are real,
 everywhere else every method is a no-op returning success,
 and
 .Fn is_supported
-\(em a return value, not a log line \(em is how a caller or a test
-tells enforcement from emulation.
+tells a caller or a test which of the two it got.
 .Pp
 All methods are class methods;
 there is no object,
 because the two syscalls being wrapped are process-global.
-Failures die with the offending promise string or path and the errno:
-there is no force flag and no warn-and-continue mode,
-since a daemon that cannot restrict itself must not start.
+Failures die with the offending promise string or path and the errno;
+there is no force flag and no warn-and-continue mode.
 The module never logs;
 callers decide what to report.
 .Pp

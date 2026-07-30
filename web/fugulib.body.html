@@ -43,8 +43,8 @@ on <code>FuguLib::Process</code>.</dd>
 <dd><a href="https://man.openbsd.org/pledge.2">pledge(2)</a> and
 <a href="https://man.openbsd.org/unveil.2">unveil(2)</a> as a platform
 abstraction: real on OpenBSD, a no-op everywhere else, so callers never test
-the operating system themselves.  Failures die &mdash; a daemon that cannot
-restrict itself must not start.</dd>
+the operating system themselves.  Failures die; there is no
+warn-and-continue mode.</dd>
 
 <dt>FuguLib::Imsg</dt>
 <dd>The base-system imsg framing &mdash; a fixed native-endian header and a
