@@ -19,7 +19,13 @@ OpenHAP::SRP - SRP-6a implementation for HAP pairing
 
 =head1 DESCRIPTION
 
-This module implements SRP-6a protocol for HomeKit pairing.
+The server (accessory) role of the SRP-6a exchange used by HAP
+pair-setup. The group parameters come from L<OpenHAP::Crypto>, the
+modular arithmetic from L<Math::BigInt> (with the GMP backend when it is
+installed, which matters: the pure-Perl backend takes seconds per
+exponentiation at 3072 bits).
+
+L<OpenHAP::Test::Controller::SRP> is the client side, for tests.
 
 =head1 SEE ALSO
 

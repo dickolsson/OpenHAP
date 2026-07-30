@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Crypto - Cryptographic operations for HAP protocol
+OpenHAP::Crypto - crypto primitives for HAP, wrapping CPAN modules
 
 =head1 SYNOPSIS
 
@@ -23,14 +23,25 @@ OpenHAP::Crypto - Cryptographic operations for HAP protocol
 
 =head1 DESCRIPTION
 
-This module provides cryptographic primitives required by the HomeKit
-Accessory Protocol:
+Thin wrappers over the CPAN modules that do the actual work, giving
+callers one argument order and one place to look for which module
+provides what:
 
-- Ed25519 signatures
-- X25519 key exchange
-- ChaCha20-Poly1305 authenticated encryption
-- HKDF-SHA-512 key derivation
-- SRP-6a parameters
+=over 4
+
+=item * Ed25519 signatures - L<Crypt::Ed25519>
+
+=item * X25519 key exchange - L<Crypt::Curve25519>
+
+=item * ChaCha20-Poly1305 - L<Crypt::AuthEnc::ChaCha20Poly1305>
+
+=item * HKDF-SHA-512 - L<Crypt::KeyDerivation>
+
+=back
+
+The module also holds the SRP-6a group parameters from
+F<spec/HAP-Pairing.md> (the RFC 5054 3072-bit group, C<g> = 5) for
+L<OpenHAP::SRP>, and reads random bytes from F</dev/urandom>.
 
 =head1 SEE ALSO
 
