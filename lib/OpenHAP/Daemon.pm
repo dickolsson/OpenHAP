@@ -40,7 +40,7 @@ sub daemonize ( $class, $logfile = '/var/log/openhapd.log' )
 #	Write current PID to file. Returns true on success.
 sub write_pidfile ( $class, $path )
 {
-	my $state = FuguLib::State->new( pidfile => $path );
+	my $state = FuguLib::State->new($path);
 	unless ( $state->write_pid($$) ) {
 		$OpenHAP::logger->error( 'Cannot write PID file %s', $path )
 		    if $OpenHAP::logger;
@@ -56,7 +56,7 @@ sub write_pidfile ( $class, $path )
 #	or cannot be read.
 sub read_pidfile ( $class, $path )
 {
-	my $state = FuguLib::State->new( pidfile => $path );
+	my $state = FuguLib::State->new($path);
 	my $pid   = $state->read_pid();
 	return $pid;
 }

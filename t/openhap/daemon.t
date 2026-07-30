@@ -152,4 +152,24 @@ use File::Temp qw(tempdir);
 	    'db_path is not optional to the builder');
 }
 
+# Test 5: the PID file shim round-trips through FuguLib::State
+{
+	use OpenHAP::Daemon;
+
+	my $tmpdir  = tempdir(CLEANUP => 1);
+	my $pidfile = "$tmpdir/openhapd.pid";
+
+	ok(OpenHAP::Daemon->write_pidfile($pidfile),
+	    'write_pidfile reports success');
+	is(OpenHAP::Daemon->read_pidfile($pidfile), $$,
+	    'read_pidfile returns the PID that was written');
+
+	# A path that cannot be opened is a recoverable error, not a die
+	my $unwritable = "$tmpdir/nonexistent/openhapd.pid";
+	is(OpenHAP::Daemon->write_pidfile($unwritable), undef,
+	    'write_pidfile returns undef on an unopenable path');
+	is(OpenHAP::Daemon->read_pidfile("$tmpdir/absent.pid"), undef,
+	    'read_pidfile returns undef for a missing file');
+}
+
 done_testing();
