@@ -19,7 +19,12 @@ vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
 echo "==> Copying test files..."
 cd "${PROJECT_ROOT}"
 TARBALL="/tmp/tests-$$.tar.gz"
-tar czf "${TARBALL}" t/openhap/integration/ t/lib/ lib/OpenHAP/Test/
+# t/fugulib/sandbox.t rides along: its enforcement subtests (a pledge
+# violation aborts, unveil hides the filesystem, required paths are
+# fatal) are OpenBSD-only and skip on the Linux hosts `make check`
+# runs on, so this guest run is the one place CI executes them
+tar czf "${TARBALL}" t/openhap/integration/ t/fugulib/sandbox.t \
+    t/lib/ lib/OpenHAP/Test/
 vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/tests.tar.gz"
 rm -f "${TARBALL}"
 
@@ -37,16 +42,13 @@ cd /tmp && tar xzf tests.tar.gz
 # shared mocks in t/lib) over the installed copies
 cp -R lib/OpenHAP/Test /usr/local/libdata/perl5/site_perl/OpenHAP/
 
-# Clean up any orphaned processes from previous test runs, gracefully:
-# a SIGKILLed mdnsctl leaves mdnsd holding a dead client socket, which
-# is a suspected cause of mdnsd exiting under client churn. TERM first,
-# KILL only stragglers.
+# Clean up any orphaned daemon from previous test runs, gracefully:
+# TERM first, KILL only stragglers. A clean exit closes the mdnsd
+# control socket, which is what withdraws the advertisement.
 rcctl stop openhapd >/dev/null 2>&1 || true
 pkill -f 'perl.*openhapd' 2>/dev/null || true
-pkill mdnsctl 2>/dev/null || true
 sleep 2
 pkill -9 -f 'perl.*openhapd' 2>/dev/null || true
-pkill -9 mdnsctl 2>/dev/null || true
 sleep 1
 
 # Start the daemon fresh
@@ -61,8 +63,9 @@ export OPENHAP_INTEGRATION_TEST=1
 # pair-setup/pair-verify do not give up before the daemon responds.
 export OPENHAP_TEST_TIMEOUT="${OPENHAP_TEST_TIMEOUT:-60}"
 
-# Run tests in order (environment first, then others)
-TESTS="t/openhap/integration/environment.t"
+# Run tests in order: environment first, then the FuguLib sandbox
+# enforcement subtests (see the tarball note above), then the rest
+TESTS="t/openhap/integration/environment.t t/fugulib/sandbox.t"
 for test in t/openhap/integration/*.t; do
 	[ "$test" = "t/openhap/integration/environment.t" ] && continue
 	TESTS="$TESTS $test"
@@ -95,7 +98,7 @@ if [ ${result} -ne 0 ]; then
 		cat /var/db/openhapd/pairings.db 2>/dev/null' || true
 	echo "-- service status --"
 	vm_run 'rcctl check openhapd; rcctl check mdnsd; rcctl get mdnsd;
-		ps -axo pid,command | grep -e mdnsd -e mdnsctl |
+		ps -axo pid,command | grep -e mdnsd |
 		grep -v grep' || true
 fi
 

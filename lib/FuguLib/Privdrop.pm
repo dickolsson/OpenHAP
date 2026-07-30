@@ -35,7 +35,7 @@ use POSIX qw(setuid setgid);
 #
 #	Example:
 #		# Start as root, do privileged operations
-#		$mdns->register_service();  # Forks mdnsctl as root
+#		$state->chown_runtime_files();
 #
 #		# Drop privileges before entering event loop
 #		FuguLib::Privdrop->drop_privileges(user => '_openhap');

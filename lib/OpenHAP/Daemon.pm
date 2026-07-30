@@ -20,6 +20,7 @@ use v5.36;
 package OpenHAP::Daemon;
 
 # OpenHAP::Daemon is now a wrapper around FuguLib for backward compatibility
+use Config;
 use FuguLib::Daemon;
 use FuguLib::State;
 
@@ -67,6 +68,88 @@ sub check_running ( $class, $pidfile )
 {
 	my $state = FuguLib::State->new($pidfile);
 	return $state->is_running() ? $state->read_pid() : undef;
+}
+
+# $class->unveil_paths(%args):
+#	db_path     => $dir	pairing and device state (required)
+#	config_file => $file	configuration file (optional on disk)
+#	log_file    => $file	daemon-mode log (optional on disk)
+#	script_lib  => $dir	the daemon's ../lib, included only when
+#				it is a source checkout
+#	perl_dirs   => \@dirs	override the perl library directories
+#				(tests only)
+#	The daemon's unveil(2) inventory: an ordered list of
+#	[$path, $perms] pairs with per-path dispositions, for
+#	FuguLib::Sandbox->unveil. Pure assembly - nothing here touches
+#	the filesystem view - so it is unit-testable on any platform.
+#
+#	Every entry is required (absent means a broken install and
+#	startup must fail naming the path) or optional (legitimately
+#	absent on a working system: a fresh install has no config
+#	file, -f mode never creates the log file, mdnsd may not run,
+#	and the resolver files matter only when mqtt_host is a name).
+#	Getting a disposition wrong turns a configuration that starts
+#	today into a startup failure.
+sub unveil_paths ( $class, %args )
+{
+	my $db_path     = $args{db_path} or die 'db_path parameter required';
+	my $config_file = $args{config_file};
+	my $log_file    = $args{log_file} // '/var/log/openhapd.log';
+
+	my @paths = ( [ $db_path, 'rwc' ], [ '/dev/urandom', 'r' ], );
+
+	# The perl library tree, read-only, for the lazy require on the
+	# MQTT reconnect path. An enumerated list, never live @INC:
+	# bin/openhapd prepends $RealBin/../lib, which on an installed
+	# layout is /usr/local/lib - every third-party library on the
+	# system, not a perl tree - and OpenHAP::MQTT unshifts a
+	# directory onto @INC at connect time, so a derived set would
+	# depend on whether the startup connect has run. Unveiling the
+	# tree read-only is the deliberate trade: proving no module
+	# ever loads late is a claim no test can hold over time, while
+	# these few read-only lines cannot regress the MQTT reconnect.
+	my @perl_dirs =
+	    $args{perl_dirs} ? @{ $args{perl_dirs} } : _perl_lib_dirs();
+
+	# The checkout's own lib, only when it really is one: the
+	# installed layout must not pick up /usr/local/lib here
+	my $script_lib = $args{script_lib};
+	push @perl_dirs, $script_lib
+	    if defined $script_lib && -d "$script_lib/OpenHAP";
+
+	my %seen;
+	push @paths, map { [ $_, 'r' ] } grep { !$seen{$_}++ } @perl_dirs;
+
+	push @paths, [ $config_file, 'r', { optional => 1 } ]
+	    if defined $config_file;
+	push @paths,
+	    [ $log_file, 'w', { optional => 1 } ],
+	    [ '/var/run/mdnsd.sock', 'rw', { optional => 1 } ],
+	    [ '/etc/resolv.conf',    'r',  { optional => 1 } ],
+	    [ '/etc/hosts',          'r',  { optional => 1 } ],
+	    [ '/etc/services',       'r',  { optional => 1 } ],
+	    [ '/etc/protocols',      'r',  { optional => 1 } ],
+	    [ '/etc/localtime',      'r',  { optional => 1 } ];
+
+	return @paths;
+}
+
+# _perl_lib_dirs():
+#	The perl library directories as the interpreter was built with
+#	them - stable facts from %Config, not runtime @INC. The
+#	literal site_perl entry is the directory OpenHAP::MQTT
+#	unshifts onto @INC at connect time; on OpenBSD it equals
+#	sitelibexp and dedupes away.
+sub _perl_lib_dirs ()
+{
+	my @dirs;
+	for my $key (qw(privlibexp archlibexp sitelibexp sitearchexp)) {
+		my $dir = $Config{$key};
+		push @dirs, $dir if defined $dir && length $dir;
+	}
+	push @dirs, '/usr/local/libdata/perl5/site_perl';
+
+	return @dirs;
 }
 
 1;

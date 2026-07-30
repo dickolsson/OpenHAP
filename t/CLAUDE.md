@@ -17,6 +17,11 @@ on missing dependencies) and need no citations. Integration tests follow the
 stricter rules in `t/openhap/integration/CLAUDE.md` (never skip, no log
 parsing).
 
+One module test crosses tiers: `scripts/integration` ships `t/fugulib/sandbox.t`
+into the VM and proves it with the integration files, because its enforcement
+subtests (pledge aborts, unveil hides the filesystem) are OpenBSD-only and would
+otherwise never run in CI — `make check` runs on Linux, where they skip.
+
 Tooling tests are named after what they cover — `t/scripts/deps.t` for
 `scripts/deps` — and drive it as a subprocess rather than loading a module, so
 they assert on exit status and output. `t/scripts/conventions.t` covers the
@@ -31,7 +36,8 @@ input which decides what it caches.
 ## Conformance tier
 
 One `.t` per normative spec topic file, named after the lowercased stem
-(`spec/HAP-TLV8.md` ↔ `t/conformance/hap-tlv8.t`). Rules:
+(`spec/HAP-TLV8.md` ↔ `t/conformance/hap-tlv8.t`, `spec/MDNS-Imsg.md` ↔
+`t/conformance/mdns-imsg.t`). Rules:
 
 - Every subtest name starts with a citation; catalog tables are data-driven
   loops citing `/<row>`; wire examples from the spec are replayed byte-exactly;
@@ -67,9 +73,9 @@ ok($error == 0x02, '[HAP-Pairing §2.6] M4 returns kTLVError_Authentication');
 subtest '[HAP-TLV8 §2] fragmentation' => sub { ... };
 ```
 
-The grep pattern is `\[(HAP|MQTT)[A-Za-z0-9-]* §[0-9][0-9.]*(/[^\]]+)?\]`. One
-test may carry several citations. A citation asserts the section's requirement —
-do not cite a section the test merely mentions.
+The grep pattern is `\[(HAP|MQTT|MDNS)[A-Za-z0-9-]* §[0-9][0-9.]*(/[^\]]+)?\]`.
+One test may carry several citations. A citation asserts the section's
+requirement — do not cite a section the test merely mentions.
 
 Coverage of `spec/` and stale-citation detection are computed by
 `make spec-coverage` (`scripts/spec-coverage`).

@@ -15,26 +15,31 @@ my $env = OpenHAP::Test::Integration->new;
 $env->setup;
 $env->ensure_unpaired or die "Cannot reset pairing state\n";
 
-# Test 1: mdnsctl command available
-my $mdnsctl_available = -x '/usr/sbin/mdnsctl' || -x '/usr/local/bin/mdnsctl';
-ok($mdnsctl_available, 'mdnsctl command available');
-
-die "mdnsctl required for mDNS integration tests\n" unless $mdnsctl_available;
-
-# Test 2: OpenHAP daemon is running
-my $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
-ok($daemon_running, 'OpenHAP daemon is running');
-
-# Test 3: mdnsd daemon is running and stays running (started if
-# needed; failure emits captured diagnostics)
+# Test 1: mdnsd daemon is running and stays running (started if
+# needed; failure emits captured diagnostics). The daemon speaks the
+# mdnsd control protocol directly, so a running mdnsd is the
+# precondition - not the mdnsctl binary, which openhapd never invokes.
 my $mdnsd_available = $env->ensure_mdnsd_running;
 ok($mdnsd_available, 'mdnsd daemon is running');
 
 die "mdnsd required for mDNS integration tests\n" unless $mdnsd_available;
 
-# Restart openhapd so it re-registers with the running mdnsd
+# Test 2: OpenHAP daemon is running
+my $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
+ok($daemon_running, 'OpenHAP daemon is running');
+
+# Test 3: mdnsctl available as the browsing tool these tests observe
+# advertisements with
+my $mdnsctl_available = -x '/usr/sbin/mdnsctl' || -x '/usr/local/bin/mdnsctl';
+ok($mdnsctl_available, 'mdnsctl browse tool available');
+
+die "mdnsctl required to observe advertisements\n" unless $mdnsctl_available;
+
+# Restart openhapd so it re-registers with the running mdnsd; the
+# listener opens after the publish conversation, so serving means
+# published
 system('rcctl restart openhapd >/dev/null 2>&1');
-sleep 2;
+$env->wait_for_hap_port or die "daemon not serving after restart\n";
 
 # Test 4: mdnsctl browse works
 my $mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
@@ -53,7 +58,7 @@ ok($mdns_output =~ /\Q$hap_name\E/i,
 
 # Test 7: Daemon restart re-advertises service
 system('rcctl restart openhapd >/dev/null 2>&1');
-sleep 2;
+$env->wait_for_hap_port;
 
 $daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
 ok($daemon_running, 'daemon running after restart');
@@ -95,20 +100,26 @@ my $txt_output = browse_txt();
 like($txt_output, qr/sf=1/,
    '[HAP-mDNS §3.7] sf=1 advertised while unpaired');
 
-# Test 11: after pairing, sf flips to 0 in the browsed TXT record
+# Test 11: after pairing, sf flips to 0 in the browsed TXT record.
+# The daemon withdraws and republishes on the state change, so poll
+# the browsed TXT rather than sleeping a fixed interval.
 my $controller = $env->get_controller;
 $controller->pair_setup
     or die 'pair-setup failed: ' . ( $controller->last_error // '?' ) . "\n";
-sleep 2;    # allow re-registration to propagate
 
+my $deadline = time + 30;
 $txt_output = browse_txt();
+while ($txt_output !~ /sf=0/ && time < $deadline) {
+	sleep 1;
+	$txt_output = browse_txt();
+}
 like($txt_output, qr/sf=0/,
    '[HAP-mDNS §8] sf flips to 0 in the browsed TXT after pairing');
 
 # Test 12: c# persists across a daemon restart
 my ($config_number) = $txt_output =~ /c#=(\d+)/;
 system('rcctl restart openhapd >/dev/null 2>&1');
-sleep 2;
+$env->wait_for_hap_port;
 $txt_output = browse_txt();
 my ($config_number_after) = $txt_output =~ /c#=(\d+)/;
 is($config_number_after, $config_number,

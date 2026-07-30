@@ -7,17 +7,66 @@ refinements.
 
 ### Security & Hardening
 
-- [ ] **Implement full pledge(2) restrictions**
-  - Current: No pledge implementation
-  - Need: Add pledge calls in bin/openhapd after initialization
-  - Promises needed: `stdio rpath wpath cpath inet dns unix`
-  - File: `bin/openhapd`
+- [x] **Implement full pledge(2) restrictions**
+  - Implemented: `FuguLib::Sandbox` (real on OpenBSD, no-op elsewhere); openhapd
+    pledges `stdio rpath wpath cpath fattr flock inet dns unix` after the
+    privilege drop and mDNS publish, before any network input. No `proc`, `exec`
+    or `prot_exec`: the mdnsctl child was replaced with a native mdnsd control
+    client (`FuguLib::MDNS` over `FuguLib::Imsg`, spec/MDNS-\*.md)
+  - Proven by: `t/fugulib/sandbox.t` (SIGABRT on violation, asserted from the
+    parent) and `t/openhap/integration/sandbox.t` (ktrace shows the syscall with
+    the exact promise string)
+  - Files: `lib/FuguLib/Sandbox.pm`, `bin/openhapd`
 
-- [ ] **Implement full unveil(2) restrictions**
-  - Current: No unveil implementation
-  - Need: Restrict file system access to specific paths
-  - Paths: `/etc/openhapd.conf` (r), `/var/db/openhapd` (rwc), `/var/run` (rwc)
-  - File: `bin/openhapd`
+- [x] **Implement full unveil(2) restrictions**
+  - Implemented: ordered inventory with per-path required/optional dispositions,
+    assembled by `OpenHAP::Daemon->unveil_paths`, applied and locked between the
+    privilege drop and the pledge; optional paths (config file, daemon log,
+    mdnsd socket, resolver files) never fail startup
+  - Proven by: `t/openhap/daemon.t` (inventory), `t/fugulib/sandbox.t`
+    (enforcement), `t/openhap/integration/sandbox.t` (trace and lock ordering)
+  - Files: `lib/OpenHAP/Daemon.pm`, `bin/openhapd`
+
+- [ ] **Pledge and unveil hapctl**
+  - Current: only openhapd is restricted
+  - Need: `hapctl` reads config and state and prints, so `stdio rpath` plus a
+    handful of unveiled paths covers it; cheap now that `FuguLib::Sandbox`
+    exists, and the asymmetry with a pledged openhapd goes unnoticed otherwise
+  - File: `bin/hapctl`
+
+- [ ] **Verify what grants \_openhap access to /var/run/mdnsd.sock**
+  - Current: the socket is root:wheel 0660 and provisioning adds `_openhap` to
+    wheel, but `FuguLib::Privdrop` calls only `setgid`/`setuid` and Perl's
+    `$) = $gid` assignment itself invokes `setgroups`, which would drop
+    supplementary groups rather than keep them - so the mechanism that makes the
+    connect succeed today is unverified, and may be retained root supplementary
+    groups (a mild privilege leak in its own right)
+  - Need: measure `id` and group set of the running daemon in the VM, then make
+    privdrop set supplementary groups deliberately
+  - Files: `lib/FuguLib/Privdrop.pm`, `bin/openhapd`
+
+- [ ] **Re-establish the mDNS advertisement after an mdnsd restart**
+  - Current: the advertisement lives exactly as long as the held control socket;
+    if mdnsd restarts, discovery is gone until openhapd restarts. Parity with
+    the old mdnsctl behaviour - a known limitation, now recorded
+  - Need: detect the closed socket in the event loop and republish
+  - File: `lib/OpenHAP/HAP.pm`, `bin/openhapd`
+
+- [ ] **Implement mdnsd browse, resolve and lookup**
+  - Current: `spec/MDNS-Control.md` §11 specifies all three message shapes, but
+    only publish is implemented; `make spec-coverage` shows the uncovered
+    sections, which is deliberate rather than an oversight
+  - Need: implement in `FuguLib::MDNS` when a consumer appears
+  - File: `lib/FuguLib/MDNS.pm`
+
+- [ ] **Fix rcctl reload: SIGHUP stops the daemon instead of reloading**
+  - Current: `etc/rc.d/openhapd` reloads with `pkill -HUP`, but openhapd
+    registers HUP as a graceful _exit_, so `rcctl reload openhapd` stops the
+    daemon - and since the held control socket is the mDNS advertisement, also
+    withdraws it
+  - Need: a real reload handler; note it must not re-exec, or `exec` returns to
+    the promise set and the pledge benefit goes
+  - Files: `bin/openhapd`, `etc/rc.d/openhapd`
 
 - [ ] **Rate limiting for pairing attempts**
   - Current: No rate limiting in Pairing.pm
@@ -61,10 +110,12 @@ refinements.
   - File: `bin/openhapd`, `lib/OpenHAP/Daemon.pm`, `lib/OpenHAP/MQTT.pm`,
     `lib/OpenHAP/HAP.pm`
 
-- [ ] **Signal handling**
-  - Current: No signal handlers
-  - Need: SIGTERM (graceful shutdown), SIGHUP (reload config), SIGINT (stop)
-  - File: `bin/openhapd`
+- [x] **Signal handling**
+  - Implemented: `FuguLib::Signal` handlers for graceful shutdown on SIGTERM,
+    SIGINT and SIGHUP, with cleanup callbacks (mDNS withdrawal, logger close)
+  - Note: SIGHUP currently _exits_ rather than reloads - see the rcctl reload
+    item under Security & Hardening
+  - File: `bin/openhapd`, `lib/FuguLib/Signal.pm`
 
 - [ ] **Logging with syslog**
   - Current: Partial syslog implementation exists in `lib/OpenHAP/Log.pm`
@@ -487,8 +538,13 @@ refinements.
   - File: New example in `share/openhap/examples/`
 
 - [ ] **Privilege separation**
-  - Current: Single process
-  - Need: Separate processes for privileged operations
+  - Current: Single process, now pledged and unveiled, which changes what
+    separation would buy: the monolith already cannot exec, fork, or see the
+    filesystem outside its inventory, so the remaining win is isolating key
+    material from the network-facing parser rather than syscall reduction
+  - Need: Separate processes for privileged operations; note that helper
+    processes would put `proc` (and likely `sendfd`/`recvfd`) back into the
+    parent's promise set
   - File: `bin/openhapd`, new helper processes
 
 ### Packaging

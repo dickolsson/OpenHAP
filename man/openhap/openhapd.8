@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: December 26 2025 $
+.Dd $Mdocdate: July 29 2026 $
 .Dt OPENHAPD 8
 .Os
 .Sh NAME
@@ -53,6 +53,43 @@ HKDF-SHA-512 for key derivation
 .It
 mDNS service advertisement
 .El
+.Pp
+The service is advertised over mDNS by talking to
+.Xr mdnsd 8
+directly on its control socket,
+.Pa /var/run/mdnsd.sock .
+.Nm
+holds that socket open for its lifetime and spawns no helper process;
+closing it on shutdown is what withdraws the advertisement.
+.Xr mdnsd 8
+must be running when
+.Nm
+starts for the accessory to be discoverable.
+Without it the daemon still starts and serves paired controllers,
+logging a warning;
+discovery remains unavailable until
+.Nm
+is restarted with
+.Xr mdnsd 8
+running.
+.Pp
+On
+.Ox ,
+once the daemon has dropped privileges and advertised itself,
+it restricts its own syscall surface with
+.Xr pledge 2
+to
+.Dq stdio rpath wpath cpath fattr flock inet dns unix
+before handling any network input;
+the
+.Dq proc ,
+.Dq exec
+and
+.Dq prot_exec
+promises are deliberately absent.
+.Ox
+is the only platform where this is enforced;
+on other systems the daemon runs unrestricted.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -96,6 +133,44 @@ Long-term secret key (Ed25519 private key).
 Long-term public key (Ed25519 public key).
 .It Pa /var/run/openhapd.pid
 Process ID file.
+.El
+.Pp
+On
+.Ox
+the running daemon locks its filesystem view down with
+.Xr unveil 2
+and can read
+.Em nothing
+outside the list below \(em an operator wondering why
+.Nm
+cannot see a file should look here first.
+Paths marked optional may be absent without preventing startup;
+a missing required path is a fatal configuration error.
+.Bl -tag -width "/var/run/mdnsd.sockXX" -compact
+.It Pa db_path
+(required, read-write-create) the state directory above.
+.It Pa /dev/urandom
+(required, read) randomness for all key material.
+.It perl library directories
+(required, read) the interpreter's library tree, for the one lazily
+loaded module on the MQTT reconnect path.
+.It Pa config file
+(optional, read) the file named with
+.Fl c .
+.It Pa /var/log/openhapd.log
+(optional, write) the daemon-mode log; never created in
+.Fl f
+mode.
+.It Pa /var/run/mdnsd.sock
+(optional, read-write) re-advertising after a pairing change
+reconnects to
+.Xr mdnsd 8 .
+.It Pa /etc/resolv.conf , Pa /etc/hosts , Pa /etc/services , Pa /etc/protocols
+(optional, read) the resolver files, used when
+.Cm mqtt_host
+is a name rather than an address.
+.It Pa /etc/localtime
+(optional, read) timestamps.
 .El
 .Sh EXAMPLES
 Check the configuration file:
@@ -148,6 +223,7 @@ An encrypted session was successfully negotiated with a paired controller.
 .Xr syslog 3 ,
 .Xr openhapd.conf 5 ,
 .Xr hapctl 8 ,
+.Xr mdnsd 8 ,
 .Xr rc 8 ,
 .Xr rc.conf 8
 .Pp
@@ -180,9 +256,12 @@ as a native implementation of the HomeKit Accessory Protocol.
 .Nm
 requires a working MQTT broker (such as
 .Xr mosquitto 8 )
-and an mDNS daemon (such as
-.Xr mdnsd 8 )
+and a running
+.Xr mdnsd 8
 to function properly.
+Without either, the daemon starts and serves what it can:
+MQTT reconnects in the background,
+while mDNS discovery stays unavailable until the daemon is restarted.
 .Pp
 The HAP PIN code is logged on first startup when the accessory is unpaired.
 Protect access to system logs accordingly.
@@ -197,3 +276,87 @@ with mode 0700.
 .Nm
 currently only supports Tasmota devices.
 Additional device types and protocols may be added in future versions.
+.Sh SECURITY CONSIDERATIONS
+.Nm
+starts as root to fix the ownership of
+.Pa /var/db/openhapd ,
+drops to the
+.Dq _openhap
+user,
+publishes its mDNS advertisement,
+and only then restricts itself \(em first the filesystem view with
+.Xr unveil 2 ,
+then the syscall surface with
+.Xr pledge 2
+\(em before accepting any network connection.
+Applying the restrictions after the privilege drop means they confine
+everything that ever handles untrusted input;
+they do not, and cannot, confine the brief root phase, which handles
+none.
+.Pp
+The promise set is
+.Dq stdio rpath wpath cpath fattr flock inet dns unix :
+.Bl -tag -width "wpath cpathXX" -compact
+.It Cm stdio
+always required.
+.It Cm rpath
+.Pa /dev/urandom ,
+state reads, and the lazily loaded MQTT module.
+.It Cm wpath , cpath
+writing, creating and removing state files, and the daemon log.
+.It Cm fattr
+key material is chmodded to 0600.
+.It Cm flock
+state files are lock-protected.
+.It Cm inet
+the HAP listener and MQTT connections.
+.It Cm dns
+resolving
+.Cm mqtt_host
+when it is a name.
+.It Cm unix
+re-advertising after a pairing change reconnects to
+.Xr mdnsd 8 .
+.El
+.Pp
+The
+.Cm proc ,
+.Cm exec
+and
+.Cm prot_exec
+promises are deliberately absent:
+the daemon spawns no processes and loads no shared objects after
+startup.
+The unveiled paths and their dispositions are listed in
+.Sx FILES .
+.Pp
+The
+.Xr mdnsd 8
+control socket is created root:wheel with mode 0660,
+so the
+.Dq _openhap
+user must be able to open it read-write;
+the standard setup arranges this through wheel group membership.
+.Pp
+Enforcement is
+.Ox No only .
+Linux and Darwin are development platforms where both mechanisms are
+no-ops;
+a deployment there runs unrestricted, whatever the rest of this page
+says.
+.Pp
+A pledge violation kills the daemon immediately with
+.Dv SIGABRT ,
+and the kernel logs a line to
+.Xr dmesg 8
+and
+.Pa /var/log/messages
+naming the process and the forbidden syscall \(em if
+.Nm
+dies unexpectedly, look there before anywhere else.
+A path outside the unveiled view does not kill anything;
+the affected operation fails with
+.Er ENOENT
+or
+.Er EACCES ,
+typically surfacing as a warning in the daemon log.

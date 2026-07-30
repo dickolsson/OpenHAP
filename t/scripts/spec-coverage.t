@@ -62,15 +62,30 @@ write_file( "$spec_dir/IMPLEMENTATIONS.md", <<'EOF' );
 No numbered anchors here.
 EOF
 
+# A second topic family covering the MDNS branch of the citation regex
+write_file( "$spec_dir/MDNS-Fixture1.md", <<'EOF' );
+# MDNS Fixture
+
+## 1. Framed Section
+
+Text.
+
+## 2. Uncited Section
+
+Nothing cites this.
+EOF
+
 # Citation strings are assembled at runtime so this file's own source
 # never matches the citation grep when the tool runs on the real tree.
 # The stem carries a digit to cover stems like HAP-TLV8.
-my $STEM = 'HAP-' . 'Fixture8';
+my $STEM      = 'HAP-' . 'Fixture8';
+my $MDNS_STEM = 'MDNS-' . 'Fixture1';
 
 write_file( "$test_dir/fixture.t", <<EOF );
 ok(1, '[$STEM §1] first section requirement');
 ok(1, '[$STEM §1.1] subsection requirement');
 ok(1, '[$STEM §2.1/RowName] table row citation');
+ok(1, '[$MDNS_STEM §1] mdns family citation');
 EOF
 
 sub run_tool (@args)
@@ -87,6 +102,8 @@ sub run_tool (@args)
 	is( $exit, 0, 'exits 0 with no stale citations' );
 	like( $output, qr/HAP-Fixture8\.md\s+3\/5 sections cited/,
 		'per-file coverage counts cited sections' );
+	like( $output, qr/MDNS-Fixture1\.md\s+1\/2 sections cited/,
+		'MDNS stem citation counted' );
 	like( $output, qr/§1\s+\S*fixture\.t:1/,
 		'citation resolved to file:line' );
 	like( $output, qr/§2\.1\s+\S*fixture\.t:3/,
@@ -94,7 +111,7 @@ sub run_tool (@args)
 	like( $output, qr/§3\s+UNCOVERED/, 'uncovered section reported' );
 	like( $output, qr/§2\s+UNCOVERED/,
 		'parent section not covered by child citation' );
-	like( $output, qr/TOTAL: 3\/5 numbered sections cited/,
+	like( $output, qr/TOTAL: 4\/7 numbered sections cited/,
 		'total line present' );
 	like( $output, qr/HAP\.md\s+\(index, not counted\)/,
 		'index file listed but not counted' );
@@ -106,7 +123,7 @@ sub run_tool (@args)
 {
 	my ( $exit, $output ) = run_tool('--quiet');
 	is( $exit, 0, '--quiet exits 0' );
-	like( $output, qr/^TOTAL: 3\/5 numbered sections cited/m,
+	like( $output, qr/^TOTAL: 4\/7 numbered sections cited/m,
 		'--quiet prints totals' );
 	unlike( $output, qr/UNCOVERED/, '--quiet omits section detail' );
 }

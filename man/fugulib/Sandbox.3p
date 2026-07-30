@@ -1,0 +1,130 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 29 2026 $
+.Dt FuguLib::Sandbox 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Sandbox
+.Nd pledge and unveil as a platform abstraction
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Sandbox;
+
+FuguLib::Sandbox->unveil(
+    paths => [
+        ['/var/db/mydaemon',  'rwc'],
+        ['/etc/mydaemon.conf', 'r', { optional => 1 }],
+    ],
+    on_skip => sub ($path) { ... },
+);
+FuguLib::Sandbox->unveil_lock;
+FuguLib::Sandbox->pledge(promises => 'stdio rpath inet');
+.Ed
+.Sh DESCRIPTION
+.Nm
+wraps
+.Xr pledge 2
+and
+.Xr unveil 2
+so that callers never test the operating system themselves:
+on
+.Ox
+the restrictions are real,
+everywhere else every method is a no-op returning success,
+and
+.Fn is_supported
+\(em a return value, not a log line \(em is how a caller or a test
+tells enforcement from emulation.
+.Pp
+All methods are class methods;
+there is no object,
+because the two syscalls being wrapped are process-global.
+Failures die with the offending promise string or path and the errno:
+there is no force flag and no warn-and-continue mode,
+since a daemon that cannot restrict itself must not start.
+The module never logs;
+callers decide what to report.
+.Pp
+On
+.Ox
+the base-system
+.Xr OpenBSD::Pledge 3p
+and
+.Xr OpenBSD::Unveil 3p
+modules are loaded when
+.Nm
+is,
+and failing to load them is immediately fatal:
+there, their absence means a broken perl,
+not an unsupported system.
+.Ss is_supported
+.Fn is_supported
+returns true only where the restrictions are enforced,
+that is,
+on
+.Ox .
+.Ss pledge
+.Fn pledge "promises => $string"
+restricts the process to the space-separated promise set,
+as
+.Xr pledge 2
+defines it.
+Returns 1, dies on failure naming the promises and the error.
+The first call defines the sandbox;
+later calls may only shrink it.
+.Ss unveil
+.Fo unveil
+.Fa "paths => arrayref of pairs"
+.Fa "on_skip => sub"
+.Fc
+restricts the filesystem view to the listed paths with the listed
+.Xr unveil 2
+permission strings.
+The argument is an ordered list of pairs, not a hash:
+.Xr unveil 2
+replaces rather than merges a path's permissions,
+so parent-then-child ordering is load-bearing,
+and hash key order would randomise it.
+.Pp
+Each entry may carry
+.Li { optional => 1 }
+as a third element.
+A missing
+.Em required
+path dies naming the path \(em a typo'd path silently accepted is the
+failure mode that makes unveil useless \(em while a missing
+.Em optional
+path is skipped and reported through the
+.Fa on_skip
+callback,
+for paths that are legitimately absent on a working system
+(a configuration file, a socket whose daemon is not running).
+Returns 1.
+.Ss unveil_lock
+.Fn unveil_lock
+forbids further
+.Fn unveil
+calls,
+fixing the view for the life of the process.
+Returns 1, dies on failure.
+.Sh SEE ALSO
+.Xr pledge 2 ,
+.Xr unveil 2 ,
+.Xr OpenBSD::Pledge 3p ,
+.Xr OpenBSD::Unveil 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io

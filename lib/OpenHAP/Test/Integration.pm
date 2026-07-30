@@ -304,15 +304,42 @@ sub get_devices ($self)
 
 sub ensure_daemon_running ($self)
 {
-	# Check if already running
-	return 1 if system('rcctl check openhapd >/dev/null 2>&1') == 0;
+	if ( system('rcctl check openhapd >/dev/null 2>&1') != 0 ) {
+		system('rcctl start openhapd >/dev/null 2>&1');
+		sleep 1;
+		return if system('rcctl check openhapd >/dev/null 2>&1') != 0;
+	}
 
-	# Attempt to start
-	system('rcctl start openhapd >/dev/null 2>&1');
-	sleep 1;
+	# Running per rcctl is not serving: startup publishes the mDNS
+	# advertisement (waiting for mdnsd's replies) before the HAP
+	# listener opens, so wait for the port rather than a fixed sleep
+	return $self->wait_for_hap_port;
+}
 
-	# Verify it started
-	return system('rcctl check openhapd >/dev/null 2>&1') == 0;
+# $self->wait_for_hap_port($timeout):
+#	Wait until the HAP port accepts connections, polling every
+#	quarter second up to $timeout seconds (default 30, generous
+#	for TCG emulation). Returns 1 when serving, undef on deadline.
+sub wait_for_hap_port ( $self, $timeout = 30 )
+{
+	my $port     = $self->get_config_value('hap_port') // DEFAULT_HAP_PORT;
+	my $deadline = time + $timeout;
+
+	while ( time < $deadline ) {
+		my $socket = IO::Socket::INET->new(
+			PeerAddr => '127.0.0.1',
+			PeerPort => $port,
+			Proto    => 'tcp',
+			Timeout  => 2,
+		);
+		if ( defined $socket ) {
+			$socket->close;
+			return 1;
+		}
+		sleep 0.25;
+	}
+
+	return;
 }
 
 sub ensure_daemon_stopped ($self)

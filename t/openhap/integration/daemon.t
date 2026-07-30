@@ -31,14 +31,7 @@ ok(!defined $pid || $pid =~ /^\d+$/, 'PID file handling correct');
 ok($running, 'process is running');
 
 # Test 4: Daemon responds to connections
-my $socket = IO::Socket::INET->new(
-	PeerAddr => '127.0.0.1',
-	PeerPort => $env->get_config_value('hap_port') // 51827,
-	Proto    => 'tcp',
-	Timeout  => 2,
-);
-ok(defined $socket, 'daemon accepts connections');
-$socket->close if defined $socket;
+ok($env->wait_for_hap_port, 'daemon accepts connections');
 
 # Test 5: Daemon restart works
 system('rcctl restart openhapd >/dev/null 2>&1');
@@ -71,15 +64,9 @@ sleep 1;
 $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
 ok($running, 'daemon starts successfully');
 
-# Test 10: Daemon responds after restart
-sleep 0.5;
-$socket = IO::Socket::INET->new(
-	PeerAddr => '127.0.0.1',
-	PeerPort => $env->get_config_value('hap_port') // 51827,
-	Proto    => 'tcp',
-	Timeout  => 2,
-);
-ok(defined $socket, 'daemon responds after restart');
-$socket->close if defined $socket;
+# Test 10: Daemon responds after restart. The listener opens only
+# after the mDNS publish conversation completes, so wait for the port
+# rather than a fixed sleep.
+ok($env->wait_for_hap_port, 'daemon responds after restart');
 
 $env->teardown;
