@@ -1,14 +1,13 @@
 <h1>FuguLib</h1>
 
-<p>FuguLib is the handful of things every OpenBSD daemon needs and the base
-system does not hand you in Perl: going into the background, writing a PID
-file, dropping privileges, reaping children, handling signals, logging to
-syslog or stderr depending on how you were started, restricting yourself with
-pledge and unveil, and advertising over mDNS without shelling out.</p>
+<p>FuguLib covers the parts of writing an OpenBSD-style daemon in Perl that the
+base system leaves to you: going into the background, writing a PID file,
+dropping privileges, reaping children, handling signals, logging to syslog or
+stderr depending on how the program was started, restricting itself with pledge
+and unveil, and advertising over mDNS without shelling out.</p>
 
-<p>It is deliberately small.  Nine modules, no dependencies outside core Perl,
-no framework, no configuration, and no opinion about what your daemon does.
-OpenHAP is built on it; nothing in it knows that.</p>
+<p>Nine modules, using only core Perl.  OpenHAP is built on it; nothing in it
+knows about OpenHAP.</p>
 
 <h2>The modules</h2>
 
@@ -20,7 +19,7 @@ written.</dd>
 
 <dt>FuguLib::Privdrop</dt>
 <dd>Drop from root to a named user and group, then verify that root cannot be
-regained &mdash; the check is the point.</dd>
+regained.</dd>
 
 <dt>FuguLib::Process</dt>
 <dd>Spawn, exec, verify a child actually survived start-up, terminate with a
@@ -66,6 +65,4 @@ listed under <a href="manuals.html#fugulib">FuguLib in the manuals</a>.</p>
 
 <h2>Name</h2>
 
-<p><em>Fugu</em> is the pufferfish: OpenBSD&rsquo;s mascot is a pufferfish, and
-the fish is famously safe only if prepared correctly.  Both readings are
-intended.</p>
+<p><em>Fugu</em> is the pufferfish, after OpenBSD&rsquo;s mascot.</p>

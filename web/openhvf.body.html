@@ -6,9 +6,8 @@ answers the installer over the serial console, and hands you back a machine
 that accepts SSH.  One command, unattended, on a host that need not be running
 OpenBSD itself.</p>
 
-<p>Anyone who has installed OpenBSD by hand to test one thing knows why this
-exists.  OpenHVF turns that afternoon into <code>openhvf up</code>, and turns
-the result into something a <code>Makefile</code> can drive.</p>
+<p>It exists so that an install can be driven from a <code>Makefile</code>
+rather than answered by hand.</p>
 
 <h2>What it does</h2>
 
@@ -18,7 +17,7 @@ the result into something a <code>Makefile</code> can drive.</p>
 drives <code>bsd.rd</code> through the installer, and starts the machine.  It
 is idempotent: run it again and nothing happens.</dd>
 
-<dt>A project, not a global daemon</dt>
+<dt>Per-project state</dt>
 <dd>State lives beside the code, in an <code>.openhvfrc</code> file and an
 <code>.openhvf/</code> directory found by searching upward from the current
 directory.  Several machines can be defined per project, each with its own
@@ -29,12 +28,12 @@ release, memory, disk and forwarded ports.</dd>
 the guest through a built-in proxy, so the expensive download happens once
 rather than once per machine.</dd>
 
-<dt>Scriptable, with honest exit codes</dt>
+<dt>Scriptable</dt>
 <dd><code>openhvf ssh</code> runs a command in the guest and exits with its
 status; <code>openhvf expect</code> drives the serial console with an
-<a href="https://man.openbsd.org/expect.1">expect(1)</a> script; a distinct
-exit code per failure mode &mdash; not running, timed out, download failed
-&mdash; means a script can tell what went wrong.</dd>
+<a href="https://man.openbsd.org/expect.1">expect(1)</a> script; and there is a
+distinct exit code per failure mode &mdash; not running, timed out, download
+failed.</dd>
 
 <dt>Whatever accelerator is there</dt>
 <dd>HVF on macOS, KVM on aarch64 Linux, TCG everywhere else, chosen
@@ -46,13 +45,13 @@ automatically and overridable with <code>--emulate</code>.</dd>
 <p>OpenHVF was written to run OpenHAP's integration tests on the platform they
 are about: <a href="https://man.openbsd.org/pledge.2">pledge(2)</a>,
 <a href="https://man.openbsd.org/unveil.2">unveil(2)</a>, <code>rc.d</code> and
-<code>mdnsd</code> cannot be tested anywhere else.  Nothing in it knows that;
-it is a general utility, and this repository is simply its first user.</p>
+<code>mdnsd</code> cannot be tested anywhere else.  Nothing in it knows about
+OpenHAP; this repository is its first user.</p>
 
 <p>It ships with the OpenHAP source but not with OpenHAP: <code>make
 install</code> does not install it, and no release package contains it.</p>
 
 <h2>Reference</h2>
 
-<p>Every option, subcommand, exit code and configuration key is documented in
+<p>Options, subcommands, exit codes and configuration keys are documented in
 the <a href="manuals.html#openhvf">manual</a>.</p>
