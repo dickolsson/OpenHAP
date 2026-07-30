@@ -39,10 +39,86 @@ sub run_child ($source)
 	return $?;
 }
 
+# The child sources, rendered at file scope so the compile subtest
+# below syntax-checks them on every platform: the children themselves
+# only ever run on OpenBSD, and a heredoc interpolation slip in one
+# once hid until a VM run.
+my $violation_child = <<'EOF';
+use v5.36;
+use FuguLib::Sandbox;
+use Socket qw(AF_INET SOCK_STREAM);
+use POSIX ();
+FuguLib::Sandbox->pledge(promises => 'stdio');
+socket(my $s, AF_INET, SOCK_STREAM, 0);
+POSIX::_exit(0);    # only reachable if the pledge did not enforce
+EOF
+
+# Exit codes pick the failing step apart: 1 = a file outside the view
+# stayed readable, 2 = the file inside did not
+my $unveil_child = <<EOF . <<'BODY';
+use v5.36;
+use FuguLib::Sandbox;
+use POSIX ();
+my \$dir = '$dir';
+EOF
+FuguLib::Sandbox->unveil(paths => [[$dir, 'r']]);
+FuguLib::Sandbox->unveil_lock;
+POSIX::_exit(1) if open(my $out, '<', '/etc/services');
+POSIX::_exit(2) unless open(my $in, '<', "$dir/inside.txt");
+POSIX::_exit(0);
+BODY
+
+# 3 = a missing required path was silently accepted, 4 = a missing
+# optional path was not skipped cleanly, 5 = on_skip did not report it
+my $dispositions_child = <<EOF . <<'BODY';
+use v5.36;
+use FuguLib::Sandbox;
+use POSIX ();
+my \$dir = '$dir';
+EOF
+my @skipped;
+eval {
+	FuguLib::Sandbox->unveil(
+		paths   => [["$dir/no-such-entry", 'r']],
+	);
+	1;
+} and POSIX::_exit(3);
+eval {
+	FuguLib::Sandbox->unveil(
+		paths => [
+			["$dir/no-such-entry", 'r', { optional => 1 }],
+			[$dir, 'r'],
+		],
+		on_skip => sub ($path) { push @skipped, $path },
+	);
+	1;
+} or POSIX::_exit(4);
+POSIX::_exit(5) unless @skipped == 1;
+POSIX::_exit(0);
+BODY
+
 subtest 'is_supported reflects the platform' => sub {
 	is( !!FuguLib::Sandbox->is_supported,
 		!!( $^O eq 'openbsd' ),
 		'true exactly on OpenBSD' );
+};
+
+subtest 'child sources compile on every platform' => sub {
+	my %children = (
+		violation    => $violation_child,
+		unveil       => $unveil_child,
+		dispositions => $dispositions_child,
+	);
+	for my $name ( sort keys %children ) {
+		my $script = "$dir/compile-$name.pl";
+		open my $fh, '>', $script or die "write $script: $!";
+		print $fh $children{$name};
+		close $fh;
+
+		is( system("'$^X' -I'$lib' -c '$script' >/dev/null 2>&1"),
+			0, "$name child source compiles" );
+		unlink $script;
+	}
 };
 
 subtest 'malformed arguments die on every platform' => sub {
@@ -77,15 +153,7 @@ subtest 'pledge violation aborts the violator' => sub {
 	plan skip_all => 'pledge(2) only enforced on OpenBSD'
 	    unless FuguLib::Sandbox->is_supported;
 
-	my $status = run_child(<<'EOF');
-use v5.36;
-use FuguLib::Sandbox;
-use Socket qw(AF_INET SOCK_STREAM);
-use POSIX ();
-FuguLib::Sandbox->pledge(promises => 'stdio');
-socket(my $s, AF_INET, SOCK_STREAM, 0);
-POSIX::_exit(0);    # only reachable if the pledge did not enforce
-EOF
+	my $status = run_child($violation_child);
 	is( $status & 127, SIGABRT,
 		'socket(2) outside the promise set delivers SIGABRT' );
 	unlink 'perl.core';    # belt and braces: ulimit already forbids it
@@ -115,20 +183,7 @@ subtest 'unveil restricts the filesystem view' => sub {
 	print $fh "visible\n";
 	close $fh;
 
-	# Exit codes pick the failing step apart: 1 = a file outside
-	# the view stayed readable, 2 = the file inside did not
-	my $status = run_child( <<EOF . <<'BODY' );
-use v5.36;
-use FuguLib::Sandbox;
-use POSIX ();
-my $dir = '$dir';
-EOF
-FuguLib::Sandbox->unveil(paths => [[$dir, 'r']]);
-FuguLib::Sandbox->unveil_lock;
-POSIX::_exit(1) if open(my $out, '<', '/etc/services');
-POSIX::_exit(2) unless open(my $in, '<', "$dir/inside.txt");
-POSIX::_exit(0);
-BODY
+	my $status = run_child($unveil_child);
 	is( $status >> 8, 0, 'outside unreadable, inside readable' );
 };
 
@@ -136,35 +191,7 @@ subtest 'required and optional dispositions' => sub {
 	plan skip_all => 'unveil(2) only enforced on OpenBSD'
 	    unless FuguLib::Sandbox->is_supported;
 
-	# 3 = a missing required path was silently accepted,
-	# 4 = a missing optional path was not skipped cleanly,
-	# 5 = on_skip did not report it
-	my $status = run_child( <<EOF . <<'BODY' );
-use v5.36;
-use FuguLib::Sandbox;
-use POSIX ();
-my $dir = '$dir';
-EOF
-my @skipped;
-eval {
-	FuguLib::Sandbox->unveil(
-		paths   => [["$dir/no-such-entry", 'r']],
-	);
-	1;
-} and POSIX::_exit(3);
-eval {
-	FuguLib::Sandbox->unveil(
-		paths => [
-			["$dir/no-such-entry", 'r', { optional => 1 }],
-			[$dir, 'r'],
-		],
-		on_skip => sub ($path) { push @skipped, $path },
-	);
-	1;
-} or POSIX::_exit(4);
-POSIX::_exit(5) unless @skipped == 1;
-POSIX::_exit(0);
-BODY
+	my $status = run_child($dispositions_child);
 	is( $status >> 8, 0,
 		'missing required dies, missing optional is skipped and reported'
 	);
