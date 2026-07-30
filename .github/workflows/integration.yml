@@ -27,6 +27,7 @@ on:
       - "share/openhap/examples/*.sample"
       # The suite itself and the mocks it carries over
       - "t/openhap/integration/*.t"
+      - "t/fugulib/sandbox.t"
       - "t/lib/**.pm"
       # The harness that installs the guest, provisions it and drives
       # the run
@@ -63,6 +64,7 @@ on:
       - "etc/rc.d/openhapd"
       - "share/openhap/examples/*.sample"
       - "t/openhap/integration/*.t"
+      - "t/fugulib/sandbox.t"
       - "t/lib/**.pm"
       - "bin/openhvf"
       - "lib/OpenHVF/**.pm"

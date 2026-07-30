@@ -17,6 +17,11 @@ on missing dependencies) and need no citations. Integration tests follow the
 stricter rules in `t/openhap/integration/CLAUDE.md` (never skip, no log
 parsing).
 
+One module test crosses tiers: `scripts/integration` ships `t/fugulib/sandbox.t`
+into the VM and proves it with the integration files, because its enforcement
+subtests (pledge aborts, unveil hides the filesystem) are OpenBSD-only and would
+otherwise never run in CI — `make check` runs on Linux, where they skip.
+
 Tooling tests are named after what they cover — `t/scripts/deps.t` for
 `scripts/deps` — and drive it as a subprocess rather than loading a module, so
 they assert on exit status and output. `t/scripts/conventions.t` covers the

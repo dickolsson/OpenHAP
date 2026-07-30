@@ -109,6 +109,31 @@ cmp_ok($pledge_pos, '>', $lock_pos, 'pledge applied after the lock');
 
 unlink $trace;
 
+# Permanent negative control: the identical trace pipeline over a
+# perl process that deliberately does not pledge or unveil must show
+# neither syscall. This is what proves the positive assertions above
+# can fail - the demonstration plan 005 required - without the
+# test-only daemon override it forbids: if the pledge or unveil call
+# were dropped from bin/openhapd, its trace would look exactly like
+# this one, and the assertions above would go red. It also pins the
+# detector itself: a kdump format drift that made the regexes match
+# ambient records would fail here. ktrace(1) itself calls neither
+# syscall, so any such record in this trace is a defect.
+my $neg_trace = "/tmp/openhapd-negctl-$$";
+system('ktrace', '-i', '-f', $neg_trace, $^X, '-e', 'exit 0');
+my $neg = `kdump -f $neg_trace 2>&1`;
+$neg =~ s/\\\n\t//g;
+ok(length $neg, 'negative-control trace produced');
+like($neg, qr/CALL\s+exit\(/,
+     'the control traced real syscalls');
+unlike($neg, qr/CALL\s+pledge\(/,
+       'no pledge syscall without a pledge call');
+unlike($neg, qr/STRU\s+promise=/,
+       'no promise record without a pledge call');
+unlike($neg, qr/CALL\s+unveil\(/,
+       'no unveil syscall without an unveil call');
+unlink $neg_trace;
+
 # Startup still succeeds in every configuration that worked before
 # the sandbox: a missing config file must be an optional unveil entry,
 # never a refusal to boot ...
