@@ -20,11 +20,13 @@ OpenHAP::Test::Integration - Base module for OpenHAP integration tests
 
 =head1 DESCRIPTION
 
-Provides common setup, teardown, and utility functions for integration tests.
-Ensures environment is properly configured and dependencies are available.
+Setup, teardown, and helpers for the integration tests, which run against
+an installed openhapd on OpenBSD rather than against modules in the
+checkout.
 
-Integration tests must run in a properly configured OpenBSD environment with
-all dependencies installed. Tests fail (not skip) if requirements are not met.
+Unlike the unit tests, these fail rather than skip when a requirement is
+missing, since a silent skip in the VM would report a green run that
+tested nothing.
 
 =head1 ENVIRONMENT
 

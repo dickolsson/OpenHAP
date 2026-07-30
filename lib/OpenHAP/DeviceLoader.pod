@@ -22,10 +22,9 @@ OpenHAP::DeviceLoader - Device configuration loading and instantiation
 
 =head1 DESCRIPTION
 
-OpenHAP::DeviceLoader handles loading device configurations, validating
-them, instantiating the appropriate device classes, and registering them
-with the HAP bridge. It centralizes device management logic and provides
-extensibility for adding new device types.
+Reads the device blocks from an L<OpenHAP::Config>, validates them,
+instantiates the matching device class, and registers each one with the
+HAP bridge.
 
 =head1 METHODS
 
@@ -92,48 +91,26 @@ Devices missing required fields are skipped with appropriate error logging.
 
 =head1 SUPPORTED DEVICES
 
-Currently supported device types:
+The only device type is C<tasmota>, with these subtypes:
 
 =over 4
 
-=item * B<tasmota/thermostat> - Tasmota-based thermostat devices
+=item * B<thermostat> - L<OpenHAP::Tasmota::Thermostat>
 
-=back
+=item * B<heater>, B<switch> - L<OpenHAP::Tasmota::Heater>
 
-Additional device types can be added by:
+=item * B<sensor> - L<OpenHAP::Tasmota::Sensor>
 
-=over 4
-
-=item 1. Adding type check to _is_supported_device()
-
-=item 2. Adding instantiation case to _instantiate_device()
-
-=item 3. Ensuring device class implements required interface
+=item * B<lightbulb>, B<dimmer>, B<rgblight>, B<ctlight> -
+L<OpenHAP::Tasmota::Lightbulb>
 
 =back
 
 =head1 ERROR HANDLING
 
-The loader uses eval blocks to catch errors during device instantiation
-and MQTT subscription. Errors are logged but don't stop processing of
-other devices. This ensures one misconfigured device doesn't prevent
-the entire system from starting.
-
-=head1 LOGGING
-
-The loader logs at various levels:
-
-=over 4
-
-=item * B<debug> - Device processing details, MQTT subscriptions
-
-=item * B<info> - Successfully loaded devices, summary counts
-
-=item * B<warning> - Missing optional fields, recoverable issues
-
-=item * B<error> - Invalid configurations, instantiation failures
-
-=back
+Device instantiation and MQTT subscription run inside C<eval>, so one
+misconfigured device is logged and skipped rather than stopping the
+daemon from starting.
 
 =head1 SEE ALSO
 

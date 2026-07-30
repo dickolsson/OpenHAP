@@ -7,7 +7,7 @@ OpenHAP::Pairing - HAP pairing protocol implementation
     use OpenHAP::Pairing;
 
     my $pairing = OpenHAP::Pairing->new(
-        pin => '123-45-678',
+        pin => '9876-5432',
         storage => $storage,
         accessory_ltsk => $ltsk,
         accessory_ltpk => $ltpk,

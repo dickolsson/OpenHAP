@@ -9,11 +9,11 @@ Website and manuals: <https://www.openhap.org/>
 
 ## Features
 
-- **HomeKit**: Full HAP implementation with secure pairing
-- **Crypto**: SRP-6a, Ed25519, X25519, ChaCha20-Poly1305
-- **Thermostats**: Control Tasmota heaters with temperature sensors
-- **MQTT**: Connects HomeKit to MQTT-based devices
-- **OpenBSD**: Native with pledge(2)/unveil(2) support
+- Pairs with the iOS Home app over HAP, and keeps the session encrypted
+- Tasmota thermostats, heaters, switches, sensors, lightbulbs and dimmers,
+  declared in `openhapd.conf(5)`
+- MQTT for device control and state
+- Runs as `_openhap` from `rc.d`, under pledge(2) and unveil(2)
 
 ## Quick Start
 

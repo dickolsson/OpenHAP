@@ -20,9 +20,11 @@ OpenHAP::Daemon - Daemonization and process management
 
 =head1 DESCRIPTION
 
-OpenHAP::Daemon provides utilities for daemonizing processes and managing
-PID files on OpenBSD. It handles forking, session creation, and file
-descriptor redirection following OpenBSD conventions.
+C<daemonize>, C<write_pidfile>, C<read_pidfile> and C<check_running> are
+a compatibility shim over L<FuguLib::Daemon> and L<FuguLib::State>,
+which document the behaviour; new code should call those directly.
+C<unveil_paths> is the part that belongs here, since the path list it
+assembles is specific to openhapd.
 
 =head1 CLASS METHODS
 
@@ -83,16 +85,9 @@ unveils F</usr/local/lib>. Pure assembly - nothing here changes the
 filesystem view - so it is unit-testable anywhere. C<perl_dirs>
 overrides the enumerated directories for tests.
 
-=head1 SECURITY CONSIDERATIONS
-
-The daemonize() method sets C<$DB::inhibit_exit = 0> after forking to
-ensure proper cleanup when running under the debugger.
-
-PID files should be stored in /var/run/ with appropriate permissions.
-
 =head1 SEE ALSO
 
-L<OpenHAP::Log>, L<daemon(3)>, L<rc.d(8)>
+L<FuguLib::Daemon>, L<FuguLib::State>, L<rc.d(8)>
 
 =head1 AUTHOR
 

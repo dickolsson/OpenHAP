@@ -8,7 +8,7 @@ OpenHAP::HAP - Main HAP server
 
     my $server = OpenHAP::HAP->new(
         port => 51827,
-        pin => '123-45-678',
+        pin => '9876-5432',
         name => 'My Bridge',
     );
 

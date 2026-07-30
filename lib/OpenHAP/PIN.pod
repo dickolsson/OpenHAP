@@ -7,28 +7,26 @@ OpenHAP::PIN - HomeKit Accessory Protocol PIN validation and normalization
     use OpenHAP::PIN qw(normalize_pin validate_pin);
 
     # Normalize PIN (strip dashes/spaces)
-    my $normalized = normalize_pin('1234-5678');  # Returns '12345678'
-    my $normalized = normalize_pin('1234 5678');  # Returns '12345678'
-    my $normalized = normalize_pin('12345678');   # Returns '12345678'
+    my $normalized = normalize_pin('9876-5432');  # Returns '98765432'
+    my $normalized = normalize_pin('9876 5432');  # Returns '98765432'
+    my $normalized = normalize_pin('98765432');   # Returns '98765432'
 
     # Validate PIN
-    if (validate_pin('1234-5678')) {
+    if (validate_pin('9876-5432')) {
         print "Valid PIN\n";
     }
 
-    if (!validate_pin('12345678')) {
+    if (!validate_pin('1234-5678')) {
         print "Invalid PIN (sequential pattern)\n";
     }
 
 =head1 DESCRIPTION
 
-This module provides utilities for handling HomeKit Accessory Protocol (HAP)
-setup codes (PINs). PINs are 8-digit numeric codes used during the pairing
-process.
+Handles HAP setup codes: 8-digit numeric codes used during pairing.
 
-Per the HAP specification, dashes and spaces in PINs are formatting characters
-only and are stripped before use. The PIN C<1234-5678> is equivalent to
-C<12345678>.
+Per the HAP specification, dashes and spaces are formatting characters only
+and are stripped before use, so C<9876-5432> and C<98765432> are the same
+setup code.
 
 =head1 FUNCTIONS
 
@@ -37,8 +35,8 @@ C<12345678>.
 Normalizes a PIN by stripping dashes and spaces, returning the 8-digit
 numeric string.
 
-    my $normalized = normalize_pin('1234-5678');
-    # Returns: '12345678'
+    my $normalized = normalize_pin('9876-5432');
+    # Returns: '98765432'
 
 Returns C<undef> if the input is not a valid format (not exactly 8 digits
 after normalization).
@@ -57,51 +55,17 @@ Validates a PIN meets HAP requirements:
 
 Returns C<1> if valid, C<undef> if invalid.
 
-    if (validate_pin('1234-5678')) {
+    if (validate_pin('9876-5432')) {
         # PIN is valid
     }
 
 =head1 INVALID PINS
 
-The following PINs are invalid per the HAP specification:
+The HAP specification rejects these setup codes:
 
     00000000  11111111  22222222  33333333  44444444
     55555555  66666666  77777777  88888888  99999999
     12345678  87654321
-
-These patterns are too simple and pose a security risk.
-
-=head1 PIN FORMAT
-
-PINs may be formatted with dashes for readability:
-
-=over 4
-
-=item * Format: C<XXXX-XXXX> where X is a digit 0-9
-
-=item * Examples: C<1234-5678>, C<9876-5432>
-
-=item * Dashes are optional and stripped during processing
-
-=back
-
-The canonical format used in configuration files and displays is C<XXXX-XXXX>,
-but the underlying 8-digit number is what matters for validation and
-cryptographic operations.
-
-=head1 SECURITY CONSIDERATIONS
-
-=over 4
-
-=item * Never use default or example PINs in production
-
-=item * Generate random PINs that are not trivial patterns
-
-=item * Store PINs securely with appropriate file permissions
-
-=item * Consider displaying PINs only on secure channels (local console)
-
-=back
 
 =head1 SEE ALSO
 
