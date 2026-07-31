@@ -36,8 +36,8 @@ validity, and configured devices — with `bin/hapctl`.
 4. Against the test VM, run the installed copy:
 
    ```sh
-   bin/openhvf ssh 'hapctl status'
-   bin/openhvf ssh 'hapctl -c /etc/openhapd.conf check'
+   bin/fuguvm ssh 'hapctl status'
+   bin/fuguvm ssh 'hapctl -c /etc/openhapd.conf check'
    ```
 
 Note: `status` reads `/var/db/openhapd` directly; as a non-root user, pairing

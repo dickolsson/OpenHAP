@@ -9,17 +9,17 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Find openhvf
-OPENHVF="${PROJECT_ROOT}/bin/openhvf"
-if [ ! -x "${OPENHVF}" ]; then
-	echo "ERROR: openhvf not found" >&2
+# Find fuguvm
+FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
+if [ ! -x "${FUGUVM}" ]; then
+	echo "ERROR: fuguvm not found" >&2
 	exit 1
 fi
 
-# Read a field from 'openhvf status'. openhvf logs to stderr, so stderr
+# Read a field from 'fuguvm status'. fuguvm logs to stderr, so stderr
 # has to be folded in for the value to be readable at all.
 vm_status() {
-	"${OPENHVF}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
+	"${FUGUVM}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
 }
 
 # Parse arguments
@@ -44,7 +44,7 @@ done
 # Fresh install?
 if [ ${FRESH} -eq 1 ]; then
 	echo "==> Destroying existing VM..."
-	"${OPENHVF}" destroy 2>/dev/null || true
+	"${FUGUVM}" destroy 2>/dev/null || true
 fi
 
 # Restore the cached provisioning layer before the VM is created, so a
@@ -58,7 +58,7 @@ fi
 # it for next time.
 if [ "$(vm_status disk_exists)" != "1" ]; then
 	DEPS_SNAPSHOT="deps-$("${SCRIPT_DIR}/deps-key")"
-	if ! "${OPENHVF}" snapshot restore "${DEPS_SNAPSHOT}"; then
+	if ! "${FUGUVM}" snapshot restore "${DEPS_SNAPSHOT}"; then
 		echo "==> No cached ${DEPS_SNAPSHOT} layer, will provision"
 	fi
 fi
@@ -66,5 +66,5 @@ fi
 # Bring up VM (idempotent). Under TCG emulation (e.g. CI runners
 # without hardware acceleration) boot and install take far longer than
 # under HVF/KVM, so the wait timeout is overridable.
-"${OPENHVF}" up
-"${OPENHVF}" wait --timeout "${OPENHVF_WAIT_TIMEOUT:-120}"
+"${FUGUVM}" up
+"${FUGUVM}" wait --timeout "${FUGUVM_WAIT_TIMEOUT:-120}"

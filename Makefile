@@ -44,7 +44,7 @@ DEPS			= scripts/deps
 
 # Man pages.  FuguLib sources drop the FuguLib:: prefix because a colon
 # cannot appear in a make target; install-man puts it back.
-MAN1			= man/openhvf/openhvf.1
+MAN1			= man/fuguvm/fuguvm.1
 MAN3P			= man/fugulib/Daemon.3p man/fugulib/Imsg.3p \
 			  man/fugulib/Log.3p man/fugulib/MDNS.3p \
 			  man/fugulib/Privdrop.3p man/fugulib/Process.3p \
@@ -215,7 +215,7 @@ package: clean
 	rm -rf build/$(PACKAGE)
 
 test:
-	prove -l -v t/openhvf/*.t
+	prove -l -v t/fuguvm/*.t
 	prove -l -v t/fugulib/*.t
 	prove -l -v t/openhap/*.t
 	prove -l -v t/conformance/*.t
@@ -294,7 +294,7 @@ web:
 	    $(MKPAGE) 'Install' > $(WEBOUT)/install.html
 	$(MKINDEX) $(MAN1) $(MAN3P) $(MAN5) $(MAN8) `$(FINDPOD)` | \
 	    $(MKPAGE) 'Manuals' > $(WEBOUT)/manuals.html
-	$(MKPAGE) 'OpenHVF' < web/openhvf.body.html > $(WEBOUT)/openhvf.html
+	$(MKPAGE) 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
 	$(MKPAGE) 'FuguLib' < web/fugulib.body.html > $(WEBOUT)/fugulib.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.8 ) | \
 	    $(MKPAGE) 'openhapd(8)' > $(WEBOUT)/openhapd.8.html
@@ -302,8 +302,8 @@ web:
 	    $(MKPAGE) 'hapctl(8)' > $(WEBOUT)/hapctl.8.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.conf.5 ) | \
 	    $(MKPAGE) 'openhapd.conf(5)' > $(WEBOUT)/openhapd.conf.5.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhvf.1 ) | \
-	    $(MKPAGE) 'openhvf(1)' > $(WEBOUT)/openhvf.1.html
+	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) fuguvm.1 ) | \
+	    $(MKPAGE) 'fuguvm(1)' > $(WEBOUT)/fuguvm.1.html
 	for f in $(MAN3P); do \
 		n="FuguLib::$${f##*/}"; n="$${n%.3p}"; \
 		( cd $(WEBMAN) && $(MANDOC) $(MANHTML) "$$n.3p" ) | \

@@ -1,6 +1,6 @@
 # Build artifacts
 *.o
-.openhvf/
+.fuguvm/
 build/
 local/
 

@@ -3,7 +3,7 @@
 # Provision OpenHAP in the OpenBSD VM
 #
 # Two layers. The deps layer installs the guest's packages and Perl
-# modules and is cached as an openhvf snapshot, because under TCG
+# modules and is cached as a fuguvm snapshot, because under TCG
 # emulation it costs as much as the OS install itself. The OpenHAP layer
 # installs this checkout and runs every time.
 
@@ -11,24 +11,24 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-OPENHVF="${PROJECT_ROOT}/bin/openhvf"
+FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
 
-# Read a field from 'openhvf status'. openhvf logs to stderr, so stderr
+# Read a field from 'fuguvm status'. fuguvm logs to stderr, so stderr
 # has to be folded in for the value to be readable at all.
 vm_status() {
-	"${OPENHVF}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
+	"${FUGUVM}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
 }
 
 SSH_PORT="$(vm_status ssh_port)"
 SSH_PORT="${SSH_PORT:-2222}"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
-vm_run() { "${OPENHVF}" ssh "$@"; }
+vm_run() { "${FUGUVM}" ssh "$@"; }
 vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
 
 DEPS_KEY="$("${SCRIPT_DIR}/deps-key")"
 DEPS_SNAPSHOT="deps-${DEPS_KEY}"
-DEPS_MARKER="/var/db/openhvf-deps-${DEPS_KEY}"
+DEPS_MARKER="/var/db/fuguvm-deps-${DEPS_KEY}"
 
 echo "==> Building package..."
 cd "${PROJECT_ROOT}"
@@ -119,15 +119,15 @@ EOF
 	# snapshotted. Guard them here rather than softening the verb: a
 	# cache miss must not abort provisioning.
 	echo "==> Caching guest dependencies as ${DEPS_SNAPSHOT}..."
-	"${OPENHVF}" down
-	if "${OPENHVF}" snapshot save "${DEPS_SNAPSHOT}"; then
+	"${FUGUVM}" down
+	if "${FUGUVM}" snapshot save "${DEPS_SNAPSHOT}"; then
 		# Safe to prune: snapshots are flattened onto the base
 		# image, so no deps-* layer is another one's parent.
-		for old in $("${OPENHVF}" snapshot list --names || true); do
+		for old in $("${FUGUVM}" snapshot list --names || true); do
 			case "${old}" in
 			deps-*)
 				if [ "${old}" != "${DEPS_SNAPSHOT}" ]; then
-					"${OPENHVF}" snapshot rm "${old}" ||
+					"${FUGUVM}" snapshot rm "${old}" ||
 						true
 				fi
 				;;
@@ -136,8 +136,8 @@ EOF
 	else
 		echo "WARNING: could not cache ${DEPS_SNAPSHOT}; continuing" >&2
 	fi
-	"${OPENHVF}" up
-	"${OPENHVF}" wait --timeout "${OPENHVF_WAIT_TIMEOUT:-120}"
+	"${FUGUVM}" up
+	"${FUGUVM}" wait --timeout "${FUGUVM_WAIT_TIMEOUT:-120}"
 fi
 
 echo "==> Copying to VM..."

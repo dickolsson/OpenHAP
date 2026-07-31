@@ -1,0 +1,15 @@
+# FuguVM project configuration
+
+cache_dir ~/.cache/fuguvm
+state_dir .fuguvm/state
+default_vm default
+
+# OpenBSD VM for OpenHAP integration testing
+vm "default" {
+	version      7.8
+	arch         arm64
+	memory       2048
+	disk_size    8G
+	ssh_port     2222
+	console_port 4444
+}

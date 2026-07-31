@@ -1,0 +1,520 @@
+#!/usr/bin/env perl
+# ex:ts=8 sw=4:
+
+use v5.36;
+use Test::More;
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib";
+use File::Path qw(make_path);
+use File::Temp qw(tempdir);
+use Cwd qw(getcwd);
+
+# CLI depends on SSH which requires Net::SSH2
+BEGIN {
+    eval { require Net::SSH2 };
+    if ($@) {
+	plan skip_all => 'Net::SSH2 not available';
+    }
+}
+
+use_ok('FuguVM::CLI');
+use_ok('FuguVM::Proxy::Cache');
+
+# Test help command returns success
+
+# Test help command returns success (exit code 0)
+{
+    my $result = FuguVM::CLI->run('help');
+    is($result, 0, 'help command returns success');
+}
+
+# Test unknown command returns error (exit code 2 = invalid args)
+{
+    # Suppress warning
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('unknown_command');
+    is($result, 2, 'unknown command returns invalid args exit code');
+}
+
+# ============================================================
+# Robustness tests (from ROBUSTNESS-REPORT.md)
+# ============================================================
+
+# Issue 2: Permission denied during init (readonly directory)
+SKIP: {
+    skip "Cannot test permission issues as root", 2 if $< == 0;
+    
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $readonly = "$tmpdir/readonly";
+    mkdir $readonly;
+    chmod 0555, $readonly;
+    
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('init', $readonly);
+    
+    chmod 0755, $readonly;  # cleanup
+    
+    is($result, 1, 'init on readonly dir returns EXIT_ERROR');
+}
+
+# Issue 2: Init on non-existent directory
+{
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('init', '/nonexistent/path/should/fail');
+    is($result, 1, 'init on non-existent dir returns EXIT_ERROR');
+}
+
+# Issue 5: Non-existent project path
+{
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('--project=/nonexistent/path', 'status');
+    is($result, 3, 'non-existent project path returns EXIT_CONFIG_ERROR');
+}
+
+# Issue 6: Non-numeric timeout value
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $orig_dir = getcwd();
+    chdir $tmpdir;
+    
+    # Initialize project first
+    FuguVM::CLI->run('init');
+    
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('wait', '--timeout=abc');
+    
+    chdir $orig_dir;
+    
+    is($result, 2, 'non-numeric timeout returns EXIT_INVALID_ARGS');
+}
+
+# Issue 6: Zero timeout value
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $orig_dir = getcwd();
+    chdir $tmpdir;
+    
+    # Initialize project first
+    FuguVM::CLI->run('init');
+    
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('wait', '--timeout=0');
+    
+    chdir $orig_dir;
+    
+    is($result, 2, 'zero timeout returns EXIT_INVALID_ARGS');
+}
+
+# Issue 6: Negative timeout value (as string)
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $orig_dir = getcwd();
+    chdir $tmpdir;
+    
+    # Initialize project first
+    FuguVM::CLI->run('init');
+    
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('wait', '--timeout=-10');
+    
+    chdir $orig_dir;
+    
+    is($result, 2, 'negative timeout returns EXIT_INVALID_ARGS');
+}
+
+# Issue 1: Long VM name via CLI
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $orig_dir = getcwd();
+    chdir $tmpdir;
+    
+    # Initialize project first
+    FuguVM::CLI->run('init');
+    
+    my $long_name = 'x' x 10000;
+    local $SIG{__WARN__} = sub {};
+    my $result = FuguVM::CLI->run('--vm', $long_name, 'status');
+    
+    chdir $orig_dir;
+    
+    is($result, 1, 'extremely long VM name returns EXIT_ERROR');
+}
+
+# Init command is idempotent
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+
+    my $result1 = FuguVM::CLI->run('init', $tmpdir);
+    is($result1, 0, 'first init returns success');
+
+    my $result2 = FuguVM::CLI->run('init', $tmpdir);
+    is($result2, 0, 'second init (idempotent) returns success');
+}
+
+# ============================================================
+# Installed-image cache subcommand
+# ============================================================
+
+# Usage errors match the style of the other subcommands
+{
+    my $project = _cache_project();
+
+    local $SIG{__WARN__} = sub {};
+    is(FuguVM::CLI->run("--project=$project", 'cache', 'frobnicate'), 2,
+	'unknown cache action returns EXIT_INVALID_ARGS');
+    is(FuguVM::CLI->run("--project=$project", 'cache'), 2,
+	'cache without an action returns EXIT_INVALID_ARGS');
+    is(FuguVM::CLI->run("--project=$project", 'cache', 'clear', '--bogus'),
+	2, 'unknown cache clear option returns EXIT_INVALID_ARGS');
+}
+
+# Listing an empty cache mirrors 'image list'
+{
+    my $project = _cache_project();
+    is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'list'),
+	0, 'cache list on an empty cache succeeds');
+}
+
+# clear removes everything; clear --stale keeps the invoked VM's key
+{
+    my $project = _cache_project();
+    my $cache = FuguVM::ImageCache->new("$project/cache");
+    my $current = $cache->key(
+	FuguVM::Config->new($project)->load_vm('default'));
+    ok(defined $current, 'the configured VM derives a cache key');
+
+    _fake_entry($cache, $current);
+    _fake_entry($cache, '7.7-arm64-00000000');
+    make_path($cache->installed_dir . '/.tmp.999.abcdef');
+
+    is(scalar @{ $cache->list }, 2, 'two entries before pruning');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'cache', 'clear', '--stale'),
+	0, 'cache clear --stale succeeds');
+
+    my $left = $cache->list;
+    is(scalar @$left, 1, '--stale keeps exactly one entry');
+    is($left->[0]{key}, $current, 'and it is the invoked VM\'s key');
+    ok(!-e $cache->installed_dir . '/.tmp.999.abcdef',
+	'--stale also sweeps interrupted store trees');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	0, 'bare cache clear succeeds');
+    is(scalar @{ $cache->list }, 0, 'bare clear removes everything');
+}
+
+# The proxy's downloads share cache_dir with the images and nothing else
+# bounds them, so the same command prunes both: --stale keeps the OpenBSD
+# version the invoked VM installs, bare clear keeps nothing
+{
+    my $project = _cache_project();
+    my $proxy = FuguVM::Proxy::Cache->new("$project/cache");
+
+    _fake_download($project, '7.8/arm64/base78.tgz');
+    _fake_download($project, '7.7/arm64/base77.tgz');
+    is(scalar @{ $proxy->list }, 2, 'two cached downloads before pruning');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'cache', 'clear', '--stale'),
+	0, 'cache clear --stale succeeds');
+
+    is_deeply([map { $_->{url} } @{ $proxy->list }],
+	['http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz'],
+	'--stale keeps the version the configured VM installs');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	0, 'bare cache clear succeeds');
+    is(scalar @{ $proxy->list }, 0, 'bare clear empties the proxy too');
+}
+
+# Listing reports the proxy as well, so neither half of cache_dir is
+# invisible to someone deciding whether to prune
+{
+    my $project = _cache_project();
+    _fake_download($project, '7.7/arm64/base77.tgz');
+
+    my $err = _capture_stderr($project, 'cache', 'list');
+    like($err, qr/Proxy downloads/, 'cache list reports the proxy store');
+    like($err, qr/OpenBSD 7\.7/, 'broken down by version');
+    like($err, qr/No cached images/,
+	'and still says the images are empty');
+}
+
+# clear refuses while a VM whose disk is backed by the entry is running
+SKIP: {
+    my $has_qemu = `which qemu-img 2>/dev/null`;
+    skip 'qemu-img not installed', 4 unless $has_qemu;
+
+    my $project = _cache_project();
+    my $cache = FuguVM::ImageCache->new("$project/cache");
+    my $key = '7.8-arm64-cafebabe';
+
+    my $source = "$project/source.qcow2";
+    system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
+	or skip 'cannot create a test disk image', 4;
+    my $base = $cache->store($key, $source, { root_password => 'pw' });
+
+    # A working disk in this checkout, backed by the cached entry
+    my $state_dir = "$project/.fuguvm/state";
+    FuguVM::Disk->new($state_dir)->create('default', undef, $base, 'qcow2');
+
+    # This test process stands in for a live QEMU
+    make_path("$state_dir/default");
+    open my $pidfh, '>', "$state_dir/default/vm.pid" or die $!;
+    print $pidfh "$$\n";
+    close $pidfh;
+
+    local $SIG{__WARN__} = sub {};
+    is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	5, 'clear refuses with EXIT_VM_RUNNING while the VM runs');
+    ok(defined $cache->lookup($key), 'the entry survives the refusal');
+
+    # Stopped: removal is allowed, with a warning about the orphan
+    unlink "$state_dir/default/vm.pid";
+    is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
+	0, 'clear proceeds once the VM is stopped');
+    is($cache->lookup($key), undef, 'the entry is gone');
+}
+
+# ============================================================
+# Snapshot subcommand
+# ============================================================
+
+# Usage and name validation
+{
+    my $project = _cache_project();
+
+    local $SIG{__WARN__} = sub {};
+    is(FuguVM::CLI->run("--project=$project", 'snapshot'), 2,
+	'snapshot without an action returns EXIT_INVALID_ARGS');
+    is(FuguVM::CLI->run("--project=$project", 'snapshot', 'frobnicate'), 2,
+	'unknown snapshot action returns EXIT_INVALID_ARGS');
+    is(FuguVM::CLI->run("--project=$project", 'snapshot', 'save'), 2,
+	'snapshot save without a name returns EXIT_INVALID_ARGS');
+    is(FuguVM::CLI->run("--project=$project", 'snapshot', 'save', '../x'),
+	2, 'a name with a path separator is rejected');
+}
+
+# Missing snapshots report a distinct, scriptable exit code so callers
+# can do 'snapshot restore || provision-from-scratch'
+{
+    my $project = _cache_project();
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	11, 'restoring a missing snapshot returns EXIT_SNAPSHOT_NOT_FOUND');
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'rm', 'deps'),
+	11, 'removing a missing snapshot returns the same code');
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'list'),
+	0, 'listing with nothing cached still succeeds');
+}
+
+# Save, restore, and the refusals, over a real backing chain
+SKIP: {
+    my $has_qemu = `which qemu-img 2>/dev/null`;
+    skip 'qemu-img not installed', 12 unless $has_qemu;
+
+    my $project = _cache_project();
+    my $state_dir = "$project/.fuguvm/state";
+    my $cache = FuguVM::ImageCache->new("$project/cache");
+    my $key = $cache->key(FuguVM::Config->new($project)->load_vm('default'));
+
+    my $source = "$project/source.qcow2";
+    system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
+	or skip 'cannot create a test disk image', 12;
+
+    # A standalone disk cannot be snapshotted: say so, do not crash
+    my $disk = FuguVM::Disk->new($state_dir);
+    $disk->create('default', '16M');
+    my $state = FuguVM::State->new($state_dir, 'default');
+    $state->mark_installed;
+
+    local $SIG{__WARN__} = sub {};
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'save', 'deps'),
+	1, 'a standalone disk is a diagnosed error, not a crash');
+
+    # Rebuild the disk as an overlay on a cached base
+    my $base = $cache->store($key, $source, { root_password => 'pw' });
+    unlink $disk->path('default');
+    $disk->create('default', undef, $base, 'qcow2');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'save', 'deps'),
+	0, 'save succeeds on a disk backed by a cached image');
+    ok(defined $cache->snapshot_lookup($key, 'deps'), 'the snapshot exists');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'list'),
+	0, 'list succeeds');
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	0, 'restore succeeds');
+    is($disk->backing_file('default'),
+	$cache->snapshot_path($key, 'deps'),
+	'restore actually replaced the disk with an overlay on the snapshot');
+
+    # Restore from nothing: no disk, no state, as a fresh checkout has
+    unlink $disk->path('default');
+    unlink "$state_dir/default/status";
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	0, 'restore works with no disk and no state');
+
+    my $reseeded = FuguVM::State->new($state_dir, 'default');
+    ok($reseeded->is_installed, 'restore reseeds installed state');
+    is($reseeded->get_root_password, 'pw',
+	'restore reseeds the root password from the base');
+
+    # A running VM refuses both save and restore
+    open my $pidfh, '>', "$state_dir/default/vm.pid" or die $!;
+    print $pidfh "$$\n";
+    close $pidfh;
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'save', 'deps'),
+	5, 'save refuses while the VM is running');
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'restore', 'deps'),
+	5, 'restore refuses while the VM is running');
+    unlink "$state_dir/default/vm.pid";
+
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'rm', 'deps'),
+	0, 'rm succeeds');
+}
+
+# --names is the scriptable listing: bare names on stdout, where a
+# shell can read them, rather than through the stderr logger
+SKIP: {
+    my $has_qemu = `which qemu-img 2>/dev/null`;
+    skip 'qemu-img not installed', 4 unless $has_qemu;
+
+    my $project = _cache_project();
+    my $cache = FuguVM::ImageCache->new("$project/cache");
+    my $key = $cache->key(FuguVM::Config->new($project)->load_vm('default'));
+
+    my $source = "$project/source.qcow2";
+    system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
+	or skip 'cannot create a test disk image', 4;
+    my $base = $cache->store($key, $source, { root_password => 'pw' });
+    FuguVM::Disk->new("$project/.fuguvm/state")
+	->create('default', undef, $base, 'qcow2');
+    FuguVM::State->new("$project/.fuguvm/state", 'default')->mark_installed;
+
+    is(_capture_stdout($project, 'snapshot', 'list', '--names'), '',
+	'nothing on stdout when there are no snapshots');
+
+    FuguVM::CLI->run("--project=$project", '--quiet',
+	'snapshot', 'save', 'deps-aaa');
+    FuguVM::CLI->run("--project=$project", '--quiet',
+	'snapshot', 'save', 'deps-bbb');
+
+    is(_capture_stdout($project, 'snapshot', 'list', '--names'),
+	"deps-aaa\ndeps-bbb\n", 'one bare name per line, sorted');
+    is(_capture_stdout($project, 'snapshot', 'list'), '',
+	'the human listing writes nothing to stdout');
+
+    local $SIG{__WARN__} = sub {};
+    is(FuguVM::CLI->run("--project=$project", '--quiet',
+	    'snapshot', 'list', '--bogus'),
+	2, 'an unknown list option returns EXIT_INVALID_ARGS');
+}
+
+done_testing();
+
+# A project whose cache_dir points inside the project, so the tests
+# never touch the developer's real ~/.cache/fuguvm
+sub _cache_project
+{
+    my $project = tempdir(CLEANUP => 1);
+    make_path("$project/.fuguvm/vms", "$project/.fuguvm/state");
+
+    open my $fh, '>', "$project/.fuguvmrc" or die $!;
+    print $fh "cache_dir $project/cache\n";
+    print $fh "state_dir .fuguvm/state\n";
+    print $fh "default_vm default\n";
+    print $fh "vm \"default\" {\n";
+    print $fh "\tversion 7.8\n";
+    print $fh "\tdisk_size 8G\n";
+    print $fh "}\n";
+    close $fh;
+
+    return $project;
+}
+
+# Run a command with stdout captured, so the scriptable output can be
+# told apart from the logger's stderr
+sub _capture_stdout
+{
+    my ($project, @args) = @_;
+    my $out = '';
+
+    open my $saved, '>&', \*STDOUT or die $!;
+    close STDOUT;
+    open STDOUT, '>', \$out or die $!;
+
+    FuguVM::CLI->run("--project=$project", '--quiet', @args);
+
+    close STDOUT;
+    open STDOUT, '>&', $saved or die $!;
+    close $saved;
+
+    return $out;
+}
+
+# The logger writes to stderr, so the human listing is captured apart
+# from the scriptable output above
+sub _capture_stderr
+{
+    my ($project, @args) = @_;
+    my $err = '';
+
+    open my $saved, '>&', \*STDERR or die $!;
+    close STDERR;
+    open STDERR, '>', \$err or die $!;
+
+    FuguVM::CLI->run("--project=$project", @args);
+
+    close STDERR;
+    open STDERR, '>&', $saved or die $!;
+    close $saved;
+
+    return $err;
+}
+
+# A cached proxy download, seeded on disk rather than through store(),
+# whose cache_path() wants URI - a develop dependency
+sub _fake_download
+{
+    my ($project, $rel) = @_;
+    my $dir = "$project/cache/proxy/cdn.openbsd.org/pub/OpenBSD/$rel";
+
+    $dir =~ m{\A(.*)/} and make_path($1);
+    open my $fh, '>', $dir or die $!;
+    print $fh 'not a real file set';
+    close $fh;
+
+    return $dir;
+}
+
+# A complete-looking cache entry without the cost of a real image
+sub _fake_entry
+{
+    my ($cache, $key) = @_;
+    my $dir = $cache->entry_dir($key);
+    make_path($dir);
+
+    open my $bh, '>', "$dir/base.qcow2" or die $!;
+    print $bh 'not a real image';
+    close $bh;
+
+    open my $mh, '>', "$dir/meta.json" or die $!;
+    print $mh qq({"key":"$key","created_at":1,"root_password":"pw"});
+    close $mh;
+
+    return $dir;
+}

@@ -40,7 +40,7 @@ my @SITE = qw(
     index.html
     install.html
     manuals.html
-    openhvf.html
+    fuguvm.html
     fugulib.html
     404.html
 );
@@ -52,7 +52,7 @@ my @NAV = (
 	'index.html',
 	'install.html',
 	'manuals.html',
-	'openhvf.html',
+	'fuguvm.html',
 	'fugulib.html',
 	'https://github.com/dickolsson/openhap',
 );
@@ -197,7 +197,7 @@ for my $page (@PAGES) {
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
 	my @module_pages =
-	    grep { /^(?:OpenHAP|OpenHVF)::.*\.3p\.html$/ } readdir $dh;
+	    grep { /^(?:OpenHAP|FuguVM)::.*\.3p\.html$/ } readdir $dh;
 	closedir $dh;
 
 	is( scalar @module_pages, scalar keys %POD,

@@ -13,15 +13,15 @@ The repo contains three Perl namespaces with distinct concerns:
 - `FuguLib::` (`lib/FuguLib/`) — generic OpenBSD-style daemon utilities
   (daemonize, privilege drop, signals, logging, process, state, pledge/unveil,
   imsg framing, mdnsd publishing)
-- `OpenHVF::` (`lib/OpenHVF/`) — installs and manages OpenBSD VMs under QEMU,
-  driven by `bin/openhvf` and `.openhvfrc`. Keep it OpenHAP-agnostic: this repo
-  is its first user, not its purpose. Development-only, never shipped
+- `FuguVM::` (`lib/FuguVM/`) — installs and manages OpenBSD VMs under QEMU,
+  driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this repo is
+  its first user, not its purpose. Development-only, never shipped
 
 ## Commands
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/{openhvf,fugulib,openhap,conformance,scripts,web}/*.t
+make test           # prove -l -v t/{fuguvm,fugulib,openhap,conformance,scripts,web}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check
@@ -38,20 +38,20 @@ make integration    # provision OpenBSD VM and run integration tests
 
 ## Layout
 
-- `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `openhvf` (OpenBSD VM
+- `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `fuguvm` (OpenBSD VM
   CLI)
 - `lib/OpenHAP/` — protocol (`HAP.pm`, `HTTP.pm`, `TLV.pm`), crypto
   (`Crypto.pm`, `SRP.pm`, `Pairing.pm`, `Session.pm`), data model
   (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`), config
   (`Config.pm`, `Storage.pm`), integration (`MQTT.pm`, `MDNS.pm`,
   `DeviceLoader.pm`), devices (`Tasmota/*.pm`)
-- `t/openhap/`, `t/fugulib/`, `t/openhvf/` — unit tests; `t/conformance/` —
+- `t/openhap/`, `t/fugulib/`, `t/fuguvm/` — unit tests; `t/conformance/` —
   spec-cited conformance tests; `t/scripts/`, `t/web/` — tooling tests, named
   after what they drive (see `t/CLAUDE.md`); `t/openhap/integration/` —
   integration tests, run inside the OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/fugulib/` — `<Module>.3p`, one per `lib/FuguLib/`
-  module, installed as `FuguLib::<Module>.3p`; `man/openhvf/` — `openhvf.1`
+  module, installed as `FuguLib::<Module>.3p`; `man/fuguvm/` — `fuguvm.1`
   (development-only, not installed)
 - `spec/` — curated protocol references, normative for the conformance tier (see
   `spec/CLAUDE.md`)
@@ -144,10 +144,12 @@ site-specific framing is hand-written, in `web/*.body.html` — see
 
 Corollaries:
 
-- Rows 2 and 3 are exclusive: FuguLib is meant for reuse outside OpenHAP, so it
-  is documented as a library is — installed 3p manuals, found by
-  `man FuguLib::Daemon`. OpenHAP and OpenHVF modules are internal and keep
-  sidecars. No module has both.
+- Rows 2 and 3 are exclusive, and the line is whether the module ships: FuguLib
+  is installed, so it is documented as an installed library is — 3p manuals,
+  found by `man FuguLib::Daemon`. OpenHAP and FuguVM modules are read from the
+  source tree and keep sidecars. The shared `Fugu` prefix does not decide this:
+  FuguVM is reusable but development-only, so it stays on sidecars. No module
+  has both.
 - No `README.md` anywhere except the repository root
 - Skills and `CLAUDE.md` files may point to man pages, `.pod` files, `spec/`, or
   each other, but never restate their content
