@@ -77,9 +77,9 @@ use_ok('FuguVM::VM');
 # The image cache follows the configured cache_dir, which
 # FuguVM::Config::load_vm injects into the per-VM config.
 {
-	my $vm = FuguVM::VM->new(config => { cache_dir => '/var/cache/hvf' });
-	is($vm->_cache_dir, '/var/cache/hvf', 'configured cache_dir wins');
-	is($vm->_image_cache->cache_dir, '/var/cache/hvf',
+	my $vm = FuguVM::VM->new(config => { cache_dir => '/var/cache/fuguvm' });
+	is($vm->_cache_dir, '/var/cache/fuguvm', 'configured cache_dir wins');
+	is($vm->_image_cache->cache_dir, '/var/cache/fuguvm',
 	    'the image cache uses it too');
 
 	local $ENV{HOME} = '/home/nobody';
@@ -92,17 +92,17 @@ use_ok('FuguVM::VM');
 # derives no key at all, so it can neither look one up nor publish one.
 {
 	my $off = FuguVM::VM->new(
-		config => { cache_dir => '/var/cache/hvf', image_cache => 0 });
+		config => { cache_dir => '/var/cache/fuguvm', image_cache => 0 });
 	is($off->_image_cache, undef, 'image_cache no disables the cache');
 
 	my $flag = FuguVM::VM->new(
-		config   => { cache_dir => '/var/cache/hvf' },
+		config   => { cache_dir => '/var/cache/fuguvm' },
 		no_cache => 1,
 	);
 	is($flag->_image_cache, undef, '--no-cache disables the cache');
 
 	my $on = FuguVM::VM->new(
-		config => { cache_dir => '/var/cache/hvf', image_cache => 1 });
+		config => { cache_dir => '/var/cache/fuguvm', image_cache => 1 });
 	ok(defined $on->_image_cache, 'image_cache yes leaves it enabled');
 }
 
