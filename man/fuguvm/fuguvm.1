@@ -1,0 +1,510 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: July 27 2026 $
+.Dt FUGUVM 1
+.Os
+.Sh NAME
+.Nm fuguvm
+.Nd install and manage OpenBSD virtual machines
+.Sh SYNOPSIS
+.Nm fuguvm
+.Op Fl hq
+.Op Fl Fl vm Ar name
+.Op Fl Fl project Ar dir
+.Op Fl Fl emulate
+.Ar command
+.Op Ar argument ...
+.Sh DESCRIPTION
+.Nm
+installs and manages
+.Ox
+virtual machines under QEMU.
+It downloads the installation image,
+creates the disk image,
+answers the installer over the serial console,
+and from then on controls the machine's lifecycle,
+guest access,
+and console automation.
+Getting from nothing to a machine that accepts
+.Xr ssh 1
+is one command,
+and running it again does nothing.
+.Pp
+The host does not have to run
+.Ox .
+Anything that runs QEMU will do,
+and the accelerator is chosen to suit it,
+so a Linux or Darwin workstation can build,
+test,
+or reproduce a bug on a real
+.Ox
+system without one on the desk.
+.Pp
+Within the OpenHAP source tree,
+.Nm
+is a development tool:
+it is not installed by
+.Ql make install
+and is not part of any release package.
+.Pp
+.Nm
+operates on a project:
+a directory containing an
+.Pa .fuguvmrc
+configuration file and an
+.Pa .fuguvm/
+state directory,
+created by the
+.Cm init
+command.
+Unless
+.Fl Fl project
+is given,
+the project root is auto-discovered by searching upward from the
+current directory for an
+.Pa .fuguvmrc
+file.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl Fl vm Ar name
+Operate on the named VM.
+The default is
+.Dq default .
+VM definitions live in
+.Pa .fuguvm/vms/ Ns Ar name Ns Pa .conf .
+.It Fl Fl project Ar dir
+Use
+.Ar dir
+as the project root instead of auto-discovering it.
+.It Fl q , Fl Fl quiet
+Suppress informational output.
+.It Fl Fl emulate
+Force TCG software emulation instead of hardware acceleration.
+Without this flag the accelerator is chosen automatically:
+HVF on macOS, KVM on aarch64 Linux hosts with
+.Pa /dev/kvm ,
+and TCG everywhere else.
+.It Fl h , Fl Fl help
+Display usage information.
+.El
+.Pp
+The following commands are available:
+.Bl -tag -width "expect script"
+.It Cm init Op Ar dir
+Initialize a project in
+.Ar dir
+(default: the current directory).
+Creates the
+.Pa .fuguvmrc
+project configuration,
+the
+.Pa .fuguvm/
+directory with
+.Pa vms/
+and
+.Pa state/
+subdirectories,
+and a default VM configuration.
+Idempotent:
+does nothing if the project is already initialized.
+.It Cm up Op Fl Fl no-cache
+Ensure the VM is running.
+Downloads the installation image,
+creates the disk image,
+and starts the VM as needed.
+Idempotent.
+.Pp
+Unless the installed-image cache is disabled,
+.Cm up
+takes both sides of that cache:
+with no disk image present it creates one as an overlay on a matching
+cached base and boots the installed system directly,
+skipping the miniroot download and the installer entirely;
+after an installation it publishes the freshly installed disk as a new
+cached base.
+Caching is best effort:
+a failure warns and the VM comes up anyway,
+installing from scratch or keeping a standalone disk.
+.Pp
+.Fl Fl no-cache
+skips both the restore and the save for this invocation,
+forcing a fresh installation and leaving the cache untouched.
+It overrides the
+.Ar image_cache
+directive and is meant for debugging the installer itself.
+.It Cm down
+Stop the VM gracefully.
+.It Cm destroy
+Stop the VM and delete its disk image.
+.It Cm start
+Start the VM in the background.
+.It Cm stop Op Fl f , Fl Fl force
+Stop the VM.
+With
+.Fl f ,
+terminate it forcefully.
+.It Cm status
+Show VM status as
+.Ar key : value
+lines,
+including
+.Ar ssh_port
+and
+.Ar console_port .
+.It Cm ssh Op Ar command
+Open an interactive SSH session to the VM as root,
+or run
+.Ar command
+and exit with its exit code.
+Authentication uses the SSH agent.
+.It Cm console
+Show how to connect to the VM serial console
+.Pq via Xr telnet 1 .
+.It Cm expect Ar script Op Ar argument ...
+Run an
+.Xr expect 1
+script against the VM console.
+.It Cm wait Op Fl Fl timeout Ns = Ns Ar seconds
+Block until the VM accepts SSH connections
+(default timeout: 120 seconds).
+.It Cm image Cm download | list
+Manage cached installation images.
+.Cm list
+shows cached images;
+.Cm download Op Ar version
+shows the cache path or download URL for
+.Ar version
+(default: 7.8).
+Images are downloaded via the built-in proxy when the VM boots.
+.It Cm cache Cm list | clear Op Fl Fl stale
+Manage everything under
+.Ar cache_dir :
+the installed-image cache described in
+.Sx IMAGE CACHE ,
+and the downloads the built-in proxy keeps for the installer.
+.Cm list
+prints one line per cached image
+.Pq key, size, creation time, snapshot count ,
+marking the entry the invoked VM's configuration currently derives,
+then the proxy's downloads by
+.Ox
+version.
+.Cm clear
+removes every image and every download;
+.Fl Fl stale
+keeps only the image the invoked VM derives and only the downloads for
+the
+.Ox
+.Ar version
+it installs.
+Both forms also sweep temporary trees left by an interrupted save.
+.Pp
+Pruning the downloads is the only thing that bounds them.
+They are keyed by
+.Ox
+version alone,
+share no key input with the images,
+and every pattern the proxy caches is version-scoped,
+so a
+.Ar version
+bump otherwise leaves the whole previous version's file sets behind
+unreadable.
+.Pp
+The scope of
+.Fl Fl stale
+is one VM,
+the one named by
+.Fl Fl vm .
+The key inputs
+.Ar version
+and
+.Ar disk_size
+are per-VM,
+so pruning for one VM removes bases another VM would have hit,
+and downloads for the
+.Ox
+version another VM installs.
+.Pp
+.Cm clear
+refuses to remove an entry while a VM in this project is running on it,
+and warns when removal orphans the disk of a stopped one
+.Pq rebuild it with Cm destroy No and Cm up .
+VMs in other projects sharing the same
+.Ar cache_dir
+cannot be surveyed and are not covered by either check.
+.It Cm snapshot Cm save | restore | rm Ar name
+.It Cm snapshot Cm list Op Fl Fl names
+Manage named snapshot layers over the cached base image,
+for caching guest states
+.Nm
+knows nothing about
+.Pq typically the result of a provisioning script .
+See
+.Sx IMAGE CACHE .
+.Pp
+.Cm save
+flattens the working disk into the cache under the base image it is built
+on;
+.Cm restore
+replaces the working disk with a fresh overlay on
+.Ar name
+and reseeds the VM state the snapshot records.
+The VM must be stopped for both:
+a live overlay is not consistent.
+.Cm save
+additionally needs an installed VM whose disk is built on a cached image;
+a standalone disk
+.Pq from Fl Fl no-cache No or Ar image_cache no
+cannot be snapshotted.
+.Cm restore
+needs neither disk nor state and can run on a fresh checkout before the
+first
+.Cm up .
+.Pp
+A missing or unresolvable snapshot exits 11 rather than 1, so a script can
+distinguish it from a real failure:
+.Bd -literal -offset indent
+fuguvm snapshot restore deps-$hash || provision_from_scratch
+.Ed
+.Pp
+.Cm list
+and
+.Cm rm
+are scoped to the cache entry the current configuration derives.
+.Cm list Fl Fl names
+writes bare snapshot names to standard output, one per line, for
+scripts;
+without it the listing goes to standard error like all other
+informational output.
+.It Cm disk Cm check | repair | info
+Manage the VM disk image:
+verify integrity,
+repair errors
+(the VM must be stopped),
+or show image details.
+.It Cm help
+Display usage information.
+.El
+.Sh IMAGE CACHE
+Installing
+.Ox
+under software emulation costs tens of minutes.
+.Nm
+therefore keeps the result:
+a pristine, compacted copy of the disk taken the moment the installer
+finished, which later runs use as the backing image of a throwaway
+overlay.
+A warm cache turns
+.Cm destroy
+followed by
+.Cm up
+into a cheap factory reset.
+.Pp
+Entries live under
+.Ar cache_dir ,
+beside the proxy cache holding the miniroot and install sets:
+.Bd -literal -offset indent
+<cache_dir>/proxy/...                            miniroot, install sets
+<cache_dir>/installed/<key>/base.qcow2           mode 0400, compacted
+<cache_dir>/installed/<key>/meta.json            mode 0600
+<cache_dir>/installed/<key>/snapshots/<n>.qcow2  mode 0400
+<cache_dir>/installed/<key>/snapshots/<n>.json   mode 0600
+.Ed
+.Pp
+.Ar key
+is
+.Ar version Ns - Ns Ar arch Ns - Ns Ar hash ,
+where
+.Ar hash
+is a truncated SHA-256 over everything that shapes an installed disk:
+the
+.Ox
+version,
+the architecture,
+.Ar disk_size ,
+the contents of the
+.Pa install.exp
+installer script,
+and the contents of
+.Pa share/fuguvm/cache-generation .
+Memory and port settings do not shape the disk and are excluded,
+so changing them still hits the same entry.
+.Pp
+.Pa share/fuguvm/cache-generation
+is a generation counter.
+Bump the number in it when the way the installer is driven changes
+outside
+.Pa install.exp ,
+so existing cached images are invalidated.
+Keep it to the bare number:
+the whole file is hashed.
+.Pp
+Entries are immutable and write-once.
+Each is built whole in a temporary directory and published by renaming
+that directory, so a reader never sees one installation's base image
+beside another installation's metadata.
+.Pp
+A snapshot is an immutable named layer over an entry's base image,
+created by
+.Cm snapshot save
+from a stopped VM.
+Snapshots are flattened onto
+.Pa base.qcow2 ,
+so each is a direct child of the base whatever the working disk was built
+on:
+.Bd -literal -offset indent
+base.qcow2  <-  <name>.qcow2  <-  disk.qcow2
+.Ed
+.Pp
+No snapshot is therefore ever another's parent,
+and removing one cannot orphan another.
+Because snapshots live inside the entry,
+anything that invalidates a base
+.Pq a new key, or Cm cache clear
+invalidates its snapshots with it.
+.Sh FILES
+.Bl -tag -width ".fuguvm/vms/name.conf" -compact
+.It Pa .fuguvmrc
+Project configuration:
+.Ar cache_dir ,
+.Ar state_dir ,
+.Ar default_vm ,
+.Ar image_cache .
+.It Pa .fuguvm/vms/ Ns Ar name Ns Pa .conf
+Per-VM configuration:
+.Ar name , version , memory , disk_size , ssh_port , console_port .
+.It Pa .fuguvm/state/
+Runtime state
+.Pq PID files, sockets, disk images .
+.It Pa ~/.cache/fuguvm/
+Default cache directory:
+downloaded installation images and installed-image cache.
+.It Pa share/fuguvm/cache-generation
+Installed-image cache generation counter.
+.El
+.Pp
+.Ar image_cache Cm yes | no
+.Pq default Cm yes
+switches the installed-image cache on or off.
+It is read from the project
+.Pa .fuguvmrc
+or the global
+.Pa ~/.fuguvmrc ,
+project first, and may also appear inside a
+.Ar vm
+block.
+.Fl Fl no-cache
+on
+.Cm up
+overrides all of them.
+.Sh EXIT STATUS
+.Nm
+exits with one of the following values:
+.Pp
+.Bl -tag -width Ds -offset indent -compact
+.It 0
+Success.
+.It 1
+General error.
+.It 2
+Invalid arguments.
+.It 3
+Configuration error, or not in an
+.Nm
+project.
+.It 4
+VM not found.
+.It 5
+VM is running.
+.It 6
+VM is not running.
+.It 7
+Timeout waiting for the VM.
+.It 8
+SSH connection failed.
+.It 9
+Expect script failed.
+.It 10
+Image download failed.
+.It 11
+Snapshot not found.
+.El
+.Pp
+The
+.Cm ssh
+command with a
+.Ar command
+argument exits with the remote command's exit code.
+.Sh EXAMPLES
+Initialize a project and boot the default VM:
+.Bd -literal -offset indent
+$ fuguvm init
+$ fuguvm up
+$ fuguvm wait --timeout=300
+.Ed
+.Pp
+Run a command in the VM:
+.Bd -literal -offset indent
+$ fuguvm ssh "uname -a"
+OpenBSD openbsd-default.my.domain 7.8 GENERIC arm64
+.Ed
+.Pp
+Operate on a VM other than the default:
+.Bd -literal -offset indent
+$ fuguvm --vm minimal up
+.Ed
+.Sh SEE ALSO
+.Xr expect 1 ,
+.Xr ssh 1 ,
+.Xr telnet 1
+.Sh HISTORY
+The
+.Nm
+utility first appeared in 2025,
+written to run the
+.Xr openhapd 8
+test suite against a real
+.Ox
+guest,
+and generalised from there.
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh SECURITY CONSIDERATIONS
+.Nm
+generates a random root password for each installation and stores it in
+the VM state directory,
+and, when the installed image is cached, in that entry's
+.Pa meta.json
+.Pq mode 0600 .
+Caching lengthens the secret's life:
+it survives
+.Cm destroy
+and rotates only when the base key does.
+.Pp
+This is not a localhost-only secret.
+The guest permits password root login,
+and QEMU is given
+.Ar ssh_port
+and
+.Ar console_port
+with no bind address,
+so the forwarded SSH port and the telnet serial console listen on every
+host interface.
+Treat a running VM, and a populated
+.Ar cache_dir ,
+as reachable by anyone who can reach the host.

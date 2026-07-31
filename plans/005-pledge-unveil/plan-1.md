@@ -38,10 +38,10 @@ provenance. Base-system `imsg` framing is not in openmdns at all — the install
 
 ### 1.2 Take the measurements
 
-Six measurements, all inside the OpenBSD VM (`make integration`, or the
-`openhvf` skill for an interactive shell). Their output is what the spec
-records, and items 2, 4 and 5 **gate phase 2's API** — phase 2 does not start
-until they are settled.
+Six measurements, all inside the OpenBSD VM (`make integration`, or the `fuguvm`
+skill for an interactive shell). Their output is what the spec records, and
+items 2, 4 and 5 **gate phase 2's API** — phase 2 does not start until they are
+settled.
 
 1. **`struct mdns_service` ABI.** Compile a short C probe against the installed
    `/usr/local/include/mdns.h` printing `sizeof` and `offsetof` for every field.

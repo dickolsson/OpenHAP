@@ -23,7 +23,7 @@ on 'test' => sub {
 	requires 'Perl::Tidy';
 };
 
-# Development dependencies for OpenHVF
+# Development dependencies for FuguVM
 on 'develop' => sub {
 	requires 'HTTP::Daemon';
 	requires 'LWP::UserAgent';

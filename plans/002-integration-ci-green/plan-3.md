@@ -59,10 +59,10 @@ In preference order, based on 3.1:
 3. **Network backend change — separately planned last resort**: only if 3.1
    proves an in-guest multicast-loopback deficit (mdnsd cannot hear its own
    answers). This is phase-sized, not a task: every host→guest path assumes
-   SLIRP hostfwd to 127.0.0.1 (`lib/OpenHVF/`, both scripts), the installer
+   SLIRP hostfwd to 127.0.0.1 (`lib/FuguVM/`, both scripts), the installer
    answers `dhcp` against SLIRP's DHCP, the package proxy assumes the `10.0.2.2`
    gateway, macOS development hosts cannot exercise a Linux bridge, and touching
-   `.openhvfrc` invalidates both CI caches. If this branch is reached, write a
+   `.fuguvmrc` invalidates both CI caches. If this branch is reached, write a
    new design/plan with abort criteria; do not bolt it onto this phase.
 
 Do **not** add a `skip` to the mDNS tests — `t/openhap/integration/CLAUDE.md`
@@ -82,7 +82,7 @@ test to soften.
   rationale in the commit body (which hypothesis 3.1 confirmed and how).
 - Doc updates: `lib/OpenHAP/Test/Integration.pod`'s ENVIRONMENT section gains
   the mdnsd (and mosquitto) prerequisites it currently omits; `INSTALL.md` /
-  `man/openhvf/openhvf.1` only if the VM configuration changes.
+  `man/fuguvm/fuguvm.1` only if the VM configuration changes.
 
 ## Acceptance criteria
 

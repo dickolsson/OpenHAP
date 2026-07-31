@@ -22,7 +22,7 @@ have `.pod` sidecars; `Log` and `State` have nothing.
    outputs (terminal and web).
 3. Rendered manuals look and read like manual pages — `NAME`, `SYNOPSIS`,
    section headers, the running header and footer bars.
-4. Flat navigation covering OpenHAP and the two sub-projects, OpenHVF and
+4. Flat navigation covering OpenHAP and the two sub-projects, FuguVM and
    FuguLib, each with its own manuals.
 5. FuguLib gains mdoc(7) section 3p manuals for all six modules, installed like
    any other manual — useful at a terminal, website or no website.
@@ -36,7 +36,7 @@ have `.pod` sidecars; `Log` and `State` have nothing.
 - Client-side scripting, web fonts, analytics, cookies, CSS frameworks,
   minification, images beyond a favicon, or a generator with templates, layouts,
   front matter, and a plugin model.
-- Converting the OpenHAP and OpenHVF `.pod` sidecars to mdoc. They document
+- Converting the OpenHAP and FuguVM `.pod` sidecars to mdoc. They document
   internal implementation modules; the sidecar rule stands for them.
 - Rendering `spec/`, `plans/`, or `TODO.md` — contributor working documents the
   repository already serves.
@@ -56,16 +56,16 @@ web/build/
   index.html      OpenHAP — what it is, features, quick start
   install.html    rendered from INSTALL.md
   manuals.html    index of every manual, grouped by project
-  openhvf.html    OpenHVF — the QEMU test harness
+  fuguvm.html    FuguVM — the QEMU test harness
   fugulib.html    FuguLib — OpenBSD-style daemon utilities
-  openhapd.8.html  hapctl.8.html  openhapd.conf.5.html  openhvf.1.html
+  openhapd.8.html  hapctl.8.html  openhapd.conf.5.html  fuguvm.1.html
   FuguLib.Daemon.3p.html … FuguLib.State.3p.html  (six, from mdoc)
   OpenHAP.HAP.3p.html …                           (one per .pod sidecar)
   style.css
 ```
 
 Navigation is identical on every page:
-`OpenHAP · Install · Manuals · OpenHVF · FuguLib · GitHub`. That is the whole
+`OpenHAP · Install · Manuals · FuguVM · FuguLib · GitHub`. That is the whole
 hierarchy — two levels, no menus, no breadcrumbs.
 
 ### Build pipeline
@@ -92,7 +92,7 @@ the second and last script: given the manual source paths it emits the body of
 
 ### Manual rendering
 
-- **mdoc pages** — `man/openhap/*`, `man/openhvf/*`, and the new
+- **mdoc pages** — `man/openhap/*`, `man/fuguvm/*`, and the new
   `man/fugulib/*.3p` — go through
   `mandoc -Thtml -O fragment,man='%N.%S.html;https://man.openbsd.org/%N.%S'`.
   mandoc picks the first template when a file named `%N.%S` exists _in the
@@ -126,7 +126,7 @@ make and cannot appear in a target; the title comes from
 `FuguLib.Daemon.3p.html`.
 
 This splits the API-documentation rule along a real seam: FuguLib is a library
-others may use, documented where a library is documented; OpenHAP and OpenHVF
+others may use, documented where a library is documented; OpenHAP and FuguVM
 modules are internal and keep `.pod`. The root `CLAUDE.md` table says so.
 
 ### Look and feel

@@ -71,7 +71,7 @@ shared daemon is never left paired between files.
 file. To iterate on one file without re-provisioning:
 
 ```sh
-bin/openhvf ssh 'cd /tmp && export OPENHAP_INTEGRATION_TEST=1 && \
+bin/fuguvm ssh 'cd /tmp && export OPENHAP_INTEGRATION_TEST=1 && \
     prove -I/usr/local/libdata/perl5/site_perl -v t/openhap/integration/daemon.t'
 ```
 
@@ -81,9 +81,9 @@ On an OpenBSD host with OpenHAP installed, skip the VM entirely:
 ## Debugging failures
 
 ```sh
-bin/openhvf ssh 'rcctl check openhapd && echo running || echo stopped'
-bin/openhvf ssh 'tail -50 /var/log/daemon | grep openhapd'
-bin/openhvf ssh 'hapctl -c /etc/openhapd.conf check'
+bin/fuguvm ssh 'rcctl check openhapd && echo running || echo stopped'
+bin/fuguvm ssh 'tail -50 /var/log/daemon | grep openhapd'
+bin/fuguvm ssh 'hapctl -c /etc/openhapd.conf check'
 ```
 
 Usual causes, in order of likelihood:
@@ -103,4 +103,4 @@ Usual causes, in order of likelihood:
 
 - Test helper API: `lib/OpenHAP/Test/Integration.pod`,
   `lib/OpenHAP/Test/Controller.pod`
-- VM lifecycle: `openhvf` skill
+- VM lifecycle: `fuguvm` skill

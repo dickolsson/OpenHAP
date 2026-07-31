@@ -31,11 +31,11 @@ on:
       - "t/lib/**.pm"
       # The harness that installs the guest, provisions it and drives
       # the run
-      - "bin/openhvf"
-      - "lib/OpenHVF/**.pm"
-      - ".openhvfrc"
-      - "share/openhvf/cache-generation"
-      - "share/openhvf/expect/*.exp"
+      - "bin/fuguvm"
+      - "lib/FuguVM/**.pm"
+      - ".fuguvmrc"
+      - "share/fuguvm/cache-generation"
+      - "share/fuguvm/expect/*.exp"
       - "scripts/deps"
       - "scripts/deps-key"
       - "scripts/ftp"
@@ -66,11 +66,11 @@ on:
       - "t/openhap/integration/*.t"
       - "t/fugulib/sandbox.t"
       - "t/lib/**.pm"
-      - "bin/openhvf"
-      - "lib/OpenHVF/**.pm"
-      - ".openhvfrc"
-      - "share/openhvf/cache-generation"
-      - "share/openhvf/expect/*.exp"
+      - "bin/fuguvm"
+      - "lib/FuguVM/**.pm"
+      - ".fuguvmrc"
+      - "share/fuguvm/cache-generation"
+      - "share/fuguvm/expect/*.exp"
       - "scripts/deps"
       - "scripts/deps-key"
       - "scripts/ftp"
@@ -99,7 +99,7 @@ jobs:
     name: Integration tests (OpenBSD VM)
     # arm64 runner: the OpenBSD guest is arm64, so the VM runs without
     # cross-architecture translation. KVM is picked up automatically by
-    # openhvf if the runner ever exposes /dev/kvm; until then QEMU falls
+    # fuguvm if the runner ever exposes /dev/kvm; until then QEMU falls
     # back to TCG software emulation, which is why the timeouts below
     # are generous.
     runs-on: ubuntu-24.04-arm
@@ -117,9 +117,9 @@ jobs:
           dependencies: develop
 
       - name: Cache OpenBSD images and downloads
-        # `.openhvf` is fully ephemeral: openhvf rebuilds the state
+        # `.fuguvm` is fully ephemeral: fuguvm rebuilds the state
         # directory on every run from three things that all live in
-        # ~/.cache/openhvf - the installed OpenBSD image, the
+        # ~/.cache/fuguvm - the installed OpenBSD image, the
         # provisioning layer snapshotted over it, and the proxy's copies
         # of everything the installer downloaded. Nothing here depends on
         # a previous run's state.
@@ -131,7 +131,7 @@ jobs:
         # directory that nothing bounded until `cache clear --stale`
         # learned to prune it - see the cleanup step below.
         #
-        # The key hashes every input that either openhvf's own cache key
+        # The key hashes every input that either fuguvm's own cache key
         # or scripts/deps-key derives from. That is a constraint, not
         # a courtesy: the post-step saves only on a primary-key MISS, so
         # an input this key cannot see would rotate a cached name,
@@ -147,41 +147,41 @@ jobs:
         # against the job's timeout.
         uses: actions/cache@v4
         with:
-          path: ~/.cache/openhvf
+          path: ~/.cache/fuguvm
           key:
-            openhvf-v1-${{ runner.arch }}-${{ hashFiles('.openhvfrc',
-            'share/openhvf/expect/install.exp',
-            'share/openhvf/cache-generation', 'deps/OpenBSD.txt', 'cpanfile',
-            'scripts/deps', 'scripts/deps-key', 'scripts/vm-provision') }}
+            fuguvm-v1-${{ runner.arch }}-${{ hashFiles('.fuguvmrc',
+            'share/fuguvm/expect/install.exp', 'share/fuguvm/cache-generation',
+            'deps/OpenBSD.txt', 'cpanfile', 'scripts/deps', 'scripts/deps-key',
+            'scripts/vm-provision') }}
           # A key rotation still restores the miniroot and any base
-          # image openhvf's own keying still considers valid, so only
+          # image fuguvm's own keying still considers valid, so only
           # the parts that actually changed are rebuilt.
           restore-keys: |
-            openhvf-v1-${{ runner.arch }}-
+            fuguvm-v1-${{ runner.arch }}-
 
       - name: Generate ephemeral SSH key for the VM
         # The harness installs an authorized_keys entry on the guest and
-        # then uses key-based auth for every later `openhvf ssh`/`scp`.
-        # Developers configure this in ~/.openhvfrc; CI has no key, so
+        # then uses key-based auth for every later `fuguvm ssh`/`scp`.
+        # Developers configure this in ~/.fuguvmrc; CI has no key, so
         # mint a throwaway one per run. Write the public half to the
-        # GLOBAL rc (~/.openhvfrc) rather than the project .openhvfrc,
+        # GLOBAL rc (~/.fuguvmrc) rather than the project .fuguvmrc,
         # which the cache key hashes and which must therefore stay
         # stable. A restored image carries the previous run's key; the
         # harness reinstalls this one over the guest's root password.
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          ssh-keygen -t ed25519 -N '' -C openhvf-ci -f ~/.ssh/id_ed25519
+          ssh-keygen -t ed25519 -N '' -C fuguvm-ci -f ~/.ssh/id_ed25519
           printf 'ssh_pubkey "%s"\n' "$(cat ~/.ssh/id_ed25519.pub)" \
-            > ~/.openhvfrc
+            > ~/.fuguvmrc
 
       - name: Run integration tests
         env:
           # Expect-script step timeout and post-boot SSH wait, both far
           # beyond the defaults to accommodate TCG emulation
-          OPENHVF_TIMEOUT: 1800
-          OPENHVF_WAIT_TIMEOUT: 1800
+          FUGUVM_TIMEOUT: 1800
+          FUGUVM_WAIT_TIMEOUT: 1800
         run: |
-          # `openhvf ssh` authenticates via the SSH agent; load the key
+          # `fuguvm ssh` authenticates via the SSH agent; load the key
           # so the harness and the test scripts can reach the guest.
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_ed25519
@@ -192,25 +192,25 @@ jobs:
         # still show the diagnostics
         if: always() && !success()
         run: |
-          echo "==> openhvf status"
-          ./bin/openhvf status || true
+          echo "==> fuguvm status"
+          ./bin/fuguvm status || true
           echo "==> QEMU log tail"
-          tail -n 80 .openhvf/state/*/qemu.log 2>/dev/null || true
+          tail -n 80 .fuguvm/state/*/qemu.log 2>/dev/null || true
           echo "==> Host virtualization"
           ls -l /dev/kvm 2>/dev/null || echo "no /dev/kvm"
           qemu-system-aarch64 --version 2>/dev/null | head -1 || true
 
       - name: Shut down VM and bound cache growth
         # A clean shutdown keeps the qcow2 consistent for the snapshot
-        # machinery. `openhvf down` is internally bounded (its guest
+        # machinery. `fuguvm down` is internally bounded (its guest
         # interactions are time-limited and it force-stops the QEMU
         # process as a last resort), so it cannot hang the job even when
         # the guest is wedged.
         #
-        # `cache clear --stale` prunes both halves of ~/.cache/openhvf:
+        # `cache clear --stale` prunes both halves of ~/.cache/fuguvm:
         # the images whose key the current configuration no longer
         # derives, and the proxy's downloads for every OpenBSD version
-        # other than the one .openhvfrc pins. It runs before the cache
+        # other than the one .fuguvmrc pins. It runs before the cache
         # post-step, so what a version bump orphans is dropped on the run
         # that bumped it rather than uploaded forever.
         #
@@ -223,5 +223,5 @@ jobs:
         # cache grows.
         if: always()
         run: |
-          ./bin/openhvf down || true
-          ./bin/openhvf cache clear --stale || true
+          ./bin/fuguvm down || true
+          ./bin/fuguvm cache clear --stale || true

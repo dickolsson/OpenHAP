@@ -140,7 +140,7 @@ system.  Cross-references between them are links; everything else goes to
 EOF
 
 emit_group 'OpenHAP' openhap man/openhap/ '' "$@"
-emit_group 'OpenHVF' openhvf man/openhvf/ '' "$@"
+emit_group 'FuguVM' fuguvm man/fuguvm/ '' "$@"
 emit_group 'FuguLib' fugulib man/fugulib/ 'FuguLib::' "$@"
 emit_group 'OpenHAP modules' modules lib/OpenHAP/ '' "$@"
-emit_group 'OpenHVF modules' vm-modules lib/OpenHVF/ '' "$@"
+emit_group 'FuguVM modules' vm-modules lib/FuguVM/ '' "$@"

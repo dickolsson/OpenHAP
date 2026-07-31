@@ -10,7 +10,7 @@ a checkout, from exactly one source. Depends on phase 1.
 
 mandoc's `-O man=local;remote` chooses the first template only when a file named
 `%N.%S` exists **in the current working directory** (mandoc(1), `man=`). Our
-four sources are split across `man/openhap/` and `man/openhvf/`, so no single
+four sources are split across `man/openhap/` and `man/fuguvm/`, so no single
 directory sees them all and every `.Xr` would fall through to the remote
 template.
 
@@ -32,7 +32,7 @@ mandoc -Thtml -O fragment,man='%N.%S.html;https://man.openbsd.org/%N.%S' \
 ```
 
 - Outputs: `openhapd.8.html`, `hapctl.8.html`, `openhapd.conf.5.html`,
-  `openhvf.1.html`.
+  `fuguvm.1.html`.
 - Page title is the manual's own `name(section)` form — `openhapd(8)`, not
   "Openhapd Manual". The site chrome supplies the rest.
 - Run mandoc with `-W warning` so a malformed page fails the build instead of
@@ -57,13 +57,13 @@ in `web/CLAUDE.md` (phase 5).
 ### 2.4 `web/mkindex.sh` and `manuals.html`
 
 - `web/mkindex.sh <manpage>...` emits the body of `manuals.html`: a heading per
-  project (OpenHAP, OpenHVF; FuguLib and the OpenHAP modules arrive in phases 3
+  project (OpenHAP, FuguVM; FuguLib and the OpenHAP modules arrive in phases 3
   and 4) and, under each, a definition list of `name(section)` linked to its
   page with the one-line description.
 - Take the description from the page's `.Nd` macro rather than retyping it —
   `mandoc -Tman` or a `.Nd`-targeted read of the source. Retyping it here would
   create the second copy this whole design exists to avoid.
-- Grouping is by source directory (`man/openhap/`, `man/openhvf/`,
+- Grouping is by source directory (`man/openhap/`, `man/fuguvm/`,
   `man/fugulib/`), which is already how the tree is organised — no separate
   mapping table to maintain.
 - Replaces the phase 1 placeholder `manuals.html` entirely.
@@ -92,7 +92,7 @@ appears in no `deps/*.txt` — it is in OpenBSD and Darwin base, and needs the
 - `Makefile` — `.man/` staging, four render rules, `manuals.html`
 - `web/mkindex.sh`
 - `web/style.css` — mandoc classes
-- `man/openhap/*`, `man/openhvf/*` — mdoc style-warning fixes
+- `man/openhap/*`, `man/fuguvm/*` — mdoc style-warning fixes
 - `deps/Linux.txt` — `develop pkg mandoc`
 - `t/web/site.t` — extended
 
