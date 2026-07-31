@@ -920,8 +920,9 @@ sub cmd_disk ( $self, @args )
 sub cmd_init ( $self, @args )
 {
 	my $dir         = shift @args // '.';
-	my $fuguvm_dir  = "$dir/.fuguvm";
-	my $config_file = "$dir/.fuguvmrc";
+	my $data_dir    = FuguVM::Config::DATA_DIR();
+	my $fuguvm_dir  = "$dir/$data_dir";
+	my $config_file = "$dir/" . FuguVM::Config::PROJECT_CONFIG();
 
 	if ( -f $config_file ) {
 		$self->{log}->info("FuguVM already initialized in $dir");
@@ -949,12 +950,13 @@ sub cmd_init ( $self, @args )
 		return EXIT_ERROR;
 	}
 
-	# Create project config
-	_write_file( $config_file, <<'EOF' );
+	# Create project config.  state_dir has to agree with the directory
+	# created above, so it derives from the same constant.
+	_write_file( $config_file, <<"EOF" );
 # FuguVM project configuration
 
 cache_dir = ~/.cache/fuguvm
-state_dir = .fuguvm/state
+state_dir = $data_dir/state
 default_vm = default
 EOF
 
