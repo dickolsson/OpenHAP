@@ -13,8 +13,8 @@ Ships a complete, navigable four-page site.
   `<link rel="stylesheet" href="style.css">`, then the opening `<body>`, the
   site banner, and the navigation bar. Nav is a single line of six links,
   separated by a middot, identical on every page: `OpenHAP` (`index.html`),
-  `Install` (`install.html`), `Manuals` (`manuals.html`), `OpenHVF`
-  (`openhvf.html`), `FuguLib` (`fugulib.html`), `GitHub` (the repository URL).
+  `Install` (`install.html`), `Manuals` (`manuals.html`), `FuguVM`
+  (`fuguvm.html`), `FuguLib` (`fugulib.html`), `GitHub` (the repository URL).
 - `web/foot.html` — an `<hr>`, the copyright line, the ISC licence note, and the
   closing tags. No "generated at" timestamp: it would make the build
   non-reproducible for no reader benefit.
@@ -63,7 +63,7 @@ Body fragments only, no chrome:
   block, and links onward to Install and Manuals. This is site-specific framing
   and the one place prose is written by hand; keep it short and do not paste
   `README.md` into it.
-- `web/openhvf.body.html` — OpenHVF as the QEMU harness for OpenBSD integration
+- `web/fuguvm.body.html` — FuguVM as the QEMU harness for OpenBSD integration
   testing, stating plainly that it is a development tool, not shipped, and not
   part of any release.
 - `web/fugulib.body.html` — FuguLib as generic OpenBSD-style daemon utilities
@@ -110,7 +110,7 @@ In the top-level `Makefile`, using only constructs already present (`?=`, `!=`,
 ## Deliverables
 
 - `web/head.html`, `web/foot.html`, `web/style.css`, `web/mkpage.sh`
-- `web/index.body.html`, `web/openhvf.body.html`, `web/fugulib.body.html`
+- `web/index.body.html`, `web/fuguvm.body.html`, `web/fugulib.body.html`
 - `Makefile` — `WEBOUT`, `web`, `web-clean`, `clean`, `test`, `.PHONY`
 - `deps/{OpenBSD,Linux,Darwin}.txt` — `develop pkg lowdown`
 - `t/web/site.t`
@@ -118,7 +118,7 @@ In the top-level `Makefile`, using only constructs already present (`?=`, `!=`,
 ## Acceptance criteria
 
 - `make web` on a clean checkout produces `index.html`, `install.html`,
-  `openhvf.html`, `fugulib.html`, a placeholder `manuals.html`, and `style.css`
+  `fuguvm.html`, `fugulib.html`, a placeholder `manuals.html`, and `style.css`
   in `web/build`, and writes nothing outside it.
 - Running `make web` twice produces byte-identical output.
 - `install.html` reflects `INSTALL.md`; editing `INSTALL.md` and rebuilding

@@ -50,20 +50,20 @@ sidecar that no longer gets updated is worse than none.
   cannot be expressed as a glob.
 - `uninstall` removes them. `package` copies them into
   `build/$(PACKAGE)/man/fugulib/`.
-- FuguLib manuals ship with the product; unlike `man/openhvf/`, they are not
+- FuguLib manuals ship with the product; unlike `man/fuguvm/`, they are not
   development-only.
 
 ### 3.4 Amend the documentation-placement rule
 
 The root `CLAUDE.md` table says a Perl module's API belongs in a sidecar `.pod`.
-That is now true of OpenHAP and OpenHVF but not FuguLib. Amend row 2 to state
-the split and the reason: FuguLib is a library intended for reuse and is
-documented as a library, in `man/fugulib/*.3p`; OpenHAP and OpenHVF modules are
-internal and keep their sidecars. Without this, the next module added to FuguLib
-gets a `.pod` and the split silently rots.
+That is now true of OpenHAP and FuguVM but not FuguLib. Amend row 2 to state the
+split and the reason: FuguLib is a library intended for reuse and is documented
+as a library, in `man/fugulib/*.3p`; OpenHAP and FuguVM modules are internal and
+keep their sidecars. Without this, the next module added to FuguLib gets a
+`.pod` and the split silently rots.
 
 Also update the `## Layout` section, which currently lists only `man/openhap/`
-and `man/openhvf/`.
+and `man/fuguvm/`.
 
 ### 3.5 Render onto the site
 

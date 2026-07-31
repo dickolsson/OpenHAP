@@ -40,7 +40,7 @@ flowchart LR
     end
     subgraph tests [test tiers]
         T1[t/conformance/*.t<br/>spec-cited, host-side]
-        T2[t/openhap/*.t t/fugulib/*.t<br/>t/openhvf/*.t - module/API]
+        T2[t/openhap/*.t t/fugulib/*.t<br/>t/fuguvm/*.t - module/API]
         T3[t/openhap/integration/*.t<br/>end-to-end, in VM]
     end
     C[scripts/spec-coverage<br/>make spec-coverage]

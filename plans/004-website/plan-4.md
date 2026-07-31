@@ -42,8 +42,8 @@ Makefile line would silently never publish.
 - `lib/OpenHAP/Test/*` sidecars document test helpers that ship only in the
   packaged tree. Include them; they are part of the module reference and
   excluding them means maintaining an exclusion list.
-- `lib/OpenHVF/` has no sidecars today. If any appear, they belong in this same
-  loop — but OpenHVF is development-only, so decide at that point rather than
+- `lib/FuguVM/` has no sidecars today. If any appear, they belong in this same
+  loop — but FuguVM is development-only, so decide at that point rather than
   writing speculative rules now.
 
 ### 4.3 Index and navigation

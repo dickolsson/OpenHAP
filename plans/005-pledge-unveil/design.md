@@ -58,7 +58,7 @@ hold it.
 ## Should the mDNS client be a fourth sub-project?
 
 No. The precedent splits on **lifecycle and audience**, not subject matter:
-OpenHVF earned a namespace by being a separate _program_ — own entry point,
+FuguVM earned a namespace by being a separate _program_ — own entry point,
 config format and man page section, development-only, never installed. An mdnsd
 client is FuguLib's shape, and so is a pledge wrapper: a shipped library with no
 CLI, no config, no user of its own. Precedent also says FuguLib _absorbs_

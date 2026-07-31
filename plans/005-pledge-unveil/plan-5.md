@@ -152,7 +152,7 @@ Two more that phases 2–4 falsify and no earlier phase is allowed to touch:
   dependencies outside core Perl" and enumerates exactly six in a `<dl>`. This
   plan adds `Imsg`, `MDNS` and `Sandbox` — nine. Update the count and add the
   three entries. `t/web/site.t` will not catch this: its exhaustiveness
-  assertion counts only `/^(?:OpenHAP|OpenHVF)::.*\.3p\.html$/` against `.pod`
+  assertion counts only `/^(?:OpenHAP|FuguVM)::.*\.3p\.html$/` against `.pod`
   sidecars and deliberately excludes FuguLib.
 - **`CLAUDE.md:14-15`** scopes FuguLib as "generic OpenBSD-style daemon
   utilities (daemonize, privilege drop, signals, logging, process, state)" — an

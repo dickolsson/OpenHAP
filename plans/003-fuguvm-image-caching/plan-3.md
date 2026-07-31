@@ -1,7 +1,7 @@
 # Phase 3 — Named snapshots
 
 A generic layer verb over the same backing-chain mechanism, so scripts can cache
-states openhvf knows nothing about — the motivating consumer is `vm-provision`
+states fuguvm knows nothing about — the motivating consumer is `vm-provision`
 caching its `make deps` result (wired up in phase 4). Mechanism lives here;
 policy stays in the scripts.
 
@@ -22,7 +22,7 @@ for free.
 
 ## Tasks
 
-### 3.1 `OpenHVF::ImageCache` snapshot primitives
+### 3.1 `FuguVM::ImageCache` snapshot primitives
 
 - `snapshot_store($key, $name, $disk_path, $meta)` — flatten the (stopped)
   working overlay into `snapshots/`, atomically, 0400, with
@@ -40,20 +40,20 @@ for free.
   `snapshot_remove($key, $name)`.
 - Snapshot metadata records the state fields the disk embodies at save time:
   `installed`, the installed SSH public key, and the root password (copied from
-  the base's `meta.json`), so restore can reseed `OpenHVF::State` and the
+  the base's `meta.json`), so restore can reseed `FuguVM::State` and the
   existing `_needs_ssh_key_update` path reconciles a different per-checkout key
   afterwards.
 
 ### 3.2 CLI verb
 
-- `openhvf snapshot save <name>` — requires an existing, installed, **stopped**
+- `fuguvm snapshot save <name>` — requires an existing, installed, **stopped**
   VM (`EXIT_VM_RUNNING` otherwise; a live overlay copy is not consistent).
   Requires the disk to resolve to a cached base, whether directly or through a
   snapshot — re-saving after a restore is normal. Only a standalone disk (from
   `--no-cache` or a pre-phase-1 state) is a diagnosed error, not a crash. Add
-  `EXIT_VM_RUNNING` and the missing-snapshot code to `OpenHVF::CLI`'s existing
+  `EXIT_VM_RUNNING` and the missing-snapshot code to `FuguVM::CLI`'s existing
   exit-code set rather than inventing local numbers.
-- `openhvf snapshot restore <name>` — VM stopped; unlinks the working disk and
+- `fuguvm snapshot restore <name>` — VM stopped; unlinks the working disk and
   recreates it as a fresh overlay backed by the snapshot (`Disk::create` returns
   early on an existing path, so a restore that skips the unlink reports success
   while changing nothing), then reseeds state from snapshot metadata. Missing
@@ -62,22 +62,22 @@ for free.
   and report a broken snapshot as a miss, so that same idiom recovers instead of
   failing hard.
 - Restore must also work from nothing — no working disk, no state — because
-  phase 4 calls it on a fresh checkout before `openhvf up`. Only `save` requires
+  phase 4 calls it on a fresh checkout before `fuguvm up`. Only `save` requires
   an existing installed VM.
-- `openhvf snapshot list` / `openhvf snapshot rm <name>` — scoped to the current
+- `fuguvm snapshot list` / `fuguvm snapshot rm <name>` — scoped to the current
   configuration's key; `cache list` gains real snapshot counts.
 
 ### 3.3 Documentation
 
-- `man/openhvf/openhvf.1`: snapshot subcommand, the consistency rule (VM must be
+- `man/fuguvm/fuguvm.1`: snapshot subcommand, the consistency rule (VM must be
   stopped), and the invalidation relationship to the base key.
 - `.pod` updates for the new `ImageCache` methods.
 
 ## Deliverables
 
-- Changes to `lib/OpenHVF/ImageCache.pm` (+ `.pod`), `lib/OpenHVF/CLI.pm`
-- Extended `t/openhvf/imagecache.t` and `t/openhvf/cli.t`
-- `man/openhvf/openhvf.1` updates
+- Changes to `lib/FuguVM/ImageCache.pm` (+ `.pod`), `lib/FuguVM/CLI.pm`
+- Extended `t/fuguvm/imagecache.t` and `t/fuguvm/cli.t`
+- `man/fuguvm/fuguvm.1` updates
 
 ## Acceptance criteria
 
@@ -94,6 +94,6 @@ for free.
   `up` shows the first mutation and not the second.
 - `destroy` (empty state directory) → `snapshot restore s1` → `up` → `ssh`
   works, exercising the reseed-from-nothing path phase 4 depends on.
-- `openhvf ssh` works after a restore in a checkout with a different SSH key
-  than the one saved (exercises reseeded password + key reinstall).
+- `fuguvm ssh` works after a restore in a checkout with a different SSH key than
+  the one saved (exercises reseeded password + key reinstall).
 - `make check` stays green.

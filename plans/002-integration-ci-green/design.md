@@ -18,7 +18,7 @@ Two properties of the execution environment shape the remaining work:
    why timing-sensitive tests are fragile.
 2. **User-mode (SLIRP) networking — everywhere, not only in CI.** The harness
    has exactly one network backend (`-netdev user` with hostfwd, built in
-   `lib/OpenHVF/VM.pm`), so the guest's network is identical on a developer host
+   `lib/FuguVM/VM.pm`), so the guest's network is identical on a developer host
    and in CI. SLIRP does not carry multicast off-host, but nothing the suite
    asserts requires a packet to leave the guest — mDNS registration is local
    `mdnsctl` IPC against `/var/run/mdnsd.sock` — so SLIRP is not established as

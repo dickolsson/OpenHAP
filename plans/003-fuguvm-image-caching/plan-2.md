@@ -5,9 +5,9 @@ documented. Independently shippable on top of phase 1.
 
 ## Tasks
 
-### 2.1 `openhvf cache` subcommand
+### 2.1 `fuguvm cache` subcommand
 
-Add to `OpenHVF::CLI` alongside the existing `image` subcommand:
+Add to `FuguVM::CLI` alongside the existing `image` subcommand:
 
 - `cache list` — one line per `installed/<key>/` entry: key, on-disk size,
   creation time (from `meta.json`), snapshot count (0 until phase 3), and a
@@ -17,7 +17,7 @@ Add to `OpenHVF::CLI` alongside the existing `image` subcommand:
   `installed/`; `--stale` keeps only the entry whose key matches the VM named by
   `--vm`, matching every other verb's scoping. Say so explicitly: the key inputs
   `version` and `disk_size` are per-VM (`Config.pm:163-164`) and a configuration
-  may declare many `vm` blocks plus `.openhvf/vms/*.conf`, so `--stale` run for
+  may declare many `vm` blocks plus `.fuguvm/vms/*.conf`, so `--stale` run for
   one VM prunes bases another VM would have hit. Widening the keep-set instead
   would need a Config enumerator that does not exist today.
 - Before removing an entry, resolve which base an existing working disk uses via
@@ -32,16 +32,16 @@ Add to `OpenHVF::CLI` alongside the existing `image` subcommand:
 
 ### 2.2 Cache on/off control
 
-- New config directive `image_cache yes|no` (project or global `.openhvfrc`),
-  default `yes`, parsed and exposed by `OpenHVF::Config` like `cache_dir`.
+- New config directive `image_cache yes|no` (project or global `.fuguvmrc`),
+  default `yes`, parsed and exposed by `FuguVM::Config` like `cache_dir`.
 - New `up` option `--no-cache`: skip both restore (force a fresh install) and
   save for this invocation. Useful when debugging the installer itself and for
-  `robustness-openhvf` runs.
+  `robustness-fuguvm` runs.
 - Precedence: CLI flag over project config over global config.
 
 ### 2.3 Documentation
 
-- `man/openhvf/openhvf.1`: document the `cache` subcommand, the `--no-cache`
+- `man/fuguvm/fuguvm.1`: document the `cache` subcommand, the `--no-cache`
   option, the `image_cache` directive, the cache layout under `cache_dir`, the
   per-VM scoping of `--stale`, and a SECURITY note that `meta.json` stores the
   generated root password (mode 0600; the same secret the state directory
@@ -54,16 +54,16 @@ Add to `OpenHVF::CLI` alongside the existing `image` subcommand:
   interface. State the exposure as it is. Rebinding those to 127.0.0.1 is a
   `VM.pm` networking change unrelated to caching — every in-tree consumer
   already dials 127.0.0.1 — and belongs outside plan 003.
-- Update `lib/OpenHVF/ImageCache.pod` for any interface additions.
-- Update the `openhvf` skill (`.claude/skills/openhvf/SKILL.md`) only if its
+- Update `lib/FuguVM/ImageCache.pod` for any interface additions.
+- Update the `fuguvm` skill (`.claude/skills/fuguvm/SKILL.md`) only if its
   procedures change; it must point at the man page, not restate it.
 
 ## Deliverables
 
-- Changes to `lib/OpenHVF/CLI.pm`, `lib/OpenHVF/Config.pm`, `lib/OpenHVF/VM.pm`,
-  `lib/OpenHVF/ImageCache.pm` (+ `.pod`)
-- Extended `t/openhvf/cli.t`, `t/openhvf/config.t`, `t/openhvf/imagecache.t`
-- `man/openhvf/openhvf.1` updates
+- Changes to `lib/FuguVM/CLI.pm`, `lib/FuguVM/Config.pm`, `lib/FuguVM/VM.pm`,
+  `lib/FuguVM/ImageCache.pm` (+ `.pod`)
+- Extended `t/fuguvm/cli.t`, `t/fuguvm/config.t`, `t/fuguvm/imagecache.t`
+- `man/fuguvm/fuguvm.1` updates
 
 ## Acceptance criteria
 
