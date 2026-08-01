@@ -10,8 +10,8 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use_ok('FuguLib::Imsg');
 
-# pair(): a FuguLib::Imsg endpoint and the raw peer handle, so tests
-# can capture and inject wire bytes
+# pair(): a FuguLib::Imsg endpoint and the raw peer handle. Thus
+# tests can capture and inject wire bytes.
 sub pair ()
 {
 	socketpair( my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
@@ -26,8 +26,9 @@ subtest '[MDNS-Imsg §1] header is four uint32 fields in order' => sub {
 
 	is( length($hdr), 16, 'IMSG_HEADER_SIZE is 16' );
 
-	# Field layout, not byte order: each field occupies its own
-	# 4-byte slot at the measured offset, whatever the host order
+	# Field layout, not byte order: each field is in its own 4-byte
+	# slot at the measured offset. The host byte order does not
+	# matter.
 	is( unpack( 'L', substr( $hdr, 0, 4 ) ),
 		0x11223344, 'type at offset 0' );
 	is( unpack( 'L', substr( $hdr, 4, 4 ) ),
@@ -62,7 +63,7 @@ subtest '[MDNS-Imsg §2] receiver masks the fd mark off len' => sub {
 	my ( $imsg, $peer ) = pair();
 
 	# A message whose len carries IMSG_FD_MARK still frames
-	# correctly once the mark is masked
+	# correctly after the receiver masks off the mark
 	my $marked = pack( 'L4', 7, ( 16 + 4 ) | 0x80000000, 0, 1 ) . 'data';
 	syswrite $peer, $marked;
 	my $msg = $imsg->recv( timeout => 5 );
@@ -98,7 +99,7 @@ subtest '[MDNS-Imsg §4] short reads accumulate across calls' => sub {
 
 	my $wire = pack( 'L4', 15, 16 + 6, 0, 1 ) . 'abcdef';
 
-	# Header split mid-field, then the rest
+	# Send the header split mid-field. Then send the rest.
 	syswrite $peer, substr( $wire, 0, 10 );
 	ok( !defined $imsg->recv( timeout => 0.1 ),
 		'partial header is not a message yet' );

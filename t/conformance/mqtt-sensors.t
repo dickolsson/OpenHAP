@@ -68,18 +68,18 @@ subtest '[MQTT-Sensors §3] temperature sensors' => sub {
 	my $mqtt   = OpenHAP::TestMock::MQTT->new;
 	my $sensor = make_sensor($mqtt);
 
-	# TempUnit C is passed through
+	# The sensor passes TempUnit C readings through
 	$mqtt->simulate_message( 'tele/sensor/SENSOR',
 		'{"DS18B20":{"Temperature":25},"TempUnit":"C"}' );
 	is( $sensor->{current_temp}, 25, 'Celsius reading passed through' );
 
-	# TempUnit F is converted before use in HomeKit
+	# The sensor converts TempUnit F readings before use in HomeKit
 	$mqtt->simulate_message( 'tele/sensor/SENSOR',
 		'{"DS18B20":{"Temperature":77},"TempUnit":"F"}' );
 	ok( abs( $sensor->{current_temp} - 25 ) < 0.1,
 		'TempUnit F converted to Celsius (77F = 25C)' );
 
-	# The conversion helper handles the boundary case
+	# The conversion helper converts the boundary case correctly
 	my $base = OpenHAP::Tasmota::Base->new(
 		aid         => 9,
 		name        => 'Conv',
@@ -103,7 +103,7 @@ subtest '[MQTT-Sensors §3] temperature sensors' => sub {
 	is( $indexed->{current_temp}, 25,
 		'indexed sensor DS18B20-2 selected' );
 
-	# Sensor Id field is tracked
+	# The module tracks the sensor Id field
 	$mqtt->simulate_message( 'tele/sensor/SENSOR',
 		'{"DS18B20":{"Id":"01131B123456","Temperature":22.5},'
 		    . '"TempUnit":"C"}' );

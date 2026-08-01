@@ -1,7 +1,8 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Session-framing assertions over a real verified in-process session
-# established by OpenHAP::Test::Controller (spec/HAP-Encryption.md).
+# Session-framing assertions for spec/HAP-Encryption.md.
+# OpenHAP::Test::Controller makes a real verified in-process session.
+# The tests assert on the frames of that session.
 
 use v5.36;
 use Test::More;
@@ -32,7 +33,7 @@ use_ok('OpenHAP::Test::Controller');
 
 my $PIN = '123-45-678';
 
-# Transport that records the raw (encrypted) bytes both directions
+# The transport records the raw encrypted bytes in both directions
 my @wire;
 
 sub make_verified_pair ()
@@ -120,14 +121,14 @@ subtest '[HAP-Encryption §2][HAP-Encryption §3] frame layout both '
 		ok( ( !grep { $_ > 1024 } @$lengths ),
 			"$name frames carry at most 1024 bytes" );
 
-		# each frame is 2-byte LE length + ciphertext + 16-byte tag
+		# Each frame is: 2-byte LE length + ciphertext + 16-byte tag
 		my $expected = 0;
 		$expected += 2 + $_ + 16 for @$lengths;
 		is( length( $capture->{bytes} ),
 			$expected, "$name frame overhead is 18 bytes" );
 	}
 
-	# Plaintext is not visible on the wire
+	# The plaintext is not visible on the wire
 	unlike( $a2c->{bytes}, qr/"accessories"/,
 		'accessory JSON not visible in the encrypted stream' );
 
@@ -141,8 +142,9 @@ subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
 	$controller->request( 'GET', '/accessories' );
 	$controller->request( 'GET', '/accessories' );
 
-	# Two requests, two responses; the response to /accessories is
-	# larger than 1024 bytes so it spans several frames
+	# There are two requests and two responses. The response to
+	# /accessories is larger than 1024 bytes. Thus it spans several
+	# frames.
 	my @c2a = grep { $_->{direction} eq 'c2a' } @wire;
 	is( scalar @c2a, 2, 'two request transmissions' );
 
@@ -163,7 +165,7 @@ subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
 subtest '[HAP-Encryption §9] tampered frame fails the session' => sub {
 	my ( $controller, $hap, $session ) = make_verified_pair();
 
-	# Build a valid encrypted request, then flip a ciphertext bit
+	# Build a valid encrypted request. Then flip a ciphertext bit.
 	my $raw = $controller->_build_request( 'GET', '/accessories' );
 	my $encrypted = $controller->_encrypt($raw);
 	substr( $encrypted, 5, 1 ) =

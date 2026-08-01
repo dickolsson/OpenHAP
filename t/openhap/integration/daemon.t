@@ -27,7 +27,7 @@ if (open my $fh, '<', $pidfile) {
 }
 ok(!defined $pid || $pid =~ /^\d+$/, 'PID file handling correct');
 
-# Test 3: Process is running (check via rcctl or connections)
+# Test 3: Process is running. The check uses rcctl or connections.
 ok($running, 'process is running');
 
 # Test 4: Daemon responds to connections
@@ -65,8 +65,8 @@ $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
 ok($running, 'daemon starts successfully');
 
 # Test 10: Daemon responds after restart. The listener opens only
-# after the mDNS publish conversation completes, so wait for the port
-# rather than a fixed sleep.
+# after the mDNS publish conversation completes. Thus wait for the
+# port. Do not use a fixed sleep.
 ok($env->wait_for_hap_port, 'daemon responds after restart');
 
 $env->teardown;

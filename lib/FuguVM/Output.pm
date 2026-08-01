@@ -93,14 +93,14 @@ sub _format_data ( $self, $data, $indent = 0 )
 
 	if ( $indent == 0 ) {
 
-		# Top level: log all lines
+		# Top level: log all the lines
 		for my $line (@lines) {
 			$self->{log}->info($line);
 		}
 	}
 	else {
 
-		# Nested: return lines for parent
+		# Nested: return the lines to the parent
 		return @lines;
 	}
 }

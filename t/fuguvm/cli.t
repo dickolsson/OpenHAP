@@ -9,7 +9,7 @@ use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Cwd qw(getcwd);
 
-# CLI depends on SSH which requires Net::SSH2
+# The CLI depends on SSH, which requires Net::SSH2
 BEGIN {
     eval { require Net::SSH2 };
     if ($@) {
@@ -30,7 +30,7 @@ use_ok('FuguVM::Proxy::Cache');
 
 # Test unknown command returns error (exit code 2 = invalid args)
 {
-    # Suppress warning
+    # Suppress the warning
     local $SIG{__WARN__} = sub {};
     my $result = FuguVM::CLI->run('unknown_command');
     is($result, 2, 'unknown command returns invalid args exit code');
@@ -77,7 +77,7 @@ SKIP: {
     my $orig_dir = getcwd();
     chdir $tmpdir;
     
-    # Initialize project first
+    # Initialize the project first
     FuguVM::CLI->run('init');
     
     local $SIG{__WARN__} = sub {};
@@ -94,7 +94,7 @@ SKIP: {
     my $orig_dir = getcwd();
     chdir $tmpdir;
     
-    # Initialize project first
+    # Initialize the project first
     FuguVM::CLI->run('init');
     
     local $SIG{__WARN__} = sub {};
@@ -111,7 +111,7 @@ SKIP: {
     my $orig_dir = getcwd();
     chdir $tmpdir;
     
-    # Initialize project first
+    # Initialize the project first
     FuguVM::CLI->run('init');
     
     local $SIG{__WARN__} = sub {};
@@ -128,7 +128,7 @@ SKIP: {
     my $orig_dir = getcwd();
     chdir $tmpdir;
     
-    # Initialize project first
+    # Initialize the project first
     FuguVM::CLI->run('init');
     
     my $long_name = 'x' x 10000;
@@ -168,14 +168,14 @@ SKIP: {
 	2, 'unknown cache clear option returns EXIT_INVALID_ARGS');
 }
 
-# Listing an empty cache mirrors 'image list'
+# A 'cache list' on an empty cache mirrors 'image list'
 {
     my $project = _cache_project();
     is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'list'),
 	0, 'cache list on an empty cache succeeds');
 }
 
-# clear removes everything; clear --stale keeps the invoked VM's key
+# clear removes everything. clear --stale keeps the invoked VM's key.
 {
     my $project = _cache_project();
     my $cache = FuguVM::ImageCache->new("$project/cache");
@@ -204,9 +204,9 @@ SKIP: {
     is(scalar @{ $cache->list }, 0, 'bare clear removes everything');
 }
 
-# The proxy's downloads share cache_dir with the images and nothing else
-# bounds them, so the same command prunes both: --stale keeps the OpenBSD
-# version the invoked VM installs, bare clear keeps nothing
+# The proxy's downloads share cache_dir with the images, and nothing
+# else bounds them. Thus the same command prunes both. --stale keeps the
+# OpenBSD version the invoked VM installs. A bare clear keeps nothing.
 {
     my $project = _cache_project();
     my $proxy = FuguVM::Proxy::Cache->new("$project/cache");
@@ -228,8 +228,8 @@ SKIP: {
     is(scalar @{ $proxy->list }, 0, 'bare clear empties the proxy too');
 }
 
-# Listing reports the proxy as well, so neither half of cache_dir is
-# invisible to someone deciding whether to prune
+# The listing also reports the proxy. Thus a user who decides on a
+# prune sees both halves of cache_dir.
 {
     my $project = _cache_project();
     _fake_download($project, '7.7/arm64/base77.tgz');
@@ -241,7 +241,7 @@ SKIP: {
 	'and still says the images are empty');
 }
 
-# clear refuses while a VM whose disk is backed by the entry is running
+# clear refuses while a VM runs on a disk that the entry backs
 SKIP: {
     my $has_qemu = `which qemu-img 2>/dev/null`;
     skip 'qemu-img not installed', 4 unless $has_qemu;
@@ -270,7 +270,7 @@ SKIP: {
 	5, 'clear refuses with EXIT_VM_RUNNING while the VM runs');
     ok(defined $cache->lookup($key), 'the entry survives the refusal');
 
-    # Stopped: removal is allowed, with a warning about the orphan
+    # Once the VM stops, removal proceeds. A warning reports the orphan.
     unlink "$state_dir/default/vm.pid";
     is(FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'clear'),
 	0, 'clear proceeds once the VM is stopped');
@@ -296,8 +296,8 @@ SKIP: {
 	2, 'a name with a path separator is rejected');
 }
 
-# Missing snapshots report a distinct, scriptable exit code so callers
-# can do 'snapshot restore || provision-from-scratch'
+# Missing snapshots report a distinct, scriptable exit code. Thus
+# callers can do 'snapshot restore || provision-from-scratch'.
 {
     my $project = _cache_project();
     is(FuguVM::CLI->run("--project=$project", '--quiet',
@@ -325,7 +325,8 @@ SKIP: {
     system('qemu-img', 'create', '-f', 'qcow2', $source, '16M') == 0
 	or skip 'cannot create a test disk image', 12;
 
-    # A standalone disk cannot be snapshotted: say so, do not crash
+    # A snapshot of a standalone disk is not possible. Say so. Do
+    # not crash.
     my $disk = FuguVM::Disk->new($state_dir);
     $disk->create('default', '16M');
     my $state = FuguVM::State->new($state_dir, 'default');
@@ -357,7 +358,8 @@ SKIP: {
 	$cache->snapshot_path($key, 'deps'),
 	'restore actually replaced the disk with an overlay on the snapshot');
 
-    # Restore from nothing: no disk, no state, as a fresh checkout has
+    # Restore from nothing. No disk and no state exist, as in a
+    # fresh checkout.
     unlink $disk->path('default');
     unlink "$state_dir/default/status";
     is(FuguVM::CLI->run("--project=$project", '--quiet',
@@ -387,8 +389,8 @@ SKIP: {
 	0, 'rm succeeds');
 }
 
-# --names is the scriptable listing: bare names on stdout, where a
-# shell can read them, rather than through the stderr logger
+# --names is the scriptable listing. It writes bare names on stdout,
+# where a shell can read them. It does not go through the stderr logger.
 SKIP: {
     my $has_qemu = `which qemu-img 2>/dev/null`;
     skip 'qemu-img not installed', 4 unless $has_qemu;
@@ -426,8 +428,8 @@ SKIP: {
 
 done_testing();
 
-# A project whose cache_dir points inside the project, so the tests
-# never touch the developer's real ~/.cache/fuguvm
+# A project whose cache_dir points inside the project. Thus the tests
+# never touch the developer's real ~/.cache/fuguvm.
 sub _cache_project
 {
     my $project = tempdir(CLEANUP => 1);
@@ -446,8 +448,8 @@ sub _cache_project
     return $project;
 }
 
-# Run a command with stdout captured, so the scriptable output can be
-# told apart from the logger's stderr
+# Run a command and capture stdout. This separates the scriptable
+# output from the logger's stderr.
 sub _capture_stdout
 {
     my ($project, @args) = @_;
@@ -466,8 +468,8 @@ sub _capture_stdout
     return $out;
 }
 
-# The logger writes to stderr, so the human listing is captured apart
-# from the scriptable output above
+# The logger writes to stderr. Thus this helper captures the human
+# listing apart from the scriptable output above.
 sub _capture_stderr
 {
     my ($project, @args) = @_;
@@ -486,8 +488,8 @@ sub _capture_stderr
     return $err;
 }
 
-# A cached proxy download, seeded on disk rather than through store(),
-# whose cache_path() wants URI - a develop dependency
+# A cached proxy download, seeded on disk and not through store().
+# store() uses cache_path(), which wants URI, a develop dependency.
 sub _fake_download
 {
     my ($project, $rel) = @_;

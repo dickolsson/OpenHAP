@@ -22,7 +22,7 @@ package FuguVM::Proxy::Cache;
 use File::Basename;
 use File::Path qw(make_path);
 
-# Patterns for content that should be cached (OpenBSD-specific)
+# The patterns match the content to cache. They are OpenBSD-specific.
 my @CACHEABLE_PATTERNS = (
 	qr{/pub/OpenBSD/\d+\.\d+/\w+/.*\.(tgz|img|gz)$},    # File sets
 	qr{/pub/OpenBSD/syspatch/.*\.tgz$},                 # Patches
@@ -52,8 +52,8 @@ sub _ensure_dir ($self)
 }
 
 # $self->cache_path($url):
-#	Convert URL to filesystem cache path
-#	Returns undef if URL cannot be converted safely
+#	Convert the URL to a filesystem cache path. The method returns
+#	undef if it cannot convert the URL safely.
 sub cache_path ( $self, $url )
 {
 	require URI;
@@ -66,20 +66,20 @@ sub cache_path ( $self, $url )
 	my $path = $uri->path // return;
 	$path =~ s|^/||;
 
-	# Security: reject hostile paths outright
+	# Security: reject hostile paths before any use
 	return if $path eq '' || $path =~ /\.\./;
 
 	return "$self->{cache_dir}/proxy/$host/$path";
 }
 
 # $self->is_cacheable($url, $status_code):
-#	Determine if a URL response should be cached
+#	Check if a URL response is cacheable
 sub is_cacheable ( $self, $url, $status_code = 200 )
 {
-	# Only cache successful responses
+	# Cache only successful responses
 	return 0 if $status_code != 200;
 
-	# Check against cacheable patterns
+	# Check the URL against the cacheable patterns
 	for my $pattern (@CACHEABLE_PATTERNS) {
 		return 1 if $url =~ $pattern;
 	}
@@ -88,8 +88,8 @@ sub is_cacheable ( $self, $url, $status_code = 200 )
 }
 
 # $self->lookup($url):
-#	Check if URL is in cache
-#	Returns cache file path if found, undef otherwise
+#	Check if the URL is in the cache. The method returns the cache
+#	file path if the file exists and undef otherwise.
 sub lookup ( $self, $url )
 {
 	my $path = $self->cache_path($url);
@@ -99,14 +99,14 @@ sub lookup ( $self, $url )
 }
 
 # $self->store($url, $content):
-#	Store content in cache
-#	Returns cache file path on success, undef on failure
+#	Store the content in the cache. The method returns the cache
+#	file path on success and undef on failure.
 sub store ( $self, $url, $content )
 {
 	my $path = $self->cache_path($url);
 	return if !defined $path;
 
-	# Create directory structure
+	# Create the directory structure
 	my $dir = dirname($path);
 	make_path( $dir, { error => \my $err } );
 	if ( $err && @$err ) {
@@ -115,7 +115,8 @@ sub store ( $self, $url, $content )
 		return;
 	}
 
-	# Write to temp file then rename for atomicity
+	# Write to a temp file. Then rename the file to make the store
+	# atomic.
 	my $tmp = "$path.tmp.$$";
 	open my $fh, '>', $tmp or do {
 		warn "Cannot write cache file $tmp: $!";
@@ -136,14 +137,14 @@ sub store ( $self, $url, $content )
 }
 
 # $self->store_from_file($url, $source_path):
-#	Store content from a file into cache
-#	Returns cache file path on success, undef on failure
+#	Store the content of a file into the cache. The method returns
+#	the cache file path on success and undef on failure.
 sub store_from_file ( $self, $url, $source_path )
 {
 	my $path = $self->cache_path($url);
 	return if !defined $path;
 
-	# Create directory structure
+	# Create the directory structure
 	my $dir = dirname($path);
 	make_path( $dir, { error => \my $err } );
 	if ( $err && @$err ) {
@@ -152,7 +153,7 @@ sub store_from_file ( $self, $url, $source_path )
 		return;
 	}
 
-	# Copy file
+	# Copy the file
 	require File::Copy;
 	File::Copy::copy( $source_path, $path ) or do {
 		warn "Cannot copy $source_path to $path: $!";
@@ -163,7 +164,7 @@ sub store_from_file ( $self, $url, $source_path )
 }
 
 # $self->size:
-#	Calculate total cache size in bytes
+#	Calculate the total cache size in bytes
 sub size ($self)
 {
 	my $proxy_dir = "$self->{cache_dir}/proxy";
@@ -174,24 +175,27 @@ sub size ($self)
 
 # $self->prune(@keep):
 #	Remove the cached download tree of every OpenBSD version other
-#	than @keep. Returns [ { version, path, size } ] for what went.
+#	than @keep. The method returns [ { version, path, size } ] for
+#	each removed tree.
 #
 #	Nothing else bounds this cache. 'fuguvm cache clear --stale'
-#	prunes installed images, which live beside these downloads under
-#	the same cache_dir but are keyed by nothing in common, so a
-#	version bump used to leave the whole previous version's file sets
-#	here for good - unreadable afterwards, since every pattern
-#	is_cacheable() admits is version-scoped, and still carried by
-#	every copy of the directory a continuous-integration cache makes.
+#	prunes installed images. Those images live beside these
+#	downloads under the same cache_dir, but no common key connects
+#	them. Thus a version bump left the full file sets of the
+#	previous version here for good. Nothing read them again,
+#	because every pattern that is_cacheable() admits is
+#	version-scoped. And every copy of the directory that a
+#	continuous-integration cache made still carried them.
 #
-#	Whole directories, not matching files: removing the files alone
-#	would leave the empty version tree behind, and the tree is what
-#	such a copy walks.
+#	The method removes whole directories, not matching files.
+#	Removal of the files alone leaves the empty version tree
+#	behind, and such a copy walks the tree.
 #
-#	A directory whose name is not a version is left alone. In
-#	practice there are none - the patterns put everything under
-#	pub/OpenBSD/<version>/ or pub/OpenBSD/syspatch/<version>/ - and a
-#	cache under $HOME is the wrong place to delete on a guess.
+#	The method does not touch a directory whose name is not a
+#	version. In practice there are none. The patterns put
+#	everything under pub/OpenBSD/<version>/ or
+#	pub/OpenBSD/syspatch/<version>/. And a cache under $HOME is the
+#	wrong place to delete on a guess.
 sub prune ( $self, @keep )
 {
 	my $proxy_dir = "$self->{cache_dir}/proxy";
@@ -212,8 +216,8 @@ sub prune ( $self, @keep )
 			my $dir = "$root/$version";
 			next if !-d $dir;
 
-			# Measured before removal, so the caller can say
-			# what the prune bought
+			# Measure the size before removal. Thus the caller
+			# can say what the prune freed.
 			my $size = $self->_dir_size($dir);
 
 			require File::Path;
@@ -251,8 +255,8 @@ sub clear ($self)
 }
 
 # $self->list:
-#	List all cached files
-#	Returns arrayref of {url => $url, path => $path, size => $size}
+#	List all cached files. The method returns an arrayref of
+#	{url => $url, path => $path, size => $size}.
 sub list ($self)
 {
 	my $proxy_dir = "$self->{cache_dir}/proxy";
@@ -265,11 +269,12 @@ sub list ($self)
 		sub ($path) {
 			return if !-f $path;
 
-			# Reconstruct URL from path
+			# Reconstruct the URL from the path
 			my $rel = $path;
 			$rel =~ s|^\Q$proxy_dir/\E||;
 
-			# First component is host, rest is path
+			# The first component is the host. The rest is
+			# the path.
 			my ( $host, @rest ) = split '/', $rel;
 			my $url_path = join '/', @rest;
 
@@ -285,10 +290,10 @@ sub list ($self)
 }
 
 # $self->_version_roots($proxy_dir):
-#	Every directory under $proxy_dir whose immediate children are
-#	OpenBSD version numbers, across all cached hosts. Release trees
-#	hang off pub/OpenBSD, syspatch sets one level deeper; both are
-#	named for a version and neither outlives it.
+#	Get every directory under $proxy_dir whose immediate children
+#	are OpenBSD version numbers, across all cached hosts. Release
+#	trees hang off pub/OpenBSD. Syspatch sets sit one level deeper.
+#	Both have the name of a version, and neither outlives it.
 sub _version_roots ( $self, $proxy_dir )
 {
 	opendir my $dh, $proxy_dir or return ();
@@ -308,7 +313,7 @@ sub _version_roots ( $self, $proxy_dir )
 }
 
 # $self->_dir_size($dir):
-#	Total bytes of the regular files under $dir.
+#	Get the total bytes of the regular files under $dir.
 sub _dir_size ( $self, $dir )
 {
 	my $total = 0;

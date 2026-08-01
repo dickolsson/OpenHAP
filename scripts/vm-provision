@@ -3,9 +3,9 @@
 # Provision OpenHAP in the OpenBSD VM
 #
 # Two layers. The deps layer installs the guest's packages and Perl
-# modules and is cached as a fuguvm snapshot, because under TCG
-# emulation it costs as much as the OS install itself. The OpenHAP layer
-# installs this checkout and runs every time.
+# modules. A fuguvm snapshot caches this layer, because under TCG
+# emulation it costs as much as the OS install itself. The OpenHAP
+# layer installs this checkout and runs every time.
 
 set -e
 
@@ -13,8 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
 
-# Read a field from 'fuguvm status'. fuguvm logs to stderr, so stderr
-# has to be folded in for the value to be readable at all.
+# Read a field from 'fuguvm status'. fuguvm logs to stderr. Thus the
+# function folds stderr in. Without that, the value is not readable.
 vm_status() {
 	"${FUGUVM}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
 }
@@ -43,9 +43,9 @@ fi
 echo "Using tarball: ${TARBALL}"
 
 # make deps only exists inside the extracted tarball, along with deps/
-# and scripts/deps which it reads relative to cwd. So the package has
-# to reach the guest before the deps layer runs, not with make install
-# after it.
+# and scripts/deps. make deps reads those relative to the cwd. Thus
+# the package must reach the guest before the deps layer runs, not
+# with make install after it.
 copy_and_extract() {
 	vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
 	vm_run <<'EOF'
@@ -55,11 +55,11 @@ EOF
 }
 
 # The guest itself says whether the deps layer is already present. A
-# host-side flag could not: vm-up and vm-provision are sibling
-# make recipes in separate shells, so nothing can be handed over. The
-# marker travels inside the snapshot, which also answers the local case
-# where nothing was restored but the working disk already carries the
-# dependencies.
+# host-side flag could not. vm-up and vm-provision are sibling
+# make recipes in separate shells. Thus they cannot give data to each
+# other. The marker travels inside the snapshot. Thus it also answers
+# the local case where the script restored nothing, but the working
+# disk already carries the dependencies.
 if vm_run "test -f ${DEPS_MARKER}"; then
 	echo "==> Guest dependencies already present (${DEPS_SNAPSHOT}), skipping"
 else
@@ -67,19 +67,19 @@ else
 	copy_and_extract
 
 	# BEGIN deps layer
-	# Everything between these markers is hashed into DEPS_KEY by
-	# scripts/deps-key: editing it invalidates the cached layer.
-	# Guest heredocs run under set -e so a failed pkg_add/cpan/make
+	# scripts/deps-key hashes everything between these markers into
+	# DEPS_KEY. An edit here invalidates the cached layer.
+	# Guest heredocs run under set -e. Thus a failed pkg_add/cpan/make
 	# cannot report a provisioned guest.
 	#
 	# Every command here that might read stdin needs </dev/null. The
-	# remote shell reads THIS SCRIPT from stdin, so a command that reads
-	# stdin consumes the rest of the script as its own input: cpan(1)
-	# answering its configuration prompts swallowed 'make deps', the
-	# cleanup and the marker below, and the truncated block still exited
-	# 0 - so set -e never fired, the layer was cached without any
-	# dependencies in it, and provisioning failed much later on
-	# 'rcctl enable mosquitto'.
+	# remote shell reads THIS SCRIPT from stdin. Thus a command that
+	# reads stdin consumes the rest of the script as its own input.
+	# Once, cpan(1) answered its configuration prompts and swallowed
+	# 'make deps', the cleanup, and the marker below. The truncated
+	# block still exited 0. Thus set -e never fired. The cache then
+	# held a layer without any dependencies in it, and provisioning
+	# failed much later on 'rcctl enable mosquitto'.
 	vm_run <<EOF
 set -e
 pkg_add -u </dev/null 2>/dev/null || true
@@ -105,24 +105,24 @@ touch ${DEPS_MARKER}
 EOF
 	# END deps layer
 
-	# The layer has to have finished, not merely exited 0: the marker
-	# is its last statement, so its absence means the block was cut
-	# short. Check before snapshotting, or an incomplete layer enters
-	# the cache and every later run restores it.
+	# The layer must have finished, not merely exited 0. The marker
+	# is its last statement. Thus a missing marker means the block
+	# ended early. Check before the snapshot. Otherwise an incomplete
+	# layer enters the cache and every later run restores it.
 	if ! vm_run "test -f ${DEPS_MARKER}"; then
 		echo "Error: deps layer did not complete; not caching" >&2
 		exit 1
 	fi
 
-	# The snapshot verbs run under set -e, and a base-image cache
-	# miss legitimately leaves a standalone disk that cannot be
-	# snapshotted. Guard them here rather than softening the verb: a
-	# cache miss must not abort provisioning.
+	# The snapshot verbs run under set -e. A base-image cache miss
+	# legitimately leaves a standalone disk. fuguvm cannot snapshot
+	# such a disk. Guard the verbs here. Do not soften the verb
+	# itself. A cache miss must not abort provisioning.
 	echo "==> Caching guest dependencies as ${DEPS_SNAPSHOT}..."
 	"${FUGUVM}" down
 	if "${FUGUVM}" snapshot save "${DEPS_SNAPSHOT}"; then
-		# Safe to prune: snapshots are flattened onto the base
-		# image, so no deps-* layer is another one's parent.
+		# The prune is safe. fuguvm flattens snapshots onto the
+		# base image. Thus no deps-* layer is another one's parent.
 		for old in $("${FUGUVM}" snapshot list --names || true); do
 			case "${old}" in
 			deps-*)

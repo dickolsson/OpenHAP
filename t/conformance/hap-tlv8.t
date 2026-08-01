@@ -29,7 +29,7 @@ subtest '[HAP-TLV8 §2] fragmentation of long values' => sub {
 	# 500 bytes -> 255 + 245: 2 records with 2-byte headers each
 	is( length($encoded), 500 + 4, 'two records for 500 bytes' );
 
-	# First fragment must be exactly 255 bytes
+	# The first fragment must be exactly 255 bytes
 	my ( $t1, $l1 ) = unpack( 'CC', substr( $encoded, 0, 2 ) );
 	is( $t1, 0x03, 'first fragment has value type' );
 	is( $l1, 255,  'non-final fragment is exactly 255 bytes' );
@@ -38,7 +38,7 @@ subtest '[HAP-TLV8 §2] fragmentation of long values' => sub {
 	is( $t2, 0x03, 'second fragment has same type' );
 	is( $l2, 245,  'final fragment carries the remainder' );
 
-	# Decoder concatenates same-type records
+	# The decoder concatenates same-type records
 	my %decoded = OpenHAP::TLV::decode($encoded);
 	is( $decoded{0x03}, $value, 'fragments concatenated on decode' );
 };
@@ -67,7 +67,8 @@ subtest '[HAP-TLV8 §3] separators between list items' => sub {
 
 subtest '[HAP-TLV8 §4] value encodings' => sub {
 
-	# [HAP-TLV8 §4.1] integers are little-endian, minimum bytes
+	# [HAP-TLV8 §4.1] integers are little-endian and use the minimum
+	# bytes
 	is( unpack( 'H*', OpenHAP::TLV::encode( 0x0B, pack( 'C', 1 ) ) ),
 		'0b0101', '[HAP-TLV8 §4.1] integer 1 encodes as 01' );
 	is( unpack( 'H*', OpenHAP::TLV::encode( 0x0B, pack( 'v', 256 ) ) ),
@@ -189,7 +190,7 @@ subtest '[HAP-TLV8 §9] base64 encoding in JSON' => sub {
 
 subtest '[HAP-TLV8 §10] parser rules with hostile buffers' => sub {
 
-	# Rule 1: unknown types are preserved, not fatal
+	# Rule 1: the parser keeps unknown types. They are not fatal.
 	my %decoded =
 	    OpenHAP::TLV::decode( pack( 'H*', '060101' . 'aa0142' ) );
 	is( unpack( 'C', $decoded{0x06} ), 1, 'known type decoded' );

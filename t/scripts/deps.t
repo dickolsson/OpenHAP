@@ -2,8 +2,9 @@
 # ex:ts=8 sw=4:
 # Unit tests for scripts/deps against fixture manifests
 #
-# Everything runs under --dry-run, so no package manager is ever
-# invoked; --os drives all three platform branches from one runner.
+# Everything runs under --dry-run. Thus the tests never invoke a
+# package manager. --os drives all three platform branches from one
+# runner.
 
 use v5.36;
 use Test::More;
@@ -24,8 +25,9 @@ sub write_file ( $path, $content )
 }
 
 # fixture($os, $manifest):
-#	A directory holding deps/<os>.txt. deps reads the manifest
-#	relative to the current directory, so tests chdir into this.
+#	A directory that holds deps/<os>.txt. deps reads the manifest
+#	relative to the current directory. Thus tests chdir into this
+#	directory.
 sub fixture ( $os, $manifest )
 {
 	my $dir = tempdir( CLEANUP => 1 );
@@ -77,7 +79,7 @@ EOF
 	unlike( $output, qr/cpanm/, 'no cpanm run when a tier has no modules' );
 }
 
-# Comments and blank lines are skipped, including an indented comment
+# deps skips comments and blank lines, including an indented comment
 {
 	my ( $exit, $output ) =
 	    run_in( fixture( 'OpenBSD', $MANIFEST ), '--os OpenBSD --dry-run develop' );
@@ -115,9 +117,9 @@ EOF
 	like( $output, qr/Unknown OS: Plan9/, 'and says which OS' );
 }
 
-# List-form exec: a name containing a space stays one argument. The
-# shell version built a string and let word splitting have it, so this
-# installed two wrong packages.
+# List-form exec: a name that contains a space stays one argument.
+# The shell version built a string and let word splitting have it.
+# Thus it installed two wrong packages.
 {
 	my ( $exit, $output ) = run_in(
 		fixture( 'OpenBSD', "runtime pkg foo bar\n" ),
@@ -128,10 +130,11 @@ EOF
 		'and is passed as a single argument' );
 }
 
-# CPAN options. Both cases pin PERL_LOCAL_LIB_ROOT rather than inherit
-# it: CI sets it (.github/actions/setup-perl exports it for local::lib)
-# and a developer shell usually does not, so an inherited value makes
-# the same test assert opposite things in the two places.
+# CPAN options. Both cases pin PERL_LOCAL_LIB_ROOT rather than
+# inherit it. CI sets it: .github/actions/setup-perl exports it for
+# local::lib. A developer shell usually does not set it. Thus an
+# inherited value makes the same test assert opposite things in the
+# two places.
 {
 	my $dir = fixture( 'OpenBSD', "runtime cpan Foo::Bar\n" );
 
@@ -160,8 +163,8 @@ EOF
 	like( $output, qr/usage: deps/, 'and prints usage' );
 }
 
-# An environment that is not one of the three selects nothing, which the
-# shell version reported as a successful install.
+# An environment that is not one of the three selects nothing. The
+# shell version reported this as a successful install.
 {
 	my ( $exit, $output ) =
 	    run_in( fixture( 'OpenBSD', $MANIFEST ), '--os OpenBSD --dry-run bogus' );
@@ -190,9 +193,9 @@ EOF
 	like( $output, qr/Unknown type 'deb'/, 'and names the type' );
 }
 
-# A malformed line in another environment still fails: the shell version
-# filtered before validating, so this stayed hidden until someone ran
-# that tier.
+# A malformed line in another environment still fails: the shell
+# version filtered before it validated. Thus the bad line stayed
+# hidden until someone ran that tier.
 {
 	my ( $exit, $output ) = run_in(
 		fixture( 'OpenBSD', "runtime pkg alpha\ndevelop deb gamma\n" ),
@@ -201,7 +204,7 @@ EOF
 	isnt( $exit, 0, 'a bad line in an unselected environment still fails' );
 }
 
-# A missing manifest is not an error - most platforms have none
+# A missing manifest is not an error. Most platforms have none.
 {
 	my ( $exit, $output ) =
 	    run_in( tempdir( CLEANUP => 1 ), '--os Nosuchos --dry-run runtime' );
@@ -209,8 +212,8 @@ EOF
 	like( $output, qr/No dependencies for Nosuchos/, 'and says so' );
 }
 
-# The real manifests parse, so a typo in one fails here rather than on
-# somebody's laptop halfway through an install
+# The real manifests parse. Thus a typo in one fails here, not on
+# somebody's laptop halfway through an install.
 for my $os (qw(OpenBSD Linux Darwin)) {
 	for my $env (qw(runtime test develop)) {
 		my ( $exit, $output ) =

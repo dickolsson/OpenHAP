@@ -60,10 +60,11 @@ sub run_script ( $self, $script, @args )
 }
 
 # $class_or_self->script_path($script_name):
-#	Path of a shipped expect script, or undef when it cannot be
-#	found. Callable on the class: FuguVM::ImageCache hashes the
-#	installer script into its cache key and must resolve it the same
-#	way run_install does.
+#	Get the path of a shipped expect script. The method returns
+#	undef when it cannot find the script. The method also works on
+#	the class. FuguVM::ImageCache hashes the installer script into
+#	its cache key. Thus it must resolve the script the same way
+#	run_install does.
 sub script_path ( $self, $script_name )
 {
 	return $self->_find_script($script_name);
@@ -93,7 +94,7 @@ sub run_install ( $self, $config )
 		return 0;
 	}
 
-	# Pass timeout via environment variable
+	# Pass the timeout in the environment variable
 	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
 
 	my @cmd = (
@@ -119,7 +120,8 @@ sub install_ssh_key ( $self, $password, $ssh_pubkey )
 		return 0;
 	}
 
-	# Pass timeout via environment variable for expect script
+	# Pass the timeout in the environment variable for the expect
+	# script
 	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
 
 	my @cmd = (
@@ -139,7 +141,7 @@ sub halt_system ( $self, $password )
 		return 0;
 	}
 
-	# Pass timeout via environment variable
+	# Pass the timeout in the environment variable
 	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
 
 	my @cmd = (

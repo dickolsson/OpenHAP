@@ -15,7 +15,7 @@ sub new ( $class, %args )
 		event_callbacks   => [],
 	}, $class;
 
-	# Add required Accessory Information service
+	# Add the required Accessory Information service
 	$self->_add_accessory_info_service();
 
 	return $self;
@@ -101,7 +101,7 @@ sub get_services ($self)
 
 sub get_service ( $self, $type )
 {
-	# Look up the full UUID if a short name is given
+	# Look up the full UUID when the caller gives a short name
 	require OpenHAP::Service;
 	my $target_uuid = $OpenHAP::Service::SERVICE_TYPES{$type} // $type;
 
@@ -137,8 +137,8 @@ sub to_json ($self)
 
 sub identify ($self)
 {
-	# Override in subclasses to implement identify functionality
-	# (e.g., blink LED, beep, etc.)
+	# Subclasses override this method to add the identify function.
+	# For example, blink an LED or sound a beep.
 }
 
 sub add_event_callback ( $self, $callback )
@@ -148,7 +148,7 @@ sub add_event_callback ( $self, $callback )
 
 sub notify_change ( $self, $iid )
 {
-	# Notify all registered callbacks about characteristic change
+	# Tell all registered callbacks about the characteristic change
 	for my $callback ( @{ $self->{event_callbacks} } ) {
 		$callback->( $self->{aid}, $iid );
 	}

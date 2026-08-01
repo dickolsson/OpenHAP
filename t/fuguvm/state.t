@@ -37,7 +37,7 @@ use_ok('FuguVM::State');
     
     $state->set_vm_pid(54321);
     
-    # Verify vm.pid file exists and contains the PID
+    # Make sure that the vm.pid file exists and contains the PID
     my $pid_file = "$tmpdir/test/vm.pid";
     ok(-f $pid_file, 'vm.pid file created');
     open my $fh, '<', $pid_file;
@@ -46,7 +46,7 @@ use_ok('FuguVM::State');
     chomp $pid_content;
     is($pid_content, '54321', 'vm.pid file contains correct PID');
     
-    # Verify PID is NOT in the status JSON
+    # Make sure that the PID is NOT in the status JSON
     my $status_file = "$tmpdir/test/status";
     if (-f $status_file) {
         open my $sfh, '<', $status_file;
@@ -56,7 +56,7 @@ use_ok('FuguVM::State');
         unlike($json, qr/"pid"/, 'PID not stored in status JSON');
     }
     
-    # Clear and verify pid file is removed
+    # Clear the PID. Make sure that the pid file is gone.
     $state->clear_vm_pid;
     ok(!-f $pid_file, 'vm.pid file removed after clear_vm_pid');
 }
@@ -69,11 +69,11 @@ use_ok('FuguVM::State');
     $state->set_vm_pid($$);
     is($state->get_vm_pid, $$, 'VM PID set to current process');
     
-    # Reload state - PID should still be readable from pid file
+    # Reload the state. The PID stays readable from the pid file.
     my $state2 = FuguVM::State->new($tmpdir, 'test');
     is($state2->get_vm_pid, $$, 'VM PID readable after state reload');
     
-    # Clear PID and reload - should be gone
+    # Clear the PID and reload. The PID must be gone.
     $state2->clear_vm_pid;
     my $state3 = FuguVM::State->new($tmpdir, 'test');
     is($state3->get_vm_pid, undef, 'VM PID cleared persists after reload');
@@ -84,11 +84,11 @@ use_ok('FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = FuguVM::State->new($tmpdir, 'test');
     
-    # Use current process PID (which is running)
+    # Use the current process PID, which is running
     $state->set_vm_pid($$);
     ok($state->is_vm_running, 'is_vm_running returns true for running process');
     
-    # Use invalid PID
+    # Use an invalid PID
     $state->set_vm_pid(99999999);
     ok(!$state->is_vm_running, 'is_vm_running returns false for non-running process');
 }
@@ -112,7 +112,7 @@ use_ok('FuguVM::State');
     
     $state->set_proxy_pid(11111);
     
-    # Verify proxy.pid file exists
+    # Make sure that the proxy.pid file exists
     my $proxy_pid_file = "$tmpdir/test/proxy.pid";
     ok(-f $proxy_pid_file, 'proxy.pid file created');
     open my $fh, '<', $proxy_pid_file;
@@ -121,7 +121,7 @@ use_ok('FuguVM::State');
     chomp $pid_content;
     is($pid_content, '11111', 'proxy.pid file contains correct PID');
     
-    # Clear and verify file is removed
+    # Clear the PID. Make sure that the file is gone.
     $state->clear_proxy_pid;
     ok(!-f $proxy_pid_file, 'proxy.pid file removed after clear_proxy_pid');
 }
@@ -131,11 +131,11 @@ use_ok('FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = FuguVM::State->new($tmpdir, 'test');
     
-    # Use current process PID (which is running)
+    # Use the current process PID, which is running
     $state->set_proxy_pid($$);
     ok($state->is_proxy_running, 'is_proxy_running returns true for running process');
     
-    # Use invalid PID
+    # Use an invalid PID
     $state->set_proxy_pid(99999999);
     ok(!$state->is_proxy_running, 'is_proxy_running returns false for non-running process');
 }
@@ -150,7 +150,7 @@ use_ok('FuguVM::State');
     $state->set_proxy_port(8080);
     is($state->get_proxy_port, 8080, 'Proxy port stored and retrieved');
     
-    # Verify port is in status JSON (persisted)
+    # Make sure that the port persists in the status JSON
     my $state2 = FuguVM::State->new($tmpdir, 'test');
     is($state2->get_proxy_port, 8080, 'Proxy port persisted across reload');
     
@@ -187,7 +187,7 @@ use_ok('FuguVM::State');
     $state->mark_installed;
     ok($state->is_installed, 'Installed after mark_installed');
     
-    # Reload state and verify persistence
+    # Reload the state and make sure that the value persists
     my $state2 = FuguVM::State->new($tmpdir, 'test');
     ok($state2->is_installed, 'Installation state persisted');
 }
@@ -211,7 +211,7 @@ use_ok('FuguVM::State');
     $state->set_root_password('testpass123');
     is($state->get_root_password, 'testpass123', 'Password stored and retrieved');
     
-    # Reload state and verify persistence
+    # Reload the state and make sure that the value persists
     my $state2 = FuguVM::State->new($tmpdir, 'test');
     is($state2->get_root_password, 'testpass123', 'Password persisted');
 }
@@ -227,7 +227,7 @@ use_ok('FuguVM::State');
     $state->mark_ssh_key_installed($test_pubkey);
     is($state->get_installed_ssh_pubkey, $test_pubkey, 'Pubkey stored correctly');
     
-    # Reload state and verify persistence
+    # Reload the state and make sure that the value persists
     my $state2 = FuguVM::State->new($tmpdir, 'test');
     is($state2->get_installed_ssh_pubkey, $test_pubkey, 'Pubkey persisted correctly');
 }
@@ -248,7 +248,7 @@ use_ok('FuguVM::State');
     is($state, undef, 'Long VM name (10000 chars) returns undef');
 }
 
-# Issue 1: VM name at boundary (255 chars should work)
+# Issue 1: a VM name at the boundary of 255 chars works
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     
@@ -257,7 +257,7 @@ use_ok('FuguVM::State');
     ok(defined $state, 'VM name at 255 chars is accepted');
 }
 
-# Issue 1: VM name over boundary (256 chars should fail)
+# Issue 1: a VM name over the boundary at 256 chars fails
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     
@@ -282,7 +282,7 @@ use_ok('FuguVM::State');
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     
-    # Create a file where the VM state directory should be
+    # Create a file where the VM state directory belongs
     my $file_path = "$tmpdir/testvm";
     open my $fh, '>', $file_path or die "Cannot create file: $!";
     print $fh "not a directory\n";
@@ -298,7 +298,7 @@ use_ok('FuguVM::State');
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     
-    # Create a symlink where the VM state directory should be
+    # Create a symlink where the VM state directory belongs
     my $target = "$tmpdir/target";
     mkdir $target;
     my $link = "$tmpdir/symvm";
@@ -327,7 +327,7 @@ use_ok('FuguVM::State');
     is($state, undef, 'Symlink to file as state directory returns undef');
 }
 
-# Valid special characters in VM name (should work)
+# A VM name with valid special characters works
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     
@@ -340,11 +340,13 @@ use_ok('FuguVM::State');
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     
-    # Empty name should still create a directory (it becomes "$tmpdir/")
-    # This might be intentional behavior or could be restricted
+    # An empty name still creates a directory. The directory becomes
+    # "$tmpdir/". This behavior can be intentional, or a later change
+    # can restrict it.
     my $state = FuguVM::State->new($tmpdir, '');
-    # The behavior here depends on whether empty names are allowed
-    # Currently they create a directory named "" which is valid
+    # The behavior here depends on whether the code allows empty
+    # names. Currently an empty name creates a directory named "",
+    # which is valid.
     ok(defined $state || !defined $state, 'Empty VM name handled (either way)');
 }
 

@@ -43,7 +43,7 @@ like($response, qr/Content-Type: application\/hap\+json/, 'Response has headers'
 like($response, qr/Content-Length: 15/, 'Response has content-length');
 like($response, qr/\{"status":"ok"\}$/, 'Response has body');
 
-# Test Connection: keep-alive header is added
+# Test that the builder adds the Connection: keep-alive header
 like($response, qr/Connection: keep-alive/, 'Response has Connection: keep-alive header');
 
 # Test 204 No Content response
@@ -60,7 +60,7 @@ my $multi_status = OpenHAP::HTTP::build_response(
 );
 like($multi_status, qr/HTTP\/1\.1 207 Multi-Status/, '207 response has correct status');
 
-# Test custom Connection header is not overwritten
+# Test that the builder does not overwrite a custom Connection header
 my $custom_conn = OpenHAP::HTTP::build_response(
     status => 200,
     headers => { 'Connection' => 'close' },

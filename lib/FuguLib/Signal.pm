@@ -21,9 +21,9 @@ package FuguLib::Signal;
 
 # FuguLib::Signal - Robust signal handling for graceful shutdown
 #
-# Provides safe signal handler registration with cleanup and interrupt
-# handling. Ensures processes can be interrupted cleanly without leaving
-# orphaned resources.
+# The module gives safe signal handler registration with cleanup and
+# interrupt support. It makes sure a process can stop cleanly on an
+# interrupt and leave no orphaned resources.
 
 # Global flag for interrupt detection
 our $interrupted = 0;
@@ -40,8 +40,9 @@ sub new ($class)
 }
 
 # $self->setup_graceful_exit(@signals):
-#	Setup handlers for graceful exit on specified signals
-#	Calls all registered cleanup handlers and exits
+#	Set up handlers for a graceful exit on the specified signals.
+#	On a signal, the handler calls all registered cleanup handlers
+#	and exits.
 sub setup_graceful_exit ( $self, @signals )
 {
 	for my $sig (@signals) {
@@ -57,8 +58,9 @@ sub setup_graceful_exit ( $self, @signals )
 }
 
 # $self->setup_interrupt_flag(@signals):
-#	Setup handlers that set interrupt flag without exiting
-#	Allows long-running operations to check and exit cleanly
+#	Set up handlers that set the interrupt flag and do not exit.
+#	Long-running operations can then check the flag and exit
+#	cleanly.
 sub setup_interrupt_flag ( $self, @signals )
 {
 	for my $sig (@signals) {
@@ -70,8 +72,8 @@ sub setup_interrupt_flag ( $self, @signals )
 }
 
 # $self->add_cleanup($handler):
-#	Add cleanup handler to be called on signal
-#	Handler receives signal name as argument
+#	Add a cleanup handler that runs on a signal.
+#	The handler receives the signal name as its argument.
 sub add_cleanup ( $self, $handler )
 {
 	push @cleanup_handlers, $handler;
@@ -79,7 +81,7 @@ sub add_cleanup ( $self, $handler )
 }
 
 # $self->restore():
-#	Restore original signal handlers
+#	Restore the original signal handlers
 sub restore ($self)
 {
 	for my $sig ( keys %{ $self->{handlers} } ) {
@@ -90,15 +92,16 @@ sub restore ($self)
 }
 
 # check_interrupted():
-#	Check if process has been interrupted
-#	Returns true if interrupt signal received
+#	Check if the process received an interrupt.
+#	The function returns true if an interrupt signal arrived.
 sub check_interrupted()
 {
 	return $interrupted;
 }
 
 # reset_interrupted():
-#	Reset interrupt flag (for testing or manual control)
+#	Reset the interrupt flag. Use this for tests or manual
+#	control.
 sub reset_interrupted()
 {
 	$interrupted = 0;
@@ -112,7 +115,7 @@ sub _run_cleanup_handlers ( $self, $signal )
 	@cleanup_handlers = ();
 }
 
-# DESTROY runs when object goes out of scope
+# DESTROY runs when the object goes out of scope
 sub DESTROY ($self)
 {
 	$self->restore;

@@ -25,14 +25,15 @@ use Socket      qw(SOCK_STREAM);
 use Time::HiRes qw(time);
 
 # FuguLib::MDNS - publish services through OpenBSD's mdnsd(8) over its
-# control socket, natively: no mdnsctl(8) child process. The socket is
-# the advertisement's lifetime - closing it withdraws the service.
-# Protocol per spec/MDNS-Control.md. The module never logs; it returns
-# outcomes and keeps the last failure in ->error for the caller.
+# control socket, natively. There is no mdnsctl(8) child process. The
+# socket is the advertisement's lifetime. Close the socket to withdraw
+# the service. The protocol is per spec/MDNS-Control.md. The module
+# never logs. It returns outcomes and keeps the last failure in
+# ->error for the caller.
 
-# The imsg_type enum ordinals [MDNS-Control §2]. Positional in the
-# upstream header, so all of them are pinned here in order even though
-# only the group subset is used.
+# The imsg_type enum ordinals [MDNS-Control §2]. The values are
+# positional in the upstream header. Thus the list pins all of them in
+# order, although the module uses only the group subset.
 use constant {
 	IMSG_NONE                     => 0,
 	IMSG_CTL_END                  => 1,
@@ -54,10 +55,11 @@ use constant {
 	IMSG_CTL_GROUP_PUBLISHED      => 17,
 };
 
-# Field limits and the struct mdns_service layout [MDNS-Control §3-§4],
-# LP64 as measured for OpenBSD 7.8/openmdns-0.7p3 (the LIST_ENTRY width
-# and the 864-byte total are LP64-specific). NAME_MAX etc. are the
-# usable lengths: one byte of each field is the terminating NUL.
+# Field limits and the struct mdns_service layout [MDNS-Control §3-§4].
+# The layout is LP64 as measured for OpenBSD 7.8/openmdns-0.7p3. The
+# LIST_ENTRY width and the 864-byte total are LP64-specific. NAME_MAX
+# and the other maximums are the usable lengths. One byte of each field
+# is the terminating NUL.
 use constant {
 	GROUP_NAME_LEN => 256,    # char[MAXHOSTNAMELEN] [MDNS-Control §3.1]
 	SERVICE_LEN    => 864,    # sizeof(struct mdns_service)
@@ -66,17 +68,18 @@ use constant {
 	TXT_MAX        => 255,
 };
 
-# struct mdns_service, one template [MDNS-Control §4]: 16 zero bytes of
-# LIST_ENTRY, app[64], proto[4], name[256], target[256] (zeros: mdnsd
-# substitutes its own hostname), u16 priority/weight/port native order,
-# txt[256], 2 bytes padding, in_addr (zeros: INADDR_ANY, mdnsd patches
-# in the interface address).
+# struct mdns_service, one template [MDNS-Control §4]. The fields are:
+# 16 zero bytes of LIST_ENTRY, app[64], proto[4], name[256],
+# target[256], u16 priority/weight/port in native order, txt[256],
+# 2 bytes padding, and in_addr. The target field is zeros: mdnsd
+# substitutes its own hostname. The in_addr field is zeros, INADDR_ANY:
+# mdnsd patches in the interface address.
 use constant SERVICE_TEMPLATE => 'x16 Z64 Z4 Z256 x256 S S S Z256 x2 x4';
 
 # FuguLib::MDNS->new(%args):
 #	socket_path => $path	control socket (default /var/run/mdnsd.sock)
-#	timeout     => $secs	reply deadline (default 10; PUBLISHED
-#				takes ~4-4.5s [MDNS-Control §6.2])
+#	timeout     => $secs	reply deadline (default 10). PUBLISHED
+#				takes ~4-4.5s [MDNS-Control §6.2].
 sub new ( $class, %args )
 {
 	return bless {
@@ -90,9 +93,10 @@ sub new ( $class, %args )
 }
 
 # $self->connect:
-#	Connect to mdnsd's control socket. Returns 1, or undef when
-#	the socket is missing or refuses - mdnsd not running is a
-#	normal condition the caller decides about [MDNS-Control §1].
+#	Connect to mdnsd's control socket. The method returns 1, or
+#	undef when the socket is missing or refuses. An mdnsd that
+#	does not run is a normal condition. The caller decides about
+#	it [MDNS-Control §1].
 sub connect ($self)
 {
 	my $sock = IO::Socket::UNIX->new(
@@ -110,24 +114,25 @@ sub connect ($self)
 }
 
 # $self->publish_service(%args):
-#	name    => $instance	service instance name (also the group
-#				name; mdnsd requires them equal
-#				[MDNS-Control §7])
+#	name    => $instance	service instance name, also the group
+#				name. mdnsd requires them equal
+#				[MDNS-Control §7].
 #	app     => $app		application protocol, no underscore
 #	proto   => $proto	'tcp' or 'udp'
 #	port    => $port	port number
 #	txt     => $string	formatted TXT string [MDNS-Control §5]
 #	timeout => $secs	overrides the object default
-#	Send the ADD/ADD_SERVICE/COMMIT sequence and wait for
-#	GROUP_PUBLISHED. Returns 1 once published; undef on invalid
-#	arguments, no connection, an error reply, EOF, or timeout,
-#	with the reason in ->error.
+#	Send the ADD/ADD_SERVICE/COMMIT sequence. Wait for
+#	GROUP_PUBLISHED. The method returns 1 when the service is
+#	published. It returns undef on invalid arguments, no
+#	connection, an error reply, EOF, or timeout. The reason is in
+#	->error.
 sub publish_service ( $self, %args )
 {
 	my $service = $self->_check_service(%args) or return;
 
-	# Republishing on a held connection must go through update_txt:
-	# mdnsd silently ignores the duplicate GROUP_ADD, drops the
+	# To republish on a held connection, use update_txt. mdnsd
+	# silently ignores the duplicate GROUP_ADD, drops the
 	# ADD_SERVICE, and answers the COMMIT with a success-looking
 	# reply sequence for the old records [MDNS-Control §8]
 	if ( $self->{published} ) {
@@ -149,10 +154,10 @@ sub publish_service ( $self, %args )
 #	txt     => $string	replacement TXT string
 #	timeout => $secs	overrides the object default
 #	Re-advertise with a new TXT record. Same-socket replacement
-#	does not work [MDNS-Control §8], so this withdraws and
-#	republishes over a fresh connection, reusing the service
-#	parameters from publish_service. A no-op returning 1 while
-#	unpublished, mirroring the old mdnsctl wrapper.
+#	does not work [MDNS-Control §8]. Thus the method withdraws and
+#	republishes over a fresh connection. It reuses the service
+#	parameters from publish_service. While unpublished, it is a
+#	no-op that returns 1. This mirrors the old mdnsctl wrapper.
 sub update_txt ( $self, %args )
 {
 	return 1 unless $self->{published};
@@ -171,7 +176,7 @@ sub update_txt ( $self, %args )
 }
 
 # $self->withdraw:
-#	Close the control socket. That is the entire operation: mdnsd
+#	Close the control socket. That is the entire operation. mdnsd
 #	kills the connection's groups and sends goodbyes
 #	[MDNS-Control §6].
 sub withdraw ($self)
@@ -186,23 +191,25 @@ sub withdraw ($self)
 }
 
 # $self->is_published:
-#	True while the service is advertised on a held connection.
+#	The method returns true while the service is published on a
+#	held connection.
 sub is_published ($self)
 {
 	return $self->{published};
 }
 
 # $self->error:
-#	The most recent failure, for the caller to log.
+#	Return the most recent failure. The caller can log it.
 sub error ($self)
 {
 	return $self->{error};
 }
 
 # $self->_check_service(%args):
-#	Validate lengths against the wire field limits - over-length
-#	input is an error, never a silent truncation [MDNS-Control §4]
-#	- and return the parameter set publish and update reuse.
+#	Validate the lengths against the wire field limits.
+#	Over-length input is an error, never a silent truncation
+#	[MDNS-Control §4]. Return the parameter set that publish and
+#	update reuse.
 sub _check_service ( $self, %args )
 {
 	my %service = (
@@ -232,7 +239,7 @@ sub _check_service ( $self, %args )
 		return;
 	}
 
-	# The wire field is a u16 [MDNS-Control §4]; pack would
+	# The wire field is a u16 [MDNS-Control §4]. pack would
 	# silently truncate anything wider
 	if ( $service{port} !~ /^\d+$/ || $service{port} > 65535 ) {
 		$self->{error} = 'port out of range';
@@ -243,9 +250,9 @@ sub _check_service ( $self, %args )
 }
 
 # $self->_publish($timeout):
-#	The three-message publish conversation and its reply loop
-#	[MDNS-Control §6]. On any failure the connection is closed so
-#	mdnsd forgets the half-built group.
+#	Run the three-message publish conversation and its reply loop
+#	[MDNS-Control §6]. On any failure, the method closes the
+#	connection so that mdnsd forgets the half-built group.
 sub _publish ( $self, $timeout )
 {
 	my $s     = $self->{service};
@@ -253,8 +260,8 @@ sub _publish ( $self, $timeout )
 
 	$self->{error} = undef;
 
-	# ADD must precede COMMIT on this connection, unconditionally:
-	# committing an unknown group crashes mdnsd [MDNS-Control §9]
+	# ADD must precede COMMIT on this connection, unconditionally.
+	# A COMMIT for an unknown group crashes mdnsd [MDNS-Control §9]
 	my $sent = $self->{imsg}->send(
 		type => IMSG_CTL_GROUP_ADD,
 		data => $group
@@ -317,8 +324,8 @@ sub _publish ( $self, $timeout )
 
 # $self->_encode_service:
 #	Encode the stored parameters as one struct mdns_service
-#	[MDNS-Control §4]. Lengths were validated in _check_service,
-#	so the Z templates never truncate.
+#	[MDNS-Control §4]. _check_service already validates the
+#	lengths. Thus the Z templates never truncate.
 sub _encode_service ($self)
 {
 	my $s   = $self->{service};

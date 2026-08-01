@@ -2,9 +2,9 @@
 # ex:ts=8 sw=4:
 # Conformance tests for spec/HAP-Characteristics.md
 #
-# Data-driven over the characteristics OpenHAP implements; catalog rows
-# are cited as [HAP-Characteristics §5/<Name>] and the UUID table as
-# §6 rows.
+# The tests are data-driven over the characteristics that OpenHAP
+# implements. The tests cite catalog rows as
+# [HAP-Characteristics §5/<Name>] and UUID table entries as §6 rows.
 
 use v5.36;
 use Test::More;
@@ -22,8 +22,9 @@ use_ok('OpenHAP::Tasmota::Sensor');
 use_ok('OpenHAP::Tasmota::Thermostat');
 use_ok('OpenHAP::Tasmota::Lightbulb');
 
-# [HAP-Characteristics §5] catalog rows for the characteristics OpenHAP
-# implements: short UUID, format, spec permissions, spec range, unit
+# [HAP-Characteristics §5] catalog rows for the characteristics that
+# OpenHAP implements: short UUID, format, spec permissions, spec
+# range, unit
 my %catalog = (
 	Identify => {
 		short  => '14',
@@ -181,7 +182,8 @@ subtest '[HAP-Characteristics §1][HAP-Characteristics §7] JSON shape' =>
 	is( $json->{unit},     'percentage', 'unit encoded' );
 	is_deeply( $json->{perms}, [ 'pr', 'pw', 'ev' ], 'perms encoded' );
 
-	# [HAP-Characteristics §8] a write-only characteristic omits value
+	# [HAP-Characteristics §8] a write-only characteristic omits the
+	# value
 	my $write_only = OpenHAP::Characteristic->new(
 		type   => 'Identify',
 		iid    => 2,
@@ -192,8 +194,8 @@ subtest '[HAP-Characteristics §1][HAP-Characteristics §7] JSON shape' =>
 		'[HAP-Characteristics §8] non-readable value omitted' );
 };
 
-# Instantiate every device type and check each characteristic instance
-# against its catalog row
+# Instantiate every device type. Check each characteristic instance
+# against its catalog row.
 subtest '[HAP-Characteristics §5] device characteristics match rows' =>
     sub {
 	my $mqtt        = OpenHAP::TestMock::MQTT->new;
@@ -280,7 +282,7 @@ sub check_row ( $where, $name, $char )
 			"$label: unit is $row->{unit}" );
 	}
 
-	# [HAP-Characteristics §4] any unit used must be a spec unit
+	# [HAP-Characteristics §4] each unit in use must be a spec unit
 	if ( defined $char->{unit} ) {
 		my %spec_units =
 		    map { $_ => 1 } qw(celsius percentage arcdegrees

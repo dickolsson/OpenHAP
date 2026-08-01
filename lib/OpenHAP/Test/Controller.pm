@@ -26,10 +26,10 @@ use OpenHAP::TLV;
 use OpenHAP::Pairing;
 use OpenHAP::Test::Controller::SRP;
 
-# A minimal HomeKit controller for tests: completes pair-setup (SRP
-# M1-M6), pair-verify (X25519), and speaks the encrypted session
-# framing, against a live accessory over TCP or in-process through an
-# injected transport code ref.
+# This module is a minimal HomeKit controller for tests. It completes
+# pair-setup (SRP M1-M6) and pair-verify (X25519). It uses the
+# encrypted session framing. It connects to a live accessory over
+# TCP, or runs in-process through an injected transport code ref.
 
 use constant MAX_FRAME => 1024;
 
@@ -41,19 +41,20 @@ sub new ( $class, %args )
 		pin       => $args{pin}  // '031-45-154',
 		transport => $args{transport},
 
-		# Socket read timeout. The default suits fast in-process and
-		# native runs; integration tests against a real daemon under
-		# TCG emulation, where a single SRP modexp can take many
-		# seconds, raise it via OPENHAP_TEST_TIMEOUT.
+		# Socket read timeout. The default is correct for fast
+		# in-process and native runs. Under TCG emulation, one
+		# SRP modexp can take many seconds. Thus integration
+		# tests against a real daemon raise the timeout with
+		# OPENHAP_TEST_TIMEOUT.
 		timeout => $args{timeout} // $ENV{OPENHAP_TEST_TIMEOUT} // 5,
 
 		controller_id => $args{controller_id} // 'openhap-test-ctrl',
 
-		# Controller long-term identity (generated once)
+		# Controller long-term identity. new makes it once.
 		ltsk => undef,
 		ltpk => undef,
 
-		# Learned during pair-setup
+		# pair_setup sets these values.
 		accessory_ltpk => undef,
 		accessory_id   => undef,
 
@@ -77,7 +78,8 @@ sub new ( $class, %args )
 }
 
 # $self->last_error():
-#	TLV error code (or message string) of the last failed exchange.
+#	Return the TLV error code or message string of the last
+#	failed exchange.
 sub last_error ($self)
 {
 	return $self->{last_error};
@@ -122,8 +124,8 @@ sub close ($self)
 }
 
 # $self->_round_trip($request_bytes):
-#	Send raw bytes and return the raw response bytes (one HTTP
-#	response; encrypted responses are returned still encrypted).
+#	Send the raw bytes and return the raw response bytes of one
+#	HTTP response. Encrypted responses stay encrypted.
 sub _round_trip ( $self, $request )
 {
 	if ( $self->{transport} ) {
@@ -135,7 +137,7 @@ sub _round_trip ( $self, $request )
 	my $socket = $self->{socket};
 	$socket->syswrite($request);
 
-	# Read until a full HTTP response is decodable from the buffer
+	# Read until the buffer holds a full, decodable HTTP response
 	my $select = IO::Select->new($socket);
 	my $raw    = '';
 	while (1) {
@@ -158,8 +160,8 @@ sub _round_trip ( $self, $request )
 }
 
 # _message_complete($text):
-#	True once $text holds a complete HTTP message (headers plus
-#	Content-Length bytes of body).
+#	Return true when $text holds a complete HTTP message. That
+#	is the headers plus Content-Length bytes of body.
 sub _message_complete ($text)
 {
 	return unless $text =~ /\r\n\r\n/;
@@ -188,8 +190,8 @@ sub _encrypt ( $self, $data )
 }
 
 # _decrypt_peek($data):
-#	Decrypt without consuming the counter state (used while
-#	accumulating frames from the socket).
+#	Decrypt the data but do not consume the counter state. The
+#	socket read loop uses this while it accumulates frames.
 sub _decrypt_peek ( $self, $data )
 {
 	my $count = $self->{decrypt_count};
@@ -268,9 +270,10 @@ sub _parse_response ( $self, $raw )
 }
 
 # $self->request($method, $path, $body?, $headers?):
-#	Perform one HTTP request over the session (encrypted framing
-#	once pair-verify has completed). Returns a hash ref with
-#	status, headers and body, or undef on transport error.
+#	Send one HTTP request over the session. After pair-verify
+#	completes, the session uses the encrypted framing. Return a
+#	hash ref with status, headers and body. Return undef on a
+#	transport error.
 sub request ( $self, $method, $path, $body = undef, $headers = {} )
 {
 	my $raw = $self->_build_request( $method, $path, $body, $headers );
@@ -287,8 +290,9 @@ sub request ( $self, $method, $path, $body = undef, $headers = {} )
 		}
 	}
 
-	# Keep anything beyond the first complete message (e.g. an event
-	# that arrived back-to-back with the response) for next_event
+	# Keep the bytes after the first complete message for
+	# next_event. For example, an event can arrive back-to-back
+	# with the response.
 	if ( $response =~ /\A(.*?\r\n\r\n)(.*)\z/s ) {
 		my ( $head, $rest ) = ( $1, $2 );
 		my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
@@ -326,9 +330,9 @@ sub _tlv_request ( $self, $path, %tlv_items )
 }
 
 # $self->pair_setup():
-#	Complete SRP pair-setup M1-M6. On success the accessory LTPK is
-#	stored and true is returned; on any protocol error undef is
-#	returned with the TLV error code in last_error.
+#	Complete SRP pair-setup M1-M6. On success, store the
+#	accessory LTPK and return true. On a protocol error, return
+#	undef and put the TLV error code in last_error.
 sub pair_setup ($self)
 {
 	$self->{last_error} = undef;
@@ -441,9 +445,9 @@ sub pair_setup ($self)
 }
 
 # $self->pair_verify():
-#	Complete pair-verify M1-M4 and switch the connection to
-#	encrypted session framing. Requires a completed pair_setup (or
-#	an accessory_ltpk supplied by the caller).
+#	Complete pair-verify M1-M4 and switch the connection to the
+#	encrypted session framing. This requires a completed
+#	pair_setup, or an accessory_ltpk from the caller.
 sub pair_verify ($self)
 {
 	$self->{last_error} = undef;
@@ -483,7 +487,8 @@ sub pair_verify ($self)
 	my $acc_id   = $m2_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
 	my $acc_sig  = $m2_inner{ OpenHAP::Pairing::kTLVType_Signature() };
 
-	# Verify the accessory signature when we know its LTPK
+	# Verify the accessory signature when the controller knows
+	# the accessory LTPK
 	if ( defined $self->{accessory_ltpk} ) {
 		unless (
 			OpenHAP::Crypto::verify_ed25519(
@@ -581,8 +586,9 @@ sub list_pairings ($self)
 		return;
 	}
 
-	# Split entries on the zero-length separator; TLV::decode would
-	# concatenate the repeated Identifier/PublicKey types
+	# Split the entries on the zero-length separator. Without
+	# the split, TLV::decode concatenates the repeated
+	# Identifier/PublicKey types.
 	my @pairings;
 	for my $entry ( split /\xFF\x00/, $response->{body} ) {
 		my %tlv = OpenHAP::TLV::decode($entry);
@@ -609,7 +615,7 @@ sub list_pairings ($self)
 		    };
 	}
 
-	# A lone error TLV (no identifiers) means the request failed
+	# A lone error TLV with no identifiers means the request failed
 	if ( !@pairings ) {
 		my %tlv   = OpenHAP::TLV::decode( $response->{body} );
 		my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
@@ -625,12 +631,12 @@ sub list_pairings ($self)
 # --- events -------------------------------------------------------------
 
 # $self->next_event($timeout?):
-#	Wait for an EVENT/1.0 message on the socket, decrypt and parse
-#	it. Returns { status, headers, body } or undef on timeout.
-#	Without an explicit $timeout the wait is bounded by the session
-#	timeout (which honors OPENHAP_TEST_TIMEOUT); pass a literal only
-#	for short negative probes. Requires a socket connection (not an
-#	injected transport).
+#	Wait for an EVENT/1.0 message on the socket, then decrypt
+#	and parse it. Return { status, headers, body }, or undef on
+#	timeout. Without an explicit $timeout, the session timeout
+#	bounds the wait. That timeout honors OPENHAP_TEST_TIMEOUT.
+#	Pass a literal only for short negative probes. This requires
+#	a socket connection, not an injected transport.
 sub next_event ( $self, $timeout = undef )
 {
 	return unless $self->{socket};
@@ -642,7 +648,7 @@ sub next_event ( $self, $timeout = undef )
 
 	while (1) {
 
-		# A complete event may already be buffered
+		# The buffer can already hold a complete event
 		if ( $self->{inbuf} =~ s{\A(EVENT/1\.0.*?\r\n\r\n)}{}s ) {
 			my $head = $1;
 			my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
@@ -675,10 +681,10 @@ sub next_event ( $self, $timeout = undef )
 			next;
 		}
 
-		# A frame may arrive split across reads: accumulate raw
-		# bytes and decrypt only complete frames, leaving a
-		# partial tail buffered so the nonce counter stays in
-		# sync with the accessory
+		# A frame can arrive split across reads. Accumulate the
+		# raw bytes and decrypt only complete frames. Keep a
+		# partial tail buffered. Then the nonce counter stays in
+		# sync with the accessory.
 		$self->{rawbuf} .= $chunk;
 		my $plain = $self->_drain_frames;
 		return unless defined $plain;
@@ -688,9 +694,9 @@ sub next_event ( $self, $timeout = undef )
 
 # $self->_drain_frames():
 #	Decrypt and consume every complete frame at the front of the
-#	raw receive buffer; a trailing partial frame stays buffered for
-#	the next read. Returns the decrypted plaintext (possibly
-#	empty), or undef on an authentication failure.
+#	raw receive buffer. A trailing partial frame stays buffered
+#	for the next read. Return the decrypted plaintext, which can
+#	be empty. Return undef on an authentication failure.
 sub _drain_frames ($self)
 {
 	my $out = '';

@@ -80,7 +80,7 @@ for (1..3) {
 }
 ok($multi_ok, 'multiple invocations work');
 
-# Test 14: hapctl doesn't interfere with daemon
+# Test 14: hapctl does not interfere with the daemon
 my $before = system('rcctl check openhapd >/dev/null 2>&1');
 system("$hapctl -c $config_file status >/dev/null 2>&1");
 system("$hapctl -c $config_file devices >/dev/null 2>&1");

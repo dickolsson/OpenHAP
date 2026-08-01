@@ -2,10 +2,10 @@
 # ex:ts=8 sw=4:
 # Conformance tests for spec/HAP-Pairing.md
 #
-# The controller side of pair-setup and pair-verify is scripted inline
-# from the spec formulas (Math::BigInt for SRP, OpenHAP::Crypto
-# primitives for the rest), independent of the accessory-side modules
-# under test.
+# The tests script the controller side of pair-setup and pair-verify
+# inline from the spec formulas. They use Math::BigInt for SRP and
+# OpenHAP::Crypto primitives for the rest. The controller side is
+# independent of the accessory-side modules under test.
 
 use v5.36;
 use Test::More;
@@ -75,8 +75,8 @@ sub error_code ($response)
 	return defined $error ? unpack( 'C', $error ) : undef;
 }
 
-# Client-side SRP per HAP-Pairing.md §2.5, independent of OpenHAP::SRP
-# state. Returns (A_bytes, M1, K).
+# Do client-side SRP as HAP-Pairing.md §2.5 specifies. The function
+# does not use OpenHAP::SRP state. It returns (A_bytes, M1, K).
 sub client_srp ( $salt, $B_bytes, $pin )
 {
 	my $I = 'Pair-Setup';
@@ -110,7 +110,7 @@ sub client_srp ( $salt, $B_bytes, $pin )
 }
 
 # Drive pair-setup M1..M4 against a pairing handler with a given PIN.
-# Returns (m4_response, K, session).
+# It returns (m4_response, K, session).
 sub run_m1_to_m4 ( $pairing, $pin )
 {
 	my $session = OpenHAP::Session->new( socket => 'client' );
@@ -258,7 +258,7 @@ subtest '[HAP-Pairing §2][HAP-Pairing §2.1] pair setup state machine' =>
 	my ($pairing) = make_pairing();
 	my $session = OpenHAP::Session->new( socket => 'client' );
 
-	# Invalid state value is rejected
+	# The handler rejects an invalid state value
 	my $bogus = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 99 ),
 	);
@@ -266,7 +266,7 @@ subtest '[HAP-Pairing §2][HAP-Pairing §2.1] pair setup state machine' =>
 		OpenHAP::Pairing::kTLVError_Unknown(),
 		'invalid state rejected with kTLVError_Unknown' );
 
-	# M3 without a preceding M1 is rejected
+	# The handler rejects M3 without a preceding M1
 	my $m3 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
 		OpenHAP::Pairing::kTLVType_PublicKey(), 'A' x 384,
@@ -283,7 +283,7 @@ subtest '[HAP-Pairing §3.1] pair verify state machine' => sub {
 	my ($pairing) = make_pairing();
 	my $session = OpenHAP::Session->new( socket => 'client' );
 
-	# Invalid state value is rejected
+	# The handler rejects an invalid state value
 	my $bogus = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 99 ),
 	);
@@ -291,7 +291,7 @@ subtest '[HAP-Pairing §3.1] pair verify state machine' => sub {
 		OpenHAP::Pairing::kTLVError_Unknown(),
 		'invalid state rejected with kTLVError_Unknown' );
 
-	# M3 without a preceding M1 is rejected
+	# The handler rejects M3 without a preceding M1
 	my $m3 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
 		OpenHAP::Pairing::kTLVType_EncryptedData(), 'X' x 32,
@@ -367,7 +367,8 @@ subtest '[HAP-Pairing §2.5][HAP-Pairing §2.6] M3 -> M4 SRP proof' => sub {
 	my $proof = tlv_field( $m4, OpenHAP::Pairing::kTLVType_Proof() );
 	is( length($proof), 64, 'M4 proof is 64 bytes (SHA-512)' );
 
-	# M2 = H(PAD(A) | M1 | K), verified client-side
+	# M2 = H(PAD(A) | M1 | K). The test verifies it on the client
+	# side.
 	is( unpack( 'H*', $proof ),
 		unpack( 'H*', sha512( $A . $M1 . $K ) ),
 		'server proof M2 = H(A | M1 | K) verifies' );
@@ -383,7 +384,7 @@ subtest '[HAP-Pairing §2.5][HAP-Pairing §2.6] M3 -> M4 SRP proof' => sub {
 		1, 'failed proof increments attempt counter' );
 	OpenHAP::Pairing->clear_pairing_state();
 
-	# A mod N == 0: rejected before proof verification
+	# A mod N == 0: the handler rejects it before proof verification
 	my ($pairing3) = make_pairing();
 	my $s = OpenHAP::Session->new( socket => 'client' );
 	my $m1 = OpenHAP::TLV::encode(
@@ -450,7 +451,7 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 		6, 'M6 has State 0x06' );
 	ok( !defined error_code($m6), 'M5 accepted' );
 
-	# Pairing persisted with admin permissions
+	# The accessory stores the pairing with admin permissions
 	my $pairings = $storage->load_pairings();
 	ok( exists $pairings->{$ios_id},
 		'[HAP-Pairing §6] controller pairing persisted' );
@@ -471,7 +472,8 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 		pack('x[4]') . 'PS-Msg06', $m6_data, $m6_tag );
 	ok( defined $m6_plain, 'M6 sub-TLV decrypts with PS-Msg06 nonce' );
 
-	# Verify accessory signature ([HAP-Pairing §4/Accessory Signature])
+	# Verify the accessory signature
+	# ([HAP-Pairing §4/Accessory Signature])
 	my %m6_inner = OpenHAP::TLV::decode($m6_plain);
 	my $acc_id =
 	    $m6_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
@@ -572,7 +574,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	);
 	my $m4 = $pairing->handle_pair_verify( $m3, $session );
 
-	# [HAP-Pairing §3.5] M4: success, session becomes encrypted
+	# [HAP-Pairing §3.5] M4: success. The session becomes encrypted.
 	is( unpack( 'C',
 		    tlv_field( $m4, OpenHAP::Pairing::kTLVType_State() ) ),
 		4, 'M4 has State 0x04' );
@@ -581,7 +583,8 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	ok( $session->is_encrypted, 'session encryption enabled' );
 
 	# [HAP-Pairing §4/Session Read Key][HAP-Pairing §4/Session Write Key]
-	# Accessory encrypts with the Read key, decrypts with the Write key
+	# The accessory encrypts with the Read key and decrypts with the
+	# Write key
 	my $read_key =
 	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
@@ -597,7 +600,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 		'accessory-to-controller key is Control-Read-Encryption-Key'
 	);
 
-	# Unknown controller is rejected with 0x02
+	# The accessory rejects an unknown controller with 0x02
 	my $session2 = OpenHAP::Session->new( socket => 'client2' );
 	my ( $pairing2, $storage2 ) = make_pairing();
 	my $m2_2 = $pairing2->handle_pair_verify( $m1, $session2 );
@@ -632,7 +635,8 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 	    OpenHAP::Storage->new( db_path => tempdir( CLEANUP => 1 ) );
 	my ( $pairing, undef, undef ) = make_pairing($storage);
 
-	# Limit is 100 attempts; at the limit M1 returns 0x05 MaxTries
+	# The limit is 100 attempts. At the limit, M1 returns 0x05
+	# MaxTries.
 	is( OpenHAP::Pairing::MAX_AUTH_ATTEMPTS(),
 		100, 'maximum unsuccessful attempts is 100' );
 
@@ -646,7 +650,8 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 		OpenHAP::Pairing::kTLVError_MaxTries(),
 		'M1 at the limit returns 0x05 MaxTries' );
 
-	# Counter is stored persistently and survives restart
+	# The accessory stores the counter persistently. Thus the
+	# counter survives a restart.
 	my ($pairing2) = run_failed_attempt($storage);
 	is( $storage->get_auth_attempts, 1, 'failed attempt persisted' );
 
@@ -659,7 +664,8 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 	is( OpenHAP::Pairing->get_failed_attempts(),
 		1, 'attempt counter restored from storage on restart' );
 
-	# Reset only after a successful SRP proof verification
+	# The counter resets only after a successful SRP proof
+	# verification
 	my ( $pairing3, undef, undef ) = make_pairing($storage);
 	my ($m4) = run_m1_to_m4( $pairing3, $PIN );
 	ok( !defined error_code($m4), 'successful SRP proof' );
@@ -670,7 +676,7 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 	OpenHAP::Pairing->clear_pairing_state();
 };
 
-# Run a single failed pairing attempt (wrong PIN) against $storage
+# Run one failed pairing attempt with a wrong PIN against $storage
 sub run_failed_attempt ($storage)
 {
 	OpenHAP::Pairing->clear_pairing_state();

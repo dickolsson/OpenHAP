@@ -24,14 +24,16 @@ use IO::Select;
 use Time::HiRes qw(time);
 
 # FuguLib::Imsg - the base-system imsg(3) framing over a connected
-# stream socket: a fixed native-endian header followed by a payload.
-# Pure serialisation; the module never opens or names a socket itself,
-# and never logs - callers decide what an error means.
+# stream socket. Each message is a fixed native-endian header followed
+# by a payload. The module does serialisation only. It never opens or
+# names a socket itself, and it never logs. The callers decide what an
+# error means.
 
-# Header and size constants per spec/MDNS-Imsg.md §1-§2: four native
-# uint32 fields (type, len, peerid, pid), len counts the whole message,
-# MAX_IMSGSIZE bounds it. The field order and widths are pinned by the
-# HEADER_TEMPLATE pack template; change them only against the spec.
+# Header and size constants per spec/MDNS-Imsg.md §1-§2. The header
+# has four native uint32 fields: type, len, peerid, pid. The len field
+# counts the whole message, and MAX_IMSGSIZE bounds it. The
+# HEADER_TEMPLATE pack template pins the field order and widths.
+# Change them only against the spec.
 use constant {
 	HEADER_SIZE     => 16,
 	HEADER_TEMPLATE => 'L4',    # type, len, peerid, pid; native order
@@ -39,14 +41,14 @@ use constant {
 };
 use constant MAX_PAYLOAD => MAX_IMSGSIZE - HEADER_SIZE;
 
-# The high bit of len marks fd-passing messages [MDNS-Imsg §2]; the
-# protocols this module serves never set it, but a receiver must mask
-# it off before trusting the length.
+# The high bit of len marks fd-passing messages [MDNS-Imsg §2]. The
+# protocols this module serves never set it. But a receiver must mask
+# it off before it trusts the length.
 use constant FD_MARK => 0x80000000;
 
 # FuguLib::Imsg->new(%args):
 #	fh => $fh	connected stream socket (required)
-#	Framing object over an already-connected handle.
+#	Make a framing object over an already-connected handle.
 sub new ( $class, %args )
 {
 	my $fh = $args{fh} or die 'fh parameter required';
@@ -60,15 +62,17 @@ sub new ( $class, %args )
 }
 
 # _encode_header($type, $len, $peerid, $pid):
-#	Encode one header [MDNS-Imsg §1]. Internal seam so tests can
-#	assert the encoded bytes without scraping a socketpair.
+#	Encode one header [MDNS-Imsg §1]. This internal seam lets the
+#	tests assert the encoded bytes. The tests do not have to
+#	scrape a socketpair.
 sub _encode_header ( $type, $len, $peerid, $pid )
 {
 	return pack( HEADER_TEMPLATE, $type, $len, $peerid, $pid );
 }
 
 # _decode_header($bytes):
-#	Decode one header; returns ($type, $len, $peerid, $pid).
+#	Decode one header. The function returns ($type, $len, $peerid,
+#	$pid).
 sub _decode_header ($bytes)
 {
 	return unpack( HEADER_TEMPLATE, $bytes );
@@ -77,10 +81,10 @@ sub _decode_header ($bytes)
 # $self->send(%args):
 #	type => $n	message type (required)
 #	data => $bytes	payload (default empty)
-#	Frame and write one message. Returns 1 on success, undef with
-#	$! set on an oversized payload, a dead connection, or a write
-#	error. A peer that closed the socket surfaces as EPIPE, not as
-#	a fatal SIGPIPE.
+#	Frame and write one message. The method returns 1 on success.
+#	It returns undef, with $! set, on an oversized payload, a dead
+#	connection, or a write error. A peer that closed the socket
+#	shows as EPIPE, not as a fatal SIGPIPE.
 sub send ( $self, %args )
 {
 	my $type = $args{type} // die 'type parameter required';
@@ -116,11 +120,11 @@ sub send ( $self, %args )
 
 # $self->recv(%args):
 #	timeout => $seconds	how long to wait (undef blocks forever)
-#	Return one whole message as { type => $n, data => $bytes },
-#	accumulating short reads across calls. Returns undef on
-#	timeout, clean EOF, or an unrecoverable framing error ($! set
-#	to EBADMSG, and the connection is marked dead per
-#	spec/MDNS-Imsg.md §4).
+#	Return one whole message as { type => $n, data => $bytes }.
+#	The method accumulates short reads across calls. It returns
+#	undef on timeout, clean EOF, or an unrecoverable framing
+#	error. For a framing error, it sets $! to EBADMSG and marks
+#	the connection dead per spec/MDNS-Imsg.md §4.
 sub recv ( $self, %args )
 {
 	my $timeout  = $args{timeout};
@@ -149,8 +153,9 @@ sub recv ( $self, %args )
 		}
 		if ( $n == 0 ) {
 
-			# Clean EOF only on a message boundary; EOF with
-			# buffered bytes is a truncated message either way
+			# A clean EOF occurs only on a message boundary.
+			# An EOF with buffered bytes is a truncated
+			# message either way.
 			$self->{dead} = 1;
 			return;
 		}
@@ -159,9 +164,9 @@ sub recv ( $self, %args )
 }
 
 # $self->_extract_message:
-#	Pop one complete message off the buffer, or return undef when
-#	more bytes are needed. An invalid length poisons the
-#	connection [MDNS-Imsg §2].
+#	Pop one complete message off the buffer. Return undef when
+#	more bytes are necessary. An invalid length marks the
+#	connection dead [MDNS-Imsg §2].
 sub _extract_message ($self)
 {
 	return if length( $self->{buffer} ) < HEADER_SIZE;

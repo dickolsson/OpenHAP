@@ -16,9 +16,9 @@ is(FuguVM::Image::CDN_HOST(), 'cdn.openbsd.org',
 is(FuguVM::Image::ARCH(), 'arm64',
     'ARCH is correct');
 
-# download() only warns when the helper is missing, so a rename would
-# degrade silently to "no download" instead of failing.  Assert the path
-# still resolves.
+# download() only warns when the helper is missing. Thus a rename
+# degrades silently to "no download" instead of a failure. Assert
+# that the path still resolves.
 ok(-x FuguVM::Image::_ftp_script(),
     'the ftp helper resolves to an executable');
 
@@ -62,7 +62,7 @@ ok(-x FuguVM::Image::_ftp_script(),
     my $tmpdir = tempdir(CLEANUP => 1);
     my $image = FuguVM::Image->new($tmpdir);
     
-    # Create fake cached image in proxy cache structure
+    # Create a fake cached image in the proxy cache structure
     my $cache_path = "$tmpdir/proxy/cdn.openbsd.org/pub/OpenBSD/7.8/arm64";
     make_path($cache_path);
     open my $fh, '>', "$cache_path/miniroot78.img";
@@ -89,7 +89,7 @@ ok(-x FuguVM::Image::_ftp_script(),
     my $tmpdir = tempdir(CLEANUP => 1);
     my $image = FuguVM::Image->new($tmpdir);
     
-    # Create fake cached images in proxy cache structure
+    # Create fake cached images in the proxy cache structure
     for my $ver (qw(7.7 7.8)) {
         (my $shortver = $ver) =~ s/\.//;
         my $cache_path = "$tmpdir/proxy/cdn.openbsd.org/pub/OpenBSD/$ver/arm64";

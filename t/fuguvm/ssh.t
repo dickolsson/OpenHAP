@@ -6,7 +6,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 
-# Skip if Net::SSH2 not available
+# Skip if Net::SSH2 is not available
 BEGIN {
     eval { require Net::SSH2 };
     if ($@) {
@@ -49,10 +49,10 @@ is(FuguVM::SSH::BUFFER_SIZE(), 32768, 'BUFFER_SIZE is 32768');
     ok(!$ssh->is_available, 'is_available false for closed port');
 }
 
-# _exit_code maps a raw wait status to a 0-255 exit code. This is what
-# lets `fuguvm ssh` running a script over stdin propagate a failing
-# remote command (e.g. a failing `prove` run) instead of truncating a
-# raw status like 256 down to exit(256) -> 0.
+# _exit_code maps a raw wait status to a 0-255 exit code. This lets
+# `fuguvm ssh`, when it runs a script over stdin, propagate a failing
+# remote command (e.g. a failing `prove` run). Without it, a raw
+# status like 256 truncates down to exit(256) -> 0.
 {
     is(FuguVM::SSH::_exit_code(0), 0, 'status 0 -> exit 0');
     is(FuguVM::SSH::_exit_code(1 << 8), 1, 'exit code 1 preserved');

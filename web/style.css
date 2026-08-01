@@ -148,10 +148,10 @@ footer {
 /*
  * Manual pages.
  *
- * mandoc(1) emits its own class names; the rules below adopt them into the
- * site's typography instead of shipping mandoc's default stylesheet.  Bold,
- * italic and monospace are the whole vocabulary: the target is a manual
- * page, not a syntax-highlighted document.
+ * mandoc(1) emits its own class names.  The rules below adopt them into
+ * the site's typography instead of shipping mandoc's default stylesheet.
+ * Bold, italic and monospace are the whole vocabulary.  The target is a
+ * manual page, not a syntax-highlighted document.
  */
 
 /* Running header and footer bars */
@@ -182,8 +182,8 @@ td.foot-os {
 	text-align: right;
 }
 
-/* Section and subsection headings.  As in a terminal, SECTION is flush
- * left, Subsection is half-indented, and the text is indented past both. */
+/* Section and subsection headings.  As in a terminal, SECTION sits flush
+ * left, Subsection sits at a half indent, and the text sits past both. */
 
 h1.Sh,
 h2.Ss {
@@ -222,7 +222,7 @@ a.permalink:visited {
 	display: none;
 }
 
-/* The SYNOPSIS is a two-cell table: name, then everything else */
+/* The SYNOPSIS is a two-cell table: the name, then everything else */
 
 table.Nm td {
 	vertical-align: top;
@@ -241,7 +241,8 @@ dl.Bl-tag > dd {
 	margin-left: 2em;
 }
 
-/* Inline semantics: bold for what you type, italic for what you substitute */
+/* Inline semantics.  Bold marks what you type, and italic marks what
+ * you substitute. */
 
 .Nm,
 .Cm,

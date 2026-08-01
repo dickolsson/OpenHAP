@@ -1,9 +1,9 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Full pair-setup and pair-verify exchanges through
-# OpenHAP::Test::Controller wired in-process to an OpenHAP::HAP
-# instance (spec/HAP-Pairing.md). No crypto is mocked: the accessory
-# ends these tests actually paired.
+# Full pair-setup and pair-verify exchanges for spec/HAP-Pairing.md.
+# OpenHAP::Test::Controller connects in-process to an OpenHAP::HAP
+# instance. The tests do not mock the crypto. The accessory is really
+# paired when these tests end.
 
 use v5.36;
 use Test::More;
@@ -35,8 +35,9 @@ use_ok('OpenHAP::Test::Controller');
 my $PIN = '123-45-678';
 
 # Wire a controller to a fresh OpenHAP::HAP instance through an
-# in-process transport: requests are parsed and dispatched directly,
-# with one accessory-side session per controller connection.
+# in-process transport. The transport parses and dispatches requests
+# directly. Each controller connection gets one accessory-side
+# session.
 sub make_pair ( %controller_args )
 {
 	OpenHAP::Pairing->clear_pairing_state();
@@ -49,8 +50,8 @@ sub make_pair ( %controller_args )
 	);
 	$hap->{pairing}->reset_auth_attempts;
 
-	# Mirror _handle_client: the pair-verify M4 response is sent in
-	# the clear even though dispatch just enabled encryption
+	# Mirror _handle_client: dispatch just enabled encryption, but
+	# the transport sends the pair-verify M4 response in the clear
 	my $session   = OpenHAP::Session->new( socket => 'in-process' );
 	my $transport = sub ($request_bytes) {
 		my $was_encrypted = $session->is_encrypted;
@@ -118,7 +119,7 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 	my ( $controller, $hap, $session ) = make_pair();
 	ok( $controller->pair_setup, 'first pairing succeeds' );
 
-	# A second controller on a fresh connection is refused
+	# The accessory refuses a second controller on a fresh connection
 	my $session2   = OpenHAP::Session->new( socket => 'in-process-2' );
 	my $transport2 = sub ($request_bytes) {
 		my $request = OpenHAP::HTTP::parse($request_bytes);
@@ -149,7 +150,8 @@ subtest '[HAP-Pairing §3] pair-verify and key derivation' => sub {
 	is( $session->controller_id, 'openhap-test-ctrl',
 		'accessory knows the controller identity' );
 
-	# The derived keys interoperate: authenticated request succeeds
+	# The derived keys interoperate. The authenticated request
+	# succeeds.
 	my $response = $controller->request( 'GET', '/accessories' );
 	ok( defined $response, 'encrypted request round-trips' );
 	is( $response->{status}, 200,
@@ -166,17 +168,17 @@ subtest '[HAP-Pairing §7.2] remove-pairing and last-admin behavior' =>
 	ok( $controller->pair_setup,  'pair-setup completes' );
 	ok( $controller->pair_verify, 'pair-verify completes' );
 
-	# Add a second (non-admin) pairing, then list both
+	# Add a second non-admin pairing. Then list both pairings.
 	ok( $controller->add_pairing( 'user-ctrl', 'U' x 32, 0 ),
 		'[HAP-Pairing §7.1] admin adds a second pairing' );
 	my $pairings = $controller->list_pairings;
 	is( scalar @$pairings, 2, '[HAP-Pairing §7.3] two pairings listed' );
 
-	# Removing a pairing that does not exist returns success
+	# The removal of a pairing that does not exist returns success
 	ok( $controller->remove_pairing('ghost-ctrl'),
 		'removing nonexistent pairing succeeds' );
 
-	# Removing the last admin clears all pairings
+	# The removal of the last admin clears all pairings
 	my $old_ltpk = $hap->{accessory_ltpk};
 	ok( $controller->remove_pairing, 'admin removes itself' );
 	ok( !$hap->is_paired, 'all pairings removed with the last admin' );
@@ -190,8 +192,8 @@ subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
 	my ( $controller, $hap, $session ) = make_pair();
 	ok( $controller->pair_setup, 'first pairing' );
 
-	# Unpair directly through storage (the encrypted session died
-	# with the identity regeneration in the previous flow)
+	# Unpair directly through storage. The encrypted session died
+	# when the previous flow regenerated the identity.
 	$hap->{storage}->remove_all_pairings;
 	ok( !$hap->is_paired, 'unpaired again' );
 

@@ -132,7 +132,8 @@ subtest '[MQTT-State §5.2] reconnection strategy' => sub {
 	my $mqtt   = OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
-	# On LWT Online, subscriptions exist and the state is re-queried
+	# On LWT Online, the subscriptions exist. The accessory queries
+	# the state again.
 	$mqtt->clear_published;
 	$mqtt->simulate_message( 'tele/device/LWT', 'Online' );
 	ok(

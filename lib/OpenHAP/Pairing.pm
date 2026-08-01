@@ -67,11 +67,13 @@ sub new ( $class, %args )
 	return $self;
 }
 
-# clear_pairing_state() - Reset global pairing state
-# Called after successful pairing or on connection close
+# clear_pairing_state() - Reset the global pairing state
+# The server calls this after successful pairing or on
+# connection close.
 sub clear_pairing_state ( $class_or_self, $session = undef )
 {
-	# Only clear if this session owns the lock or no session specified
+	# Clear the state only if this session owns the lock or
+	# the caller gives no session
 	if (       !defined $session
 		|| !defined $pairing_session_id
 		|| $pairing_session_id == $session )
@@ -81,8 +83,9 @@ sub clear_pairing_state ( $class_or_self, $session = undef )
 	}
 }
 
-# reset_auth_attempts() - Reset failed authentication counter
-# Called after successful SRP proof verification or administratively
+# reset_auth_attempts() - Reset the failed authentication counter
+# The server calls this after successful SRP proof verification.
+# Administrative actions also call it.
 sub reset_auth_attempts ($class_or_self)
 {
 	$failed_auth_attempts = 0;
@@ -98,13 +101,15 @@ sub _record_failed_attempt ($self)
 	    if $self->{storage};
 }
 
-# get_failed_attempts() - Get current failed attempt count (for testing)
+# get_failed_attempts() - Get the current failed attempt count
+# (for testing)
 sub get_failed_attempts ($class_or_self)
 {
 	return $failed_auth_attempts;
 }
 
-# _get_accessory_pairing_id() - Generate MAC-like pairing ID from public key
+# _get_accessory_pairing_id() - Generate a MAC-like pairing ID
+# from the public key
 sub _get_accessory_pairing_id ($self)
 {
 	my $id = uc( unpack( 'H*', substr( $self->{accessory_ltpk}, 0, 6 ) ) );
@@ -116,7 +121,7 @@ sub handle_pair_setup ( $self, $body, $session )
 
 	my %request = OpenHAP::TLV::decode($body);
 
-	# Reject malformed TLV or missing State ([HAP-TLV8 §10])
+	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
 		$OpenHAP::logger->warning(
 			'Pair-setup rejected: malformed TLV request');
@@ -128,7 +133,7 @@ sub handle_pair_setup ( $self, $body, $session )
 	$OpenHAP::logger->debug( 'Pair-setup M%d received (method=%d)',
 		$state, $method );
 
-	# Validate method (0x00 = PairSetup, 0x01 = PairSetupWithAuth)
+	# Validate the method (0x00 = PairSetup, 0x01 = PairSetupWithAuth)
 	if ( $method != 0 && $method != 1 ) {
 		return $self->_error_response( kTLVError_Unknown, 2 );
 	}
@@ -148,15 +153,18 @@ sub handle_pair_setup ( $self, $body, $session )
 
 sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 {
-	# Check if max authentication attempts exceeded (HAP-Pairing.md §8)
+	# Check if the failed attempts exceed the maximum
+	# (HAP-Pairing.md §8)
 	if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
 		$OpenHAP::logger->warning(
 			'Pair-setup rejected: max attempts exceeded');
 		return $self->_error_response( kTLVError_MaxTries, 2 );
 	}
 
-	# Check if already paired (HAP-Pairing.md §2.4)
-	# PairSetupWithAuth (method=1) allows pairing even when already paired
+	# Check if the accessory is already paired
+	# (HAP-Pairing.md §2.4). PairSetupWithAuth (method=1)
+	# permits pairing even when the accessory is already
+	# paired.
 	if ( $method == 0 ) {
 		my $pairings = $self->{storage}->load_pairings();
 		if ( keys %$pairings > 0 ) {
@@ -167,14 +175,14 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 		}
 	}
 
-	# Check for concurrent pairing attempt (HAP-Pairing.md §2.4)
+	# Check for a concurrent pairing attempt (HAP-Pairing.md §2.4)
 	if ( $pairing_in_progress && $pairing_session_id != $session ) {
 		$OpenHAP::logger->debug(
 			'Pair-setup rejected: another pairing in progress');
 		return $self->_error_response( kTLVError_Busy, 2 );
 	}
 
-	# Mark pairing as in progress
+	# Mark the pairing as in progress
 	$pairing_in_progress = 1;
 	$pairing_session_id  = $session;
 
@@ -184,13 +192,13 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	$srp->compute_verifier( $salt, $self->{pin} );
 	my $B = $srp->generate_server_public();
 
-	# Store SRP session
+	# Store the SRP session
 	$session->{pairing_state}{srp} = $srp;
 
-	# M2: Send salt and public key
+	# M2: Send the salt and the public key
 	my $B_hex = $B->as_hex();
-	$B_hex =~ s/^0x//;                              # Strip 0x prefix
-	$B_hex = '0' . $B_hex if length($B_hex) % 2;    # Ensure even length
+	$B_hex =~ s/^0x//;                              # Remove the 0x prefix
+	$B_hex = '0' . $B_hex if length($B_hex) % 2;    # Make the length even
 	my $response = OpenHAP::TLV::encode(
 		kTLVType_State,     pack( 'C',  2 ),
 		kTLVType_PublicKey, pack( 'H*', $B_hex ),
@@ -209,7 +217,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	my $A  = $request->{ kTLVType_PublicKey() };
 	my $M1 = $request->{ kTLVType_Proof() };
 
-	# Compute session key (returns undef if A mod N == 0)
+	# Compute the session key. It returns undef if A mod N == 0.
 	my $K = $srp->compute_session_key($A);
 	unless ( defined $K ) {
 		$self->_record_failed_attempt;
@@ -236,11 +244,11 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	# Successful SRP proof resets the attempt counter (§8)
 	$self->reset_auth_attempts;
 
-	# Generate server proof
+	# Generate the server proof
 	my $M2 = $srp->generate_server_proof();
 	$OpenHAP::logger->debug('Pair-setup M3 verified, sending M4');
 
-	# M4: Send proof
+	# M4: Send the proof
 	my $response = OpenHAP::TLV::encode( kTLVType_State, pack( 'C', 4 ),
 		kTLVType_Proof, $M2, );
 
@@ -255,12 +263,12 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 
 	my $encrypted_data = $request->{ kTLVType_EncryptedData() };
 
-	# Derive encryption key from SRP session key
+	# Derive the encryption key from the SRP session key
 	my $session_key = $srp->get_session_key();
 	my $encrypt_key = OpenHAP::Crypto::hkdf_sha512( $session_key,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
-	# Decrypt data
+	# Decrypt the data
 	my $nonce    = pack('x[4]') . 'PS-Msg05';
 	my $auth_tag = substr( $encrypted_data, -16, 16, '' );
 	my $decrypted =
@@ -270,13 +278,13 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	return $self->_error_response( kTLVError_Authentication, 6 )
 	    unless defined $decrypted;
 
-	# Parse decrypted TLV
+	# Parse the decrypted TLV
 	my %inner                 = OpenHAP::TLV::decode($decrypted);
 	my $ios_device_pairing_id = $inner{ kTLVType_Identifier() };
 	my $ios_device_ltpk       = $inner{ kTLVType_PublicKey() };
 	my $ios_device_signature  = $inner{ kTLVType_Signature() };
 
-	# Verify signature
+	# Verify the signature
 	my $ios_device_x = OpenHAP::Crypto::hkdf_sha512(
 		$session_key,
 		'Pair-Setup-Controller-Sign-Salt',
@@ -294,18 +302,19 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 		return $self->_error_response( kTLVError_Authentication, 6 );
 	}
 
-	# Save pairing
+	# Save the pairing
 	$self->{storage}
 	    ->save_pairing( $ios_device_pairing_id, $ios_device_ltpk, 1 );
 	$OpenHAP::logger->debug( 'Pair-setup M5 verified, pairing saved for %s',
 		$ios_device_pairing_id );
 
-	# Pairing successful - reset attempt counter and clear pairing lock
+	# The pairing is successful. Reset the attempt counter.
+	# Clear the pairing lock.
 	$self->reset_auth_attempts;
 	$pairing_in_progress = 0;
 	$pairing_session_id  = undef;
 
-	# Generate accessory signature
+	# Generate the accessory signature
 	my $accessory_x = OpenHAP::Crypto::hkdf_sha512(
 		$session_key,
 		'Pair-Setup-Accessory-Sign-Salt',
@@ -319,20 +328,20 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 		$self->{accessory_ltsk},
 		$self->{accessory_ltpk} );
 
-	# Build response TLV
+	# Build the response TLV
 	my $response_tlv = OpenHAP::TLV::encode(
 		kTLVType_Identifier, $accessory_pairing_id,
 		kTLVType_PublicKey,  $self->{accessory_ltpk},
 		kTLVType_Signature,  $accessory_signature,
 	);
 
-	# Encrypt response
+	# Encrypt the response
 	my $response_nonce = pack('x[4]') . 'PS-Msg06';
 	my ( $response_encrypted, $response_tag ) =
 	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $encrypt_key,
 		$response_nonce, $response_tlv );
 
-	# M6: Send encrypted data
+	# M6: Send the encrypted data
 	my $response = OpenHAP::TLV::encode(
 		kTLVType_State,         pack( 'C', 6 ),
 		kTLVType_EncryptedData, $response_encrypted . $response_tag,
@@ -346,7 +355,7 @@ sub handle_pair_verify ( $self, $body, $session )
 
 	my %request = OpenHAP::TLV::decode($body);
 
-	# Reject malformed TLV or missing State ([HAP-TLV8 §10])
+	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
 		$OpenHAP::logger->warning(
 			'Pair-verify rejected: malformed TLV request');
@@ -372,22 +381,22 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 	my $ios_public_key = $request->{ kTLVType_PublicKey() };
 	$OpenHAP::logger->debug('Pair-verify M1: generating ephemeral keypair');
 
-	# Generate accessory ephemeral keypair
+	# Generate the accessory ephemeral keypair
 	my ( $accessory_secret, $accessory_public ) =
 	    OpenHAP::Crypto::generate_keypair_x25519();
 
-	# Compute shared secret
+	# Compute the shared secret
 	my $shared_secret =
 	    OpenHAP::Crypto::derive_shared_secret( $accessory_secret,
 		$ios_public_key );
 
-	# Store for next step
+	# Store the state for the next step
 	$session->{pairing_state}{accessory_secret} = $accessory_secret;
 	$session->{pairing_state}{accessory_public} = $accessory_public;
 	$session->{pairing_state}{ios_public_key}   = $ios_public_key;
 	$session->{pairing_state}{shared_secret}    = $shared_secret;
 
-	# Generate accessory info and signature
+	# Generate the accessory info and signature
 	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
 	my $accessory_info =
 	    $accessory_public . $accessory_pairing_id . $ios_public_key;
@@ -396,13 +405,13 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 		$self->{accessory_ltsk},
 		$self->{accessory_ltpk} );
 
-	# Build sub-TLV
+	# Build the sub-TLV
 	my $sub_tlv = OpenHAP::TLV::encode(
 		kTLVType_Identifier, $accessory_pairing_id,
 		kTLVType_Signature,  $accessory_signature,
 	);
 
-	# Derive session key and encrypt
+	# Derive the session key and encrypt
 	my $session_key = OpenHAP::Crypto::hkdf_sha512( $shared_secret,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
@@ -411,7 +420,7 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $session_key, $nonce,
 		$sub_tlv );
 
-	# M2: Send public key and encrypted data
+	# M2: Send the public key and the encrypted data
 	my $response = OpenHAP::TLV::encode(
 		kTLVType_State,         pack( 'C', 2 ),
 		kTLVType_PublicKey,     $accessory_public,
@@ -434,7 +443,7 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	return $self->_error_response( kTLVError_Unknown, 4 )
 	    unless defined $shared_secret;
 
-	# Derive session key
+	# Derive the session key
 	my $session_key = OpenHAP::Crypto::hkdf_sha512( $shared_secret,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
@@ -448,19 +457,19 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	return $self->_error_response( kTLVError_Authentication, 4 )
 	    unless defined $decrypted;
 
-	# Parse inner TLV
+	# Parse the inner TLV
 	my %inner          = OpenHAP::TLV::decode($decrypted);
 	my $ios_pairing_id = $inner{ kTLVType_Identifier() };
 	my $ios_signature  = $inner{ kTLVType_Signature() };
 
-	# Load pairing
+	# Load the pairing
 	my $pairings = $self->{storage}->load_pairings();
 	my $pairing  = $pairings->{$ios_pairing_id};
 
 	return $self->_error_response( kTLVError_Authentication, 4 )
 	    unless $pairing;
 
-	# Verify signature
+	# Verify the signature
 	my $ios_info = $ios_public_key . $ios_pairing_id . $accessory_public;
 	unless (
 		OpenHAP::Crypto::verify_ed25519(
@@ -469,10 +478,12 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 		return $self->_error_response( kTLVError_Authentication, 4 );
 	}
 
-	# Derive session encryption keys
-	# From controller's perspective:
-	# - Control-Read-Encryption-Key: controller reads (accessory encrypts)
-	# - Control-Write-Encryption-Key: controller writes (accessory decrypts)
+	# Derive the session encryption keys. The names are from
+	# the controller's point of view:
+	# - Control-Read-Encryption-Key: the controller reads,
+	#   the accessory encrypts
+	# - Control-Write-Encryption-Key: the controller writes,
+	#   the accessory decrypts
 	my $encrypt_key =
 	    OpenHAP::Crypto::hkdf_sha512( $shared_secret, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
@@ -480,7 +491,7 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	    OpenHAP::Crypto::hkdf_sha512( $shared_secret, 'Control-Salt',
 		'Control-Write-Encryption-Key', 32 );
 
-	# Set up encrypted session
+	# Set up the encrypted session
 	$session->set_encryption( $encrypt_key, $decrypt_key );
 	$session->set_verified($ios_pairing_id);
 	$OpenHAP::logger->debug(

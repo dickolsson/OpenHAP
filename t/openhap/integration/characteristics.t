@@ -77,7 +77,7 @@ $result = $controller->request('GET', "/characteristics?id=$aid.$iid");
 like($result->{body}, qr/"value"\s*:\s*true/,
    '[HAP-HTTP §8] written value reads back as true');
 
-# Test 7: Invalid iid yields 207 with HAP status -70409
+# Test 7: Invalid iid returns 207 with HAP status -70409
 $result = $controller->request('GET', '/characteristics?id=999.999');
 is($result->{status}, 207,
    '[HAP-HTTP §9] invalid id returns 207 Multi-Status');
@@ -91,7 +91,7 @@ $result = $controller->request('PUT', '/prepare',
 is($result->{status}, 200, '[HAP-HTTP §10] /prepare accepted');
 is(decode_json($result->{body})->{status}, 0, '/prepare status 0');
 
-# Test 9: Mixed write is answered with 207 and per-item status
+# Test 9: The daemon answers a mixed write with 207 and per-item status
 $result = $controller->request('PUT', '/characteristics',
 	encode_json({ characteristics => [
 		{ aid => $aid, iid => $iid,  value => \0 },

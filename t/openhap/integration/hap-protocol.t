@@ -96,7 +96,7 @@ my $socket = IO::Socket::INET->new(
 );
 ok(defined $socket, 'connection established');
 
-# Make multiple requests on same connection
+# Make multiple requests on the same connection
 print $socket "GET /accessories HTTP/1.1\r\n";
 print $socket "Host: 127.0.0.1\r\n\r\n";
 my $resp1 = '';
@@ -115,7 +115,7 @@ while (my $line = <$socket>) {
 
 $socket->close;
 
-# Test 15: Both requests succeeded
+# Test 15: Both requests succeed
 ok($resp1 =~ /HTTP/ && $resp2 =~ /HTTP/,
    'connection persistence works');
 
@@ -146,7 +146,7 @@ $response = $env->http_request('GET', '/accessories');
 my $has_keepalive = $response =~ /Connection:\s*keep-alive/i;
 ok($has_keepalive, 'response includes Connection: keep-alive header');
 
-# Test 20: Server handles GET /characteristics with meta/perms/type/ev params
+# Test 20: Server answers GET /characteristics with meta/perms/type/ev params
 $response = $env->http_request('GET', '/characteristics?id=1.10&meta=1&perms=1&type=1&ev=1');
 ($status) = OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 200 || $status == 470 || $status == 404 || $status == 207),
@@ -173,7 +173,7 @@ ok($response =~ /HTTP\/1\.1/, 'server uses HTTP/1.1 specifically');
 # Test 24: /pair-setup returns TLV response
 $response = $env->http_request('POST', '/pair-setup', "\x00\x01\x00",
 	{'Content-Type' => 'application/pairing+tlv8'});
-# TLV responses are binary, check for Content-Length
+# TLV responses are binary. Check for Content-Length.
 my ($content_length) = $response =~ /Content-Length:\s*(\d+)/i;
 ok(defined $content_length && $content_length > 0,
    '/pair-setup returns non-empty TLV response');
@@ -191,7 +191,7 @@ ok(defined $response && $response =~ /HTTP\/1\.1\s+200/,
 $response = $env->http_request('PUT', '/characteristics',
 	'invalid json',
 	{'Content-Type' => 'application/hap+json'});
-# Check if response has content-type header
+# Check if the response has a content-type header
 my $error_content_type = $response =~ /Content-Type:\s*application\/(hap\+)?json/i;
 # Either proper error content-type or 470 unpaired
 ok($error_content_type || $response =~ /470/,

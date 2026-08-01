@@ -46,16 +46,17 @@ SKIP: {
 SKIP: {
 	skip 'Must be root to test actual privilege dropping', 5 unless $> == 0;
 	
-	# This test would actually drop privileges, which would affect the rest of the test suite
-	# So we skip it in normal test runs. It should be tested manually or in isolation.
+	# This test drops privileges for real. That has an effect on
+	# the rest of the test suite. Thus normal test runs skip it.
+	# Test it manually or in isolation.
 	skip 'Actual privilege drop test skipped (would affect other tests)', 5;
 	
-	# If we were to test this:
+	# A manual test does these steps:
 	# - Fork a child process
-	# - In child, call drop_privileges
-	# - Verify UID/GID changed
-	# - Verify cannot regain root
-	# - Exit child
+	# - In the child, call drop_privileges
+	# - Make sure that the UID and the GID have changed
+	# - Make sure that the child cannot get root again
+	# - Exit the child
 }
 
 done_testing();

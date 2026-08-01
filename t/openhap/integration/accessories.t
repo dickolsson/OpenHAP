@@ -25,9 +25,10 @@ my @device_topics = $env->get_device_topics;
 is($config_count // 0, scalar @device_topics,
    'device count matches configuration');
 
-# The daemon starts unpaired (integration files own their pairing
-# lifecycle), so the data-plane endpoints must be gated with HTTP 470.
-# Paired access is covered by t/openhap/integration/characteristics.t.
+# The daemon starts unpaired, because the integration files own their
+# pairing lifecycle. Thus the data-plane endpoints must return HTTP
+# 470. The file t/openhap/integration/characteristics.t covers paired
+# access.
 
 # Test 3: GET /accessories requires pairing
 my $response = $env->http_request('GET', '/accessories');
@@ -58,7 +59,7 @@ $response = $env->http_request('PUT', '/characteristics',
 is($status, 470,
    '[HAP-HTTP §9] PUT /characteristics returns 470 when unpaired');
 
-# Test 7: Invalid characteristic id is still gated when unpaired
+# Test 7: An invalid characteristic id still returns 470 when unpaired
 $response = $env->http_request('GET', '/characteristics?id=999.999');
 ($status) = OpenHAP::Test::Integration::parse_http_response($response);
 is($status, 470,

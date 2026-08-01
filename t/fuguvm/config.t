@@ -27,7 +27,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
-    # Create .fuguvmrc at project root
+    # Create .fuguvmrc at the project root
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     close $fh;
     chdir $tmpdir;
@@ -44,7 +44,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
     
-    # Create config file at project root
+    # Create the config file at the project root
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     print $fh "cache_dir /tmp/test\n";
     print $fh "default_vm test\n";
@@ -59,7 +59,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
     
-    # Create project config with VM block
+    # Create a project config with a VM block
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     print $fh "default_vm test\n";
     print $fh "\n";
@@ -84,7 +84,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
     
-    # Create separate VM config file
+    # Create a separate VM config file
     open my $fh, '>', "$tmpdir/.fuguvm/vms/legacy.conf";
     print $fh "name legacy-vm\n";
     print $fh "memory 2048\n";
@@ -108,8 +108,8 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     is($vm, undef, 'load_vm returns undef for missing VM');
 }
 
-# The resolved cache_dir reaches the per-VM config, so `fuguvm up`
-# writes its image cache where the cache subcommands look for it
+# The resolved cache_dir reaches the per-VM config. Thus `fuguvm up`
+# writes its image cache where the cache subcommands look for it.
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
@@ -130,8 +130,9 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 	'and it is the same value cache_dir reports');
 }
 
-# image_cache: default on, project overrides global, and every
-# spelling an OpenBSD-style switch accepts
+# image_cache: the default is on. The project setting overrides the
+# global setting. The test covers every spelling an OpenBSD-style
+# switch accepts.
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     my $homedir = tempdir(CLEANUP => 1);
@@ -189,7 +190,8 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     ok(scalar @warnings, 'and warns about it');
 }
 
-# image_cache inside a vm block is normalized like the global directive
+# The parser normalizes image_cache inside a vm block like the global
+# directive
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     my $homedir = tempdir(CLEANUP => 1);
@@ -231,7 +233,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
     
-    # Create config with ssh_pubkey at project root
+    # Create a config with ssh_pubkey at the project root
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     print $fh "ssh_pubkey ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI test\@example\n";
     close $fh;
@@ -251,7 +253,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "default_vm test\n";
     close $fh;
     
-    # Create global config with ssh_pubkey
+    # Create a global config with ssh_pubkey
     open my $gh, '>', "$homedir/.fuguvmrc";
     print $gh "ssh_pubkey ssh-rsa AAAAB3NzaC1 global\@test\n";
     close $gh;
@@ -292,7 +294,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $gh "ssh_pubkey ssh-rsa GLOBAL global\@test\n";
     close $gh;
     
-    # Project config overrides some values
+    # The project config overrides some values
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     print $fh "default_vm project-vm\n";
     close $fh;
@@ -310,16 +312,16 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/subdir/deep/nested");
     
-    # Create .fuguvmrc at project root
+    # Create .fuguvmrc at the project root
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     close $fh;
     
-    # Save cwd, change to nested directory
+    # Save the cwd. Change to the nested directory.
     use Cwd qw(getcwd realpath);
     my $orig_cwd = getcwd();
     chdir "$tmpdir/subdir/deep/nested";
     my $root = FuguVM::Config->find_project_root;
-    chdir $orig_cwd;  # Restore cwd before cleanup
+    chdir $orig_cwd;  # Restore the cwd before cleanup
     
     my $expected = realpath($tmpdir);
     my $actual = realpath($root);

@@ -10,9 +10,10 @@ use Time::HiRes qw(time);
 
 use_ok('FuguVM::QMP');
 
-# A QMP object wired to one end of a socketpair, with the peer returned
-# so the test can play QEMU. Built through IO::Socket so both ends
-# autoflush exactly as the sockets the module itself opens do.
+# A QMP object wired to one end of a socketpair. The helper also
+# returns the peer, so the test can play QEMU. It builds the pair
+# through IO::Socket. Thus both ends autoflush exactly as the
+# sockets the module itself opens do.
 sub paired_qmp
 {
 	my ($ours, $theirs) =
@@ -55,9 +56,9 @@ sub paired_qmp
 	is($result, undef, 'run_command returns undef when not connected');
 }
 
-# A silent peer must not stall the caller. IO::Socket's timeout() does
-# not bound a read, so this used to block forever: 'fuguvm down' hung
-# instead of falling back to a force stop.
+# A silent peer must not stall the caller. IO::Socket's timeout()
+# does not bound a read. Thus this used to block forever. 'fuguvm
+# down' hung and did not fall back to a force stop.
 {
 	my ($qmp, $peer) = paired_qmp();
 	SKIP: {
@@ -72,8 +73,8 @@ sub paired_qmp
 	}
 }
 
-# A complete line is returned without its terminator, and anything the
-# peer sent past the newline stays for the next read.
+# The read returns a complete line without its terminator. Anything
+# the peer sent past the newline stays for the next read.
 {
 	my ($qmp, $peer) = paired_qmp();
 	SKIP: {
@@ -90,8 +91,8 @@ sub paired_qmp
 	}
 }
 
-# Whole-response path: a well-formed reply decodes, a silent peer does
-# not hang run_command.
+# Whole-response path: a well-formed reply decodes. A silent peer
+# does not hang run_command.
 {
 	my ($qmp, $peer) = paired_qmp();
 	SKIP: {

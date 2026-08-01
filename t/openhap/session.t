@@ -67,7 +67,7 @@ SKIP: {
     ok(defined $encrypted, 'Data encrypted');
     isnt($encrypted, $plaintext, 'Encrypted data differs from plaintext');
     
-    # Create new session with same keys for decryption
+    # Create a new session with the same keys for decryption
     my $session2 = OpenHAP::Session->new(socket => 'dummy');
     $session2->set_encryption($key, $key);
     

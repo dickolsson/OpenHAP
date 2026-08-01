@@ -63,7 +63,7 @@ sub new ( $class, %args )
 	$self->{has_ct} =
 	    ( $self->{capabilities} & CAP_CT ) ? 1 : 0;
 
-	# Add Lightbulb service
+	# Add the Lightbulb service
 	my $lightbulb = OpenHAP::Service->new(
 		type    => 'Lightbulb',
 		iid     => 10,
@@ -152,7 +152,8 @@ sub new ( $class, %args )
 
 sub subscribe_mqtt ($self)
 {
-	# Call base class to set up standard subscriptions (C1, C2, C3)
+	# Call the base class to set up the standard subscriptions
+	# (C1, C2, C3)
 	$self->SUPER::subscribe_mqtt();
 
 	return unless $self->{mqtt_client}->is_connected();
@@ -161,7 +162,8 @@ sub subscribe_mqtt ($self)
 		'Lightbulb %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# M2: Subscribe to plain-text POWER response (SetOption4 support)
+	# M2: Subscribe to the plain-text POWER response
+	# (SetOption4 support)
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', $self->_get_power_key() ),
 		sub ( $recv_topic, $payload ) {
@@ -171,7 +173,7 @@ sub subscribe_mqtt ($self)
 			$self->notify_change(11);
 		} );
 
-	# M2: Subscribe to DIMMER topic for SetOption4 devices
+	# M2: Subscribe to the DIMMER topic for SetOption4 devices
 	if ( $self->{has_dimmer} ) {
 		$self->{mqtt_client}->subscribe(
 			$self->_build_topic( 'stat', 'DIMMER' ),
@@ -186,7 +188,7 @@ sub subscribe_mqtt ($self)
 			} );
 	}
 
-	# M2: Subscribe to HSBCOLOR topic for SetOption4 devices
+	# M2: Subscribe to the HSBCOLOR topic for SetOption4 devices
 	if ( $self->{has_color} ) {
 		$self->{mqtt_client}->subscribe(
 			$self->_build_topic( 'stat', 'HSBCOLOR' ),
@@ -195,7 +197,7 @@ sub subscribe_mqtt ($self)
 			} );
 	}
 
-	# M2: Subscribe to CT topic for SetOption4 devices
+	# M2: Subscribe to the CT topic for SetOption4 devices
 	if ( $self->{has_ct} ) {
 		$self->{mqtt_client}->subscribe(
 			$self->_build_topic( 'stat', 'CT' ),
@@ -214,25 +216,26 @@ sub subscribe_mqtt ($self)
 	}
 }
 
-# Override to process state data from periodic STATE messages
+# Override the base method to process the state data from
+# periodic STATE messages
 sub _process_state_data ( $self, $data )
 {
 	$self->SUPER::_process_state_data($data);
 
-	# Extract light-specific state
+	# Extract the light-specific state
 	$self->_extract_light_state($data);
 }
 
-# Override to process command results
+# Override the base method to process the command results
 sub _process_result_data ( $self, $data )
 {
 	$self->SUPER::_process_result_data($data);
 
-	# Extract light-specific state
+	# Extract the light-specific state
 	$self->_extract_light_state($data);
 }
 
-# Override _on_power_update to update our power state
+# Override _on_power_update to update the power state
 sub _on_power_update ( $self, $state )
 {
 	if ( $self->{power_state} != $state ) {
@@ -244,7 +247,7 @@ sub _on_power_update ( $self, $state )
 }
 
 # $self->_extract_light_state($data):
-#	Extract light state from JSON data.
+#	Extract the light state from the JSON data.
 sub _extract_light_state ( $self, $data )
 {
 	my $changed = 0;
@@ -261,12 +264,12 @@ sub _extract_light_state ( $self, $data )
 		}
 	}
 
-	# HSB Color (HSBColor in Tasmota is "h,s,b" string)
+	# HSB Color. The Tasmota HSBColor value is a "h,s,b" string.
 	if ( exists $data->{HSBColor} && $self->{has_color} ) {
 		$self->_parse_hsbcolor( $data->{HSBColor} );
 	}
 
-	# M3: Handle Color field for SetOption17 decimal format
+	# M3: Process the Color field for the SetOption17 decimal format
 	if ( exists $data->{Color} && $self->{has_color} ) {
 		$self->_parse_color( $data->{Color} );
 	}
@@ -275,7 +278,7 @@ sub _extract_light_state ( $self, $data )
 	if ( exists $data->{CT} && $self->{has_ct} ) {
 		my $ct = $data->{CT};
 
-		# Clamp to Tasmota/HomeKit range (153-500)
+		# Clamp to the Tasmota/HomeKit range (153-500)
 		$ct = 153 if $ct < 153;
 		$ct = 500 if $ct > 500;
 
@@ -289,7 +292,7 @@ sub _extract_light_state ( $self, $data )
 }
 
 # $self->_set_brightness($value):
-#	Set brightness level (0-100).
+#	Set the brightness level (0-100).
 sub _set_brightness ( $self, $value )
 {
 	$OpenHAP::logger->debug( 'Lightbulb %s brightness set to %d%%',
@@ -300,10 +303,10 @@ sub _set_brightness ( $self, $value )
 }
 
 # $self->_set_hue($value):
-#	Set hue (0-360).
+#	Set the hue (0-360).
 sub _set_hue ( $self, $value )
 {
-	# Tasmota accepts 0-360 for hue (360 wraps to 0)
+	# Tasmota accepts 0-360 for the hue. The value 360 wraps to 0.
 	$value = int($value) % 360;
 
 	$OpenHAP::logger->debug( 'Lightbulb %s hue set to %d',
@@ -314,7 +317,7 @@ sub _set_hue ( $self, $value )
 }
 
 # $self->_set_saturation($value):
-#	Set saturation (0-100).
+#	Set the saturation (0-100).
 sub _set_saturation ( $self, $value )
 {
 	$OpenHAP::logger->debug( 'Lightbulb %s saturation set to %d%%',
@@ -325,10 +328,10 @@ sub _set_saturation ( $self, $value )
 }
 
 # $self->_set_ct($value):
-#	Set color temperature in mireds (153-500).
+#	Set the color temperature in mireds (153-500).
 sub _set_ct ( $self, $value )
 {
-	# Tasmota CT range is 153-500, clamp to that
+	# The Tasmota CT range is 153-500. Clamp the value to it.
 	$value = 153 if $value < 153;
 	$value = 500 if $value > 500;
 
@@ -340,7 +343,7 @@ sub _set_ct ( $self, $value )
 }
 
 # $self->set_color($hue, $saturation, $brightness):
-#	Set color using HSB values.
+#	Set the color with HSB values.
 sub set_color ( $self, $hue, $saturation, $brightness )
 {
 	$hue = int($hue) % 360;
@@ -354,7 +357,7 @@ sub set_color ( $self, $hue, $saturation, $brightness )
 }
 
 # $self->dimmer_step($direction):
-#	Increase or decrease dimmer by step (L3).
+#	Increase or decrease the dimmer by one step (L3).
 #	$direction: '+' to increase, '-' to decrease
 sub dimmer_step ( $self, $direction = '+' )
 {
@@ -366,7 +369,7 @@ sub dimmer_step ( $self, $direction = '+' )
 }
 
 # $self->dimmer_min():
-#	Set dimmer to minimum (L3).
+#	Set the dimmer to the minimum (L3).
 sub dimmer_min ($self)
 {
 	$OpenHAP::logger->debug( 'Lightbulb %s dimmer to minimum',
@@ -377,7 +380,7 @@ sub dimmer_min ($self)
 }
 
 # $self->dimmer_max():
-#	Set dimmer to maximum (L3).
+#	Set the dimmer to the maximum (L3).
 sub dimmer_max ($self)
 {
 	$OpenHAP::logger->debug( 'Lightbulb %s dimmer to maximum',
@@ -388,7 +391,7 @@ sub dimmer_max ($self)
 }
 
 # $self->_parse_hsbcolor($value):
-#	Parse HSBColor string "h,s,b" and update state.
+#	Parse the HSBColor string "h,s,b". Update the state.
 sub _parse_hsbcolor ( $self, $value )
 {
 	return unless $self->{has_color};
@@ -408,7 +411,7 @@ sub _parse_hsbcolor ( $self, $value )
 		$self->notify_change(14);
 	}
 
-	# Brightness from HSB updates Dimmer too
+	# The brightness value from HSB also updates the Dimmer
 	if ( $self->{has_dimmer} && $self->{brightness} != $b ) {
 		$self->{brightness} = $b;
 		$self->notify_change(12);
@@ -416,8 +419,9 @@ sub _parse_hsbcolor ( $self, $value )
 }
 
 # $self->_parse_color($value):
-#	Parse Color field (M3: SetOption17 support).
-#	Handles both hex (FF5500) and decimal (255,85,0) formats.
+#	Parse the Color field (M3: SetOption17 support).
+#	The method accepts the hex (FF5500) and decimal (255,85,0)
+#	formats.
 sub _parse_color ( $self, $value )
 {
 	return unless $self->{has_color};
@@ -456,7 +460,7 @@ sub _parse_color ( $self, $value )
 #	Convert RGB (0-255) to HSB (h: 0-360, s: 0-100, b: 0-100).
 sub _rgb_to_hsb ( $self, $r, $g, $b )
 {
-	# Normalize to 0-1
+	# Normalize the values to 0-1
 	my ( $rn, $gn, $bn ) = ( $r / 255, $g / 255, $b / 255 );
 
 	my $max =

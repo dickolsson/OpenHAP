@@ -50,11 +50,11 @@ sub new ( $class, %args )
 
 sub _initialize ($self)
 {
-	# Initialize storage
+	# Initialize the storage
 	$self->{storage} =
 	    OpenHAP::Storage->new( db_path => $self->{storage_path} );
 
-	# Load or generate accessory keys
+	# Load or generate the accessory keys
 	my ( $ltsk, $ltpk ) = $self->{storage}->load_accessory_keys();
 	unless ( $ltsk && $ltpk ) {
 		( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
@@ -64,7 +64,7 @@ sub _initialize ($self)
 	$self->{accessory_ltsk} = $ltsk;
 	$self->{accessory_ltpk} = $ltpk;
 
-	# Initialize pairing handler
+	# Initialize the pairing handler
 	$self->{pairing} = OpenHAP::Pairing->new(
 		pin            => $self->{pin},
 		storage        => $self->{storage},
@@ -72,12 +72,12 @@ sub _initialize ($self)
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
 
-	# Initialize bridge
+	# Initialize the bridge
 	$self->{bridge} = OpenHAP::Bridge->new( name => $self->{name}, );
 
-	# Deliver device-side changes as EVENT/1.0 notifications: the
-	# bridge forwards each bridged accessory's notify_change with
-	# the device aid preserved (HAP-HTTP.md §14)
+	# Deliver device-side changes as EVENT/1.0 notifications.
+	# The bridge forwards the notify_change of each bridged
+	# accessory and keeps the device aid (HAP-HTTP.md §14).
 	$self->{bridge}->add_event_callback(
 		sub ( $aid, $iid ) {
 			$self->_queue_change_event( $aid, $iid );
@@ -85,7 +85,7 @@ sub _initialize ($self)
 }
 
 # $self->_queue_change_event($aid, $iid):
-#	Queue an event carrying the characteristic's current value
+#	Queue an event with the current value of the characteristic
 sub _queue_change_event ( $self, $aid, $iid )
 {
 	my $accessory = $self->{bridge}->get_accessory($aid);
@@ -105,7 +105,7 @@ sub add_accessory ( $self, $accessory )
 }
 
 # $self->_mqtt_resubscribe_accessories():
-#	resubscribe all accessories to their MQTT topics
+#	Resubscribe all accessories to their MQTT topics
 sub _mqtt_resubscribe_accessories ($self)
 {
 	my @accessories = $self->{bridge}->get_bridged_accessories();
@@ -120,15 +120,16 @@ sub _mqtt_resubscribe_accessories ($self)
 }
 
 # $self->set_mqtt_client($mqtt):
-#	set the MQTT client for event loop integration
+#	Set the MQTT client for event loop integration
 sub set_mqtt_client ( $self, $mqtt )
 {
 	$self->{mqtt_client} = $mqtt;
 }
 
 # $self->set_mdns($mdns):
-#	set the mDNS registration handle so the TXT record can be
-#	re-advertised when the pairing state changes (HAP-mDNS.md §8)
+#	Set the mDNS registration handle. The server re-advertises
+#	the TXT record when the pairing state changes
+#	(HAP-mDNS.md §8).
 sub set_mdns ( $self, $mdns )
 {
 	$self->{mdns}              = $mdns;
@@ -136,7 +137,7 @@ sub set_mdns ( $self, $mdns )
 }
 
 # $self->_refresh_mdns():
-#	re-advertise the TXT record if the pairing state changed
+#	Re-advertise the TXT record when the pairing state changes
 sub _refresh_mdns ($self)
 {
 	return unless defined $self->{mdns};
@@ -146,10 +147,10 @@ sub _refresh_mdns ($self)
 
 	$self->{last_paired_state} = $paired;
 
-	# Never drive an update onto an unpublished handle: the daemon
-	# may have started with mdnsd down, and this runs on the
-	# pairing path, where a write to a dead socket must not be
-	# reachable
+	# Never send an update to an unpublished handle. The daemon
+	# can start while mdnsd is down. This code runs on the
+	# pairing path. A write to a dead socket must not be
+	# reachable there.
 	return unless $self->{mdns}->is_published;
 
 	if ( $self->{mdns}->update_txt( txt => $self->get_mdns_txt_string ) ) {
@@ -191,19 +192,20 @@ sub run ($self)
 
 	# Use a short timeout to allow MQTT polling
 	my $select_timeout          = $self->{mqtt_tick_interval};
-	my $mqtt_reconnect_interval = 30;    # Try reconnect every 30 seconds
+	my $mqtt_reconnect_interval = 30;    # Reconnect attempt interval
 	my $last_mqtt_reconnect     = 0;
 
 	while (1) {
 		my @ready = $select->can_read($select_timeout);
 
-		# Process MQTT messages if client is configured
+		# Process MQTT messages if the server has a client
 		if ( $self->{mqtt_client} ) {
 			if ( $self->{mqtt_client}->is_connected ) {
 				$self->{mqtt_client}->tick(0);
 			}
 			else {
-				# Try to reconnect periodically if disconnected
+				# Try to reconnect at intervals when the
+				# client is not connected
 				my $now = time;
 				if ( $now - $last_mqtt_reconnect >=
 					$mqtt_reconnect_interval )
@@ -215,7 +217,7 @@ sub run ($self)
 'Reconnected to MQTT broker'
 						);
 
-						# Resubscribe devices
+						# Resubscribe the devices
 						$self
 						    ->_mqtt_resubscribe_accessories
 						    ();
@@ -239,12 +241,12 @@ sub run ($self)
 			}
 			else {
 
-				# Handle client data
+				# Process the client data
 				$self->_handle_client( $sock, $select );
 			}
 		}
 
-		# Flush coalesced events if delay has passed
+		# Flush the coalesced events after the coalesce delay
 		$self->flush_events();
 	}
 }
@@ -264,9 +266,9 @@ sub _handle_client ( $self, $sock, $select )
 
 	if ( !$bytes ) {
 
-		# Connection closed: release the pairing lock if this
-		# session held it, so an aborted pair-setup cannot lock
-		# out pairing until restart
+		# The connection is closed. Release the pairing lock
+		# if this session holds it. Thus an aborted pair-setup
+		# cannot block pairing until a restart.
 		OpenHAP::Pairing->clear_pairing_state($session);
 		$self->_purge_event_subscriptions($session);
 		$OpenHAP::logger->info( 'Client disconnected from %s',
@@ -277,9 +279,10 @@ sub _handle_client ( $self, $sock, $select )
 		return;
 	}
 
-	# Decrypt if session is encrypted. Remember the state: pair-verify
-	# M4 enables encryption during dispatch, but the M4 response itself
-	# is still sent in the clear; only subsequent traffic is encrypted.
+	# Decrypt the data if the session is encrypted. Keep a
+	# record of the state. Pair-verify M4 enables encryption
+	# during dispatch. But the server sends the M4 response in
+	# the clear. Encryption applies only to subsequent traffic.
 	my $was_encrypted = $session->is_encrypted();
 	if ($was_encrypted) {
 		$data = $session->decrypt($data);
@@ -295,25 +298,25 @@ sub _handle_client ( $self, $sock, $select )
 		}
 	}
 
-	# Parse HTTP request
+	# Parse the HTTP request
 	my $request = OpenHAP::HTTP::parse($data);
 
-	# Log HTTP request with client info
+	# Log the HTTP request with the client information
 	$OpenHAP::logger->info(
 		'HTTP %s %s from %s', $request->{method},
 		$request->{path},     $sock->peerhost
 	);
 
-	# Dispatch request
+	# Dispatch the request
 	my $response = $self->_dispatch( $request, $session );
 
-	# Encrypt only if the session was already encrypted when the
-	# request arrived (see note above)
+	# Encrypt the response only if the session was encrypted
+	# when the request arrived. See the note above.
 	if ($was_encrypted) {
 		$response = $session->encrypt($response);
 	}
 
-	# Send response
+	# Send the response
 	$sock->syswrite($response);
 
 	# Re-advertise mDNS if this request changed the pairing state
@@ -325,7 +328,7 @@ sub _dispatch ( $self, $request, $session )
 	my $path   = $request->{path};
 	my $method = $request->{method};
 
-	# Pairing endpoints (no verification required)
+	# Pairing endpoints. These need no verification.
 	if ( $path eq '/pair-setup' && $method eq 'POST' ) {
 		return $self->_handle_pair_setup( $request, $session );
 	}
@@ -334,12 +337,12 @@ sub _dispatch ( $self, $request, $session )
 		return $self->_handle_pair_verify( $request, $session );
 	}
 
-	# Identify endpoint (only for unpaired accessories)
+	# Identify endpoint. It is for unpaired accessories only.
 	if ( $path eq '/identify' && $method eq 'POST' ) {
 		return $self->_handle_identify( $request, $session );
 	}
 
-	# All other endpoints require verification
+	# All other endpoints need verification
 	unless ( $session->is_verified() ) {
 		return OpenHAP::HTTP::build_response(
 			status  => 470,    # Connection Authorization Required
@@ -357,7 +360,7 @@ sub _dispatch ( $self, $request, $session )
 		return $self->_handle_accessories( $request, $session );
 	}
 
-	# Strip query string for path matching
+	# Remove the query string for path matching
 	my $base_path = $path;
 	$base_path =~ s/\?.*//;
 
@@ -369,8 +372,9 @@ sub _dispatch ( $self, $request, $session )
 		return $self->_handle_characteristics_put( $request, $session );
 	}
 
-	# Timed write preparation (accept both POST and PUT for compatibility)
-	# Spec shows POST in table but later text uses PUT; accept both
+	# Timed write preparation. The spec shows POST in the
+	# table, but the later text uses PUT. Accept both methods
+	# for compatibility.
 	if ( $path eq '/prepare' && ( $method eq 'PUT' || $method eq 'POST' ) )
 	{
 		return $self->_handle_prepare( $request, $session );
@@ -423,7 +427,7 @@ sub _handle_accessories ( $self, $request, $session )
 
 sub _handle_characteristics_get ( $self, $request, $session )
 {
-	# Parse query string: ?id=1.11,1.13&meta=1&perms=1&type=1&ev=1
+	# Parse the query string: ?id=1.11,1.13&meta=1&perms=1&type=1&ev=1
 	my $query = $request->{path};
 	$query =~ s/^.*\?//;
 	$OpenHAP::logger->debug( 'Reading characteristics: %s', $query );
@@ -476,7 +480,7 @@ sub _handle_characteristics_get ( $self, $request, $session )
 			value => $char->json_value,
 		};
 
-		# Add optional metadata if requested
+		# Add the optional metadata if the controller requests it
 		if ($include_meta) {
 			$result->{format} = $char->{format};
 			$result->{unit}   = $char->{unit}
@@ -489,17 +493,17 @@ sub _handle_characteristics_get ( $self, $request, $session )
 			    if defined $char->{step};
 		}
 
-		# Add permissions if requested
+		# Add the permissions if the controller requests them
 		if ($include_perms) {
 			$result->{perms} = $char->{perms};
 		}
 
-		# Add type if requested
+		# Add the type if the controller requests it
 		if ($include_type) {
 			$result->{type} = $char->{type};
 		}
 
-		# Add event status if requested
+		# Add the event status if the controller requests it
 		if ($include_ev) {
 			$result->{ev} = $char->events_enabled() ? \1 : \0;
 		}
@@ -554,7 +558,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 			next;
 		}
 
-		# Check if characteristic is writable
+		# Check if the characteristic is writable
 		my $is_writable = grep { $_ eq 'pw' } @{ $char->{perms} // [] };
 		if ( defined $value && !$is_writable ) {
 			push @results,
@@ -567,7 +571,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 			next;
 		}
 
-		# Set value if provided
+		# Set the value if the request contains one
 		if ( defined $value ) {
 			eval { $char->set_value($value) };
 			if ($@) {
@@ -581,13 +585,14 @@ sub _handle_characteristics_put ( $self, $request, $session )
 				next;
 			}
 
-			# Notify subscribers on other connections; the
-			# originating session is excluded (HAP-HTTP.md §14)
+			# Notify the subscribers on other connections.
+			# Exclude the originating session
+			# (HAP-HTTP.md §14).
 			$self->queue_event( $aid, $iid, $char->json_value,
 				$session );
 		}
 
-		# Enable/disable events
+		# Enable or disable events
 		if ( exists $item->{ev} ) {
 			my $has_ev =
 			    grep { $_ eq 'ev' } @{ $char->{perms} // [] };
@@ -603,7 +608,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 			}
 			$char->enable_events( $item->{ev} );
 
-			# Track session for event delivery
+			# Record the session for event delivery
 			if ( $item->{ev} ) {
 				$self->_register_event_subscription( $session,
 					$aid, $iid );
@@ -619,11 +624,11 @@ sub _handle_characteristics_put ( $self, $request, $session )
 		    { aid => $aid + 0, iid => $iid + 0, status => 0 };
 	}
 
-	# If all succeeded, return 204 No Content
+	# Return 204 No Content when all writes succeed
 	return OpenHAP::HTTP::build_response( status => 204 )
 	    unless $has_errors;
 
-	# If any failed, return 207 Multi-Status with details
+	# Return 207 Multi-Status with details if some writes fail
 	my $json = encode_json( { characteristics => \@results } );
 	return OpenHAP::HTTP::build_response(
 		status  => 207,
@@ -634,7 +639,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 
 sub _handle_identify ( $self, $request, $session )
 {
-	# Identify is only allowed for unpaired accessories
+	# Identify is only for unpaired accessories
 	if ( $self->is_paired() ) {
 		return OpenHAP::HTTP::build_response(
 			status  => 400,
@@ -645,7 +650,7 @@ sub _handle_identify ( $self, $request, $session )
 
 	$OpenHAP::logger->info('Identify request received (unpaired)');
 
-	# Trigger identification on the bridge
+	# Start identification on the bridge
 	my $bridge = $self->{bridge};
 	if ($bridge) {
 		my $info_service = $bridge->get_service('AccessoryInformation');
@@ -706,7 +711,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	$OpenHAP::logger->debug( 'Add pairing request for: %s',
 		$identifier // 'unknown' );
 
-	# Verify admin permissions (only admins can add pairings)
+	# Verify the admin permissions. Only admins can add pairings.
 	my $pairings           = $self->{storage}->load_pairings();
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
@@ -726,9 +731,9 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 		);
 	}
 
-	# An existing identifier with a different LTPK is an error;
-	# with a matching LTPK only the permissions are updated
-	# (HAP-Pairing.md §7.4)
+	# An existing identifier with a different LTPK is an error.
+	# With a matching LTPK, the server updates only the
+	# permissions (HAP-Pairing.md §7.4).
 	my $existing = $pairings->{$identifier};
 	if ( $existing && $existing->{ltpk} ne $ltpk ) {
 		my $error = OpenHAP::TLV::encode(
@@ -768,7 +773,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	$OpenHAP::logger->debug( 'Remove pairing request for: %s',
 		$identifier // 'unknown' );
 
-	# Verify admin permissions
+	# Verify the admin permissions
 	my $pairings           = $self->{storage}->load_pairings();
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
@@ -793,8 +798,9 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	$OpenHAP::logger->info( 'Removed pairing for controller: %s',
 		$identifier );
 
-	# Check if any admins remain (HAP-Pairing.md §7.2)
-	# When last admin is removed, clear all pairings and regenerate identity
+	# Check if any admins remain (HAP-Pairing.md §7.2). If no
+	# admin remains, remove all pairings and regenerate the
+	# identity.
 	my $remaining = $self->{storage}->load_pairings();
 	my $has_admin = grep { $_->{permissions} } values %$remaining;
 	unless ( $has_admin || keys %$remaining == 0 ) {
@@ -820,7 +826,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 {
 	$OpenHAP::logger->debug('List pairings request');
 
-	# Verify admin permissions
+	# Verify the admin permissions
 	my $pairings           = $self->{storage}->load_pairings();
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
@@ -840,7 +846,8 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 		);
 	}
 
-	# Build response with all pairings, separated by 0xFF
+	# Build the response with all pairings. Separate them with
+	# 0xFF.
 	my @response_items =
 	    ( OpenHAP::Pairing::kTLVType_State(), pack( 'C', 2 ) );
 
@@ -848,7 +855,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 	for my $id ( sort keys %$pairings ) {
 		my $pairing = $pairings->{$id};
 
-		# Add separator between pairings
+		# Add a separator between pairings
 		unless ($first) {
 			push @response_items,
 			    OpenHAP::Pairing::kTLVType_Separator(), '';
@@ -890,7 +897,7 @@ sub _handle_prepare ( $self, $request, $session )
 		);
 	}
 
-	# Store timed write context in session
+	# Store the timed write context in the session
 	$session->{timed_write} = {
 		ttl       => $ttl,
 		pid       => $pid,
@@ -923,8 +930,8 @@ sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 }
 
 # $self->_purge_event_subscriptions($session):
-#	Drop every subscription held by a disconnecting session -
-#	subscriptions are per-connection (HAP-HTTP.md §14)
+#	Remove every subscription that a disconnecting session
+#	holds. Subscriptions are per-connection (HAP-HTTP.md §14).
 sub _purge_event_subscriptions ( $self, $session )
 {
 	for my $subs ( values %{ $self->{event_subscriptions} } ) {
@@ -947,10 +954,10 @@ use constant IMMEDIATE_EVENT_TYPES => {
 # Event coalescing delay in seconds (HAP-HTTP.md §14)
 use constant EVENT_COALESCE_DELAY => 0.250;
 
-# Queue an event for delivery, with coalescing for all but the
-# immediate-delivery characteristic types. The optional $originator is
-# the session whose request caused the change; it never receives the
-# event (HAP-HTTP.md §14)
+# Queue an event for delivery. Coalesce all events except the
+# immediate-delivery characteristic types. The optional
+# $originator is the session whose request caused the change.
+# That session never receives the event (HAP-HTTP.md §14).
 sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 {
 	my $accessory = $self->{bridge}->get_accessory($aid);
@@ -959,7 +966,7 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 	my $char = $accessory->get_characteristic($iid);
 	return unless $char;
 
-	# Immediate types bypass coalescing
+	# The immediate types bypass coalescing
 	my $char_type =
 	    OpenHAP::Characteristic::_uuid_to_short( $char->{type} // '' );
 	if ( IMMEDIATE_EVENT_TYPES->{$char_type} ) {
@@ -967,7 +974,7 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 		return;
 	}
 
-	# Queue event for coalescing
+	# Queue the event for coalescing
 	my $key = "$aid.$iid";
 	$self->{event_queue}{$key} = {
 		aid        => $aid,
@@ -977,11 +984,11 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 		timestamp  => Time::HiRes::time(),
 	};
 
-	# Schedule flush if not already scheduled
+	# Schedule a flush if no flush is pending
 	$self->{event_flush_scheduled} //= Time::HiRes::time();
 }
 
-# Flush queued events (called from event loop)
+# Flush the queued events. The event loop calls this function.
 sub flush_events ($self)
 {
 	return unless $self->{event_flush_scheduled};
@@ -989,23 +996,24 @@ sub flush_events ($self)
 	my $now    = Time::HiRes::time();
 	my $oldest = $self->{event_flush_scheduled};
 
-	# Wait until coalesce delay has passed
+	# Wait until the end of the coalesce delay
 	return if ( $now - $oldest ) < EVENT_COALESCE_DELAY;
 
-	# Send all queued events
+	# Send all the queued events
 	for my $event ( values %{ $self->{event_queue} } ) {
 		$self->send_event(
 			$event->{aid},   $event->{iid},
 			$event->{value}, $event->{originator} );
 	}
 
-	# Clear queue
+	# Clear the queue
 	$self->{event_queue}           = {};
 	$self->{event_flush_scheduled} = undef;
 }
 
-# Send EVENT/1.0 notification to subscribed sessions, excluding the
-# originating session if one is given (HAP-HTTP.md §14)
+# Send an EVENT/1.0 notification to the subscribed sessions. Do
+# not send it to the originating session when the caller gives
+# one (HAP-HTTP.md §14).
 sub send_event ( $self, $aid, $iid, $value, $originator = undef )
 {
 	my $key  = "$aid.$iid";
@@ -1052,9 +1060,10 @@ sub get_config_number ($self)
 }
 
 # $self->update_config_number():
-#	Increment c# when the accessory database changed since the last
-#	run (HAP-mDNS.md §3.1). Called after device loading; compares a
-#	digest of the accessory structure against the stored one.
+#	Increment c# when the accessory database changed since the
+#	last run (HAP-mDNS.md §3.1). The server calls this after
+#	device loading. It compares a digest of the accessory
+#	structure against the stored one.
 sub update_config_number ($self)
 {
 	my @parts;
@@ -1076,7 +1085,8 @@ sub update_config_number ($self)
 	my $stored = $self->{storage}->get_config_digest;
 	if ( !defined $stored ) {
 
-		# First run: record the digest, c# stays at its initial 1
+		# On the first run, record the digest. c# stays at
+		# its initial value of 1.
 		$self->{storage}->save_config_digest($digest);
 	}
 	elsif ( $stored ne $digest ) {
@@ -1092,15 +1102,16 @@ sub update_config_number ($self)
 
 sub get_device_id ($self)
 {
-	# Generate a device ID from the public key (uppercase MAC format)
+	# Generate a device ID from the public key in uppercase MAC format
 	my $id = uc( unpack( 'H*', substr( $self->{accessory_ltpk}, 0, 6 ) ) );
 	return join( ':', $id =~ /../g );
 }
 
 sub get_mdns_txt_records ($self)
 {
-	# Note: pv=1 instead of 1.1 because mdnsd uses '.' as TXT record
-	# delimiter and doesn't support escaping. HomeKit accepts pv=1.
+	# Note: pv=1, not 1.1. mdnsd uses '.' as the TXT record
+	# delimiter and does not support escaping. HomeKit accepts
+	# pv=1.
 	my $records = {
 		'c#' => $self->get_config_number(),
 		'ff' => 0,
@@ -1112,7 +1123,7 @@ sub get_mdns_txt_records ($self)
 		'ci' => 2,
 	};
 
-	# Add setup hash if setup_id is configured
+	# Add the setup hash if setup_id is set
 	if ( defined $self->{setup_id} && length( $self->{setup_id} ) == 4 ) {
 		$records->{sh} = $self->_get_setup_hash();
 	}
@@ -1121,10 +1132,11 @@ sub get_mdns_txt_records ($self)
 }
 
 # $self->get_mdns_txt_string():
-#	the TXT records formatted for the advertisement: key=value
-#	pairs joined with '.' in sorted key order. mdnsd's TXT
-#	delimiter makes the ordering observable on the wire
-#	(MDNS-Control.md §5), so it is kept deterministic
+#	Return the TXT records in the advertisement format. The
+#	string joins key=value pairs with '.' in sorted key order.
+#	The TXT delimiter of mdnsd makes the order visible on the
+#	wire (MDNS-Control.md §5). Thus the function keeps the
+#	order deterministic.
 sub get_mdns_txt_string ($self)
 {
 	my $records = $self->get_mdns_txt_records;
@@ -1132,8 +1144,9 @@ sub get_mdns_txt_string ($self)
 	return join '.', map { "$_=$records->{$_}" } sort keys %$records;
 }
 
-# _get_setup_hash() - Calculate setup hash for mDNS
-# Hash is Base64 of first 4 bytes of SHA-512(setupID + deviceID.toUpperCase())
+# _get_setup_hash() - Calculate the setup hash for mDNS
+# The hash is the Base64 of the first 4 bytes of
+# SHA-512(setupID + deviceID.toUpperCase())
 sub _get_setup_hash ($self)
 {
 	my $setup_id  = $self->{setup_id};
@@ -1142,13 +1155,14 @@ sub _get_setup_hash ($self)
 	my $hash      = sha512( $setup_id . $device_id );
 	my $truncated = substr( $hash, 0, 4 );
 
-	# Base64 encode without newlines
+	# Encode the truncated hash in Base64 without newlines
 	my $encoded = encode_base64( $truncated, '' );
 	return $encoded;
 }
 
-# _regenerate_identity() - Generate new accessory keys after factory reset
-# Called when last admin pairing is removed (HAP-Pairing.md §7.2)
+# _regenerate_identity() - Generate new accessory keys after a
+# factory reset. The server calls this after removal of the
+# last admin pairing (HAP-Pairing.md §7.2).
 sub _regenerate_identity ($self)
 {
 	my ( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
@@ -1156,7 +1170,7 @@ sub _regenerate_identity ($self)
 	$self->{accessory_ltsk} = $ltsk;
 	$self->{accessory_ltpk} = $ltpk;
 
-	# Reinitialize pairing handler with new keys
+	# Reinitialize the pairing handler with the new keys
 	$self->{pairing} = OpenHAP::Pairing->new(
 		pin            => $self->{pin},
 		storage        => $self->{storage},
@@ -1164,7 +1178,7 @@ sub _regenerate_identity ($self)
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
 
-	# Reset authentication attempt counter
+	# Reset the authentication attempt counter
 	OpenHAP::Pairing->reset_auth_attempts();
 
 	$OpenHAP::logger->info('Accessory identity regenerated');

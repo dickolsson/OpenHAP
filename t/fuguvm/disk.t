@@ -75,9 +75,9 @@ SKIP: {
     is($info->{'virtual-size'}, $disk->info('test')->{'virtual-size'},
 	'overlay inherits the backing image virtual size');
 
-    # qemu-img still reports the reference once the parent is gone:
-    # that is what makes a broken chain diagnosable rather than an
-    # opaque failure at boot.
+    # qemu-img still reports the reference once the parent is gone.
+    # This makes a broken chain diagnosable, not an opaque failure
+    # at boot.
     unlink $path;
     is($overlay->backing_file('child'), $path,
 	'backing_file still names a missing parent');
@@ -85,10 +85,10 @@ SKIP: {
 	'and the caller can see that it is gone');
 }
 
-# A running QEMU holds an exclusive lock on its disk, so inspection has
-# to ask for shared access. Without it, info() fails on exactly the VMs
-# whose chain callers most need: 'cache clear' would see no backing file
-# for a running VM and remove the base out from under it.
+# A running QEMU holds an exclusive lock on its disk. Thus inspection
+# must ask for shared access. Without it, info() fails on exactly the
+# VMs whose chain callers most need. 'cache clear' then sees no backing
+# file for a running VM and removes the base while the VM uses it.
 SKIP: {
     my $has_qemu_io = `which qemu-io 2>/dev/null`;
     skip 'qemu-io not installed', 4 unless $has_qemu_io;
@@ -108,8 +108,9 @@ SKIP: {
 	open(my $io2, '|-', "qemu-io '@{[$overlay->path('kid')]}' >/dev/null 2>&1");
     skip 'cannot spawn qemu-io', 4 unless $spawned && $spawned_kid;
 
-    # Wait for the lock, and prove it is really held: an unshared query
-    # failing here is the condition that used to break the callers.
+    # Wait for the lock and prove that qemu-io really holds it. An
+    # unshared query that fails here is the condition that used to
+    # break the callers.
     my $locked = 0;
     for (1 .. 100) {
 	`qemu-img info --output=json '$path' 2>&1`;

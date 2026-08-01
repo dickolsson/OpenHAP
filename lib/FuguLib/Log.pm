@@ -23,9 +23,9 @@ use Sys::Syslog qw(:standard :macros);
 
 # FuguLib::Log - Unified logging for syslog and stderr
 #
-# Provides a single interface for logging that works with both syslog
-# (for daemons) and stderr (for CLI tools), with level filtering and
-# printf-style formatting.
+# The module gives one logging interface for both syslog (for
+# daemons) and stderr (for CLI tools). It filters messages by level
+# and formats them printf-style.
 
 use constant {
 	MODE_SYSLOG => 'syslog',
@@ -39,12 +39,12 @@ sub new ( $class, %args )
 	my $level = $args{level} // 'info';
 	my $ident = $args{ident} // 'fugulib';
 
-	# Validate mode
+	# Validate the mode
 	unless ( $mode =~ /^(syslog|stderr|quiet)$/ ) {
 		die "Invalid log mode: $mode";
 	}
 
-	# Convert facility string to constant if needed
+	# Convert the facility string to a constant if necessary
 	my $facility = $args{facility} // LOG_DAEMON;
 	if ( ref($facility) eq '' && $facility =~ /^\w+$/ ) {
 		$facility = _parse_facility($facility);
@@ -106,7 +106,7 @@ sub _log ( $self, $level, $fmt, @args )
 }
 
 # $self->set_level($level):
-#	Change minimum log level
+#	Change the minimum log level
 sub set_level ( $self, $level )
 {
 	$self->{level} = _parse_level($level);
@@ -149,7 +149,7 @@ my %facility_map = (
 sub _parse_level ($level)
 {
 	$level = lc($level);
-	return $level_map{$level} // 1;    # Default to info
+	return $level_map{$level} // 1;    # The default is info
 }
 
 sub _level_to_priority ($level)

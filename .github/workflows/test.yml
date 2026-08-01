@@ -1,29 +1,31 @@
 name: Test
 
-# Explicit includes, never excludes: only what `make test` and
-# `make spec-coverage` actually load may start a run.  Note that the
-# Build workflow releases off a successful run of this one, so a path
-# missing here is also a change that never ships.
+# Use explicit includes, never excludes. Only what `make test` and
+# `make spec-coverage` actually load may start a run. Note that the
+# Build workflow releases from a successful run of this one. Thus a
+# path that this list omits is also a change that never ships.
 on:
   push:
     branches: [main]
     paths:
-      # Everything the suite loads
+      # The files that the suite loads
       - "bin/*"
       - "lib/**.pm"
-      # Every *.t in the tree, not just the four directories `make test`
-      # proves: spec-coverage scans all of t/ for spec citations, so a
-      # stale citation anywhere has to be able to fail this workflow.
+      # Every *.t in the tree, not only the four directories that
+      # `make test` proves. spec-coverage scans all of t/ for spec
+      # citations. Thus a stale citation anywhere must be able to fail
+      # this workflow.
       - "t/**.t"
       - "t/lib/**.pm"
       # The other half of the spec-coverage cross-check
       - "spec/*.md"
-      # The suite runs scripts as subprocesses - spec-coverage, deps and
-      # deps-key against fixtures, and scripts.t over the directory as a
-      # whole - so it has to see all of it.  A glob because scripts/ is
-      # extensionless, same as bin/ above.
+      # The suite runs scripts as subprocesses: spec-coverage, deps and
+      # deps-key against fixtures, and scripts.t over the directory as
+      # a whole. Thus the workflow must see all of scripts/. A glob is
+      # necessary because the files in scripts/ have no extension, the
+      # same as bin/ above.
       - "scripts/*"
-      # The toolchain and dependency set the job installs
+      # The toolchain and the dependency set that the job installs
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"

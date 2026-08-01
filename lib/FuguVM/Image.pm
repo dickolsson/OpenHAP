@@ -21,10 +21,11 @@ package FuguVM::Image;
 
 # FuguVM::Image - Download and cache OpenBSD miniroot images
 #
-# This module provides access to OpenBSD miniroot images. Images are
-# automatically downloaded when needed and stored in the proxy cache for reuse.
-# Downloads use the scripts/ftp helper (curl/wget/ftp fallbacks) and files are
-# stored via the Proxy::Cache module for consistent caching.
+# This module gives access to OpenBSD miniroot images. It downloads an
+# image when necessary and stores it in the proxy cache for reuse.
+# Downloads use the scripts/ftp helper, which falls back through curl,
+# wget, and ftp. The Proxy::Cache module stores the files for
+# consistent caching.
 
 use constant {
 	CDN_HOST => 'cdn.openbsd.org',
@@ -33,7 +34,7 @@ use constant {
 
 sub new ( $class, $cache_dir, $proxy = undef )
 {
-	# Expand ~ in path
+	# Expand ~ in the path
 	$cache_dir =~ s/^~/$ENV{HOME}/;
 
 	my $self = bless {
@@ -45,8 +46,8 @@ sub new ( $class, $cache_dir, $proxy = undef )
 }
 
 # $self->path($version):
-#	Return path to cached miniroot image for given version
-#	Returns undef if not cached
+#	Return the path to the cached miniroot image for the given
+#	version. Return undef if the image is not cached.
 sub path ( $self, $version )
 {
 	my $path = $self->_image_path($version);
@@ -54,25 +55,26 @@ sub path ( $self, $version )
 }
 
 # $self->ensure($version):
-#	Ensure image is available, downloading if necessary
-#	Returns path on success, undef on failure
+#	Make sure that the image is available. Download it if
+#	necessary. Return the path on success, or undef on failure.
 sub ensure ( $self, $version )
 {
-	# Check if already cached
+	# Check if the image is already cached
 	my $path = $self->path($version);
 	return $path if defined $path;
 
-	# Download via proxy if available
+	# Download through the proxy if one is available
 	return $self->download($version);
 }
 
 # _ftp_script():
-#	Absolute path to the scripts/ftp helper, resolved from this
-#	module's own location: lib/FuguVM/Image.pm is two directories
-#	below the project root.  Factored out of download so a test can
-#	assert the path still resolves - download only warns when it does
-#	not, so a rename would otherwise degrade silently to "no download"
-#	instead of failing.
+#	Return the absolute path to the scripts/ftp helper. The path
+#	resolves from the location of this module: lib/FuguVM/Image.pm
+#	is two directories below the project root. The code factors
+#	this function out of download. Thus a test can make sure that
+#	the path still resolves. download only warns when the path does
+#	not resolve. Thus a rename would otherwise degrade silently to
+#	"no download" and would not fail.
 sub _ftp_script ()
 {
 	require File::Basename;
@@ -87,8 +89,8 @@ sub _ftp_script ()
 }
 
 # $self->download($version):
-#	Download miniroot image for version via proxy cache
-#	Returns path on success, undef on failure
+#	Download the miniroot image for the version through the proxy
+#	cache. Return the path on success, or undef on failure.
 sub download ( $self, $version )
 {
 	if ( !defined $self->{proxy} ) {
@@ -98,8 +100,8 @@ sub download ( $self, $version )
 
 	my $url = $self->url($version);
 
-	# Download using the scripts/ftp helper (uses curl/wget/ftp)
-	# Then store in proxy cache
+	# Download with the scripts/ftp helper, which uses curl, wget,
+	# or ftp. Then store the file in the proxy cache.
 	require File::Temp;
 	my $tmp      = File::Temp->new( SUFFIX => '.img' );
 	my $tmp_path = $tmp->filename;
@@ -111,20 +113,20 @@ sub download ( $self, $version )
 		return;
 	}
 
-	# Download to temp file
+	# Download to the temp file
 	my $result = system( $ftp, $tmp_path, $url );
 	if ( $result != 0 ) {
 		warn "Download failed: exit code $result\n";
 		return;
 	}
 
-	# Verify file was downloaded
+	# Make sure that the download wrote a file
 	if ( !-f $tmp_path || -z $tmp_path ) {
 		warn "Download succeeded but file is empty\n";
 		return;
 	}
 
-	# Store in proxy cache
+	# Store the file in the proxy cache
 	my $cache       = $self->{proxy}->cache;
 	my $cached_path = $cache->store_from_file( $url, $tmp_path );
 	if ( !defined $cached_path ) {
@@ -149,8 +151,8 @@ sub url ( $self, $version )
 }
 
 # $self->list:
-#	List all cached miniroot images
-#	Returns arrayref of { version, filename, path }
+#	List all the cached miniroot images. Return an arrayref of
+#	{ version, filename, path }.
 sub list ($self)
 {
 	my @images;
@@ -183,14 +185,15 @@ sub list ($self)
 	}
 	closedir $dh;
 
-	# Sort by version descending
+	# Sort by version in descending order
 	@images = sort { $b->{version} cmp $a->{version} } @images;
 
 	return \@images;
 }
 
 # $self->_image_filename($version):
-#	Generate miniroot filename for version (e.g., "miniroot78.img")
+#	Make the miniroot filename for the version, for example
+#	"miniroot78.img".
 sub _image_filename ( $self, $version )
 {
 	( my $ver = $version ) =~ s/\.//g;
@@ -198,7 +201,7 @@ sub _image_filename ( $self, $version )
 }
 
 # $self->_image_path($version):
-#	Return expected cache path for miniroot image
+#	Return the expected cache path for the miniroot image.
 sub _image_path ( $self, $version )
 {
 	my $filename = $self->_image_filename($version);
@@ -206,7 +209,7 @@ sub _image_path ( $self, $version )
 }
 
 # $self->_proxy_cache_path:
-#	Return base path for proxy-cached OpenBSD files
+#	Return the base path for the proxy-cached OpenBSD files.
 sub _proxy_cache_path ($self)
 {
 	return "$self->{cache_dir}/proxy/" . CDN_HOST . "/pub/OpenBSD";

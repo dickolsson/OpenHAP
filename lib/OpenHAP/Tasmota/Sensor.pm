@@ -31,7 +31,7 @@ sub new ( $class, %args )
 	$self->{current_humidity} = undef;
 	$self->{has_humidity}     = $args{has_humidity} // 0;
 
-	# Add Temperature Sensor service
+	# Add the Temperature Sensor service
 	my $temp_sensor = OpenHAP::Service->new(
 		type    => 'TemperatureSensor',
 		iid     => 10,
@@ -52,7 +52,7 @@ sub new ( $class, %args )
 
 	$self->add_service($temp_sensor);
 
-	# Optionally add Humidity Sensor service (H5)
+	# Add the optional Humidity Sensor service (H5)
 	if ( $self->{has_humidity} ) {
 		$self->{current_humidity} = 50.0;
 
@@ -81,7 +81,8 @@ sub new ( $class, %args )
 
 sub subscribe_mqtt ($self)
 {
-	# Call base class to set up standard subscriptions (C1, C2, C3)
+	# Call the base class to set up the standard subscriptions
+	# (C1, C2, C3)
 	$self->SUPER::subscribe_mqtt();
 
 	return unless $self->{mqtt_client}->is_connected();
@@ -90,14 +91,16 @@ sub subscribe_mqtt ($self)
 		'Sensor %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# Subscribe to STATUS8 for sensor data (when actively queried)
+	# Subscribe to STATUS8 for sensor data. The device sends
+	# STATUS8 after an active query.
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', 'STATUS8' ),
 		sub ( $recv_topic, $payload ) {
 			$self->_handle_status8($payload);
 		} );
 
-	# Subscribe to STATUS10 for sensor data (recommended per spec)
+	# Subscribe to STATUS10 for sensor data. The spec recommends
+	# this query.
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', 'STATUS10' ),
 		sub ( $recv_topic, $payload ) {
@@ -105,22 +108,24 @@ sub subscribe_mqtt ($self)
 		} );
 }
 
-# Override to process sensor data from SENSOR messages
+# Override the base method to process the sensor data from
+# SENSOR messages
 sub _process_sensor_data ( $self, $data )
 {
 	$self->_extract_sensor_values($data);
 }
 
-# Override to process sensor data from STATUS8 responses
+# Process the sensor data from STATUS8 responses
 sub _handle_status8 ( $self, $payload )
 {
 	eval {
 		my $data = decode_json($payload);
 
-		# STATUS8 wraps data in StatusSNS
+		# STATUS8 wraps the data in StatusSNS
 		if ( exists $data->{StatusSNS} ) {
 
-			# Extract temperature unit if present (H4)
+			# Extract the temperature unit if it is
+			# present (H4)
 			if ( exists $data->{StatusSNS}{TempUnit} ) {
 				$self->{temp_unit} =
 				    $data->{StatusSNS}{TempUnit};
@@ -136,13 +141,14 @@ sub _handle_status8 ( $self, $payload )
 	}
 }
 
-# Override to handle STATUS10 responses (recommended sensor query)
+# Process the STATUS10 responses (recommended sensor query)
 sub _handle_status10 ( $self, $payload )
 {
 	eval {
 		my $data = decode_json($payload);
 
-		# STATUS10 wraps data in StatusSNS (same as STATUS8)
+		# STATUS10 wraps the data in StatusSNS, the same as
+		# STATUS8
 		if ( exists $data->{StatusSNS} ) {
 			if ( exists $data->{StatusSNS}{TempUnit} ) {
 				$self->{temp_unit} =
@@ -159,14 +165,14 @@ sub _handle_status10 ( $self, $payload )
 }
 
 # $self->_extract_sensor_values($data):
-#	Extract temperature and humidity from sensor data (H5).
+#	Extract the temperature and humidity from the sensor data (H5).
 sub _extract_sensor_values ( $self, $data )
 {
 	my ( $temp, $humidity, $sensor_id ) = $self->_find_sensor_values($data);
 
 	if ( defined $temp ) {
 
-		# Convert to Celsius if needed (H4)
+		# Convert the value to Celsius if necessary (H4)
 		$temp = $self->convert_temperature($temp);
 
 		$OpenHAP::logger->debug(
@@ -183,24 +189,25 @@ sub _extract_sensor_values ( $self, $data )
 		$self->notify_change(21);
 	}
 
-	# L3: Track sensor hardware ID
+	# L3: Store the sensor hardware ID
 	if ( defined $sensor_id ) {
 		$self->{sensor_id} = $sensor_id;
 	}
 }
 
 # $self->_find_sensor_values($data):
-#	Find temperature, humidity, and sensor ID in sensor data (H5, L3).
-#	Handles multiple sensor types and indexed sensors.
+#	Find the temperature, the humidity, and the sensor ID in
+#	the sensor data (H5, L3). The method supports multiple
+#	sensor types and indexed sensors.
 sub _find_sensor_values ( $self, $data )
 {
 	my ( $temp, $humidity, $sensor_id );
 
-	# If sensor type is specified, look for that specific sensor
+	# If the configuration sets a sensor type, look for that sensor
 	if ( defined $self->{sensor_type} ) {
 		my $key = $self->{sensor_type};
 
-		# Handle indexed sensors (e.g., DS18B20-1)
+		# Add the index for indexed sensors, for example DS18B20-1
 		if ( defined $self->{sensor_index} ) {
 			$key .= '-' . $self->{sensor_index};
 		}
@@ -220,7 +227,8 @@ sub _find_sensor_values ( $self, $data )
 				$humidity  = $data->{$type}{Humidity};
 				$sensor_id = $data->{$type}{Id};            # L3
 
-				# Enable humidity if sensor supports it
+				# Enable the humidity if the sensor
+				# supports it
 				if ( defined $humidity
 					&& !$self->{has_humidity} )
 				{
@@ -231,7 +239,7 @@ sub _find_sensor_values ( $self, $data )
 				last;
 			}
 
-			# Check for indexed sensors (e.g., DS18B20-1)
+			# Check for indexed sensors, for example DS18B20-1
 			for my $i ( 1 .. 8 ) {
 				my $indexed = "$type-$i";
 				if ( exists $data->{$indexed} ) {

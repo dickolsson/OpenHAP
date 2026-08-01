@@ -110,7 +110,7 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
-    # Create TLV with invalid state (99)
+    # Create a TLV with an invalid state (99)
     require OpenHAP::TLV;
     my $body = OpenHAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 99),
@@ -140,7 +140,7 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
-    # Create TLV with invalid state (99)
+    # Create a TLV with an invalid state (99)
     require OpenHAP::TLV;
     my $body = OpenHAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 99),
@@ -175,7 +175,7 @@ SKIP: {
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
     my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
     
-    # Reset global state for clean test
+    # Reset the global state for a clean test
     OpenHAP::Pairing->clear_pairing_state();
     OpenHAP::Pairing->reset_auth_attempts();
     
@@ -188,7 +188,7 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy1');
     
-    # Create TLV with invalid method (99)
+    # Create a TLV with an invalid method (99)
     require OpenHAP::TLV;
     my $body = OpenHAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 1),
@@ -198,7 +198,7 @@ SKIP: {
     my $response = $pairing->handle_pair_setup($body, $session);
     ok(defined $response, 'Invalid method returns response');
     
-    # Decode response to check for error
+    # Decode the response to check for an error
     my %resp_tlv = OpenHAP::TLV::decode($response);
     my $error = unpack('C', $resp_tlv{ OpenHAP::Pairing::kTLVType_Error() } // '');
     is($error, OpenHAP::Pairing::kTLVError_Unknown(),
@@ -218,7 +218,7 @@ SKIP: {
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
     my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
     
-    # Reset global state
+    # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
     OpenHAP::Pairing->reset_auth_attempts();
     
@@ -246,7 +246,8 @@ SKIP: {
     is($error, OpenHAP::Pairing::kTLVError_Unavailable(),
         '[HAP-Pairing §2.4] already paired returns kTLVError_Unavailable in M2');
     
-    # But PairSetupWithAuth (method=1) should be allowed even when paired
+    # The accessory must allow PairSetupWithAuth (method=1) even
+    # when paired
     OpenHAP::Pairing->clear_pairing_state();
     my $session2 = OpenHAP::Session->new(socket => 'dummy3');
     my $body_auth = OpenHAP::TLV::encode(
@@ -274,7 +275,7 @@ SKIP: {
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
     my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
     
-    # Reset global state
+    # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
     OpenHAP::Pairing->reset_auth_attempts();
     
@@ -291,13 +292,13 @@ SKIP: {
         OpenHAP::Pairing::kTLVType_Method(), pack('C', 0),
     );
     
-    # First session starts pairing
+    # The first session starts the pairing
     my $session1 = OpenHAP::Session->new(socket => 'dummy4');
     my $response1 = $pairing->handle_pair_setup($body, $session1);
     my %resp1 = OpenHAP::TLV::decode($response1);
     my $state1 = unpack('C', $resp1{ OpenHAP::Pairing::kTLVType_State() } // '');
     
-    # Second session tries to start pairing - should get Busy
+    # The second session tries to start the pairing and must get Busy
     my $session2 = OpenHAP::Session->new(socket => 'dummy5');
     my $response2 = $pairing->handle_pair_setup($body, $session2);
     my %resp2 = OpenHAP::TLV::decode($response2);
@@ -315,7 +316,7 @@ SKIP: {
         '[HAP-Pairing §8] failed attempt counter starts at 0');
 }
 
-# Test M2 response doesn't contain '0x' prefix in public key (Bug fix)
+# Test that the M2 public key does not contain a '0x' prefix (bug fix)
 SKIP: {
     eval {
         require Crypt::Ed25519;
@@ -326,7 +327,7 @@ SKIP: {
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
     my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
     
-    # Reset global state
+    # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
     OpenHAP::Pairing->reset_auth_attempts();
     
@@ -353,12 +354,13 @@ SKIP: {
     my $public_key = $resp{ OpenHAP::Pairing::kTLVType_PublicKey() };
     my $hex = unpack('H*', $public_key);
     
-    # Check that the hex doesn't start with '30' which is ASCII '0'
-    # If the bug existed, we'd see '307830...' (0x30='0', 0x78='x')
+    # Make sure that the hex does not start with '30', which is
+    # ASCII '0'. With the bug, the hex would start with '307830...'
+    # (0x30='0', 0x78='x').
     isnt(substr($hex, 0, 4), '3078',
         '[HAP-Pairing §2.4] public key does not start with ASCII "0x"');
 
-    # The public key should be 384 bytes (3072 bits)
+    # The public key must be 384 bytes (3072 bits)
     is(length($public_key), 384,
         '[HAP-Pairing §2.4] M2 public key B is 384 bytes (3072 bits)');
     

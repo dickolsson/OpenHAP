@@ -12,7 +12,7 @@ sub new ( $class, %args )
 		verified      => 0,
 		controller_id => undef,
 
-		# Session keys (set after pair-verify)
+		# Session keys. Pair-verify sets them.
 		encrypt_key => undef,
 		decrypt_key => undef,
 
@@ -45,15 +45,16 @@ sub encrypt ( $self, $data )
 
 	my $encrypted = '';
 
-	# HAP encrypts data in chunks with AAD containing length
+	# HAP encrypts data in chunks. The AAD contains the length.
 	while ( length($data) > 0 ) {
 		my $chunk  = substr( $data, 0, 1024, '' );
 		my $length = length($chunk);
 
-		# AAD is 2-byte length in little-endian
+		# The AAD is the 2-byte length in little-endian
 		my $aad = pack( 'v', $length );
 
-		# Nonce is 4 bytes zero + 8 bytes counter (little-endian)
+		# The nonce is 4 bytes zero + 8 bytes counter
+		# (little-endian)
 		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
 
 		my ( $ciphertext, $tag ) =
@@ -76,12 +77,12 @@ sub decrypt ( $self, $data )
 	my $decrypted = '';
 	my $pos       = 0;
 
-	# HAP decrypts data in frames; a truncated frame or a frame
-	# claiming more than 1024 bytes of plaintext is an error
-	# (HAP-Encryption.md §9)
+	# HAP decrypts data in frames. A truncated frame is an
+	# error. A frame that claims more than 1024 bytes of
+	# plaintext is also an error (HAP-Encryption.md §9).
 	while ( $pos < length($data) ) {
 
-		# Read frame header (2-byte length)
+		# Read the frame header (2-byte length)
 		return if $pos + 2 > length($data);
 		my $length = unpack( 'v', substr( $data, $pos, 2 ) );
 		my $aad    = substr( $data, $pos, 2 );
@@ -89,14 +90,15 @@ sub decrypt ( $self, $data )
 
 		return if $length > 1024;
 
-		# Read ciphertext + tag
+		# Read the ciphertext and the tag
 		return if $pos + $length + 16 > length($data);
 		my $ciphertext = substr( $data, $pos, $length );
 		$pos += $length;
 		my $tag = substr( $data, $pos, 16 );
 		$pos += 16;
 
-		# Nonce is 4 bytes zero + 8 bytes counter (little-endian)
+		# The nonce is 4 bytes zero + 8 bytes counter
+		# (little-endian)
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 
 		my $plaintext =

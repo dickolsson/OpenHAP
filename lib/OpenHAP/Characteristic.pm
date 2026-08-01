@@ -42,8 +42,9 @@ our %CHAR_TYPES = (
 	'Version' => '00000037-0000-1000-8000-0026BB765291',
 );
 
-# _uuid_to_short($uuid) - Convert full UUID to short form for JSON
-# Returns short hex string for Apple UUIDs, full UUID for custom ones
+# _uuid_to_short($uuid) - Convert the full UUID to the short form
+# for JSON. The function returns a short hex string for Apple
+# UUIDs. It returns the full UUID for custom UUIDs.
 sub _uuid_to_short ($uuid)
 {
 	my $base = HAP_BASE_UUID;
@@ -90,7 +91,7 @@ sub new ( $class, %args )
 		format => $args{format} // 'string',
 		perms  => $args{perms}  // ['pr'],
 
-		# Value (can be scalar ref for mutable values)
+		# Value: a scalar reference makes the value mutable
 		value => $args{value},
 
 		# Optional metadata
@@ -114,12 +115,12 @@ sub new ( $class, %args )
 sub get_value ($self)
 {
 
-	# If there's a custom getter, use it
+	# Use the custom getter if the characteristic has one
 	if ( $self->{on_get} ) {
 		return $self->{on_get}->();
 	}
 
-	# If value is a reference, dereference it
+	# If the value is a reference, dereference it
 	if ( ref $self->{value} eq 'SCALAR' ) {
 		return ${ $self->{value} };
 	}
@@ -132,12 +133,12 @@ sub set_value ( $self, $value )
 	$OpenHAP::logger->debug( 'Setting characteristic IID=%d to value: %s',
 		$self->{iid}, defined $value ? $value : 'undef' );
 
-	# If there's a custom setter, use it
+	# Use the custom setter if the characteristic has one
 	if ( $self->{on_set} ) {
 		$self->{on_set}->($value);
 	}
 
-	# Update value
+	# Update the value
 	if ( ref $self->{value} eq 'SCALAR' ) {
 		${ $self->{value} } = $value;
 	}
@@ -170,14 +171,15 @@ sub to_json ( $self, $include_value = 1 )
 		perms  => $self->{perms},
 	};
 
-	# Add optional metadata
+	# Add the optional metadata
 	$json->{unit}     = $self->{unit}   if defined $self->{unit};
 	$json->{minValue} = $self->{min}    if defined $self->{min};
 	$json->{maxValue} = $self->{max}    if defined $self->{max};
 	$json->{minStep}  = $self->{step}   if defined $self->{step};
 	$json->{maxLen}   = $self->{maxLen} if defined $self->{maxLen};
 
-	# Add value if requested and readable
+	# Add the value if the caller requests it and the
+	# characteristic is readable
 	if ( $include_value && grep { $_ eq 'pr' } @{ $self->{perms} } ) {
 		$json->{value} = $self->json_value;
 	}
@@ -185,8 +187,8 @@ sub to_json ( $self, $include_value = 1 )
 	return $json;
 }
 
-# json_value() - Current value converted to its JSON type per the
-# characteristic format (HAP-HTTP.md §15.1)
+# json_value() - Convert the current value to its JSON type. The
+# characteristic format selects the type (HAP-HTTP.md §15.1).
 sub json_value ($self)
 {
 	my $value = $self->get_value();

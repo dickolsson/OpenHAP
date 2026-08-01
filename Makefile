@@ -25,14 +25,14 @@ LOWDOWN			?= lowdown
 MANDOC			?= mandoc
 POD2MAN			?= pod2man
 PERLTIDY		= perl -MPerl::Tidy -e 'Perl::Tidy::perltidy()'
-# Pinned so local runs and CI agree on formatting
+# Pin the version so that local runs and CI agree on formatting
 PRETTIER		= npx prettier@3.9.6
 
 # Every Perl source in the tree: modules by extension, executables by
-# shebang.  bin/ and scripts/ carry no extension - a tool's name does not
-# encode its language - so the shebang is what identifies them, which is
-# also how Perl::Critic selects files.  lint and tidy therefore cover the
-# same set, with no list to keep true.
+# shebang.  Files in bin/ and scripts/ carry no extension, because a
+# tool's name does not encode its language.  Thus the shebang identifies
+# them.  Perl::Critic selects files the same way.  lint and tidy
+# therefore cover the same set, with no list to keep true.
 PERLSRC			= find lib bin scripts -type f \( -name '*.pm' -o \
 			  -exec sh -c 'head -1 "$$1" | grep -q "^\#!.*perl"' \
 			  _ {} \; \) -print
@@ -43,7 +43,7 @@ FTP				= scripts/ftp
 DEPS			= scripts/deps
 
 # Man pages.  FuguLib sources drop the FuguLib:: prefix because a colon
-# cannot appear in a make target; install-man puts it back.
+# cannot appear in a make target.  install-man puts it back.
 MAN1			= man/fuguvm/fuguvm.1
 MAN3P			= man/fugulib/Daemon.3p man/fugulib/Imsg.3p \
 			  man/fugulib/Log.3p man/fugulib/MDNS.3p \
@@ -62,15 +62,17 @@ WEBOUT			?= web/build
 WEBMAN			= $(WEBOUT)/.man
 MKPAGE			= web/mkpage.sh
 MKINDEX			= web/mkindex.sh
-# The .pod sidecars are found, never listed: one added without a Makefile
-# line would otherwise never be published, and an exclusion list would be
-# one more thing to keep true.  LC_ALL=C so the order of the index does
-# not depend on the builder's locale.
+# The Makefile finds the .pod sidecars and never lists them.  Otherwise
+# a sidecar without its own Makefile line would never reach the site.
+# An exclusion list would be one more thing to keep true.  LC_ALL=C
+# makes sure the order of the index does not depend on the builder's
+# locale.
 FINDPOD			= find lib -name '*.pod' | LC_ALL=C sort
-# mandoc resolves .Xr against the working directory: a page named %N.%S
-# there becomes a local link, anything else goes to man.openbsd.org.
-# The './' matters: a module page is FuguLib::Daemon.3p.html, and a relative
-# URL whose first segment holds a colon is read as a scheme instead.
+# mandoc resolves .Xr against the working directory.  A page named %N.%S
+# there becomes a local link.  Anything else goes to man.openbsd.org.
+# The './' matters.  A module page is FuguLib::Daemon.3p.html.  The
+# browser reads a relative URL whose first segment holds a colon as a
+# scheme instead.
 # -I os= pins the footer so the site does not vary with the build host.
 MANHTML			= -Thtml -I os=OpenBSD \
 			  -O fragment,man='./%N.%S.html;https://man.openbsd.org/%N.%S'
@@ -112,8 +114,8 @@ install: install-man
 	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
 	install -m 644 lib/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
 	install -m 644 lib/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
-	# Test helper modules ship only in the packaged tree; the glob
-	# loops handle zero, one, or many matches without stderr noise
+	# The test helper modules ship only in the packaged tree.  The
+	# glob loops accept zero, one, or many matches without stderr noise
 	for f in lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod; do \
 		[ -e "$$f" ] || continue; \
 		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/; \
@@ -122,7 +124,7 @@ install: install-man
 		[ -e "$$f" ] || continue; \
 		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/; \
 	done
-	# FuguLib's API is documented in man3p, not in sidecars
+	# FuguLib's API documentation lives in man3p, not in sidecars
 	install -m 644 lib/FuguLib/*.pm $(DESTDIR)$(LIBDIR)/FuguLib/
 	# Install rc.d script
 	install -d $(DESTDIR)$(SYSCONFDIR)/rc.d
@@ -138,8 +140,8 @@ install-man:
 	install -d $(DESTDIR)$(MANDIR)/man3p
 	install -d $(DESTDIR)$(MANDIR)/man5
 	install -d $(DESTDIR)$(MANDIR)/man8
-	# The rename cannot be a glob: 'man FuguLib::Daemon' looks for a
-	# file of that name, which make cannot have as a target
+	# The rename cannot be a glob.  'man FuguLib::Daemon' looks for a
+	# file of that name.  make cannot have that name as a target
 	for f in $(MAN3P); do \
 		install -m 644 "$$f" \
 		    "$(DESTDIR)$(MANDIR)/man3p/FuguLib::$${f##*/}"; \
@@ -251,7 +253,7 @@ uninstall:
 	rm -f $(DESTDIR)$(SYSCONFDIR)/rc.d/openhapd
 	# Remove example configuration
 	rm -f $(DESTDIR)$(SYSCONFDIR)/examples/openhapd.conf
-	# Note: /etc/openhapd.conf and /var/db/openhapd are preserved
+	# Note: the uninstall keeps /etc/openhapd.conf and /var/db/openhapd
 
 upgrade:
 	@echo "==> Downloading $(TARBALL)"
@@ -274,9 +276,9 @@ web:
 	    { echo "$(POD2MAN) not found; it ships with Perl" >&2; exit 1; }
 	# A malformed page must fail the build, not render badly
 	$(MANDOC) -Tlint -W warning $(MAN1) $(MAN3P) $(MAN5) $(MAN8)
-	# Every mdoc source in one directory, so mandoc can tell a local
-	# cross-reference from one that belongs on man.openbsd.org.  The
-	# FuguLib pages are staged under the name .Xr refers to them by.
+	# Put every mdoc source in one directory.  Then mandoc can tell a
+	# local cross-reference from one that belongs on man.openbsd.org.
+	# Stage the FuguLib pages under the name that .Xr refers to them by.
 	mkdir -p $(WEBMAN)
 	cp $(MAN1) $(MAN5) $(MAN8) $(WEBMAN)/
 	for f in $(MAN3P); do \
@@ -284,8 +286,8 @@ web:
 	done
 	cp web/style.css $(WEBOUT)/style.css
 	cp web/robots.txt $(WEBOUT)/robots.txt
-	# The custom domain is a repository setting, but the deploy artifact
-	# carries it too so a rebuild can never drop it
+	# The custom domain is a repository setting.  The deploy artifact
+	# carries it too.  Thus a rebuild can never drop it
 	cp web/CNAME $(WEBOUT)/CNAME
 	$(MKPAGE) 'HomeKit Accessory Protocol for OpenBSD' \
 	    < web/index.body.html > $(WEBOUT)/index.html
@@ -309,10 +311,10 @@ web:
 		( cd $(WEBMAN) && $(MANDOC) $(MANHTML) "$$n.3p" ) | \
 		    $(MKPAGE) "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
 	done
-	# One page per .pod sidecar.  --name, --center and --release are
-	# given so the chrome matches the mdoc pages; the date comes from
-	# the checkout rather than from file mtimes, which git does not
-	# preserve.
+	# One page per .pod sidecar.  The recipe gives --name, --center
+	# and --release so the chrome matches the mdoc pages.  The date
+	# comes from the checkout, not from file mtimes.  git does not
+	# preserve mtimes.
 	d=`git log -1 --format=%cs 2>/dev/null || date +%F`; \
 	$(FINDPOD) | while read -r p; do \
 		n="$${p#lib/}"; n="$${n%.pod}"; \

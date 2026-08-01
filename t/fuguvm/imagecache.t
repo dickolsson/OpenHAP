@@ -73,8 +73,8 @@ my %CONFIG = (
 }
 
 # The installer script and the generation counter rotate the key.
-# Both inputs are redirected at synthetic files rather than edited in
-# the checkout, so an aborted test cannot leave the tree modified.
+# The test points both inputs at synthetic files and does not edit
+# the checkout. Thus an aborted test cannot leave the tree modified.
 {
 	my $tmp = tempdir( CLEANUP => 1 );
 	_spit( "$tmp/install.exp", "#!/usr/bin/expect\n" );
@@ -97,7 +97,7 @@ my %CONFIG = (
 		'a bumped generation counter rotates the key' );
 
 	# An unreadable input means no key at all, and therefore no
-	# caching - never a key derived from partial inputs.
+	# caching. The code never derives a key from partial inputs.
 	unlink "$tmp/cache-generation";
 	my $missing = do {
 		local $SIG{__WARN__} = sub { };
@@ -142,7 +142,7 @@ my %CONFIG = (
 	is_deeply( $cache->list, [], 'list skips incomplete entries' );
 }
 
-# Temporary trees are swept, whatever left them behind
+# sweep_temp removes temporary trees, whatever left them behind
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
 	my $cache = FuguVM::ImageCache->new($tmp);
@@ -186,7 +186,7 @@ SKIP: {
 	    == 0
 	    or skip 'cannot create a test disk image', 19;
 
-	# Store and look back up
+	# Store an entry. Look it up again.
 	my $base = $cache->store( $key, $disk,
 		{ root_password => 's3cret', version => '7.8' } );
 	ok( defined $base, 'store returns the published base image path' );
@@ -324,7 +324,7 @@ SKIP: {
 	    or skip 'cannot create a test disk image', 16;
 	my $base = $cache->store( $key, $source, { root_password => 'pw' } );
 
-	# A working overlay, the shape a snapshot is taken from
+	# A working overlay, the shape a snapshot comes from
 	my $disk = FuguVM::Disk->new("$tmp/state");
 	$disk->create( 'default', undef, $base, 'qcow2' );
 	my $disk_path = $disk->path('default');
@@ -352,8 +352,9 @@ SKIP: {
 	is_deeply( $cache->list->[0]{snapshots},
 		['deps'], 'cache listing counts it' );
 
-	# Re-saving from a disk restored FROM the snapshot must not make
-	# the snapshot its own parent, nor stack chains without bound.
+	# A re-save from a disk restored FROM the snapshot must not
+	# make the snapshot its own parent. It must not stack chains
+	# without bound.
 	unlink $disk_path;
 	$disk->create( 'default', undef, $path, 'qcow2' );
 	is( $disk->backing_file('default'),
@@ -372,8 +373,8 @@ SKIP: {
 		undef, 'the snapshot is gone' );
 }
 
-# A snapshot whose base is gone reads as a miss, so callers can fall
-# back to provisioning instead of failing hard
+# A snapshot whose base is gone reads as a miss. Thus callers can
+# fall back to provisioning instead of a hard failure.
 SKIP: {
 	skip 'qemu-img not installed', 3 if !$HAS_QEMU_IMG;
 
@@ -427,11 +428,11 @@ sub _temp_trees ($dir)
 	return scalar @tmp;
 }
 
-# A cache whose two file-backed key inputs live in a scratch directory,
-# so tests can rotate them without touching the checkout.
+# A cache whose two file-backed key inputs live in a scratch
+# directory. Thus tests can rotate them and never touch the checkout.
 package TestInputs;
 
-# Inheritance must be in place before the tests above run
+# The inheritance must be in place before the tests above run
 BEGIN { our @ISA = ('FuguVM::ImageCache'); }
 
 sub new ( $class, $cache_dir, $input_dir )

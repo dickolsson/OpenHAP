@@ -5,7 +5,7 @@
 # Usage: command.exp <host> <port> <command> [user] [password]
 #
 
-# Use environment variable if set, otherwise default to 60
+# Use the environment variable when it exists. Otherwise use 60.
 if {[info exists env(FUGUVM_TIMEOUT)]} {
     set timeout $env(FUGUVM_TIMEOUT)
 } else {

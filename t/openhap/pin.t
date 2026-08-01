@@ -9,7 +9,7 @@ $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
 
 use_ok('OpenHAP::PIN');
 
-# Test normalize_pin - basic functionality
+# Test normalize_pin: basic operation
 {
 	my $pin = OpenHAP::PIN::normalize_pin('1234-5678');
 	is($pin, '12345678',
@@ -36,7 +36,7 @@ use_ok('OpenHAP::PIN');
 	is($pin, '12345678', 'Normalize PIN with spaces and dashes');
 }
 
-# Test normalize_pin - invalid formats
+# Test normalize_pin: invalid formats
 {
 	my $pin = OpenHAP::PIN::normalize_pin('123-4567');
 	is($pin, undef,
@@ -73,7 +73,7 @@ use_ok('OpenHAP::PIN');
 	is($pin, undef, 'Reject incomplete PIN');
 }
 
-# Test validate_pin - valid PINs
+# Test validate_pin: valid PINs
 {
 	ok(OpenHAP::PIN::validate_pin('9876-5432'), 'Valid PIN with dash');
 }
@@ -90,8 +90,8 @@ use_ok('OpenHAP::PIN');
 	ok(OpenHAP::PIN::validate_pin('0000-0001'), 'Valid PIN starting with zeros');
 }
 
-# Test validate_pin - trivial setup codes disallowed by HAP
-# (Apple HAP R2 5.3; the trivial-code blacklist is not in spec/)
+# Test validate_pin: HAP disallows trivial setup codes (Apple HAP R2
+# 5.3). The trivial-code blacklist is not in spec/.
 {
 	ok(!OpenHAP::PIN::validate_pin('00000000'), 'Reject 00000000');
 }
@@ -140,7 +140,7 @@ use_ok('OpenHAP::PIN');
 	ok(!OpenHAP::PIN::validate_pin('87654321'), 'Reject 87654321');
 }
 
-# Test validate_pin - invalid PINs with dashes (should still be rejected)
+# Test validate_pin: it must also reject invalid PINs with dashes
 {
 	ok(!OpenHAP::PIN::validate_pin('0000-0000'), 'Reject 0000-0000');
 }
@@ -157,7 +157,7 @@ use_ok('OpenHAP::PIN');
 	ok(!OpenHAP::PIN::validate_pin('8765-4321'), 'Reject 8765-4321 (reverse sequential)');
 }
 
-# Test validate_pin - malformed input
+# Test validate_pin: malformed input
 {
 	ok(!OpenHAP::PIN::validate_pin('123-4567'), 'Reject malformed PIN (7 digits)');
 }

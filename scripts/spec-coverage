@@ -18,11 +18,12 @@
 
 # spec-coverage: cross-verify spec/ section anchors against test citations.
 #
-# Parses the numbered ##/### headings of spec/*.md into a section
-# inventory, scans t/ for [<spec-stem> §<section>] citations, and prints
-# a coverage matrix. Exits non-zero iff a citation points at a section
-# that does not exist (stale after a spec edit). Low coverage is
-# informative, never fatal. See t/CLAUDE.md for the citation convention.
+# The script parses the numbered ##/### headings of spec/*.md into a
+# section inventory. It scans t/ for [<spec-stem> §<section>] citations.
+# It prints a coverage matrix. It exits non-zero when, and only when, a
+# citation points at a section that does not exist. Such a citation is
+# stale after a spec edit. Low coverage is informative, never fatal.
+# See t/CLAUDE.md for the citation convention.
 
 use v5.36;
 use File::Basename qw(dirname);
@@ -51,8 +52,8 @@ $test_dir //= "$root/t";
 -d $test_dir or die "spec-coverage: no such directory: $test_dir\n";
 
 # _read_inventory($dir):
-#	Parse numbered ##/### headings of every *.md file in $dir.
-#	Returns a hash: stem => {
+#	Parse the numbered ##/### headings of every *.md file in $dir.
+#	Return a hash: stem => {
 #		file     => basename,
 #		index    => 1 for index files (stem without '-'),
 #		sections => { '2.6' => 1, ... },
@@ -92,8 +93,8 @@ sub _read_inventory ($dir)
 }
 
 # _scan_citations($dir):
-#	Grep test files recursively for the citation pattern.
-#	Returns a list of { stem, section, row, site => 'file:line' }.
+#	Grep the test files recursively for the citation pattern.
+#	Return a list of { stem, section, row, site => 'file:line' }.
 sub _scan_citations ($dir)
 {
 	my @citations;

@@ -2,10 +2,10 @@
 # ex:ts=8 sw=4:
 # Guards for scripts/ that no single script's own test would catch
 #
-# Names in scripts/ carry no extension, so nothing but the shebang says
-# what language a file is in, and several call sites - the Makefile,
-# vm-up, vm-provision, Image.pm - invoke them as bare paths.  A lost
-# exec bit or a broken shebang therefore fails at use, not at build.
+# Names in scripts/ carry no extension. Thus only the shebang says
+# what language a file is in. Several call sites invoke them as bare
+# paths: the Makefile, vm-up, vm-provision, Image.pm. A lost exec bit
+# or a broken shebang thus fails at use, not at build.
 
 use v5.36;
 use Test::More;
@@ -13,8 +13,8 @@ use FindBin qw($RealBin);
 
 my $dir = "$RealBin/../../scripts";
 
-# Named, not globbed: a script that disappears has to fail here rather
-# than shrink the list silently.
+# Named, not globbed: a script that disappears must fail here. The
+# list must not shrink silently.
 my @scripts =
     qw(deps deps-key ftp integration spec-coverage vm-provision vm-up);
 
@@ -35,8 +35,8 @@ for my $name (@scripts) {
 		"scripts/$name has an sh or perl shebang" );
 }
 
-# Every Perl script compiles. make lint and make tidy already read them,
-# but neither runs the compiler, and CI's perl -cw sweep covers only
+# Every Perl script compiles. make lint and make tidy already read
+# them, but neither runs the compiler. CI's perl -cw sweep covers only
 # lib/ and bin/.
 for my $name (@scripts) {
 	my $path = "$dir/$name";

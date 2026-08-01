@@ -30,7 +30,8 @@ use_ok('FuguLib::Process');
 
 # Test 3: Process that exits immediately with non-zero (failure)
 SKIP: {
-	# This test is OS-dependent - sh -c may or may not exit immediately
+	# This test is OS-dependent. The sh -c command can exit
+	# immediately, but this is not certain.
 	skip 'Process exit timing varies by OS', 3;
 
 	my $result = FuguLib::Process->spawn_command(
@@ -86,13 +87,13 @@ SKIP: {
 
 # Test 7: Zombie reaping
 {
-	# Spawn and let it exit
+	# Spawn a process and let it exit
 	my $result = FuguLib::Process->spawn_command(
 		cmd         => [ 'true' ],
 		check_alive => 0,
 	);
 
-	sleep 1;    # Let it exit
+	sleep 1;    # Let the process exit
 
 	my $reaped = FuguLib::Process->reap( $result->{pid} );
 	ok( $reaped, 'Reaped zombie process' );
@@ -133,7 +134,7 @@ SKIP: {
 
 # Test 11: Graceful vs forced termination
 {
-	# Process that ignores SIGTERM (sleep handles it)
+	# A process that ignores SIGTERM (sleep handles it)
 	my $result = FuguLib::Process->spawn_command(
 		cmd         => [ 'sleep', '300' ],
 		check_alive => 0,
@@ -154,7 +155,7 @@ SKIP: {
 		FuguLib::Process->spawn_command( cmd => ['true'], check_alive => 0 );
 	}
 
-	sleep 1;    # Let them all exit
+	sleep 1;    # Let all the processes exit
 
 	my $count = FuguLib::Process->reap_all();
 	cmp_ok( $count, '>=', 0, 'Reaped zombies' );

@@ -9,7 +9,7 @@ use File::Temp qw(tempdir);
 
 use_ok('OpenHAP::Storage');
 
-# Create temporary directory for testing
+# Create a temporary directory for the tests
 my $temp_dir = tempdir(CLEANUP => 1);
 
 # Test storage initialization

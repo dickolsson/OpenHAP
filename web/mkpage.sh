@@ -14,14 +14,16 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #
-# Wrap an HTML body fragment read from stdin in the shared page chrome.
+# Read an HTML body fragment from stdin.  Wrap it in the shared page
+# chrome.
 # Usage: mkpage.sh <title>
 
 set -eu
 
 [ $# -eq 1 ] && [ -n "$1" ] || { echo "usage: mkpage.sh <title>" >&2; exit 1; }
 
-# The chrome lives beside this script, so callers may run from anywhere
+# The chrome lives beside this script, so callers can run it from any
+# directory
 web=$(dirname "$0")
 
 sed "s/@TITLE@/$1/" "$web/head.html"

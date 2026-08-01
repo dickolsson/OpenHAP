@@ -1,8 +1,9 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Integration test: MQTT <-> HAP round trips for Tasmota devices. Each
-# simulated device message is published on the real broker and its
-# effect asserted through the paired HAP data plane, and vice versa.
+# Integration test: MQTT <-> HAP round trips for Tasmota devices.
+# The test publishes each simulated device message on the real
+# broker and asserts its effect through the paired HAP data plane.
+# The test also covers the opposite direction.
 
 use v5.36;
 use Test::More tests => 11;

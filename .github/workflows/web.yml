@@ -1,20 +1,21 @@
 name: Website
 
-# Explicit includes, never excludes: the site is rendered from a known
-# set of sources, so anything outside that set cannot change the build.
-# The published site is derived entirely from these paths, which is what
-# makes it safe for a push to main to skip the deploy job below.
+# Use explicit includes, never excludes. The build renders the site
+# from a known set of sources, so no path outside that set can change
+# the build. The published site derives fully from these paths. That is
+# what makes it safe for a push to main to skip the deploy job below.
 on:
   push:
     branches: [main]
     paths:
-      # Hand-written pages, shared chrome, assets and the two renderers
+      # The hand-written pages, the shared chrome, the assets, and the
+      # two renderers
       - "web/*.html"
       - "web/*.css"
       - "web/*.sh"
       - "web/CNAME"
       - "web/robots.txt"
-      # Everything the build renders into a page
+      # The files that the build renders into pages
       - "man/**.1"
       - "man/**.3p"
       - "man/**.5"
@@ -43,11 +44,12 @@ on:
       - "t/web/*.t"
       - ".github/workflows/web.yml"
 
-# Deploying needs more than this; it is granted on the deploy job alone
+# A deploy needs more permissions than this. The deploy job alone
+# receives them.
 permissions:
   contents: read
 
-# One deploy at a time, and never cancel one that is already running
+# Run one deploy at a time. Never cancel a deploy that already runs.
 concurrency:
   group: pages
   cancel-in-progress: false

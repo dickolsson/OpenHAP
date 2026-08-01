@@ -23,23 +23,24 @@ use POSIX qw(setsid WNOHANG);
 
 # FuguLib::Process - Robust process management
 #
-# Handles forking, exec, PID tracking, signal handling, and zombie reaping
-# with proper error detection and logging integration.
+# The module does forking, exec, PID tracking, signal handling, and
+# zombie reaping. It adds proper error detection and logging
+# integration.
 
 # $class->spawn_command(%args):
-#	Fork and execute a command, optionally as a daemon
-#	Returns hashref with {pid => $pid, success => 1} on success,
-#	or {success => 0, error => $msg} on failure
+#	Fork and execute a command. Optionally run it as a daemon.
+#	The method returns a hashref: {pid => $pid, success => 1} on
+#	success, or {success => 0, error => $msg} on failure.
 #
 #	%args:
-#		cmd       => \@command  # Required: command to execute
-#		daemonize => 0|1        # Optional: detach from terminal
+#		cmd       => \@command  # Required: the command to execute
+#		daemonize => 0|1        # Optional: detach from the terminal
 #		stdout    => $path|undef # Optional: redirect stdout (default: /dev/null)
 #		stderr    => $path|undef # Optional: redirect stderr (default: /dev/null)
 #		stdin     => $path|undef # Optional: redirect stdin (default: /dev/null)
 #		on_error  => sub($err)  # Optional: error callback
 #		on_success => sub($pid) # Optional: success callback
-#		check_alive => $seconds # Optional: wait and verify process is alive
+#		check_alive => $seconds # Optional: wait, then make sure the process is alive
 sub spawn_command ( $class, %args )
 {
 	my $cmd = $args{cmd}
@@ -73,11 +74,11 @@ sub spawn_command ( $class, %args )
 
 		if ($daemonize) {
 
-			# Become session leader
+			# Become the session leader
 			setsid() or exit 1;
 		}
 
-		# Redirect file descriptors
+		# Redirect the file descriptors
 		if ( !open STDIN, '<', $stdin ) {
 			warn "Cannot redirect stdin: $!";
 			exit 1;
@@ -91,20 +92,21 @@ sub spawn_command ( $class, %args )
 			exit 1;
 		}
 
-		# Execute command
+		# Execute the command
 		exec @$cmd or exit 1;
 	}
 
 	# Parent process
 	if ($check_alive) {
 
-		# Give process time to start
+		# Give the process time to start
 		sleep $check_alive;
 
-	      # Try to reap zombie without blocking (is_alive would do this too)
+		# Try to reap the zombie without blocking. is_alive
+		# would do this too.
 		my $reaped = waitpid( $pid, WNOHANG );
 
-		# If we reaped the process, it died
+		# If waitpid reaped the process, the process died
 		if ( $reaped == $pid ) {
 			my $exit_status = $? >> 8;
 			my $err =
@@ -120,7 +122,8 @@ sub spawn_command ( $class, %args )
 			};
 		}
 
-		# Double-check with kill(0) to ensure process is alive
+		# Check again with kill(0) to make sure the process is
+		# alive
 		unless ( kill( 0, $pid ) ) {
 			my $err =
 "Process $pid is not alive (not reaped, possible race)";
@@ -139,39 +142,43 @@ sub spawn_command ( $class, %args )
 }
 
 # $class->is_alive($pid):
-#	Check if process is alive (not dead, not zombie)
-#	Returns 1 if alive, 0 if dead or doesn't exist or zombie
+#	Check if the process is alive (not dead, not a zombie).
+#	The method returns 1 if the process is alive. It returns 0 if
+#	the process is dead, a zombie, or does not exist.
 sub is_alive ( $class, $pid )
 {
 	return 0 unless defined $pid;
 	return 0 unless $pid =~ /^\d+$/;
 
-	# First check if process exists
+	# First check if the process exists
 	return 0 unless kill( 0, $pid );
 
-	# Don't try to wait on ourselves
+	# Do not try to wait on the current process
 	return 1 if $pid == $$;
 
 	# Try to reap zombies without blocking
 	my $result = waitpid( $pid, WNOHANG );
 
-	# If waitpid returned the PID, it was a zombie and is now reaped
+	# If waitpid returns the PID, the process was a zombie.
+	# waitpid has now reaped it.
 	return 0 if $result == $pid;
 
-	# If waitpid returned -1, no such child (not our child, but still alive)
+	# If waitpid returns -1, there is no such child. The process
+	# is not a child of the current process, but it is still alive.
 	#return 0 if $result == -1;
 
-	# Otherwise, process is alive
+	# Otherwise, the process is alive
 	return 1;
 }
 
 # $class->terminate($pid, %args):
-#	Terminate a process gracefully, with force if needed
-#	Returns 1 if process was killed or is dead, 0 on failure
+#	Stop a process gracefully. Use force if necessary.
+#	The method returns 1 if the process is killed or dead. It
+#	returns 0 on failure.
 #
 #	%args:
 #		grace_period => $seconds # Time to wait after TERM before KILL (default: 5)
-#		on_kill      => sub()    # Called after successful kill
+#		on_kill      => sub()    # Runs after a successful kill
 sub terminate ( $class, $pid, %args )
 {
 	return 1 unless defined $pid;
@@ -184,11 +191,12 @@ sub terminate ( $class, $pid, %args )
 	my $killed = kill 'TERM', $pid;
 	unless ($killed) {
 
-		# Process already dead or no permission
+		# The process is already dead, or there is no
+		# permission
 		return $class->is_alive($pid) ? 0 : 1;
 	}
 
-	# Wait for process to exit
+	# Wait for the process to exit
 	my $waited = 0;
 	while ( $waited < $grace_period && $class->is_alive($pid) ) {
 		sleep 1;
@@ -198,7 +206,7 @@ sub terminate ( $class, $pid, %args )
 		waitpid( $pid, WNOHANG );
 	}
 
-	# If still alive, force kill
+	# If the process is still alive, kill it with force
 	if ( $class->is_alive($pid) ) {
 		kill 'KILL', $pid;
 		sleep 1;
@@ -208,7 +216,7 @@ sub terminate ( $class, $pid, %args )
 		return 0 if $class->is_alive($pid);
 	}
 
-	# Reap zombie
+	# Reap the zombie
 	waitpid( $pid, WNOHANG );
 
 	$on_kill->() if $on_kill;
@@ -216,8 +224,9 @@ sub terminate ( $class, $pid, %args )
 }
 
 # $class->reap($pid):
-#	Attempt to reap a zombie process
-#	Returns 1 if process was reaped or doesn't exist, 0 if still running
+#	Try to reap a zombie process.
+#	The method returns 1 if the process is reaped or does not
+#	exist. It returns 0 if the process still runs.
 sub reap ( $class, $pid )
 {
 	return 1 unless defined $pid;
@@ -225,15 +234,15 @@ sub reap ( $class, $pid )
 
 	my $result = waitpid( $pid, WNOHANG );
 
-	# $result > 0: child was reaped
-	# $result == -1: no such child
-	# $result == 0: child still running
+	# $result > 0: waitpid reaped the child
+	# $result == -1: there is no such child
+	# $result == 0: the child still runs
 	return $result != 0;
 }
 
 # $class->reap_all():
-#	Reap all zombie children (non-blocking)
-#	Returns count of children reaped
+#	Reap all zombie children without blocking.
+#	The method returns the count of reaped children.
 sub reap_all ($class)
 {
 	my $count = 0;
@@ -244,8 +253,9 @@ sub reap_all ($class)
 }
 
 # $class->wait_exit($pid, $timeout):
-#	Wait for process to exit
-#	Returns 1 if process exited, 0 if timeout
+#	Wait for the process to exit.
+#	The method returns 1 if the process exits. It returns 0 on
+#	timeout.
 sub wait_exit ( $class, $pid, $timeout = 30 )
 {
 	my $start = time;
@@ -259,13 +269,14 @@ sub wait_exit ( $class, $pid, $timeout = 30 )
 }
 
 # $class->spawn_perl(%args):
-#	Spawn a Perl subprocess with the parent's @INC paths inherited
-#	This is a convenience wrapper around spawn_command() for running Perl code
+#	Spawn a Perl subprocess that inherits the parent's @INC paths.
+#	This is a convenience wrapper around spawn_command() to run
+#	Perl code.
 #
 #	%args:
-#		code      => $string    # Required: Perl code to execute
-#		args      => \@args     # Optional: arguments passed to the code
-#		All other args are passed to spawn_command()
+#		code      => $string    # Required: the Perl code to execute
+#		args      => \@args     # Optional: arguments for the code
+#		The method passes all other args to spawn_command().
 #
 #	Example:
 #		FuguLib::Process->spawn_perl(
@@ -279,7 +290,7 @@ sub spawn_perl ( $class, %args )
 	    or return { success => 0, error => 'No code specified' };
 	my $extra_args = delete $args{args} // [];
 
-	# Build -I flags for all non-default @INC paths
+	# Build the -I flags for all non-default @INC paths
 	my @inc_flags = map { "-I$_" } _custom_inc_paths();
 
 	$args{cmd} = [ $^X, @inc_flags, '-e', $code, @$extra_args ];
@@ -288,13 +299,14 @@ sub spawn_perl ( $class, %args )
 }
 
 # _custom_inc_paths:
-#	Get @INC paths that are not part of Perl's default installation
-#	These are typically paths added via -I, use lib, or PERL5LIB
+#	Get the @INC paths that are not part of Perl's default
+#	installation. These paths usually come from -I, use lib, or
+#	PERL5LIB.
 sub _custom_inc_paths()
 {
 	require Config;
 
-	# Build set of default Perl lib paths
+	# Build the set of default Perl lib paths
 	my %default_paths;
 	for my $key (qw(privlib archlib sitelib sitearch vendorlib vendorarch))
 	{
@@ -302,11 +314,12 @@ sub _custom_inc_paths()
 		$default_paths{$path} = 1 if defined $path && length $path;
 	}
 
-	# Return @INC paths not in the default set (excluding '.' and CODE refs)
+	# Return the @INC paths that are not in the default set.
+	# Skip '.' and CODE refs.
 	my @custom;
 	for my $inc (@INC) {
 		next if ref $inc;               # Skip CODE refs
-		next if $inc eq '.';            # Skip current directory
+		next if $inc eq '.';            # Skip the current directory
 		next if $default_paths{$inc};
 		push @custom, $inc;
 	}

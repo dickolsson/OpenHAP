@@ -24,7 +24,8 @@ use FuguLib::Process;
 
 # FuguLib::State - Simple PID file management
 #
-# Provides safe PID file reading/writing with locking and stale PID detection.
+# The module reads and writes PID files safely, with locking and
+# stale PID detection.
 
 sub new ( $class, $pidfile )
 {
@@ -37,8 +38,8 @@ sub new ( $class, $pidfile )
 }
 
 # $self->write_pid($pid):
-#	Write PID to file with exclusive lock
-#	Returns 1 on success, 0 on failure
+#	Write the PID to the file with an exclusive lock.
+#	The method returns 1 on success and 0 on failure.
 sub write_pid ( $self, $pid = $$ )
 {
 	my $pidfile = $self->{pidfile};
@@ -55,8 +56,9 @@ sub write_pid ( $self, $pid = $$ )
 }
 
 # $self->read_pid():
-#	Read PID from file
-#	Returns PID or undef if not found or invalid
+#	Read the PID from the file.
+#	The method returns the PID. It returns undef when the PID is
+#	missing or invalid.
 sub read_pid ($self)
 {
 	my $pidfile = $self->{pidfile};
@@ -73,7 +75,7 @@ sub read_pid ($self)
 }
 
 # $self->remove():
-#	Remove PID file
+#	Remove the PID file
 sub remove ($self)
 {
 	my $pidfile = $self->{pidfile};
@@ -82,8 +84,9 @@ sub remove ($self)
 }
 
 # $self->is_running():
-#	Check if process from PID file is running
-#	Returns PID if running, undef otherwise
+#	Check if the process from the PID file runs.
+#	The method returns the PID if the process runs. Otherwise it
+#	returns undef.
 sub is_running ($self)
 {
 	my $pid = $self->read_pid;
@@ -93,7 +96,8 @@ sub is_running ($self)
 }
 
 # $self->is_stale():
-#	Check if PID file is stale (process not running)
+#	Check if the PID file is stale. Stale means the process does
+#	not run.
 sub is_stale ($self)
 {
 	my $pid = $self->read_pid;

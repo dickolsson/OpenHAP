@@ -40,18 +40,20 @@ sub generate_random_bytes ( $, $length )
 }
 
 # $class->generate_password($length):
-#	Generate a strong random password of specified length using
-#	base64-encoded random bytes (URL-safe variant without padding)
+#	Generate a strong random password of the specified length. The
+#	password uses base64-encoded random bytes. The base64 variant
+#	is URL-safe and has no padding.
 sub generate_password ( $class, $length = PASSWORD_LENGTH )
 {
-	# Generate more bytes than needed since base64 expands
+	# Generate more bytes than the password needs. Base64 expands
+	# the data.
 	my $raw_bytes =
 	    $class->generate_random_bytes( ( $length * 3 / 4 ) + 3 );
 
-	# Use URL-safe base64 encoding (no + / = characters)
+	# Use the URL-safe base64 encoding. It has no + / = characters.
 	my $encoded = MIME::Base64::encode_base64url( $raw_bytes, '' );
 
-	# Trim to requested length
+	# Trim the password to the requested length
 	return substr( $encoded, 0, $length );
 }
 

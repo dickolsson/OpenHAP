@@ -55,7 +55,8 @@ m/\A \s* device \s+ (\w+) \s+ (\w+) \s+ (\w+) \s* [{] /xms
 			$current_device = undef;
 		}
 
-		# Device properties (must check BEFORE top-level config)
+		# Device properties. This check must come BEFORE the
+		# top-level config check.
 		elsif (    $current_device
 			&& $line =~ m/\A \s* (\w+) \s* = \s* (.+?) \s* \z/xms )
 		{
@@ -69,7 +70,8 @@ m/\A \s* device \s+ (\w+) \s+ (\w+) \s+ (\w+) \s* [{] /xms
 		elsif ( $line =~ m/\A \s* (\w+) \s* = \s* (.+?) \s* \z/xms ) {
 			my ( $key, $value ) = ( $1, $2 );
 
-			# Remove surrounding quotes if present
+			# Remove the quotes around the value if they
+			# are present
 			$value =~ s/\A "//xms;
 			$value =~ s/" \z//xms;
 			$self->{config}{$key} = $value;

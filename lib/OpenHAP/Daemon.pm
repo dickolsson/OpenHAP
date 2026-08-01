@@ -25,9 +25,9 @@ use FuguLib::Daemon;
 use FuguLib::State;
 
 # $class->daemonize($logfile):
-#	Fork into background, detach from terminal, and redirect
-#	standard file descriptors. Returns in child process only.
-#	Parent process exits successfully.
+#	Fork into the background. Detach from the terminal. Redirect
+#	the standard file descriptors. The method returns in the
+#	child process only. The parent process exits successfully.
 sub daemonize ( $class, $logfile = '/var/log/openhapd.log' )
 {
 	FuguLib::Daemon->daemonize( logfile => $logfile );
@@ -37,7 +37,8 @@ sub daemonize ( $class, $logfile = '/var/log/openhapd.log' )
 }
 
 # $class->write_pidfile($path):
-#	Write current PID to file. Returns true on success.
+#	Write the current PID to the file. The method returns true
+#	on success.
 sub write_pidfile ( $class, $path )
 {
 	my $state = FuguLib::State->new($path);
@@ -52,8 +53,8 @@ sub write_pidfile ( $class, $path )
 }
 
 # $class->read_pidfile($path):
-#	Read PID from file. Returns PID or undef if file doesn't exist
-#	or cannot be read.
+#	Read the PID from the file. The method returns the PID. It
+#	returns undef if the file does not exist or is not readable.
 sub read_pidfile ( $class, $path )
 {
 	my $state = FuguLib::State->new($path);
@@ -62,8 +63,9 @@ sub read_pidfile ( $class, $path )
 }
 
 # $class->check_running($pidfile):
-#	Check if daemon is running based on PID file.
-#	Returns PID if running, undef otherwise.
+#	Check if the daemon runs. The check uses the PID file.
+#	The method returns the PID if the daemon runs. Otherwise,
+#	it returns undef.
 sub check_running ( $class, $pidfile )
 {
 	my $state = FuguLib::State->new($pidfile);
@@ -78,18 +80,21 @@ sub check_running ( $class, $pidfile )
 #				it is a source checkout
 #	perl_dirs   => \@dirs	override the perl library directories
 #				(tests only)
-#	The daemon's unveil(2) inventory: an ordered list of
-#	[$path, $perms] pairs with per-path dispositions, for
-#	FuguLib::Sandbox->unveil. Pure assembly - nothing here touches
-#	the filesystem view - so it is unit-testable on any platform.
+#	The method returns the unveil(2) inventory of the daemon.
+#	The inventory is an ordered list of [$path, $perms] pairs
+#	for FuguLib::Sandbox->unveil. Each path has its own
+#	disposition. The method only assembles data. Nothing here
+#	touches the filesystem view. Thus unit tests can run on
+#	all platforms.
 #
-#	Every entry is required (absent means a broken install and
-#	startup must fail naming the path) or optional (legitimately
-#	absent on a working system: a fresh install has no config
-#	file, -f mode never creates the log file, mdnsd may not run,
-#	and the resolver files matter only when mqtt_host is a name).
-#	Getting a disposition wrong turns a configuration that starts
-#	today into a startup failure.
+#	Each entry is required or optional. If a required entry is
+#	absent, the install is broken. Then startup must fail and
+#	name the path. An optional entry can be legitimately absent
+#	on a working system. A fresh install has no config file.
+#	The -f mode never creates the log file. The mdnsd daemon
+#	does not always run. The resolver files matter only when
+#	mqtt_host is a name. A wrong disposition turns a
+#	configuration that starts today into a startup failure.
 sub unveil_paths ( $class, %args )
 {
 	my $db_path     = $args{db_path} or die 'db_path parameter required';
@@ -98,21 +103,24 @@ sub unveil_paths ( $class, %args )
 
 	my @paths = ( [ $db_path, 'rwc' ], [ '/dev/urandom', 'r' ], );
 
-	# The perl library tree, read-only, for the lazy require on the
-	# MQTT reconnect path. An enumerated list, never live @INC:
-	# bin/openhapd prepends $RealBin/../lib, which on an installed
-	# layout is /usr/local/lib - every third-party library on the
-	# system, not a perl tree - and OpenHAP::MQTT unshifts a
-	# directory onto @INC at connect time, so a derived set would
-	# depend on whether the startup connect has run. Unveiling the
-	# tree read-only is the deliberate trade: proving no module
-	# ever loads late is a claim no test can hold over time, while
-	# these few read-only lines cannot regress the MQTT reconnect.
+	# Unveil the perl library tree read-only for the lazy require
+	# on the MQTT reconnect path. Use an enumerated list, never
+	# the live @INC. Two reasons apply. First, bin/openhapd
+	# prepends $RealBin/../lib. On an installed layout, that is
+	# /usr/local/lib. That directory holds every third-party
+	# library on the system, not a perl tree. Second,
+	# OpenHAP::MQTT unshifts a directory onto @INC at connect
+	# time. Thus a derived set would depend on whether the
+	# startup connect has run. The read-only unveil of the tree
+	# is a deliberate trade. No test can prove over time that no
+	# module loads late. But these few read-only lines cannot
+	# regress the MQTT reconnect.
 	my @perl_dirs =
 	    $args{perl_dirs} ? @{ $args{perl_dirs} } : _perl_lib_dirs();
 
-	# The checkout's own lib, only when it really is one: the
-	# installed layout must not pick up /usr/local/lib here
+	# Add the checkout's own lib directory, but only when it
+	# really is a checkout. The installed layout must not pick
+	# up /usr/local/lib here.
 	my $script_lib = $args{script_lib};
 	push @perl_dirs, $script_lib
 	    if defined $script_lib && -d "$script_lib/OpenHAP";
@@ -135,11 +143,11 @@ sub unveil_paths ( $class, %args )
 }
 
 # _perl_lib_dirs():
-#	The perl library directories as the interpreter was built with
-#	them - stable facts from %Config, not runtime @INC. The
-#	literal site_perl entry is the directory OpenHAP::MQTT
-#	unshifts onto @INC at connect time; on OpenBSD it equals
-#	sitelibexp and dedupes away.
+#	Return the perl library directories from the interpreter
+#	build. These are stable facts from %Config, not the runtime
+#	@INC. The literal site_perl entry is the directory that
+#	OpenHAP::MQTT unshifts onto @INC at connect time. On
+#	OpenBSD, it equals sitelibexp and the dedupe removes it.
 sub _perl_lib_dirs ()
 {
 	my @dirs;

@@ -2,12 +2,12 @@
 # ex:ts=8 sw=4:
 # Integration test: MQTT reconnection under the pledge. The reconnect
 # path is the one code path that opens new sockets and resolves names
-# after the pledge point, so it exercises the inet and dns promises
-# and the resolver files in the unveil view - none of which the
-# steady-state suite touches, since the stock config's numeric
-# mqtt_host never resolves anything. The daemon runs with
-# mqtt_host = localhost here, the broker is restarted underneath it,
-# and recovery is observed through the paired HAP data plane.
+# after the pledge point. Thus it exercises the inet and dns promises
+# and the resolver files in the unveil view. The steady-state suite
+# touches none of these, because the stock config's numeric mqtt_host
+# never resolves anything. Here the daemon runs with
+# mqtt_host = localhost. The test restarts the broker underneath it
+# and observes recovery through the paired HAP data plane.
 
 use v5.36;
 use Test::More;
@@ -41,9 +41,9 @@ sub restore ($config_file, $saved)
 	return;
 }
 
-# Point mqtt_host at a name instead of an address, so every broker
-# (re)connect resolves via the unveiled /etc/hosts under the dns
-# promise
+# Point mqtt_host at a name instead of an address. Then every broker
+# (re)connect resolves through the unveiled /etc/hosts under the dns
+# promise.
 system($^X, '-pi', '-e',
 	's/^\s*mqtt_host\s*=.*/mqtt_host = localhost/', $config_file);
 my $switched = do {
@@ -59,8 +59,8 @@ unless ($env->wait_for_hap_port) {
 }
 ok(1, 'daemon serves with mqtt_host = localhost');
 
-# Pair and locate the light's On characteristic, so MQTT delivery is
-# observable through the paired data plane rather than daemon logs
+# Pair and locate the light's On characteristic. Then MQTT delivery
+# is observable through the paired data plane, not the daemon logs.
 my $controller = $env->get_controller;
 $controller->pair_setup
     or die 'pair-setup failed: ' . ($controller->last_error // '?') . "\n";
@@ -89,9 +89,9 @@ ok(defined $iid, 'light On characteristic located') or do {
 };
 
 # on_value(): the current On value through the paired session, or
-# undef when the daemon stopped answering - the poll loops then run to
-# their deadline and fail with the rcctl diagnosis instead of a JSON
-# parse error
+# undef when the daemon stopped answering. The poll loops then run
+# to their deadline. They fail with the rcctl diagnosis instead of a
+# JSON parse error.
 sub on_value ($controller, $aid, $iid)
 {
 	my $value = eval {
@@ -103,8 +103,9 @@ sub on_value ($controller, $aid, $iid)
 	return JSON::PP::is_bool($value) ? ($value ? 1 : 0) : $value;
 }
 
-# Baseline: a device state published on the broker reaches HAP while
-# connected via the resolved hostname
+# Baseline: the test publishes a device state on the broker. The
+# state reaches HAP while the daemon connection uses the resolved
+# hostname.
 my $mqtt = $env->get_mqtt or die "cannot connect test MQTT client\n";
 $mqtt->publish("stat/$light->{topic}/POWER", 'ON');
 my $deadline = time + 15;
@@ -115,15 +116,15 @@ is(on_value($controller, $aid, $iid), 1,
 
 # Restart the broker underneath the pledged daemon. The daemon's
 # reconnect resolves localhost and opens a fresh socket after the
-# pledge point; a promise or unveil row missing on that path aborts
-# the daemon or strands MQTT, and either fails the poll below.
+# pledge point. A missing promise or unveil row on that path aborts
+# the daemon or strands MQTT. Either failure fails the poll below.
 system('rcctl restart mosquitto >/dev/null 2>&1');
 die "mosquitto did not come back\n" unless $env->ensure_mqtt_running;
 $env->{mqtt} = undef;    # the cached test client died with the broker
 
-# The daemon retries every 30 seconds; publish OFF repeatedly on a
-# fresh client until the flip is visible through HAP, well past one
-# retry interval before giving up
+# The daemon retries every 30 seconds. Publish OFF repeatedly on a
+# fresh client until the flip is visible through HAP. The loop waits
+# well past one retry interval before it gives up.
 $deadline = time + 120;
 my $recovered = 0;
 while (time < $deadline) {

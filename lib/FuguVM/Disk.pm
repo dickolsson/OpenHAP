@@ -30,13 +30,14 @@ sub new ( $class, $state_dir )
 }
 
 # $self->create($name, $size, $backing_image, $backing_format):
-#	Create the VM disk image. $size may be undef for an overlay, which
-#	then inherits the virtual size of $backing_image. $backing_format
-#	names the format of $backing_image ('qcow2' for cached base images
-#	and snapshots, 'raw' otherwise).
+#	Create the VM disk image. $size can be undef for an overlay.
+#	The overlay then inherits the virtual size of $backing_image.
+#	$backing_format names the format of $backing_image. Use 'qcow2'
+#	for cached base images and snapshots. Use 'raw' in other cases.
 #
-#	Returns early when the path already exists, so callers replacing a
-#	disk with an overlay must unlink it first.
+#	The method returns early when the path already exists. Thus
+#	callers that replace a disk with an overlay must unlink the
+#	disk first.
 sub create (
 	$self, $name,
 	$size           = undef,
@@ -60,8 +61,9 @@ sub create (
 	push @cmd, $path;
 	push @cmd, $size if defined $size;
 
-# Suppress qemu-img's verbose "Formatting..." output by redirecting to /dev/null
-# We use shell redirection since system() doesn't provide output control
+	# Redirect the output to /dev/null. This removes the verbose
+	# "Formatting..." messages of qemu-img. The code uses a shell
+	# redirection because system() gives no output control.
 	my $cmd_str =
 	    join( ' ', map { my $s = $_; $s =~ s/'/'\\''/g; "'$s'" } @cmd );
 	my $result = system("$cmd_str >/dev/null 2>&1");
@@ -97,12 +99,14 @@ sub remove ( $self, $name )
 }
 
 # $self->info($name):
-#	qemu-img's report on the disk as a hashref, or undef when there is
-#	no disk or it cannot be read. Inspection is read-only, so it asks
-#	for shared access (-U): a running QEMU holds an exclusive lock, and
-#	without this the query fails on exactly the VMs whose backing chain
-#	callers most need to resolve - 'cache clear' skipping a running
-#	VM's disk would remove the base out from under it.
+#	Get the qemu-img report on the disk as a hashref. The method
+#	returns undef when there is no disk or when it cannot read the
+#	disk. The inspection is read-only. Thus it asks for shared
+#	access with -U. A running QEMU holds an exclusive lock. Without
+#	shared access, the query fails on exactly the VMs whose backing
+#	chain callers most need to resolve. If 'cache clear' skips the
+#	disk of a running VM, it can remove the base from under that
+#	VM.
 sub info ( $self, $name )
 {
 	my $path = $self->path($name);
@@ -116,10 +120,11 @@ sub info ( $self, $name )
 }
 
 # $self->backing_file($name):
-#	Absolute path of the image the disk is backed by, or undef when
-#	the disk is standalone or cannot be inspected. qemu-img reports a
-#	backing reference even when the file it names is gone, which is
-#	what makes a broken chain diagnosable.
+#	Get the absolute path of the image that backs the disk. The
+#	method returns undef when the disk is standalone or when it
+#	cannot inspect the disk. qemu-img reports a backing reference
+#	even when the file it names is gone. This lets callers diagnose
+#	a broken chain.
 sub backing_file ( $self, $name )
 {
 	my $info = $self->info($name);
@@ -137,8 +142,9 @@ sub backing_file ( $self, $name )
 	return $backing;
 }
 
-# P5: Check disk image integrity
-# Returns hashref with 'status' ('ok' or 'corrupted') and 'output'
+# P5: Check the disk image integrity. The method returns a hashref
+# with the 'status' and 'output' keys. The 'status' key is 'ok' or
+# 'corrupted'.
 sub check ( $self, $name )
 {
 	my $path = $self->path($name);
@@ -162,14 +168,14 @@ sub check ( $self, $name )
 	};
 }
 
-# P5: Repair disk image
-# Returns true on success, false on failure
+# P5: Repair the disk image. The method returns true on success and
+# false on failure.
 sub repair ( $self, $name )
 {
 	my $path = $self->path($name);
 	return 0 if !-f $path;
 
-	# Run qemu-img check with repair option
+	# Run qemu-img check with the repair option
 	my $result = system( 'qemu-img', 'check', '-r', 'all', $path );
 	return $result == 0;
 }

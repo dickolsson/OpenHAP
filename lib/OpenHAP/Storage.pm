@@ -10,7 +10,7 @@ sub new ( $class, %args )
 {
 	my $db_path = $args{db_path} // '/var/db/openhapd';
 
-	# Create directory if it doesn't exist
+	# Create the directory if it does not exist
 	make_path($db_path) unless -d $db_path;
 
 	my $self = bless {
@@ -114,8 +114,9 @@ sub remove_pairing ( $self, $controller_id )
 	return;
 }
 
-# remove_all_pairings() - Remove all pairings (factory reset)
-# Called when last admin pairing is removed (HAP-Pairing.md §7.2)
+# remove_all_pairings() - Remove all pairings. This is a factory
+# reset. The daemon calls this method when it removes the last
+# admin pairing (HAP-Pairing.md §7.2).
 sub remove_all_pairings ($self)
 {
 	$OpenHAP::logger->debug('Removing all pairings');
