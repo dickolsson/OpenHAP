@@ -25,71 +25,73 @@
 is the configuration file for the
 .Xr openhapd 8
 daemon.
-The file uses a simple key-value format with device blocks for
-defining HomeKit accessories.
+The file uses a simple key-value format with device blocks that
+define HomeKit accessories.
 .Pp
-Lines beginning with
+A line that starts with
 .Sq #
-are comments and are ignored.
+is a comment, and the daemon ignores it.
 .Sh GLOBAL OPTIONS
-The following global options are available:
+These global options are available:
 .Bl -tag -width Ds
 .It Ic hap_name Ar string
-The name of the HomeKit bridge as it appears in the iOS Home app.
+The name of the HomeKit bridge, as the iOS Home app shows it.
 Default:
 .Dq OpenHAP Bridge .
 .It Ic hap_port Ar number
-TCP port for the HAP server.
+The TCP port for the HAP server.
 Default: 51827.
 .It Ic hap_pin Ar XXXX-XXXX
-The 8-digit setup code used for pairing.
-Format: XXXX-XXXX where X is a digit 0-9.
-Dashes are for readability only and are stripped during processing.
-Certain values are invalid per the HAP specification
-(after stripping dashes):
+The 8-digit setup code for pairing.
+The format is XXXX-XXXX, in which each X is a digit 0-9.
+The dashes only make the code easy to read.
+The daemon removes them when it parses the value.
+The HAP specification does not permit these values (after removal of
+the dashes):
 00000000, 11111111, 22222222, 33333333, 44444444,
 55555555, 66666666, 77777777, 88888888, 99999999,
 12345678, 87654321.
 Default: 1995-1018.
 .It Ic hap_model Ar string
-Model name reported to HomeKit.
+The model name that the daemon sends to HomeKit.
 Default:
 .Dq OpenHAP .
 .It Ic hap_manufacturer Ar string
-Manufacturer name reported to HomeKit.
+The manufacturer name that the daemon sends to HomeKit.
 Default:
 .Dq OpenBSD .
 .It Ic db_path Ar path
-Directory for storing pairing database and cryptographic keys.
+The directory that holds the pairing database and the cryptographic
+keys.
 Default:
 .Pa /var/db/openhapd .
 .It Ic log_level Ar level
-Logging verbosity level.
-Valid values:
+The log verbosity level.
+The valid values are:
 .Cm debug , info , notice , warning , err , crit , alert , emerg .
 Default:
 .Cm info .
 .It Ic log_facility Ar facility
-Syslog facility for log messages.
-Valid values:
+The syslog facility for the log messages.
+The valid values are:
 .Cm daemon , local0 Ns \(en Ns Cm local7 , user .
 Default:
 .Cm daemon .
 .It Ic mqtt_host Ar hostname
-Hostname or IP address of the MQTT broker.
+The hostname or the IP address of the MQTT broker.
 Default: 127.0.0.1.
 .It Ic mqtt_port Ar number
-TCP port of the MQTT broker.
+The TCP port of the MQTT broker.
 Default: 1883.
 .It Ic mqtt_user Ar username
-Username for MQTT authentication.
-Optional.
+The username for MQTT authentication.
+This option is optional.
 .It Ic mqtt_pass Ar password
-Password for MQTT authentication.
-Optional.
+The password for MQTT authentication.
+This option is optional.
 .El
 .Sh DEVICE BLOCKS
-Devices are defined using the following syntax:
+Define each device with this syntax:
 .Bd -literal -offset indent
 device <type> <subtype> <id> {
     name = "<display name>"
@@ -101,67 +103,69 @@ device <type> <subtype> <id> {
 The parameters are:
 .Bl -tag -width "subtypeXX"
 .It Ar type
-Device driver type.
-Currently only
+The device driver type.
+At this time, only
 .Cm tasmota
-is supported.
+is available.
 .It Ar subtype
-Device subtype.
+The device subtype.
 For
 .Cm tasmota ,
-valid values are:
+the valid values are:
 .Cm thermostat , heater , sensor .
 .It Ar id
-Unique identifier for the device within the configuration.
-Used for internal reference.
+The unique identifier of the device in the configuration.
+The daemon uses it for internal reference.
 .It Ic name
-Display name shown in the iOS Home app.
-Required.
+The display name that the iOS Home app shows.
+This option is necessary.
 .It Ic topic
-MQTT topic prefix for the device.
-For Tasmota devices, this is the topic configured in the device's
-MQTT settings (default:
-.Dq tasmota_%06X
-where %06X is the last 6 hex digits of the MAC address).
-Required.
+The MQTT topic prefix for the device.
+For Tasmota devices, this is the topic from the MQTT settings of the
+device.
+The default of that setting is
+.Dq tasmota_%06X ,
+in which %06X is the last 6 hex digits of the MAC address.
+This option is necessary.
 .El
 .Pp
-Additional options depend on the device subtype:
+The other options are different for each device subtype:
 .Ss Thermostat Options
-Tasmota thermostat devices support the following options:
+Tasmota thermostat devices have these options:
 .Bl -tag -width "target_temp_topicXX"
 .It Ic current_temp_topic Ar topic
-MQTT topic for current temperature readings.
+The MQTT topic for the current temperature values.
 Default:
 .Ar topic Ns /SENSOR .
 .It Ic target_temp_topic Ar topic
-MQTT topic for target temperature.
+The MQTT topic for the target temperature.
 Default:
 .Ar topic Ns /TARGET .
 .It Ic state_topic Ar topic
-MQTT topic for heater state (on/off).
+The MQTT topic for the heater state (on or off).
 Default:
 .Ar topic Ns /STATE .
 .It Ic min_temp Ar celsius
-Minimum temperature in Celsius.
+The minimum temperature in Celsius.
 Default: 10.0.
 .It Ic max_temp Ar celsius
-Maximum temperature in Celsius.
+The maximum temperature in Celsius.
 Default: 30.0.
 .It Ic temp_step Ar celsius
-Temperature adjustment step size.
+The step size for temperature adjustment.
 Default: 0.5.
 .El
 .Sh FILES
 .Bl -tag -width "/var/db/openhapd/XX" -compact
 .It Pa /etc/openhapd.conf
-Default configuration file location.
+The default location of the configuration file.
 .It Pa /etc/examples/openhapd.conf
-Example configuration file installed by
-.Cm make install .
+The example configuration file that
+.Cm make install
+installs.
 .El
 .Sh EXAMPLES
-Minimal configuration with a single thermostat:
+A minimal configuration with one thermostat:
 .Bd -literal -offset indent
 hap_name = "Home Bridge"
 hap_pin = 9876-5432
@@ -174,7 +178,7 @@ device tasmota thermostat bedroom {
 }
 .Ed
 .Pp
-Multiple devices with custom MQTT settings:
+Three devices with custom MQTT settings:
 .Bd -literal -offset indent
 hap_name = "OpenHAP"
 hap_port = 51827
@@ -212,32 +216,35 @@ device tasmota thermostat kitchen {
 .Xr mosquitto 8 ,
 .Xr openhapd 8
 .Sh STANDARDS
-The MQTT topic structure follows the Tasmota firmware conventions.
+The MQTT topic structure obeys the Tasmota firmware conventions.
 See
 .Lk https://tasmota.github.io/docs/MQTT/
-for details on Tasmota MQTT topics.
+for more data on the Tasmota MQTT topics.
 .Sh HISTORY
 The
 .Nm
-file format first appeared with
+file format was first available with
 .Xr openhapd 8
 in 2025.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-The
+The configuration file holds the
 .Ic hap_pin
-is stored in plain text in the configuration file.
-Ensure appropriate file permissions (mode 0600, owned by root).
+in plain text.
+Make sure that the file permissions are correct:
+mode 0600, with root as the owner.
 .Pp
-Changing the
+If you change the
 .Ic hap_name
-or
+or the
 .Ic hap_pin
-after pairing may require re-pairing all controllers.
+after pairing, it can be necessary to pair all controllers again.
 .Pp
+The file holds
 .Ic mqtt_pass
-is stored in plain text and is sent to the broker in the clear;
+in plain text, and the daemon sends it to the broker without
+encryption.
 .Xr openhapd 8
-does not speak MQTT over TLS.
+does not use MQTT over TLS.
 Keep the broker on the local machine or on a trusted network.
