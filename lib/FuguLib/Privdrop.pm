@@ -71,15 +71,15 @@ sub drop_privileges ( $class, %args )
 	unless ( POSIX::setgid($gid) ) {
 		die "Cannot setgid to $gid: $!";
 	}
-	$( = $gid;    # Set the effective GID
-	$) = $gid;    # Set the real GID
+	$( = $gid;    # Set the real GID
+	$) = $gid;    # Set the effective GID
 
 	# Drop the user privileges
 	unless ( POSIX::setuid($uid) ) {
 		die "Cannot setuid to $uid: $!";
 	}
-	$< = $uid;    # Set the effective UID
-	$> = $uid;    # Set the real UID
+	$< = $uid;    # Set the real UID
+	$> = $uid;    # Set the effective UID
 
 	# Make sure the process cannot get root back
 	if ( $> == 0 || $< == 0 ) {
