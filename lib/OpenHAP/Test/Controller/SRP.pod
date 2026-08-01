@@ -47,23 +47,24 @@ C<Pair-Setup>.
 
 =head2 compute_public()
 
-Generate the ephemeral secret. Return the padded 384-byte public
-value A.
+The method generates the ephemeral secret. It returns the padded
+384-byte public value A.
 
 =head2 compute_proof($salt, $B_bytes)
 
-Derive the session key from the server salt and the server public
-key B. Return the client proof M1. The method returns undef if
-B mod N == 0.
+The method derives the session key from the server salt and the
+server public key B. It returns the client proof M1. The method
+returns undef if B mod N == 0.
 
 =head2 verify_server_proof($M2)
 
-Return true if, and only if, $M2 equals H(PAD(A) | M1 | K).
+The method returns true if, and only if, $M2 equals
+H(PAD(A) | M1 | K).
 
 =head2 session_key()
 
-Return the 64-byte shared session key K. The key is available after
-C<compute_proof>.
+The method returns the 64-byte shared session key K. The key is
+available after C<compute_proof>.
 
 =head1 SEE ALSO
 
