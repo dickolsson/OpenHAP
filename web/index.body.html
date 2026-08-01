@@ -1,40 +1,42 @@
 <h1>HomeKit Accessory Protocol for OpenBSD</h1>
 
-<p>OpenHAP puts MQTT-connected Tasmota devices into Apple&rsquo;s Home app.  An
-iPhone pairs with <code>openhapd</code> as if it were an accessory;
-<code>openhapd</code> speaks MQTT to the real ones.</p>
+<p>OpenHAP shows MQTT-connected Tasmota devices in the iOS Home app.  An
+iPhone pairs with <code>openhapd</code> as a HomeKit accessory;
+<code>openhapd</code> uses MQTT to control the real devices.</p>
 
-<p>It is written in Perl against the base system: a daemon, a configuration
-file in <code>/etc</code>, and <code>rcctl</code>.  No cloud account, and no
-separate appliance.</p>
+<p>The server is Perl code on the base system: a daemon, a configuration
+file in <code>/etc</code>, and <code>rcctl</code>.  It does not need a cloud
+account or a separate appliance.</p>
 
 <h2>Design</h2>
 
 <dl>
 <dt>Native to OpenBSD</dt>
-<dd>Base-system Perl and a short list of packages.  Runs as
-<code>_openhap</code>, starts from <code>rc.d</code>, and confines itself with
+<dd>OpenHAP uses base-system Perl and a short list of packages.  The daemon
+runs as <code>_openhap</code>, starts from <code>rc.d</code>, and limits
+itself with
 <a href="https://man.openbsd.org/pledge.2">pledge(2)</a> and
 <a href="https://man.openbsd.org/unveil.2">unveil(2)</a>.</dd>
 
 <dt>Pairing and sessions</dt>
 <dd>Pair-setup is an SRP-6a exchange over the RFC 5054 3072-bit group;
-pair-verify is X25519 with Ed25519 signatures.  Sessions are encrypted with
-ChaCha20-Poly1305 under keys from HKDF-SHA-512.  Messages are TLV8 and JSON
-over HTTP/1.1, advertised by <code>mdnsd</code>.  The SRP exchange and the
-framing are written here; the primitives come from CPAN modules.</dd>
+pair-verify is X25519 with Ed25519 signatures.  ChaCha20-Poly1305 encrypts
+the sessions with keys from HKDF-SHA-512.  The messages are TLV8 and JSON
+over HTTP/1.1, and <code>mdnsd</code> advertises the service.  This project
+supplies the SRP exchange and the framing; CPAN modules supply the
+primitives.</dd>
 
 <dt>Devices as configuration</dt>
-<dd>Accessories are declared in <code>openhapd.conf(5)</code> and loaded at
-start-up.  Thermostats, heaters, switches, sensors, lightbulbs and dimmers are
-supported today.</dd>
+<dd>You declare the accessories in <code>openhapd.conf(5)</code>, and the
+daemon loads them at startup.  OpenHAP supports thermostats, heaters,
+switches, sensors, lightbulbs, and dimmers today.</dd>
 
 <dt>Small enough to read</dt>
-<dd>Each module has a manual page or a POD sidecar, and the tests live
-beside the source in <code>t/</code>.</dd>
+<dd>Each module has a manual page or a POD sidecar, and the tests are
+adjacent to the source in <code>t/</code>.</dd>
 </dl>
 
-<h2>Getting started</h2>
+<h2>Quick start</h2>
 
 <pre><code>git clone https://github.com/dickolsson/openhap.git
 cd openhap
@@ -42,18 +44,18 @@ make deps
 doas make install
 </code></pre>
 
-<p>That leaves a daemon that still needs a user, a configuration file and a
-running MQTT broker.  <a href="install.html">Install</a> covers all of it, and
-<a href="manuals.html">Manuals</a> is the reference for the daemon, the control
-utility and the configuration format &mdash; plus
-<a href="manuals.html#modules">a page per module</a> for anyone reading the
-source.</p>
+<p>After these steps, the daemon also needs a user, a configuration file,
+and an MQTT broker.  <a href="install.html">Install</a> shows each step.
+<a href="manuals.html">Manuals</a> is the reference for the daemon, the
+control utility, and the configuration format.
+There is <a href="manuals.html#modules">a page for each module</a> for
+readers of the source.</p>
 
 <h2>Sub-projects</h2>
 
-<p>Two pieces grew out of OpenHAP and are documented separately, because
-neither is about HomeKit:
-<a href="fugulib.html">FuguLib</a>, the OpenBSD-style daemon utilities the
-server is built on, and <a href="fuguvm.html">FuguVM</a>, which installs and
-manages OpenBSD virtual machines under QEMU, and is used here to run the
+<p>Two parts of OpenHAP are sub-projects with their own documentation,
+because they are not related to HomeKit.
+<a href="fugulib.html">FuguLib</a> holds the OpenBSD-style daemon utilities
+that the server uses.  <a href="fuguvm.html">FuguVM</a> installs and manages
+OpenBSD virtual machines under QEMU; this project uses it to run the
 tests.</p>

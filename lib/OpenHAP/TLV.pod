@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::TLV - TLV8 encoding/decoding for HAP protocol
+OpenHAP::TLV - TLV8 encoder and decoder for the HAP protocol
 
 =head1 SYNOPSIS
 
@@ -17,23 +17,25 @@ OpenHAP::TLV - TLV8 encoding/decoding for HAP protocol
 
 =head1 DESCRIPTION
 
-This module implements TLV8 (Type-Length-Value with 8-bit fields) encoding
-and decoding as specified in the HomeKit Accessory Protocol.
+This module encodes and decodes TLV8 (Type-Length-Value with 8-bit
+fields). The HomeKit Accessory Protocol specifies this format.
 
 =head1 FUNCTIONS
 
 =head2 encode(%items)
 
-Encodes a hash of type => value pairs into TLV8 format.
-Values longer than 255 bytes are automatically split into chunks.
+This function encodes a hash of type => value pairs into the TLV8
+format. It automatically splits values that are longer than 255 bytes
+into chunks.
 
 =head2 decode($data)
 
-Decodes TLV8 data into a hash of type => value pairs.
-Automatically concatenates chunks with the same type.
+This function decodes TLV8 data into a hash of type => value pairs. It
+automatically concatenates the chunks that have the same type.
 
-Returns the empty list if the buffer is malformed: a truncated record
-header, or a length field pointing past the end of the buffer.
+The function returns the empty list if the buffer is malformed. A
+malformed buffer has a truncated record header, or it has a length
+field that points past the end of the buffer.
 
 =head1 SEE ALSO
 

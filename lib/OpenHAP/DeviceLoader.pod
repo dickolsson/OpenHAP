@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::DeviceLoader - Device configuration loading and instantiation
+OpenHAP::DeviceLoader - loader for the devices in the configuration
 
 =head1 SYNOPSIS
 
@@ -22,9 +22,9 @@ OpenHAP::DeviceLoader - Device configuration loading and instantiation
 
 =head1 DESCRIPTION
 
-Reads the device blocks from an L<OpenHAP::Config>, validates them,
-instantiates the matching device class, and registers each one with the
-HAP bridge.
+This module reads the device blocks from an L<OpenHAP::Config> and
+does a check of each block. It instantiates the device class that
+matches, and it registers each device with the HAP bridge.
 
 =head1 METHODS
 
@@ -32,66 +32,70 @@ HAP bridge.
 
     my $loader = OpenHAP::DeviceLoader->new()
 
-Create a new device loader instance. The loader maintains an internal
-counter for assigning Accessory IDs (AIDs), starting at 2 (AID 1 is
-reserved for the bridge itself).
+This method creates a new device loader instance. The loader keeps an
+internal counter that assigns the Accessory IDs (AIDs). The counter
+starts at 2, because AID 1 is reserved for the bridge itself.
 
 =head2 load_devices
 
     my $count = $loader->load_devices($config, $hap, $mqtt)
 
-Load all devices from the configuration and add them to the HAP bridge.
-Returns the number of successfully loaded devices.
+This method loads all devices from the configuration and adds them to
+the HAP bridge. It returns the number of devices that loaded
+correctly.
 
-The method:
+The method does these steps:
 
 =over 4
 
-=item * Retrieves device list from configuration
+=item * Gets the device list from the configuration
 
-=item * Validates each device configuration
+=item * Does a check of each device configuration
 
-=item * Instantiates appropriate device classes
+=item * Instantiates the applicable device classes
 
-=item * Subscribes devices to MQTT topics (if connected)
+=item * Subscribes the devices to MQTT topics (if MQTT is connected)
 
-=item * Registers devices with HAP bridge
+=item * Registers the devices with the HAP bridge
 
-=item * Logs progress and errors
+=item * Logs the progress and the errors
 
 =back
 
-Errors are logged but don't stop processing of remaining devices.
+The method logs errors, but an error does not stop the load of the
+other devices.
 
 =head2 get_devices
 
     my @devices = $loader->get_devices()
 
-Return a list of all successfully loaded device accessory objects.
+This method returns a list of all device accessory objects that
+loaded correctly.
 
-=head1 DEVICE VALIDATION
+=head1 DEVICE CHECKS
 
-Each device configuration must include:
+Each device configuration must have these fields:
 
 =over 4
 
-=item * B<name> - Human-readable device name
+=item * B<name> - The human-readable name of the device
 
-=item * B<type> - Device type (e.g., 'tasmota')
+=item * B<type> - The device type (for example, 'tasmota')
 
-=item * B<subtype> - Device subtype (e.g., 'thermostat')
+=item * B<subtype> - The device subtype (for example, 'thermostat')
 
-=item * B<topic> - MQTT topic for communication
+=item * B<topic> - The MQTT topic for communication
 
-=item * B<id> - Unique identifier (defaults to topic if not specified)
+=item * B<id> - The unique identifier. The default value is the topic.
 
 =back
 
-Devices missing required fields are skipped with appropriate error logging.
+The loader skips a device that does not have all the necessary
+fields. It logs an error for that device.
 
 =head1 SUPPORTED DEVICES
 
-The only device type is C<tasmota>, with these subtypes:
+The only device type is C<tasmota>. These are its subtypes:
 
 =over 4
 
@@ -108,9 +112,9 @@ L<OpenHAP::Tasmota::Lightbulb>
 
 =head1 ERROR HANDLING
 
-Device instantiation and MQTT subscription run inside C<eval>, so one
-misconfigured device is logged and skipped rather than stopping the
-daemon from starting.
+The device instantiation and the MQTT subscription run inside
+C<eval>. Thus one misconfigured device does not stop the start of the
+daemon. The loader logs that device and skips it.
 
 =head1 SEE ALSO
 

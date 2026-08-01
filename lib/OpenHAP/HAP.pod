@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::HAP - Main HAP server
+OpenHAP::HAP - main HAP server
 
 =head1 SYNOPSIS
 
@@ -17,16 +17,17 @@ OpenHAP::HAP - Main HAP server
 
 =head1 DESCRIPTION
 
-This module implements the main HAP server with HTTP endpoints,
-pairing, and accessory management.
+This module is the main HAP server. The server has the HTTP
+endpoints, the pairing operations, and the accessory management.
 
-Characteristic changes - whether written over HTTP or reported by a
-device - are delivered to subscribed connections as EVENT/1.0
-notifications, coalesced over a 250 ms window except for the
-immediate-delivery characteristic types (see F<spec/HAP-HTTP.md>
-section 14). The connection whose request caused a change never
-receives an event for its own write, and a connection's subscriptions
-end when it closes.
+The server sends characteristic changes to subscribed connections as
+EVENT/1.0 notifications. A change can come from a write over HTTP or
+from a device report. The server coalesces the events over a 250 ms
+window. The characteristic types for immediate delivery are the
+exception (see F<spec/HAP-HTTP.md> section 14). The connection that
+caused a change with its request never gets an event for its own
+write. The subscriptions of a connection end when the connection
+closes.
 
 =head1 SEE ALSO
 

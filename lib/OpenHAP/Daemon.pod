@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Daemon - Daemonization and process management
+OpenHAP::Daemon - daemonization and process management
 
 =head1 SYNOPSIS
 
@@ -20,11 +20,11 @@ OpenHAP::Daemon - Daemonization and process management
 
 =head1 DESCRIPTION
 
-C<daemonize>, C<write_pidfile>, C<read_pidfile> and C<check_running> are
-a compatibility shim over L<FuguLib::Daemon> and L<FuguLib::State>,
-which document the behaviour; new code should call those directly.
-C<unveil_paths> is the part that belongs here, since the path list it
-assembles is specific to openhapd.
+C<daemonize>, C<write_pidfile>, C<read_pidfile>, and C<check_running>
+are a compatibility shim over L<FuguLib::Daemon> and
+L<FuguLib::State>. Those two modules document the behaviour. New code
+must call those modules directly. C<unveil_paths> belongs here
+because the path list that it assembles applies only to openhapd.
 
 =head1 CLASS METHODS
 
@@ -32,35 +32,38 @@ assembles is specific to openhapd.
 
     $class->daemonize($logfile)
 
-Fork into background, detach from terminal, and redirect standard file
-descriptors. The parent process exits successfully, and only the child
-continues. Standard input is redirected to /dev/null, stdout and stderr
-are redirected to the specified log file.
+This method forks the process into the background, detaches it from
+the terminal, and redirects the standard file descriptors. The parent
+process exits successfully, and only the child continues. The method
+redirects standard input to /dev/null. It redirects stdout and stderr
+to the log file C<$logfile>.
 
-Dies if forking or session creation fails.
+The method dies if the fork fails or if the session creation fails.
 
 =head2 write_pidfile
 
     $class->write_pidfile($path)
 
-Write the current process ID to the specified file. Returns true on
-success, undef on failure. Errors are logged.
+This method writes the current process ID to the file C<$path>. It
+returns true on success and undef on failure. It logs errors.
 
 =head2 read_pidfile
 
     my $pid = $class->read_pidfile($path)
 
-Read a PID from the specified file. Returns the PID as an integer, or
-undef if the file doesn't exist, cannot be read, or doesn't contain a
-valid PID.
+This method reads a PID from the file C<$path>. It returns the PID as
+an integer. If the file does not exist, the method returns undef. It
+also returns undef if it cannot read the file or if the file does not
+hold a valid PID.
 
 =head2 check_running
 
     my $pid = $class->check_running($pidfile)
 
-Check if a daemon is running based on its PID file. Returns the PID if
-the process exists, undef otherwise. This method reads the PID file and
-verifies the process is still running using kill(0).
+This method uses the PID file to report if a daemon runs. It returns
+the PID if the process exists. If not, it returns undef. The method
+reads the PID file. Then it uses kill(0) to make sure that the
+process runs.
 
 =head2 unveil_paths
 
@@ -70,20 +73,51 @@ verifies the process is still running using kill(0).
         script_lib  => "$RealBin/../lib",
     );
 
-Assemble the daemon's unveil(2) inventory: an ordered list of
-C<[$path, $perms]> pairs for L<FuguLib::Sandbox>, each required or
-marked C<< { optional => 1 } >>. Required paths (the state directory,
-F</dev/urandom>, the perl library directories) are a broken install
-when absent; optional paths (the configuration file, the daemon log,
-the mdnsd control socket, the resolver files) are legitimately absent
-on a working system and must never prevent startup.
+This method assembles the unveil(2) inventory of the daemon. The
+inventory is an ordered list of C<[$path, $perms]> pairs for
+L<FuguLib::Sandbox>. Each pair is necessary, or it has the mark
+C<< { optional => 1 } >>.
 
-The library directories are enumerated from C<%Config>, never derived
-from live C<@INC>; C<script_lib> is included read-only only when it
-contains an F<OpenHAP/> directory, so an installed layout never
-unveils F</usr/local/lib>. Pure assembly - nothing here changes the
-filesystem view - so it is unit-testable anywhere. C<perl_dirs>
-overrides the enumerated directories for tests.
+These are the necessary paths:
+
+=over 4
+
+=item * the state directory
+
+=item * F</dev/urandom>
+
+=item * the perl library directories
+
+=back
+
+If one of these paths is absent, the installation is broken.
+
+These are the optional paths:
+
+=over 4
+
+=item * the configuration file
+
+=item * the daemon log
+
+=item * the mdnsd control socket
+
+=item * the resolver files
+
+=back
+
+These paths can be absent on a correct system. Their absence must
+never prevent the startup.
+
+The method gets the library directories from C<%Config>. It does not
+get them from the live C<@INC>. The method includes C<script_lib>
+read-only, and only when that directory holds an F<OpenHAP/>
+directory. Thus an installed layout never unveils F</usr/local/lib>.
+
+The method only assembles data. It does not change the filesystem
+view. Thus unit tests for this method can run on all platforms. In
+tests, the C<perl_dirs> parameter replaces the directories from
+C<%Config>.
 
 =head1 SEE ALSO
 

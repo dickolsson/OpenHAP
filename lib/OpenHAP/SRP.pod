@@ -19,13 +19,14 @@ OpenHAP::SRP - SRP-6a implementation for HAP pairing
 
 =head1 DESCRIPTION
 
-The server (accessory) role of the SRP-6a exchange used by HAP
-pair-setup. The group parameters come from L<OpenHAP::Crypto>, the
-modular arithmetic from L<Math::BigInt> (with the GMP backend when it is
-installed, which matters: the pure-Perl backend takes seconds per
-exponentiation at 3072 bits).
+This module implements the server (accessory) role of the SRP-6a
+exchange that HAP pair-setup uses. The group parameters come from
+L<OpenHAP::Crypto>. The modular arithmetic comes from L<Math::BigInt>.
+L<Math::BigInt> uses the GMP backend when that backend is installed.
+This is important: the pure-Perl backend takes seconds for each
+exponentiation at 3072 bits.
 
-L<OpenHAP::Test::Controller::SRP> is the client side, for tests.
+For tests, L<OpenHAP::Test::Controller::SRP> supplies the client side.
 
 =head1 SEE ALSO
 

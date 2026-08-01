@@ -18,8 +18,8 @@ OpenHAP::Pairing - HAP pairing protocol implementation
 
 =head1 DESCRIPTION
 
-This module implements the HAP pairing protocol including pair-setup
-(SRP) and pair-verify (X25519) flows.
+This module implements the HAP pairing protocol. The protocol has the
+pair-setup (SRP) flow and the pair-verify (X25519) flow.
 
 =head1 SEE ALSO
 

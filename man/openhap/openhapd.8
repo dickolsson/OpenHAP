@@ -27,18 +27,18 @@
 .Sh DESCRIPTION
 The
 .Nm
-daemon speaks the HomeKit Accessory Protocol (HAP)
+daemon uses the HomeKit Accessory Protocol (HAP)
 so that Apple HomeKit can control MQTT-connected Tasmota devices
 on
 .Ox .
 .Pp
 .Nm
-acts as a bridge between HomeKit controllers (such as the iOS Home app)
-and devices controlled via MQTT,
-translating HAP requests into MQTT commands and publishing device state
-changes back to HomeKit.
+is a bridge between HomeKit controllers, for example, the iOS Home app,
+and devices that MQTT controls.
+It changes HAP requests into MQTT commands.
+It sends changes of the device state back to HomeKit.
 .Pp
-Pairing and transport security follow the HAP specification:
+Pairing and transport security obey the HAP specification:
 .Bl -bullet -compact
 .It
 Pair-setup with SRP-6a (Secure Remote Password)
@@ -54,126 +54,138 @@ Session encryption with ChaCha20-Poly1305 AEAD
 Service advertisement over mDNS
 .El
 .Pp
-The service is advertised over mDNS by talking to
-.Xr mdnsd 8
-directly on its control socket,
+.Nm
+advertises the service over mDNS.
+To do this, it connects directly to the control socket of
+.Xr mdnsd 8 ,
 .Pa /var/run/mdnsd.sock .
 .Nm
-holds that socket open for its lifetime and spawns no helper process;
-closing it on shutdown is what withdraws the advertisement.
-.Xr mdnsd 8
-must be running when
+keeps the socket open for its full lifetime and spawns no helper
+process.
+When
 .Nm
-starts for the accessory to be discoverable.
-Without it the daemon still starts and serves paired controllers,
-logging a warning;
-discovery remains unavailable until
-.Nm
-is restarted with
+stops, it closes the socket, and this removes the advertisement.
+.Pp
 .Xr mdnsd 8
-running.
+must run when
+.Nm
+starts.
+If it is not, HomeKit controllers cannot find the accessory.
+In that condition, the daemon starts, writes a warning to the log,
+and serves the paired controllers.
+Discovery is not available until you restart
+.Nm
+while
+.Xr mdnsd 8
+runs.
 .Pp
 On
 .Ox ,
-once the daemon has dropped privileges and advertised itself,
-it restricts its own syscall surface with
+the daemon drops privileges and advertises itself.
+Then it restricts its own syscall surface with
 .Xr pledge 2
 to
 .Dq stdio rpath wpath cpath fattr flock inet dns unix
-before handling any network input;
-the
+before it receives any network input.
+The
 .Dq proc ,
 .Dq exec
 and
 .Dq prot_exec
-promises are deliberately absent.
-.Ox
-is the only platform where this is enforced;
-on other systems the daemon runs unrestricted.
+promises are absent by design.
+These restrictions are in effect only on
+.Ox .
+On other systems, the daemon runs without restrictions.
 .Pp
-The options are as follows:
+The options are:
 .Bl -tag -width Ds
 .It Fl c Ar file
-Specify the configuration file.
+Read the configuration from
+.Ar file .
 The default is
 .Pa /etc/openhapd.conf .
 .It Fl f
 Run in the foreground.
 By default,
 .Nm
-will daemonize and log to
+daemonizes and logs to
 .Xr syslog 3 .
 With this option,
 .Nm
 stays in the foreground and logs to
 .Em stderr .
 .It Fl n
-Check the configuration file for syntax errors and exit.
-No daemon is started.
+Do a check of the configuration file for syntax errors and exit.
+No daemon starts.
 .It Fl v
-Increase verbosity.
-Can be specified multiple times for more detailed logging.
+Increase the log verbosity.
+You can give this option more than one time.
 Each use increases the log level:
 .Fl v
-enables debug logging,
+gives the debug messages, and
 .Fl vv
-adds trace information.
+adds trace messages.
 .El
 .Sh FILES
 .Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
 .It Pa /etc/openhapd.conf
-Default configuration file.
+The default configuration file.
 .It Pa /var/db/openhapd/
-State directory containing pairing database and cryptographic keys.
+The state directory that holds the pairing database and the
+cryptographic keys.
 .It Pa /var/db/openhapd/pairings
-Database of paired HomeKit controllers.
+The database of paired HomeKit controllers.
 .It Pa /var/db/openhapd/ltsk
-Long-term secret key (Ed25519 private key).
+The long-term secret key (Ed25519 private key).
 .It Pa /var/db/openhapd/ltpk
-Long-term public key (Ed25519 public key).
+The long-term public key (Ed25519 public key).
 .It Pa /var/run/openhapd.pid
-Process ID file.
+The process ID file.
 .El
 .Pp
 On
-.Ox
-the running daemon locks its filesystem view down with
-.Xr unveil 2
-and can read
+.Ox ,
+the daemon restricts its filesystem view with
+.Xr unveil 2 .
+It can read
 .Em nothing
-outside the list below \(em an operator wondering why
+outside of the list that follows.
+If
 .Nm
-cannot see a file should look here first.
-Paths marked optional may be absent without preventing startup;
-a missing required path is a fatal configuration error.
+cannot see a file, examine this list first.
+If an optional path is absent, the daemon starts.
+If a necessary path is absent, this is a fatal configuration error.
 .Bl -tag -width "/var/run/mdnsd.sockXX" -compact
 .It Pa db_path
-(required, read-write-create) the state directory above.
+(necessary, read-write-create) the state directory above.
 .It Pa /dev/urandom
-(required, read) randomness for all key material.
+(necessary, read) randomness for all key material.
 .It perl library directories
-(required, read) the interpreter's library tree, for the one lazily
-loaded module on the MQTT reconnect path.
-.It Pa config file
-(optional, read) the file named with
-.Fl c .
+(necessary, read) the library tree of the interpreter, for the one
+module that the daemon loads late, on the MQTT reconnect path.
+.It Pa configuration file
+(optional, read) the file that the
+.Fl c
+option names.
 .It Pa /var/log/openhapd.log
-(optional, write) the daemon-mode log; never created in
+(optional, write) the daemon-mode log; the daemon never creates this
+file in
 .Fl f
 mode.
 .It Pa /var/run/mdnsd.sock
-(optional, read-write) re-advertising after a pairing change
-reconnects to
-.Xr mdnsd 8 .
+(optional, read-write) after a pairing change, the daemon makes a new
+connection to
+.Xr mdnsd 8
+to advertise again.
 .It Pa /etc/resolv.conf , Pa /etc/hosts , Pa /etc/services , Pa /etc/protocols
-(optional, read) the resolver files, used when
+(optional, read) the resolver files; the daemon uses them when
 .Cm mqtt_host
-is a name rather than an address.
+is a name and not an address.
 .It Pa /etc/localtime
 (optional, read) timestamps.
 .El
 .Sh EXAMPLES
-Check the configuration file:
+Do a check of the configuration file:
 .Bd -literal -offset indent
 # openhapd -n
 .Ed
@@ -183,7 +195,7 @@ Run in the foreground with verbose logging:
 # openhapd -f -v
 .Ed
 .Pp
-Typical daemon startup via
+Start the daemon the usual way, through
 .Xr rc 8 :
 .Bd -literal -offset indent
 # rcctl enable openhapd
@@ -193,31 +205,31 @@ Typical daemon startup via
 .Nm
 logs to
 .Xr syslog 3
-using the
+with the
 .Dq daemon
 facility.
-When run in the foreground with
+When the daemon runs in the foreground with
 .Fl f ,
-messages are written to
+it writes the messages to
 .Em stderr .
 .Pp
-Log messages include:
+These are some of the log messages:
 .Bl -tag -width "Not pairedXX"
 .It Dq Starting OpenHAP server
-Daemon started successfully and listening for connections.
+The daemon started correctly and now listens for connections.
 .It Dq Not paired - use Home app with PIN: XXX-XX-XXX
-The accessory is not paired with any HomeKit controller.
-Use the displayed PIN to pair via the iOS Home app.
+The accessory is not paired with a HomeKit controller.
+Use the PIN from the message to pair through the iOS Home app.
 .It Dq Connected to MQTT broker at host:port
-Successfully connected to the MQTT broker.
+The daemon connected to the MQTT broker.
 .It Dq MQTT broker not available, will retry in background
-Could not connect to MQTT broker on startup.
+The daemon did not connect to the MQTT broker at startup.
 .Nm
-will continue attempting to connect.
+continues to try to connect in the background.
 .It Dq Paired with controller: identifier
-A new HomeKit controller successfully completed pairing.
+The pairing with a new HomeKit controller was successful.
 .It Dq Secure session established
-An encrypted session was successfully negotiated with a paired controller.
+The daemon started an encrypted session with a paired controller.
 .El
 .Sh SEE ALSO
 .Xr syslog 3 ,
@@ -231,8 +243,9 @@ HomeKit Accessory Protocol Specification (Non-Commercial Version):
 .Lk https://developer.apple.com/homekit/
 .Sh STANDARDS
 .Nm
-follows the HomeKit Accessory Protocol Specification R2 for IP accessories.
-The cryptography it uses is specified in:
+obeys the HomeKit Accessory Protocol Specification R2 for IP
+accessories.
+These documents specify the cryptography that it uses:
 .Bl -bullet -compact
 .It
 RFC 5054: Using the Secure Remote Password (SRP) Protocol for TLS Authentication
@@ -248,74 +261,79 @@ RFC 7748: Elliptic Curves for Security (Curve25519)
 .Sh HISTORY
 The
 .Nm
-daemon first appeared in 2025.
+daemon was first available in 2025.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
+For correct operation,
 .Nm
-requires a working MQTT broker (such as
-.Xr mosquitto 8 )
-and a running
-.Xr mdnsd 8
-to function properly.
-Without either, the daemon starts and serves what it can:
-MQTT reconnects in the background,
-while mDNS discovery stays unavailable until the daemon is restarted.
+needs an MQTT broker, for example,
+.Xr mosquitto 8 ,
+and
+.Xr mdnsd 8 .
+Both must run.
+If one of them is not available, the daemon starts and does what it
+can.
+The daemon tries the MQTT connection again in the background.
+The mDNS discovery is not available until you restart the daemon.
 .Pp
-The HAP PIN code is logged on first startup when the accessory is unpaired.
-Protect access to system logs accordingly.
+At the first startup, if the accessory is not paired, the daemon
+writes the HAP PIN code to the log.
+Thus, limit the access to the system logs.
 .Pp
-Pairing data stored in
+The pairing data in
 .Pa /var/db/openhapd/
-contains cryptographic keys.
-The directory should be owned by
-.Dq _openhap
-with mode 0700.
+holds cryptographic keys.
+The owner of the directory must be
+.Dq _openhap ,
+and the mode must be 0700.
 .Sh BUGS
 .Nm
-only supports Tasmota devices over MQTT.
-HAP over Bluetooth Low Energy is not implemented.
+operates only with Tasmota devices over MQTT.
+It does not implement HAP over Bluetooth Low Energy.
 .Sh SECURITY CONSIDERATIONS
 .Nm
-starts as root to fix the ownership of
-.Pa /var/db/openhapd ,
-drops to the
+starts as root to set the correct ownership of
+.Pa /var/db/openhapd .
+Then it drops to the
 .Dq _openhap
-user,
-publishes its mDNS advertisement,
-and only then restricts itself \(em first the filesystem view with
+user and publishes its mDNS advertisement.
+Then it restricts itself:
+first the filesystem view with
 .Xr unveil 2 ,
-then the syscall surface with
-.Xr pledge 2
-\(em before accepting any network connection.
-Applying the restrictions after the privilege drop means they confine
-everything that ever handles untrusted input;
-they do not, and cannot, confine the brief root phase, which handles
-none.
+and then the syscall surface with
+.Xr pledge 2 .
+The daemon accepts network connections only after these steps.
+.Pp
+Because the restrictions come after the privilege drop, they apply to
+all code that receives untrusted input.
+They do not, and cannot, apply to the short root phase.
+But that phase receives no untrusted input.
 .Pp
 The promise set is
 .Dq stdio rpath wpath cpath fattr flock inet dns unix :
 .Bl -tag -width "wpath cpathXX" -compact
 .It Cm stdio
-always required.
+always necessary.
 .It Cm rpath
 .Pa /dev/urandom ,
-state reads, and the lazily loaded MQTT module.
+state reads, and the MQTT module that the daemon loads late.
 .It Cm wpath , cpath
-writing, creating and removing state files, and the daemon log.
+to write, create, and remove the state files and the daemon log.
 .It Cm fattr
-key material is chmodded to 0600.
+the daemon sets the mode of the key material to 0600.
 .It Cm flock
-state files are lock-protected.
+locks protect the state files.
 .It Cm inet
-the HAP listener and MQTT connections.
+the HAP listener and the MQTT connections.
 .It Cm dns
-resolving
+to resolve
 .Cm mqtt_host
 when it is a name.
 .It Cm unix
-re-advertising after a pairing change reconnects to
-.Xr mdnsd 8 .
+after a pairing change, the daemon makes a new connection to
+.Xr mdnsd 8
+to advertise again.
 .El
 .Pp
 The
@@ -323,39 +341,43 @@ The
 .Cm exec
 and
 .Cm prot_exec
-promises are deliberately absent:
+promises are absent by design:
 the daemon spawns no processes and loads no shared objects after
 startup.
-The unveiled paths and their dispositions are listed in
-.Sx FILES .
+The section
+.Sx FILES
+lists the unveiled paths and the access type of each path.
 .Pp
 The
 .Xr mdnsd 8
-control socket is created root:wheel with mode 0660,
-so the
+control socket has owner root:wheel and mode 0660.
+Thus, the
 .Dq _openhap
-user must be able to open it read-write;
-the standard setup arranges this through wheel group membership.
+user must have read-write access to the socket.
+In the standard setup, the
+.Dq _openhap
+user is a member of the wheel group, and this gives the access.
 .Pp
-Enforcement is
-.Ox No only .
-Linux and Darwin are development platforms where both mechanisms are
-no-ops;
-a deployment there runs unrestricted, whatever the rest of this page
-says.
+The restrictions are in effect only on
+.Ox .
+Linux and Darwin are development platforms, and there the two
+mechanisms do nothing.
+On these platforms, the daemon runs without restrictions.
 .Pp
-A pledge violation kills the daemon immediately with
-.Dv SIGABRT ,
-and the kernel logs a line to
+A pledge violation stops the daemon immediately with
+.Dv SIGABRT .
+The kernel then writes a line to
 .Xr dmesg 8
 and
-.Pa /var/log/messages
-naming the process and the forbidden syscall \(em if
+.Pa /var/log/messages .
+This line names the process and the syscall that is not permitted.
+If
 .Nm
-dies unexpectedly, look there before anywhere else.
-A path outside the unveiled view does not kill anything;
-the affected operation fails with
+stops and you do not know why, examine these logs first.
+.Pp
+A path outside of the unveiled view does not stop the daemon.
+The operation on that path fails with
 .Er ENOENT
 or
-.Er EACCES ,
-typically surfacing as a warning in the daemon log.
+.Er EACCES .
+Usually, the daemon log then shows a warning.

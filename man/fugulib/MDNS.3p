@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::MDNS
-.Nd publish mDNS services through mdnsd
+.Nd mDNS service publication through mdnsd
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::MDNS;
@@ -44,23 +44,26 @@ $mdns->withdraw;
 .Sh DESCRIPTION
 .Nm
 publishes services with
-.Xr mdnsd 8
-by speaking its control protocol natively over
+.Xr mdnsd 8 .
+The module uses the mdnsd control protocol directly over
 .Pa /var/run/mdnsd.sock ,
-with no
+and it starts no
 .Xr mdnsctl 8
 child process.
-The connection is the advertisement's lifetime:
-mdnsd withdraws the service when the socket closes, so a daemon keeps
-the object alive for as long as it wants to be discoverable, and
-withdrawing is nothing more than closing.
+The connection is the lifetime of the advertisement.
+mdnsd withdraws the service when the socket closes.
+Thus a daemon keeps the object alive for as long as the daemon must
+be discoverable.
+To withdraw the advertisement, the daemon only closes the socket.
 .Pp
-The wire protocol \(em message types, payload layouts, the group state
-machine and its timing \(em is specified in
+The document
 .Pa spec/MDNS-Control.md
-in the OpenHAP source tree.
-The module never logs;
-every method returns an outcome and records the most recent failure for
+in the OpenHAP source tree specifies the wire protocol.
+This specification has the message types, the payload layouts, the
+group state machine, and its timing.
+The module never logs.
+Every method returns an outcome and records the most recent failure
+for
 .Fn error .
 .Ss new
 .Fn new "socket_path => $path" "timeout => $seconds"
@@ -69,16 +72,19 @@ creates a handle.
 defaults to
 .Pa /var/run/mdnsd.sock .
 .Fa timeout
-bounds how long the publish methods wait for mdnsd's replies and
-defaults to 10 seconds;
-a healthy mdnsd confirms publication after roughly four.
+sets the maximum time that the publish methods wait for the replies
+from mdnsd.
+The default is 10 seconds.
+A healthy mdnsd confirms publication after approximately four seconds.
 .Ss connect
 .Fn connect
 connects to the control socket.
-Returns 1, or
+The method returns 1 on success.
+It returns
 .Dv undef
-when the socket is missing or unreachable \(em mdnsd not running is a
-normal condition, and the caller decides whether it matters.
+when the socket is absent or unreachable.
+When mdnsd does not run, this is a normal condition.
+The caller decides if this condition is important.
 .Ss publish_service
 .Fo publish_service
 .Fa "name => $instance"
@@ -90,51 +96,59 @@ normal condition, and the caller decides whether it matters.
 .Fc
 advertises one service and waits for mdnsd to confirm publication.
 .Fa name
-is the service instance name;
-mdnsd also uses it as the publish group name, so the two cannot
-disagree.
+is the service instance name.
+mdnsd also uses this name as the publish group name.
+Thus the two names cannot be different.
 .Fa app
-is the application protocol without a leading underscore
-.Pq Dq hap , not Dq _hap ;
+is the application protocol with no underscore at the start
+.Pq Dq hap , not Dq _hap .
 .Fa proto
 must be
 .Dq tcp
 or
 .Dq udp .
 .Fa txt
-is the already-formatted TXT string:
-key=value pairs joined with
-.Ql \&. ,
-which is the delimiter
+is the TXT string in its final format:
+key=value pairs with the
+.Ql \&.
+character between them.
 .Xr mdnsd 8
-splits on with no escaping.
-The module does not know or care what the keys mean.
+splits the string on this delimiter, with no escape mechanism.
+The meaning of the keys is not important to the module.
 .Pp
-Returns 1 once the service is published.
-Returns
+The method returns 1 after mdnsd publishes the service.
+The method returns
 .Dv undef
-on over-length input (an error, never a silent truncation), on a
-missing connection, on an error reply such as a name collision, on
-end-of-file, or on timeout.
+on input that is too long.
+This is an error, never a silent truncation.
+The method also returns
+.Dv undef
+on an absent connection, on an error reply (for example, a name
+collision),
+on an end-of-file, or on a timeout.
 .Ss update_txt
 .Fn update_txt "txt => $string" "timeout => $seconds"
 replaces the TXT record.
-mdnsd cannot replace records on a held connection, so this withdraws
-the advertisement and republishes over a fresh connection, reusing the
-parameters given to
+mdnsd cannot replace records on a held connection.
+Thus the method withdraws the advertisement and publishes it again
+over a fresh connection.
+The method uses the same parameters that the caller gave to
 .Fn publish_service .
-While unpublished it is a successful no-op.
+When the service is not published, the method does nothing and
+returns success.
 .Ss withdraw
 .Fn withdraw
-closes the control socket, which withdraws the advertisement.
-Always returns 1.
+closes the control socket.
+This closure withdraws the advertisement.
+The method always returns 1.
 .Ss is_published
 .Fn is_published
-returns true while the service is advertised on a held connection.
+returns true while the module advertises the service on a held
+connection.
 .Ss error
 .Fn error
-returns the most recent failure as a short string, for the caller to
-log.
+returns the most recent failure as a short string.
+The caller can log this string.
 .Sh SEE ALSO
 .Xr FuguLib::Imsg 3p ,
 .Xr mdnsd 8

@@ -14,15 +14,15 @@ OpenHAP::Bridge - HAP bridge accessory
 
 =head1 DESCRIPTION
 
-This module represents a HAP bridge that can contain multiple
-bridged accessories. The bridge accessory carries the mandatory
-AccessoryInformation and ProtocolInformation services; bridged
-accessories carry only AccessoryInformation.
+This module supplies the HAP bridge. The bridge can hold many bridged
+accessories. The bridge accessory holds the necessary
+AccessoryInformation and ProtocolInformation services. Bridged
+accessories hold only the AccessoryInformation service.
 
-Change notifications from bridged accessories are forwarded to the
-bridge's own event callbacks with the originating accessory's aid
-preserved, so the server can deliver EVENT/1.0 notifications for
-device-side changes.
+The bridge forwards change notifications from bridged accessories to
+its own event callbacks. Each notification keeps the aid of the
+source accessory. Thus the server can send EVENT/1.0 notifications
+for changes on the device side.
 
 =head1 SEE ALSO
 

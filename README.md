@@ -2,42 +2,43 @@
 
 **HomeKit Accessory Protocol for OpenBSD**
 
-OpenHAP bridges MQTT-connected Tasmota devices to Apple HomeKit, enabling
-control via the iOS Home app.
+OpenHAP connects MQTT-connected Tasmota devices to Apple HomeKit. You can
+control the devices with the iOS Home app.
 
 Website and manuals: <https://www.openhap.org/>
 
 ## Features
 
-- Pairs with the iOS Home app over HAP, and keeps the session encrypted
-- Tasmota thermostats, heaters, switches, sensors, lightbulbs and dimmers,
-  declared in `openhapd.conf(5)`
-- MQTT for device control and state
-- Runs as `_openhap` from `rc.d`, under pledge(2) and unveil(2)
+- OpenHAP pairs with the iOS Home app through HAP and encrypts the session
+- You declare Tasmota thermostats, heaters, switches, sensors, lightbulbs, and
+  dimmers in `openhapd.conf(5)`
+- OpenHAP uses MQTT to control the devices and to read their state
+- The daemon runs as the `_openhap` user from `rc.d`, under pledge(2) and
+  unveil(2)
 
 ## Quick Start
 
 ```sh
 make deps
-make install
-cp /etc/examples/openhapd.conf /etc/openhapd.conf
-vi /etc/openhapd.conf
-rcctl enable mosquitto openhapd
-rcctl start mosquitto openhapd
+doas make install
+doas cp /etc/examples/openhapd.conf /etc/openhapd.conf
+doas vi /etc/openhapd.conf
+doas rcctl enable mosquitto mdnsd openhapd
+doas rcctl start mosquitto mdnsd openhapd
 ```
 
-See [INSTALL.md](INSTALL.md) for complete installation instructions.
+See [INSTALL.md](INSTALL.md) for the complete installation instructions.
 
 ## Documentation
 
-- `openhapd(8)` - Daemon and command-line options
-- `openhapd.conf(5)` - Configuration file format
-- `hapctl(8)` - Control utility
+- `openhapd(8)` - the daemon and its command-line options
+- `openhapd.conf(5)` - the configuration file format
+- `hapctl(8)` - the control utility
 
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for development commands, coding style, and
-conventions.
+See [CLAUDE.md](CLAUDE.md) for the development commands, the coding style, and
+the conventions.
 
 ## Architecture
 

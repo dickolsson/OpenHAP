@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Crypto - crypto primitives for HAP, wrapping CPAN modules
+OpenHAP::Crypto - crypto primitives for HAP, wrappers over CPAN modules
 
 =head1 SYNOPSIS
 
@@ -23,9 +23,10 @@ OpenHAP::Crypto - crypto primitives for HAP, wrapping CPAN modules
 
 =head1 DESCRIPTION
 
-Thin wrappers over the CPAN modules that do the actual work, giving
-callers one argument order and one place to look for which module
-provides what:
+This module holds thin wrappers over the CPAN modules that do the
+work. The wrappers give the callers one argument order. They also
+give one place that shows which module supplies each function. These
+are the modules:
 
 =over 4
 
@@ -39,9 +40,10 @@ provides what:
 
 =back
 
-The module also holds the SRP-6a group parameters from
-F<spec/HAP-Pairing.md> (the RFC 5054 3072-bit group, C<g> = 5) for
-L<OpenHAP::SRP>, and reads random bytes from F</dev/urandom>.
+The module also holds the SRP-6a group parameters for L<OpenHAP::SRP>.
+These parameters come from F<spec/HAP-Pairing.md> (the RFC 5054
+3072-bit group, C<g> = 5). The module reads random bytes from
+F</dev/urandom>.
 
 =head1 SEE ALSO
 

@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::Daemon
-.Nd detach a Perl program from its controlling terminal
+.Nd daemonization for Perl programs
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::Daemon;
@@ -31,52 +31,52 @@ FuguLib::Daemon->daemonize(
 .Ed
 .Sh DESCRIPTION
 .Nm
-turns the running program into a daemon:
-it forks,
-the parent exits,
-and the child becomes a session leader with its standard descriptors
-redirected away from the terminal.
+turns the program into a daemon.
+The program forks, and the parent exits.
+The child becomes a session leader and redirects its standard
+descriptors away from the terminal.
 .Pp
-The module keeps no state and has a single class method.
+The module keeps no state and has one class method.
 .Ss daemonize
 .Fn daemonize "%args"
 forks into the background and detaches from the controlling terminal.
 .Pp
 The parent calls
 .Fa on_fork
-if one was given,
-then exits with status 0;
+if the caller gave one, and then exits with status 0.
+Thus
 .Fn daemonize
-therefore returns only in the child.
+returns only in the child.
 The child calls
-.Xr setsid 2 ,
-reopens standard input from
-.Pa /dev/null ,
-appends standard output to
-.Fa logfile ,
+.Xr setsid 2
+and reopens standard input from
+.Pa /dev/null .
+The child then appends standard output to
+.Fa logfile
 and duplicates standard output onto standard error.
 .Pp
-The arguments are as follows:
+These are the arguments:
 .Bl -tag -width "logfileXX"
 .It Fa logfile
-Path for standard output and standard error.
+The path for standard output and standard error.
 The default is
-.Pa /dev/null ,
-which is what a daemon logging through
+.Pa /dev/null .
+This default is correct for a daemon that logs through
 .Xr FuguLib::Log 3p
-in syslog mode wants.
-The file is opened for appending.
+in syslog mode.
+The module opens the file in append mode.
 .It Fa on_fork
-Code reference called in the parent with the child's process ID before
-the parent exits.
-This is where a PID file is written,
-because only the parent knows the child's process ID at that point.
+A code reference that the parent calls with the child's process ID
+before the parent exits.
+Write the PID file in this code reference.
+Only the parent knows the child's process ID at that point.
 .El
 .Sh RETURN VALUES
 .Fn daemonize
 returns nothing in the child and never returns in the parent.
 .Sh EXAMPLES
-Daemonize, writing a PID file from the parent and logging through syslog:
+This example daemonizes the program, writes a PID file from the
+parent, and logs through syslog:
 .Bd -literal -offset indent
 my $log = FuguLib::Log->new(mode => 'syslog', ident => 'mydaemon');
 my $state = FuguLib::State->new('/var/run/mydaemon.pid');
@@ -89,12 +89,11 @@ $log->info('started, pid %d', $$);
 .Ed
 .Sh ERRORS
 .Fn daemonize
-dies rather than returning if the fork fails,
-if
+dies and does not return if the fork fails, if
 .Xr setsid 2
-fails,
-or if any of the three standard descriptors cannot be redirected.
-These are start-up conditions a daemon cannot recover from.
+fails, or if the module cannot redirect one of the three standard
+descriptors.
+A daemon cannot recover from these startup conditions.
 .Sh SEE ALSO
 .Xr setsid 2 ,
 .Xr daemon 3 ,
@@ -107,12 +106,12 @@ These are start-up conditions a daemon cannot recover from.
 .Sh CAVEATS
 Call
 .Fn daemonize
-before opening files or sockets that the daemon expects to keep:
-the standard descriptors are redirected in the child,
-but anything already open is inherited as it is.
+before you open files or sockets that the daemon must keep.
+The child redirects the standard descriptors, but it inherits
+everything that is already open with no change.
 .Pp
 The parent exits with status 0 even if
 .Fa on_fork
 fails.
-A caller that must know whether the PID file was written has to check
-for it separately.
+To make sure that the PID file exists, the caller must do a separate
+check.

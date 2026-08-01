@@ -40,85 +40,91 @@ wraps
 .Xr pledge 2
 and
 .Xr unveil 2
-so that callers never test the operating system themselves:
-on
-.Ox
-the restrictions are real,
-everywhere else every method is a no-op returning success,
-and
+so that callers do not test the operating system themselves.
+On
+.Ox ,
+the restrictions are real.
+On all other platforms, each method is a no-op that returns success.
 .Fn is_supported
-tells a caller or a test which of the two it got.
+tells a caller or a test which of the two it gets.
 .Pp
-All methods are class methods;
-there is no object,
-because the two syscalls being wrapped are process-global.
-Failures die with the offending promise string or path and the errno;
-there is no force flag and no warn-and-continue mode.
-The module never logs;
-callers decide what to report.
+All methods are class methods.
+There is no object because the two syscalls that the module wraps are
+process-global.
+A method that fails dies with the promise string or the path that
+caused the failure, and with the errno.
+There is no force flag and no warn-and-continue mode.
+The module never logs.
+The caller decides what to report.
 .Pp
 On
-.Ox
-the base-system
+.Ox ,
+.Nm
+loads the base-system modules
 .Xr OpenBSD::Pledge 3p
 and
 .Xr OpenBSD::Unveil 3p
-modules are loaded when
-.Nm
-is,
-and failing to load them is immediately fatal:
-there, their absence means a broken perl,
+when it loads.
+If these modules do not load, the process dies immediately.
+On that platform, the absence of these modules shows a broken perl and
 not an unsupported system.
 .Ss is_supported
 .Fn is_supported
-returns true only where the restrictions are enforced,
+returns true only where the restrictions are real,
 that is,
 on
 .Ox .
 .Ss pledge
 .Fn pledge "promises => $string"
-restricts the process to the space-separated promise set,
+limits the process to the space-separated set of promises,
 as
 .Xr pledge 2
 defines it.
-Returns 1, dies on failure naming the promises and the error.
-The first call defines the sandbox;
-later calls may only shrink it.
+The method returns 1.
+On failure, it dies and gives the promises and the error.
+The first call defines the sandbox.
+Later calls can only make it smaller.
 .Ss unveil
 .Fo unveil
 .Fa "paths => arrayref of pairs"
 .Fa "on_skip => sub"
 .Fc
-restricts the filesystem view to the listed paths with the listed
+limits the filesystem view to the listed paths with the listed
 .Xr unveil 2
 permission strings.
-The argument is an ordered list of pairs, not a hash:
+The argument is an ordered list of pairs, not a hash.
 .Xr unveil 2
-replaces rather than merges a path's permissions,
-so parent-then-child ordering is load-bearing,
-and hash key order would randomise it.
+replaces the permissions of a path and does not merge them.
+Thus the order of parent before child is necessary,
+and the key order of a hash makes that order random.
 .Pp
-Each entry may carry
+Each entry can have
 .Li { optional => 1 }
 as a third element.
-A missing
-.Em required
-path dies naming the path \(em a typo'd path silently accepted is the
-failure mode that makes unveil useless \(em while a missing
+If a
+.Em necessary
+path is absent,
+the method dies and gives the path.
+If the method accepts a path with a typo and gives no report,
+unveil becomes useless.
+If an
 .Em optional
-path is skipped and reported through the
+path is absent,
+the method skips it and reports it through the
 .Fa on_skip
-callback,
-for paths that are legitimately absent on a working system
-(a configuration file, a socket whose daemon is not running).
-Returns 1.
+callback.
+The optional flag is for paths that can be absent on a system that
+operates correctly.
+Examples are a configuration file and the socket of a daemon that does
+not run.
+The method returns 1.
 .Ss unveil_lock
 .Fn unveil_lock
-forbids further
+prevents more
 .Fn unveil
-calls,
-fixing the view for the life of the process.
-Returns 1, dies on failure.
+calls and locks the view for the life of the process.
+The method returns 1.
+It dies on failure.
 .Sh SEE ALSO
 .Xr pledge 2 ,
 .Xr unveil 2 ,

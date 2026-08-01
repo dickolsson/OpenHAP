@@ -17,9 +17,11 @@ OpenHAP::MQTT - MQTT client wrapper for OpenHAP
 
 =head1 DESCRIPTION
 
-A wrapper around L<Net::MQTT::Simple>, which is loaded with C<require>
-so it stays optional: without it, the daemon starts and serves HomeKit
-but no device state moves. Connections are plaintext; there is no TLS.
+This module is a wrapper around L<Net::MQTT::Simple>. It loads
+L<Net::MQTT::Simple> with C<require>, thus the dependency stays
+optional. Without the dependency, the daemon starts and serves HomeKit,
+but no device state moves. The connections are plaintext. There is no
+TLS.
 
 =head1 SEE ALSO
 

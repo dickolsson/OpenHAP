@@ -17,36 +17,54 @@ OpenHAP::Test::Controller::SRP - SRP-6a client role for tests
 
 =head1 DESCRIPTION
 
-The client (controller) role of the SRP-6a exchange served by
-L<OpenHAP::SRP>: the same RFC 5054 3072-bit group, g = 5, SHA-512
-hash, fixed username C<Pair-Setup>, and 384-byte padding rules
-(F<spec/HAP-Pairing.md> section 2). The setup code is normalized like
-the server side (dashes and spaces stripped).
+This module is the client (controller) role of the SRP-6a exchange
+that L<OpenHAP::SRP> serves. It uses the same parameters as the
+server:
+
+=over 4
+
+=item * the RFC 5054 3072-bit group
+
+=item * g = 5
+
+=item * the SHA-512 hash
+
+=item * the fixed username C<Pair-Setup>
+
+=item * the 384-byte padding rules (F<spec/HAP-Pairing.md> section 2)
+
+=back
+
+The module normalizes the setup code in the same way as the server
+side: it removes dashes and spaces.
 
 =head1 METHODS
 
 =head2 new(%args)
 
-C<password> is the 8-digit setup code; C<username> defaults to
+C<password> is the 8-digit setup code. The default for C<username> is
 C<Pair-Setup>.
 
 =head2 compute_public()
 
-Generate the ephemeral secret and return the padded 384-byte public
-value A.
+The method generates the ephemeral secret. It returns the padded
+384-byte public value A.
 
 =head2 compute_proof($salt, $B_bytes)
 
-Derive the session key from the server's salt and public key B, and
-return the client proof M1. Returns undef if B mod N == 0.
+The method derives the session key from the server salt and the
+server public key B. It returns the client proof M1. The method
+returns undef if B mod N == 0.
 
 =head2 verify_server_proof($M2)
 
-True iff $M2 equals H(PAD(A) | M1 | K).
+The method returns true if, and only if, $M2 equals
+H(PAD(A) | M1 | K).
 
 =head2 session_key()
 
-The 64-byte shared session key K, available after C<compute_proof>.
+The method returns the 64-byte shared session key K. The key is
+available after C<compute_proof>.
 
 =head1 SEE ALSO
 

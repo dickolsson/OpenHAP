@@ -26,95 +26,98 @@
 .Ar command
 .Sh DESCRIPTION
 .Nm
-is a command-line utility for managing and querying the
+is a command-line utility for the
 .Xr openhapd 8
 daemon.
-It validates the configuration file,
-reports whether the daemon is running and paired,
-and lists the configured devices.
+It does a check of the configuration file.
+It shows if the daemon runs and if it is paired.
+It shows a list of the configured devices.
 .Pp
-The options are as follows:
+The options are:
 .Bl -tag -width Ds
 .It Fl c Ar file
-Specify the configuration file.
+Read the configuration from
+.Ar file .
 The default is
 .Pa /etc/openhapd.conf .
 .El
 .Pp
-The following commands are available:
+These commands are available:
 .Bl -tag -width "devicesXX"
 .It Cm check
-Validate the configuration file syntax.
-Parses
+Do a check of the configuration file syntax.
+The command parses
 .Xr openhapd.conf 5
-and reports any syntax errors or invalid values.
-Exits with status 0 if the configuration is valid,
-non-zero otherwise.
-Also displays the number of configured devices.
+and shows syntax errors and values that are not valid.
+If the configuration is correct, the command exits with status 0.
+If it is not, the exit status is not 0.
+The command also shows the number of configured devices.
 .It Cm status
-Display the status of the
+Show the status of the
 .Xr openhapd 8
-daemon and pairing information.
-Shows whether the daemon is running,
-its process ID,
-and the current pairing state (paired, unpaired, or unknown).
-For paired accessories,
-displays the number of paired HomeKit controllers.
+daemon and the pairing data.
+The command shows if the daemon runs, and it shows the process
+ID and the pairing state (paired, unpaired, or unknown).
+For a paired accessory, the command shows the number of paired
+HomeKit controllers.
 .It Cm devices
-List all devices configured in
-.Xr openhapd.conf 5 .
-For each device, displays:
+Show all devices that
+.Xr openhapd.conf 5
+configures.
+For each device, the command shows:
 .Bl -bullet -compact
 .It
-Device name as it appears in HomeKit
+The device name, as HomeKit shows it
 .It
-Device type and subtype
+The device type and subtype
 .It
-MQTT topic prefix
+The MQTT topic prefix
 .It
-Internal device identifier
+The internal device identifier
 .El
 .It Cm help
-Display usage information.
+Show the usage message.
 .El
 .Sh FILES
 .Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
 .It Pa /etc/openhapd.conf
-Default configuration file.
+The default configuration file.
 .It Pa /var/run/openhapd.pid
-Process ID of the running daemon.
+The process ID of the daemon when it runs.
 .It Pa /var/db/openhapd/pairings
-Pairing database used for status checks.
+The pairing database for status checks.
 .El
 .Sh EXIT STATUS
 .Ex -std
-Commands exit with status 0 on success.
+The commands exit with status 0 on success.
 .Pp
 The
 .Cm check
-command exits with non-zero status if configuration errors are found.
+command exits with a status that is not 0 if it finds configuration
+errors.
 .Pp
 The
 .Cm status
 and
 .Cm devices
-commands exit with status 0 regardless of daemon state.
+commands always exit with status 0.
+The daemon state has no effect on their exit status.
 .Sh EXAMPLES
-Validate the configuration file:
+Do a check of the configuration file:
 .Bd -literal -offset indent
 $ hapctl check
 Configuration file /etc/openhapd.conf is valid
   Configured devices: 3
 .Ed
 .Pp
-Check daemon status:
+Show the daemon status:
 .Bd -literal -offset indent
 $ hapctl status
 openhapd is running (PID 12345)
 Pairing status: paired (2 controllers)
 .Ed
 .Pp
-List configured devices:
+Show the configured devices:
 .Bd -literal -offset indent
 $ hapctl devices
 Configured devices: 2
@@ -130,27 +133,30 @@ Configured devices: 2
     ID:    living_room
 .Ed
 .Pp
-Use an alternate configuration file:
+Use a different configuration file:
 .Bd -literal -offset indent
 $ hapctl -c /etc/openhapd.test.conf check
 .Ed
 .Sh DIAGNOSTICS
-Configuration errors are reported to
-.Em stderr
-with descriptive messages.
+.Nm
+writes configuration errors to
+.Em stderr ,
+with a message that describes each error.
 .Pp
 If
 .Xr openhapd 8
-is not running,
+does not run,
 .Cm status
-will report:
+shows:
 .Bd -literal -offset indent
 openhapd is not running
 .Ed
 .Pp
-If the pairing database cannot be read,
+If
+.Nm
+cannot read the pairing database,
 .Cm status
-will report:
+shows:
 .Bd -literal -offset indent
 Pairing status: unknown (cannot read storage)
 .Ed
@@ -161,16 +167,17 @@ Pairing status: unknown (cannot read storage)
 .Sh HISTORY
 The
 .Nm
-utility first appeared with
+utility was first available with
 .Xr openhapd 8
 in 2025.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
 .Nm
-reads the pairing database directly to determine pairing status.
-This requires read access to
+reads the pairing database directly to get the pairing status.
+Thus, it must have read access to
 .Pa /var/db/openhapd/ .
-When run as a non-root user,
-pairing status may be reported as
+When a user who is not root runs
+.Nm ,
+the command can show the pairing status as
 .Dq unknown .

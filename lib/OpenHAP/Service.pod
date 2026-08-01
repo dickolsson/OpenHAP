@@ -15,7 +15,8 @@ OpenHAP::Service - HAP service definitions
 
 =head1 DESCRIPTION
 
-This module represents HAP services that contain related characteristics.
+This module represents HAP services. A service holds related
+characteristics.
 
 =head1 SEE ALSO
 

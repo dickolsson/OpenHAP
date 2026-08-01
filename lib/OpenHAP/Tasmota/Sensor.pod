@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Tasmota::Sensor - Tasmota temperature sensor HAP accessory
+OpenHAP::Tasmota::Sensor - Tasmota temperature-sensor HAP accessory
 
 =head1 SYNOPSIS
 
@@ -16,8 +16,8 @@ OpenHAP::Tasmota::Sensor - Tasmota temperature sensor HAP accessory
 
 =head1 DESCRIPTION
 
-This module implements a HAP temperature sensor accessory for Tasmota
-devices with temperature sensors (DS18B20, DHT22, etc).
+This module implements a HAP temperature-sensor accessory for Tasmota
+devices that have temperature sensors (for example, DS18B20 and DHT22).
 
 =head1 SEE ALSO
 
