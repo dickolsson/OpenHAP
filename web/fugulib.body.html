@@ -1,68 +1,73 @@
 <h1>FuguLib</h1>
 
-<p>FuguLib covers the parts of writing an OpenBSD-style daemon in Perl that the
-base system leaves to you: going into the background, writing a PID file,
-dropping privileges, reaping children, handling signals, logging to syslog or
-stderr depending on how the program was started, restricting itself with pledge
-and unveil, and advertising over mDNS without shelling out.</p>
+<p>FuguLib does the tasks that the base system leaves to an OpenBSD-style
+daemon in Perl.  A daemon must go into the background, write a PID file,
+drop privileges, reap children, and answer signals.  It must log to syslog
+or to stderr, as applicable to how it started.  It must limit itself with
+pledge and unveil, and advertise over mDNS without a child process.
+FuguLib supplies these functions.</p>
 
-<p>Nine modules, using only core Perl.  OpenHAP is built on it; nothing in it
-knows about OpenHAP.</p>
+<p>FuguLib has nine modules and uses only core Perl.  OpenHAP uses FuguLib;
+FuguLib does not know about OpenHAP.</p>
 
 <h2>The modules</h2>
 
 <dl>
 <dt>FuguLib::Daemon</dt>
-<dd>Fork, <code>setsid</code>, redirect the standard descriptors.  A callback
-runs in the parent before it exits, which is where the PID file gets
-written.</dd>
+<dd>The module forks, calls <code>setsid</code>, and redirects the standard
+descriptors.  A callback runs in the parent before the parent exits; the
+callback writes the PID file.</dd>
 
 <dt>FuguLib::Privdrop</dt>
-<dd>Drop from root to a named user and group, then verify that root cannot be
-regained.</dd>
+<dd>The module drops from root to a specified user and group.  It then
+makes sure that the process cannot get root again.</dd>
 
 <dt>FuguLib::Process</dt>
-<dd>Spawn, exec, verify a child actually survived start-up, terminate with a
-grace period before <code>SIGKILL</code>, reap zombies, and wait for
-exit.</dd>
+<dd>The module spawns and execs children, and makes sure that a child is
+alive after start-up.  It stops a child with a grace period before
+<code>SIGKILL</code>, reaps zombies, and waits for exit.</dd>
 
 <dt>FuguLib::Signal</dt>
-<dd>Register handlers for graceful shutdown or for a flag a long-running loop
-can poll, with a stack of cleanup callbacks and restoration of the previous
-handlers.</dd>
+<dd>The module registers handlers for a controlled shutdown, or for a flag
+that a long loop can poll.  It keeps a stack of cleanup callbacks and puts
+the previous handlers back.</dd>
 
 <dt>FuguLib::Log</dt>
-<dd>One interface over syslog, stderr and silence, with level filtering and
-printf-style formatting, so a daemon and a CLI tool can share code.</dd>
+<dd>The module gives one interface for syslog, stderr, and silence, with
+level filters and printf-style formats.  Thus a daemon and a CLI tool can
+use the same code.</dd>
 
 <dt>FuguLib::State</dt>
-<dd>PID file reading and writing with locking, plus stale-PID detection built
-on <code>FuguLib::Process</code>.</dd>
+<dd>The module reads and writes PID files with locks, and finds stale PIDs
+with <code>FuguLib::Process</code>.</dd>
 
 <dt>FuguLib::Sandbox</dt>
-<dd><a href="https://man.openbsd.org/pledge.2">pledge(2)</a> and
-<a href="https://man.openbsd.org/unveil.2">unveil(2)</a> as a platform
-abstraction: real on OpenBSD, a no-op everywhere else, so callers never test
-the operating system themselves.  Failures die; there is no
+<dd>The module is a platform abstraction for
+<a href="https://man.openbsd.org/pledge.2">pledge(2)</a> and
+<a href="https://man.openbsd.org/unveil.2">unveil(2)</a>: the calls are real
+on OpenBSD and do nothing on other platforms.  Thus the callers do not
+examine the operating system.  A failure stops the process; there is no
 warn-and-continue mode.</dd>
 
 <dt>FuguLib::Imsg</dt>
-<dd>The base-system imsg framing &mdash; a fixed native-endian header and a
-payload &mdash; over any connected stream socket, with whole-message reads
-across short counts.</dd>
+<dd>The module supplies the base-system imsg framing &mdash; a fixed
+native-endian header and a payload &mdash; over a connected stream socket.
+It reads full messages when the socket returns short counts.</dd>
 
 <dt>FuguLib::MDNS</dt>
-<dd>Publish services through <code>mdnsd(8)</code> by speaking its control
-protocol directly, no <code>mdnsctl</code> child process; the held socket is
-the advertisement's lifetime.</dd>
+<dd>The module publishes services through <code>mdnsd(8)</code> with its
+control protocol directly, not through a <code>mdnsctl</code> child
+process.  The advertisement stays active while the module holds the
+socket.</dd>
 </dl>
 
 <h2>Reference</h2>
 
-<p>Each module has a section 3p manual page, installed with OpenHAP &mdash; so
-<code>man FuguLib::Daemon</code> works on a machine that has it &mdash; and
-listed under <a href="manuals.html#fugulib">FuguLib in the manuals</a>.</p>
+<p>Each module has a section 3p manual page, and OpenHAP installs the pages
+&mdash; thus <code>man FuguLib::Daemon</code> operates on a machine that has
+OpenHAP.  The pages are also listed under
+<a href="manuals.html#fugulib">FuguLib in the manuals</a>.</p>
 
 <h2>Name</h2>
 
-<p><em>Fugu</em> is the pufferfish, after OpenBSD&rsquo;s mascot.</p>
+<p><em>Fugu</em> is the pufferfish, the mascot of OpenBSD.</p>

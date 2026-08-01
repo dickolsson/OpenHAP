@@ -1,57 +1,59 @@
 <h1>FuguVM</h1>
 
 <p>FuguVM installs and manages <a href="https://www.openbsd.org/">OpenBSD</a>
-virtual machines under QEMU.  It fetches the install set, creates the disk,
-answers the installer over the serial console, and hands you back a machine
-that accepts SSH.  One command, unattended, on a host that need not be running
-OpenBSD itself.</p>
+virtual machines under QEMU.  It downloads the install set, creates the
+disk, and answers the installer through the serial console.  The result is
+a machine that accepts SSH.  One command does the unattended install, on a
+host that does not run OpenBSD.</p>
 
-<p>It exists so that an install can be driven from a <code>Makefile</code>
-rather than answered by hand.</p>
+<p>Thus a <code>Makefile</code> can control an install; you do not have to
+answer the installer manually.</p>
 
 <h2>What it does</h2>
 
 <dl>
 <dt>Unattended install</dt>
 <dd><code>fuguvm up</code> downloads the release, creates the disk image,
-drives <code>bsd.rd</code> through the installer, and starts the machine.  It
-is idempotent: run it again and nothing happens.</dd>
+controls <code>bsd.rd</code> through the installer, and starts the machine.
+The command is idempotent: if you run it again, nothing occurs.</dd>
 
 <dt>Per-project state</dt>
-<dd>State lives beside the code, in an <code>.fuguvmrc</code> file and an
-<code>.fuguvm/</code> directory found by searching upward from the current
-directory.  Several machines can be defined per project, each with its own
-release, memory, disk and forwarded ports.</dd>
+<dd>The state is adjacent to the code, in an <code>.fuguvmrc</code> file and
+an <code>.fuguvm/</code> directory.  FuguVM finds them with a search up from
+the current directory.  A project can define several machines, each with
+its own release, memory, disk, and forwarded ports.</dd>
 
 <dt>Cached install images</dt>
-<dd>Release sets are cached under <code>~/.cache/fuguvm/</code> and served to
-the guest through a built-in proxy, so the expensive download happens once
-rather than once per machine.</dd>
+<dd>FuguVM keeps the release sets in a cache under
+<code>~/.cache/fuguvm/</code>, and a built-in proxy serves them to the
+guest.  Thus the large download occurs one time, not one time for each
+machine.</dd>
 
 <dt>Scriptable</dt>
-<dd><code>fuguvm ssh</code> runs a command in the guest and exits with its
-status; <code>fuguvm expect</code> drives the serial console with an
-<a href="https://man.openbsd.org/expect.1">expect(1)</a> script; and there is a
-distinct exit code per failure mode &mdash; not running, timed out, download
-failed.</dd>
+<dd><code>fuguvm ssh</code> runs a command in the guest and exits with the
+status of that command.  <code>fuguvm expect</code> controls the serial
+console with an
+<a href="https://man.openbsd.org/expect.1">expect(1)</a> script.  Each
+failure mode has its own exit code &mdash; not started, timeout, download
+failure.</dd>
 
-<dt>Whatever accelerator is there</dt>
-<dd>HVF on macOS, KVM on aarch64 Linux, TCG everywhere else, chosen
-automatically and overridable with <code>--emulate</code>.</dd>
+<dt>Automatic accelerator choice</dt>
+<dd>FuguVM selects HVF on macOS, KVM on aarch64 Linux, and TCG on other
+platforms.  The <code>--emulate</code> option overrides the choice.</dd>
 </dl>
 
-<h2>Where it came from</h2>
+<h2>Origin</h2>
 
-<p>FuguVM was written to run OpenHAP's integration tests on the platform they
-are about: <a href="https://man.openbsd.org/pledge.2">pledge(2)</a>,
-<a href="https://man.openbsd.org/unveil.2">unveil(2)</a>, <code>rc.d</code> and
-<code>mdnsd</code> cannot be tested anywhere else.  Nothing in it knows about
-OpenHAP; this repository is its first user.</p>
+<p>FuguVM runs the integration tests of OpenHAP on their target platform:
+tests of <a href="https://man.openbsd.org/pledge.2">pledge(2)</a>,
+<a href="https://man.openbsd.org/unveil.2">unveil(2)</a>, <code>rc.d</code>
+and <code>mdnsd</code> are possible only on OpenBSD.  FuguVM does not know
+about OpenHAP; this repository is its first user.</p>
 
-<p>It ships with the OpenHAP source but not with OpenHAP: <code>make
-install</code> does not install it, and no release package contains it.</p>
+<p>The OpenHAP source includes FuguVM, but OpenHAP does not install it:
+<code>make install</code> ignores it, and no release package has it.</p>
 
 <h2>Reference</h2>
 
-<p>Options, subcommands, exit codes and configuration keys are documented in
-the <a href="manuals.html#fuguvm">manual</a>.</p>
+<p>The <a href="manuals.html#fuguvm">manual</a> lists the options, the
+subcommands, the exit codes, and the configuration keys.</p>

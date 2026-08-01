@@ -157,7 +157,7 @@ for my $page (@PAGES) {
 # install.html is rendered from INSTALL.md, not retyped
 {
 	my $html = slurp("$OUT/install.html");
-	like( $html, qr/Create system user/,
+	like( $html, qr/Create the system user/,
 		'install.html carries content from INSTALL.md' );
 }
 

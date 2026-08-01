@@ -1,18 +1,18 @@
 # Installation
 
-This document provides installation instructions for OpenHAP on OpenBSD. For
-detailed configuration options, see `openhapd.conf(5)`. For command-line
-options, see `openhapd(8)` and `hapctl(8)`.
+This document tells you how to install OpenHAP on OpenBSD. See
+`openhapd.conf(5)` for the configuration options. See `openhapd(8)` and
+`hapctl(8)` for the command-line options.
 
 ## Requirements
 
-- OpenBSD 7.4+
-- Perl 5.36+ (base system)
+- OpenBSD 7.4 or a later version
+- Perl 5.36 or a later version (base system)
 
 ## Dependencies
 
-The `make deps` command installs the runtime dependencies listed in the
-per-platform manifests under `deps/` (e.g. `deps/OpenBSD.txt`).
+The `make deps` command installs the runtime dependencies. The manifests under
+`deps/` list them for each platform, for example `deps/OpenBSD.txt`.
 
 ## Install
 
@@ -26,37 +26,39 @@ doas make install
 ## Setup
 
 ```sh
-# Create system user
+# Create the system user
 doas useradd -c "OpenHAP" -d /var/empty -g =uid -r 100..999 -s /sbin/nologin _openhap
-doas usermod -G wheel _openhap  # Required for mdnsd socket access
+doas usermod -G wheel _openhap  # Necessary for access to the mdnsd socket
 doas chown _openhap:_openhap /var/db/openhapd
 
-# Configure
+# Configure the daemon
 doas cp /etc/examples/openhapd.conf /etc/openhapd.conf
 doas vi /etc/openhapd.conf
 
-# Test configuration
+# Do a check of the configuration
 doas openhapd -n
 
-# Enable mDNS (replace vio0 with your interface)
+# Enable mDNS (replace vio0 with the name of your interface)
 echo 'multicast=YES' | doas tee -a /etc/rc.conf.local
 echo 'mdnsd_flags=vio0' | doas tee -a /etc/rc.conf.local
 
-# Start services
+# Enable and start the services
 doas rcctl enable mosquitto mdnsd openhapd
 doas rcctl start mosquitto mdnsd openhapd
 ```
 
 ## Firewall
 
-Add to `/etc/pf.conf`:
+Add these rules to `/etc/pf.conf`:
 
 ```
 pass in on $lan_if proto tcp to port 51827  # HAP
 pass in on $lan_if proto udp to port 5353   # mDNS
 ```
 
-## Verify
+## Checks
+
+Make sure that the daemon runs and that it loaded the devices:
 
 ```sh
 hapctl status
@@ -79,22 +81,22 @@ doas rcctl stop openhapd
 doas rcctl disable openhapd
 cd openhap
 doas make uninstall
-# Optionally remove configuration and data
+# If it is necessary, remove the configuration and the data
 doas rm -f /etc/openhapd.conf
 doas rm -rf /var/db/openhapd
 doas userdel _openhap
 ```
 
-## Troubleshooting
+## Problems
 
-**Won't start:**
+**The daemon does not start:**
 
 ```sh
-openhapd -n -c /etc/openhapd.conf  # Check config
+openhapd -n -c /etc/openhapd.conf  # Do a check of the configuration
 tail /var/log/daemon | grep openhap
 ```
 
-**Not found in Home app:**
+**The Home app does not show the bridge:**
 
 ```sh
 rcctl check mdnsd
@@ -102,7 +104,7 @@ mdnsctl browse
 nc -zv <ip> 51827
 ```
 
-**MQTT issues:**
+**MQTT does not operate correctly:**
 
 ```sh
 rcctl check mosquitto

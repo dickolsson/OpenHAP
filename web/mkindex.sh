@@ -133,8 +133,9 @@ emit_group()
 cat <<'EOF'
 <h1>Manuals</h1>
 
-<p>Rendered from the same sources <code>man</code> reads on an installed
-system.  Cross-references between them are links; everything else goes to
+<p>These pages come from the same sources that <code>man</code> reads on an
+installed system.  Cross-references between these pages are links; all
+other cross-references go to
 <a href="https://man.openbsd.org/">man.openbsd.org</a>.</p>
 
 EOF
