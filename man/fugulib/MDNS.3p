@@ -82,7 +82,7 @@ connects to the control socket.
 The method returns 1 on success.
 It returns
 .Dv undef
-when the socket is missing or unreachable.
+when the socket is absent or unreachable.
 When mdnsd does not run, this is a normal condition.
 The caller decides if this condition is important.
 .Ss publish_service
@@ -123,7 +123,7 @@ on input that is too long.
 This is an error, never a silent truncation.
 The method also returns
 .Dv undef
-on a missing connection, on an error reply (for example a name
+on an absent connection, on an error reply (for example a name
 collision),
 on an end-of-file, or on a timeout.
 .Ss update_txt

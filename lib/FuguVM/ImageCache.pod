@@ -27,7 +27,7 @@ FuguVM::ImageCache - cache of installed OpenBSD disk images
 An installation of OpenBSD under TCG emulation takes tens of minutes.
 This module keeps the result, thus later runs do not do the
 installation again. The result is a pristine, compacted copy of the
-disk. This copy is made at the moment when the installation completes.
+disk. The module makes this copy when the installation is complete.
 Later VMs use this copy as the backing image of a throwaway qcow2
 overlay.
 
@@ -91,8 +91,7 @@ policy stays in the callers: they select the states that get a cache.
 
 The snapshots are inside C<< installed/<key>/ >>. Thus, when a base
 becomes invalid - through a new key, or through C<cache clear> - the
-snapshots that depend on that exact base file also become invalid
-automatically.
+snapshots of that base also become invalid automatically.
 
 C<snapshot_store> B<flattens> the working disk onto C<base.qcow2>. It
 does not copy the disk. Thus each snapshot is a direct child of the
@@ -199,7 +198,7 @@ L<FuguVM::State>. The method copies the root password from the
 metadata of the base itself, and it does not trust the caller for this
 value. The method returns the snapshot path, or C<undef> on a failure.
 
-When a caller saves an existing name again, the method replaces the
+When a caller saves the same name again, the method replaces the
 snapshot. This is the normal second run of a provisioning script.
 
 =item snapshot_lookup($key, $name)

@@ -197,8 +197,8 @@ Make sure that the MQTT broker runs.
 
 Make sure that mdnsd runs and continues to run. If it is necessary,
 the method starts mdnsd. The method then does the check again across a
-settle window, because a probe at one point in time can show green
-when mdnsd starts and then exits a short time after that. On a
+settle window. A probe at one point in time can show green when mdnsd
+starts and then exits a short time after that. On a
 failure, the method sends the captured diagnostics as warnings: the
 rcctl state, the process list, and recent syslog lines.
 

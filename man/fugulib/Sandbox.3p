@@ -102,14 +102,14 @@ Each entry can have
 .Li { optional => 1 }
 as a third element.
 If a
-.Em required
-path is missing,
+.Em necessary
+path is absent,
 the method dies and gives the path.
 If the method accepts a path with a typo and gives no report,
 unveil becomes useless.
 If an
 .Em optional
-path is missing,
+path is absent,
 the method skips it and reports it through the
 .Fa on_skip
 callback.

@@ -33,9 +33,9 @@ framing. It can operate over TCP against a live accessory, or
 in-process through an injected transport.
 
 The controller uses the error convention of the repository. A method
-returns undef (bare return) on a protocol error or a transport error,
-and it records the TLV error code, or a message string, in
-C<last_error>. A method dies only on a programming error.
+returns undef (bare return) on a protocol error or a transport error.
+It records the TLV error code, or a message string, in C<last_error>.
+A method dies only on a programming error.
 
 =head1 METHODS
 

@@ -79,8 +79,8 @@ If you do not give
 .Nm
 searches up from the current directory for an
 .Pa .fuguvmrc
-file,
-and the directory that holds this file is the project root.
+file.
+The directory that holds this file is the project root.
 .Pp
 The options are:
 .Bl -tag -width Ds
@@ -256,8 +256,8 @@ Each VM has its own
 and
 .Ar disk_size
 key inputs.
-Thus a removal for one VM removes bases that a different VM can use,
-and the downloads for the
+Thus a removal for one VM removes bases that a different VM can use.
+It also removes the downloads for the
 .Ox
 version that a different VM installs.
 .Pp
@@ -297,7 +297,7 @@ needs no disk and no state,
 and it can run on a fresh checkout before the first
 .Cm up .
 .Pp
-A snapshot that is missing or unresolvable causes an exit with code 11,
+A snapshot that is absent or unresolvable causes an exit with code 11,
 not 1.
 Thus a script can see the difference between this and a real failure:
 .Bd -literal -offset indent
@@ -317,11 +317,15 @@ Without the flag,
 the output goes to standard error,
 the same as all other informational output.
 .It Cm disk Cm check | repair | info
-Manage the VM disk image:
-do a check of its integrity,
-repair errors
-(stop the VM first),
-or show the image details.
+Manage the VM disk image.
+.Cm check
+does a check of its integrity.
+.Cm repair
+repairs errors.
+Stop the VM before you run
+.Cm repair .
+.Cm info
+shows the image details.
 .It Cm help
 Show usage information.
 .El
@@ -334,7 +338,7 @@ Thus
 keeps the result:
 a clean, compacted copy of the disk.
 .Nm
-makes the copy immediately after the installer completes.
+makes the copy immediately after the installation is complete.
 Later runs use the copy as the backing image of a throwaway overlay.
 With a warm cache,
 .Cm destroy
@@ -406,8 +410,8 @@ base.qcow2  <-  <name>.qcow2  <-  disk.qcow2
 .Pp
 Thus no snapshot is the parent of a different snapshot,
 and the removal of one snapshot cannot orphan a different snapshot.
-Because the snapshots are inside the entry,
-each operation that makes a base invalid
+The snapshots are inside the entry.
+Thus each operation that makes a base invalid
 .Pq a new key, or Cm cache clear
 also makes the snapshots of that base invalid.
 .Sh FILES
