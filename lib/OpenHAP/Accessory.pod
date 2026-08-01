@@ -17,8 +17,8 @@ OpenHAP::Accessory - Base class for HAP accessories
 
 =head1 DESCRIPTION
 
-This module provides the base class for HomeKit accessories with
-required Accessory Information service.
+This module supplies the base class for HomeKit accessories. Each
+accessory holds the necessary Accessory Information service.
 
 =head1 SEE ALSO
 

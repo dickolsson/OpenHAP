@@ -19,27 +19,46 @@ OpenHAP::HTTP - HTTP/1.1 parser for HAP protocol
 
 =head1 DESCRIPTION
 
-This module implements a simple HTTP/1.1 parser and response builder
+This module supplies a simple HTTP/1.1 parser and a response builder
 for the HomeKit Accessory Protocol.
 
 =head1 FUNCTIONS
 
 =head2 parse($data)
 
-Parses HTTP request data and returns a hashref with:
-- method: HTTP method (GET, POST, PUT)
-- path: Request path
-- version: HTTP version
-- headers: Hash of headers (lowercase keys)
-- body: Request body
+This function parses the HTTP request data. It returns a hashref with
+these keys:
+
+=over 4
+
+=item * C<method> - The HTTP method (GET, POST, PUT)
+
+=item * C<path> - The request path
+
+=item * C<version> - The HTTP version
+
+=item * C<headers> - A hash of the headers (lowercase keys)
+
+=item * C<body> - The request body
+
+=back
 
 =head2 build_response(%args)
 
-Builds an HTTP response. Arguments:
-- status: HTTP status code (default: 200)
-- status_text: Status text (auto-generated if not provided)
-- headers: Hashref of headers
-- body: Response body
+This function builds an HTTP response. These are the arguments:
+
+=over 4
+
+=item * C<status> - The HTTP status code (default: 200)
+
+=item * C<status_text> - The status text. If it is not given, the
+function generates it.
+
+=item * C<headers> - A hashref of the headers
+
+=item * C<body> - The response body
+
+=back
 
 =head1 SEE ALSO
 

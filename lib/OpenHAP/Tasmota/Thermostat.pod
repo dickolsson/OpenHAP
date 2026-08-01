@@ -16,7 +16,7 @@ OpenHAP::Tasmota::Thermostat - Tasmota thermostat HAP accessory
 =head1 DESCRIPTION
 
 This module implements a HAP thermostat accessory for Tasmota devices
-with temperature sensor and relay control.
+that have a temperature sensor and relay control.
 
 =head1 SEE ALSO
 

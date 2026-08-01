@@ -15,8 +15,8 @@ OpenHAP::Tasmota::Heater - Tasmota heater/switch HAP accessory
 
 =head1 DESCRIPTION
 
-This module implements a HAP switch accessory for Tasmota devices
-with relay control (heaters, switches, outlets).
+This module implements a HAP switch accessory for Tasmota devices that
+have relay control (for example, heaters, switches, and outlets).
 
 =head1 SEE ALSO
 
