@@ -1,57 +1,58 @@
 =head1 NAME
 
-OpenHAP::Test::Integration - Base module for OpenHAP integration tests
+OpenHAP::Test::Integration - base module for OpenHAP integration tests
 
 =head1 SYNOPSIS
 
     use v5.36;
     use Test::More;
     use OpenHAP::Test::Integration;
-    
+
     my $env = OpenHAP::Test::Integration->new;
     $env->setup;
-    
+
     # Run tests...
     my $response = $env->http_request('GET', '/accessories');
     ok(defined $response, 'received response');
-    
+
     $env->teardown;
     done_testing();
 
 =head1 DESCRIPTION
 
-Setup, teardown, and helpers for the integration tests, which run against
-an installed openhapd on OpenBSD rather than against modules in the
-checkout.
+This module supplies the setup, the teardown, and the helpers for the
+integration tests. These tests run against an installed openhapd on
+OpenBSD, not against the modules in the checkout.
 
-Unlike the unit tests, these fail rather than skip when a requirement is
-missing, since a silent skip in the VM would report a green run that
-tested nothing.
+When a requirement is not available, these tests fail. They do not skip as
+the unit tests do, because a silent skip in the VM reports a green run
+that tests nothing.
 
 =head1 ENVIRONMENT
 
-Integration tests require:
+The integration tests must have these conditions:
 
 =over 4
 
-=item * OPENHAP_INTEGRATION_TEST environment variable set
+=item * The OPENHAP_INTEGRATION_TEST environment variable is set.
 
-=item * OpenBSD system with rcctl(8)
+=item * The system is OpenBSD with rcctl(8).
 
-=item * openhapd and hapctl installed in /usr/local/bin
+=item * openhapd and hapctl are installed in /usr/local/bin.
 
-=item * Configuration file at /etc/openhapd.conf
+=item * The configuration file is at /etc/openhapd.conf.
 
-=item * System user _openhap
+=item * The system has the user _openhap.
 
-=item * Data directory /var/db/openhapd
+=item * The system has the data directory /var/db/openhapd.
 
-=item * mosquitto(8) installed and startable via rcctl (MQTT tests)
+=item * mosquitto(8) is installed, and rcctl can start it (for the
+MQTT tests).
 
-=item * mdnsd(8) installed, with its flags set to a usable network
-interface and startable via rcctl; mdnsctl(8) installed as the browsing
-tool the mDNS tests observe advertisements with (the daemon itself no
-longer invokes it)
+=item * mdnsd(8) is installed, its flags are set to a usable network
+interface, and rcctl can start it. mdnsctl(8) is installed; the mDNS
+tests use it to see the advertisements (the daemon itself no longer
+invokes mdnsctl).
 
 =back
 
@@ -61,17 +62,20 @@ longer invokes it)
 
     my $env = OpenHAP::Test::Integration->new(%options);
 
-Create a new integration test environment. Options:
+Create a new environment for the integration tests. These are the
+options:
 
 =over 4
 
-=item config_file - Path to openhapd.conf (default: /etc/openhapd.conf)
+=item config_file - the path to openhapd.conf (default:
+/etc/openhapd.conf)
 
-=item hap_port - HAP server port (default: from config or 51827)
+=item hap_port - the HAP server port (default: from the
+configuration, or 51827)
 
-=item mqtt_host - MQTT broker host (default: 127.0.0.1)
+=item mqtt_host - the MQTT broker host (default: 127.0.0.1)
 
-=item mqtt_port - MQTT broker port (default: 1883)
+=item mqtt_port - the MQTT broker port (default: 1883)
 
 =back
 
@@ -79,14 +83,15 @@ Create a new integration test environment. Options:
 
     $env->setup;
 
-Validate environment and prepare for testing. Dies if environment is not ready.
+Do a check of the environment, and prepare for the tests. The method
+dies if the environment is not ready.
 
 =head2 teardown
 
     $env->teardown;
 
-Clean up resources after testing, including any controller connections
-handed out by C<get_controller>.
+Release the resources after the tests. These resources include each
+controller connection that C<get_controller> supplied.
 
 =head2 get_controller
 
@@ -94,22 +99,26 @@ handed out by C<get_controller>.
     $c->pair_setup or die 'pair-setup: ' . $c->last_error;
 
 Construct an L<OpenHAP::Test::Controller> for the configured host,
-port, and setup code (read from the C<hap_pin> configuration key). The
-connection is tracked and closed in C<teardown>. Extra arguments are
-passed through to the controller constructor.
+port, and setup code. The method reads the setup code from the
+C<hap_pin> configuration key. The environment keeps a record of the
+connection and closes it in C<teardown>. The method passes extra
+arguments through to the controller constructor.
 
 =head2 ensure_unpaired
 
     $env->ensure_unpaired or die 'cannot unpair';
 
-Guarantee the daemon is verifiably unpaired. When the pairings database
-(/var/db/openhapd/pairings.db) holds any entry, the daemon is stopped,
-the pairing state is wiped - pairings.db and auth_attempts, keeping the
-accessory identity - and the daemon is started again. The post-condition
-is then probed with POST /identify, which returns 204 only while
-unpaired; a paired answer fails the call. Returns true on a verified
-unpaired daemon, false otherwise. Every integration test file starts
-unpaired unless it pairs itself.
+Make sure that the daemon is unpaired. When the pairings database
+(/var/db/openhapd/pairings.db) holds an entry, the method stops the
+daemon, removes the pairing state, and starts the daemon again. The
+removed state is pairings.db and auth_attempts. The accessory identity
+stays.
+
+The method then does a check of the result with POST /identify, which
+returns 204 only while the daemon is unpaired. A paired answer fails
+the call. The method returns true when the check shows an unpaired
+daemon, and false in other cases. Each integration test file starts
+unpaired, unless the file pairs itself.
 
 =head2 http_request
 
@@ -122,12 +131,13 @@ registered until C<teardown> (or C<close_sockets>).
 
     $env->close_sockets;
 
-Close and forget every raw socket opened by C<http_request>, so a probe
-connection is not left registered with the daemon until teardown.
+Close and forget each raw socket that C<http_request> opened. Thus a
+probe connection does not stay registered with the daemon until the
+teardown.
 
 =head2 parse_http_response
 
-    my ($status, $headers, $body) = 
+    my ($status, $headers, $body) =
         OpenHAP::Test::Integration::parse_http_response($response);
 
 Parse an HTTP response.
@@ -142,65 +152,68 @@ Get a configuration value.
 
     my @topics = $env->get_device_topics;
 
-Get all device MQTT topics.
+Get all the MQTT topics of the devices.
 
 =head2 get_devices
 
     my ($light) = grep { $_->{subtype} eq 'lightbulb' } $env->get_devices;
 
-Get the configured device records: hashes with C<type>, C<subtype>,
-C<id>, C<name>, and C<topic>.
+Get the configured device records. Each record is a hash with
+C<type>, C<subtype>, C<id>, C<name>, and C<topic>.
 
 =head2 ensure_daemon_running
 
     $env->ensure_daemon_running or die "Cannot start daemon";
 
-Ensure openhapd is running and serving: starts it if needed, then
-waits for the HAP port, since the daemon publishes its mDNS
-advertisement before opening the listener.
+Make sure that openhapd runs and serves. If it is necessary, the
+method starts the daemon. The method then waits for the HAP port,
+because the daemon publishes its mDNS advertisement before it opens
+the listener.
 
 =head2 wait_for_hap_port
 
     $env->wait_for_hap_port or die "daemon not serving";
     $env->wait_for_hap_port(60);
 
-Wait until the HAP port accepts connections, polling up to the given
-number of seconds (default 30). Use this instead of a fixed sleep
-after restarting the daemon.
+Wait until the HAP port accepts connections. The method polls for a
+maximum of the given number of seconds (default 30). Use this method,
+not a fixed sleep, after you restart the daemon.
 
 =head2 ensure_daemon_stopped
 
     $env->ensure_daemon_stopped;
 
-Ensure openhapd is stopped.
+Make sure that openhapd is stopped.
 
 =head2 ensure_mqtt_running
 
     $env->ensure_mqtt_running or die "MQTT required";
 
-Ensure MQTT broker is running.
+Make sure that the MQTT broker runs.
 
 =head2 ensure_mdnsd_running
 
     $env->ensure_mdnsd_running or die "mdnsd required";
 
-Ensure mdnsd is running and stays running: start it if needed, then
-re-check across a settle window, because a point-in-time probe races
-green when mdnsd starts and then exits shortly after. On failure,
-captured diagnostics (rcctl state, process list, recent syslog lines)
-are emitted as warnings.
+Make sure that mdnsd runs and continues to run. If it is necessary,
+the method starts mdnsd. The method then does the check again across a
+settle window, because a probe at one point in time can show green
+when mdnsd starts and then exits a short time after that. On a
+failure, the method sends the captured diagnostics as warnings: the
+rcctl state, the process list, and recent syslog lines.
 
 =head2 get_log_lines
 
     my @lines = $env->get_log_lines($pattern);
 
-Get log lines matching pattern since baseline.
+Get the log lines that match the pattern and that come after the
+baseline.
 
 =head2 get_mqtt
 
     my $mqtt = $env->get_mqtt;
 
-Get MQTT client connection.
+Get the MQTT client connection.
 
 =head1 AUTHOR
 

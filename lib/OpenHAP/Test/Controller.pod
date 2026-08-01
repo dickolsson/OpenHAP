@@ -26,59 +26,80 @@ OpenHAP::Test::Controller - minimal HomeKit controller for tests
 
 =head1 DESCRIPTION
 
-A minimal HomeKit controller used by conformance and integration
-tests. It completes SRP-6a pair-setup (M1-M6), X25519 pair-verify, and
-speaks the ChaCha20-Poly1305 session framing, either over TCP against
-a live accessory or in-process through an injected transport.
+This module is a minimal HomeKit controller for the conformance tests
+and the integration tests. It completes the SRP-6a pair-setup (M1-M6)
+and the X25519 pair-verify, and it uses the ChaCha20-Poly1305 session
+framing. It can operate over TCP against a live accessory, or
+in-process through an injected transport.
 
-The controller follows the repository error convention: methods return
-undef (bare return) on protocol or transport errors, recording the TLV
-error code (or a message string) in C<last_error>; they die only on
-programming errors.
+The controller uses the error convention of the repository. A method
+returns undef (bare return) on a protocol error or a transport error,
+and it records the TLV error code, or a message string, in
+C<last_error>. A method dies only on a programming error.
 
 =head1 METHODS
 
 =head2 new(%args)
 
-Create a controller. Arguments: C<host> (default 127.0.0.1), C<port>
-(default 51827), C<pin> (setup code, default 031-45-154),
-C<controller_id> (pairing identifier, default openhap-test-ctrl),
-C<timeout> (socket timeout in seconds, default 5), and C<transport>.
+Create a controller. These are the arguments:
 
-C<transport>, when given, is a code ref C<($request_bytes) ->
-$response_bytes> replacing the TCP socket; this enables in-process use
-against an OpenHAP::HAP instance without sockets. Request and response
-bytes are pre-encryption/post-encryption wire bytes.
+=over 4
 
-An Ed25519 controller identity is generated once per controller.
+=item * C<host> - default 127.0.0.1
+
+=item * C<port> - default 51827
+
+=item * C<pin> - the setup code, default 031-45-154
+
+=item * C<controller_id> - the pairing identifier, default
+openhap-test-ctrl
+
+=item * C<timeout> - the socket timeout in seconds, default 5
+
+=item * C<transport> - optional, see below
+
+=back
+
+C<transport> is a code ref C<($request_bytes) -> $response_bytes>
+that replaces the TCP socket. This permits in-process use against an
+OpenHAP::HAP instance, without sockets. The request bytes and the
+response bytes are the wire bytes before encryption and after
+encryption.
+
+Each controller generates its Ed25519 identity one time.
 
 =head2 pair_setup()
 
-Complete pair-setup M1-M6 with the configured PIN. On success the
-accessory LTPK and pairing identifier are stored on the controller and
-true is returned.
+Complete the pair-setup M1-M6 with the configured PIN. On success, the
+method stores the accessory LTPK and the pairing identifier on the
+controller, and it returns true.
 
 =head2 pair_verify()
 
-Complete pair-verify M1-M4 and switch the connection to encrypted
-session framing. When the accessory LTPK is known from a prior
-C<pair_setup>, the accessory signature in M2 is verified against it.
+Complete the pair-verify M1-M4. Then switch the connection to
+encrypted session framing. When the controller knows the accessory
+LTPK from an earlier C<pair_setup>, the method does a check of the
+accessory signature in M2 against that LTPK.
 
 =head2 request($method, $path, $body?, $headers?)
 
-Perform one HTTP request over the session, encrypted once pair-verify
-has completed. Returns a hash ref with C<status>, C<headers> (lower
-cased names) and C<body>.
+Do one HTTP request over the session. The controller encrypts the
+request after the pair-verify is complete. The method returns a hash
+ref with C<status>, C<headers> (names in lower case), and C<body>.
 
 =head2 next_event($timeout?)
 
-Wait for an EVENT/1.0 message, decrypt and parse it. Returns a hash
-ref with C<status>, C<headers> and C<body>, or undef on timeout.
-Without an explicit $timeout the wait is bounded by the session
-timeout, which honors OPENHAP_TEST_TIMEOUT - pass a literal only for
-short negative probes ("no event arrives"). Event frames split across
-socket reads are reassembled without desynchronizing the session nonce
-counter. Requires a socket connection.
+Wait for one EVENT/1.0 message. Decrypt the message and parse it. The
+method returns a hash ref with C<status>, C<headers>, and C<body>, or
+undef on a timeout.
+
+Without an explicit $timeout, the session timeout limits the wait, and
+the session timeout obeys OPENHAP_TEST_TIMEOUT. Pass a literal value
+only for a short negative probe ("no event arrives").
+
+The method reassembles the event frames that split across socket
+reads. The reassembly does not desynchronize the session nonce
+counter. The method must have a socket connection.
 
 =head2 add_pairing($identifier, $ltpk, $permissions)
 
@@ -86,30 +107,32 @@ Add a pairing over POST /pairings (method AddPairing).
 
 =head2 remove_pairing($identifier?)
 
-Remove a pairing (default: this controller's own).
+Remove a pairing. The default is the controller's own pairing.
 
 =head2 list_pairings()
 
-Return an array ref of hashes with C<identifier>, C<ltpk> and
+Return an array ref of hashes with C<identifier>, C<ltpk>, and
 C<permissions>.
 
 =head2 last_error()
 
-The TLV error code (numeric) or message string of the last failure.
+Return the TLV error code (numeric), or the message string, of the
+last failure.
 
 =head2 is_encrypted()
 
-True once pair-verify has switched the session to encrypted framing.
+Return true after the pair-verify switches the session to encrypted
+framing.
 
 =head2 close()
 
-Close the socket connection and reset session state.
+Close the socket connection. Reset the session state.
 
 =head1 ENVIRONMENT
 
-Test-only namespace: not part of the production daemon and never a
-dependency of production modules. Ships to the integration VM together
-with the integration tests.
+This namespace is for tests only. It is not a part of the production
+daemon, and it is never a dependency of a production module. It ships
+to the integration VM together with the integration tests.
 
 =head1 SEE ALSO
 
