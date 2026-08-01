@@ -30,7 +30,7 @@ is a command-line utility for the
 .Xr openhapd 8
 daemon.
 It does a check of the configuration file.
-It shows if the daemon operates and if it is paired.
+It shows if the daemon runs and if it is paired.
 It shows a list of the configured devices.
 .Pp
 The options are:
@@ -56,7 +56,7 @@ The command also shows the number of configured devices.
 Show the status of the
 .Xr openhapd 8
 daemon and the pairing data.
-The command shows if the daemon operates, and it shows the process
+The command shows if the daemon runs, and it shows the process
 ID and the pairing state (paired, unpaired, or unknown).
 For a paired accessory, the command shows the number of paired
 HomeKit controllers.
@@ -145,7 +145,7 @@ with a message that describes each error.
 .Pp
 If
 .Xr openhapd 8
-is not in operation,
+does not run,
 .Cm status
 shows:
 .Bd -literal -offset indent

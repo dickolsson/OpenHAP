@@ -67,7 +67,7 @@ When
 stops, it closes the socket, and this removes the advertisement.
 .Pp
 .Xr mdnsd 8
-must be in operation when
+must run when
 .Nm
 starts.
 If it is not, HomeKit controllers cannot find the accessory.
@@ -77,7 +77,7 @@ Discovery is not available until you restart
 .Nm
 with
 .Xr mdnsd 8
-in operation.
+active.
 .Pp
 On
 .Ox ,
@@ -271,7 +271,7 @@ needs an MQTT broker, for example
 .Xr mosquitto 8 ,
 and
 .Xr mdnsd 8 .
-Both must be in operation.
+Both must run.
 If one of them is not available, the daemon starts and does what it
 can.
 The daemon tries the MQTT connection again in the background.

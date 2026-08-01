@@ -123,7 +123,8 @@ on input that is too long.
 This is an error, never a silent truncation.
 The method also returns
 .Dv undef
-on a missing connection, on an error reply such as a name collision,
+on a missing connection, on an error reply (for example a name
+collision),
 on an end-of-file, or on a timeout.
 .Ss update_txt
 .Fn update_txt "txt => $string" "timeout => $seconds"

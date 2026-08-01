@@ -87,7 +87,7 @@ A snapshot is an immutable, named layer over the base image of an
 entry. Its purpose is to cache states that fuguvm itself does not
 know. One example is a provisioning script that caches its "guest
 packages installed" state. The mechanism is in this module. The
-policy - which states are worth a cache - stays in the callers.
+policy stays in the callers: they select the states that get a cache.
 
 The snapshots are inside C<< installed/<key>/ >>. Thus, when a base
 becomes invalid - through a new key, or through C<cache clear> - the
@@ -105,7 +105,7 @@ That header is correct only while the disk hangs directly off the
 base. After a restore, the disk hangs off a snapshot. Thus a copy
 stacks chains without a limit, or it publishes a qcow2 that names
 itself as its own backing file. The second result occurs when a caller
-saves the same name again, which a normal second run does.
+saves the same name again. A normal second run does this.
 
 Because C<snapshot_store> flattens the disk, no snapshot is the parent
 of a different snapshot. Thus C<snapshot_remove> cannot make a
@@ -171,8 +171,8 @@ of removed trees.
 
 =item key_for_path($path)
 
-Return the key of the entry that holds C<$path>, which is a base image
-or a snapshot. The method returns C<undef> when C<$path> is outside
+Return the key of the entry that holds C<$path>. The path points to
+a base image or a snapshot. The method returns C<undef> when C<$path> is outside
 the cache. The method answers this question: "Which cached image is
 the base of this working disk?"
 

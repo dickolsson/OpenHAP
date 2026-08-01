@@ -216,7 +216,7 @@ and the downloads that the built-in proxy keeps for the installer.
 prints one line for each cached image
 .Pq key, size, creation time, snapshot count .
 It puts a mark on the entry that the invoked VM's configuration
-currently derives.
+derives at this time.
 Then it prints the proxy's downloads by
 .Ox
 version.
@@ -281,7 +281,7 @@ See
 .Pp
 .Cm save
 flattens the working disk into the cache,
-under the base image on which the disk is built.
+under the base image that the disk uses.
 .Cm restore
 replaces the working disk with a new overlay on
 .Ar name ,
@@ -465,9 +465,9 @@ project.
 .It 4
 VM not found.
 .It 5
-VM is running.
+The VM runs.
 .It 6
-VM is not running.
+The VM does not run.
 .It 7
 Timeout in the wait for the VM.
 .It 8

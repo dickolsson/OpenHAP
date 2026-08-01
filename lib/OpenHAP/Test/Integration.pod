@@ -114,8 +114,8 @@ daemon, removes the pairing state, and starts the daemon again. The
 removed state is pairings.db and auth_attempts. The accessory identity
 stays.
 
-The method then does a check of the result with POST /identify, which
-returns 204 only while the daemon is unpaired. A paired answer fails
+The method then does a check of the result with POST /identify.
+That request returns 204 only while the daemon is unpaired. A paired answer fails
 the call. The method returns true when the check shows an unpaired
 daemon, and false in other cases. Each integration test file starts
 unpaired, unless the file pairs itself.

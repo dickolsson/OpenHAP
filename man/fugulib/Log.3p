@@ -36,8 +36,9 @@ $log->err('cannot open %s: %s', $path, $!);
 .Ed
 .Sh DESCRIPTION
 .Nm
-gives a program one logging interface whether the program runs as a
-daemon or in the foreground.
+gives a program one logging interface.
+The interface is the same when the program runs as a daemon and when
+it runs in the foreground.
 The caller selects the destination one time, when it creates the
 logger.
 Every call site then has the same form for all destinations.

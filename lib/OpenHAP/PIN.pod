@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::PIN - HomeKit Accessory Protocol PIN validation and normalization
+OpenHAP::PIN - HomeKit Accessory Protocol PIN checks and normalization
 
 =head1 SYNOPSIS
 

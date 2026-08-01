@@ -237,8 +237,8 @@ to 0 for commands that stop quickly.
 and
 .Fn reap
 call
-.Xr waitpid 2 ,
-which reaps only the children of the caller.
+.Xr waitpid 2 .
+That call reaps only the children of the caller.
 For all other processes, they use
 .Xr kill 2
 with signal 0.

@@ -76,7 +76,7 @@ controller, and it returns true.
 
 =head2 pair_verify()
 
-Complete the pair-verify M1-M4. Then switch the connection to
+Do the pair-verify M1-M4. Then switch the connection to
 encrypted session framing. When the controller knows the accessory
 LTPK from an earlier C<pair_setup>, the method does a check of the
 accessory signature in M2 against that LTPK.

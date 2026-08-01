@@ -43,7 +43,8 @@ The TCP port for the HAP server.
 Default: 51827.
 .It Ic hap_pin Ar XXXX-XXXX
 The 8-digit setup code for pairing.
-The format is XXXX-XXXX, in which each X is a digit 0-9.
+The format is XXXX-XXXX.
+Each X is a digit 0-9.
 The dashes only make the code easy to read.
 The daemon removes them when it parses the value.
 The HAP specification does not permit these values (after removal of
@@ -96,7 +97,7 @@ Define each device with this syntax:
 device <type> <subtype> <id> {
     name = "<display name>"
     topic = "<mqtt topic>"
-    [additional options...]
+    [more options...]
 }
 .Ed
 .Pp
@@ -124,8 +125,8 @@ The MQTT topic prefix for the device.
 For Tasmota devices, this is the topic from the MQTT settings of the
 device.
 The default of that setting is
-.Dq tasmota_%06X ,
-in which %06X is the last 6 hex digits of the MAC address.
+.Dq tasmota_%06X .
+The %06X part is the last 6 hex digits of the MAC address.
 This option is necessary.
 .El
 .Pp
