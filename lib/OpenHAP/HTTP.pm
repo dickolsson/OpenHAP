@@ -2,7 +2,7 @@ use v5.36;
 
 package OpenHAP::HTTP;
 
-# Simple HTTP/1.1 parser for HAP protocol
+# A simple HTTP/1.1 parser for the HAP protocol
 # HAP uses a variant of HTTP/1.1 with some differences
 
 sub parse ($data)
@@ -15,16 +15,16 @@ sub parse ($data)
 		body    => '',
 	};
 
-	# Split headers and body
+	# Split the headers and the body
 	my ( $headers_part, $body ) = split( /\r?\n\r?\n/, $data, 2 );
 	$request->{body} = $body // '';
 
-	# Parse request line and headers
+	# Parse the request line and headers
 	my @lines = split( /\r?\n/, $headers_part );
 
 	if ( @lines > 0 ) {
 
-		# Parse request line (GET /path HTTP/1.1)
+		# Parse the request line (GET /path HTTP/1.1)
 		my $request_line = shift @lines;
 		if ( $request_line =~ m{^(\S+)\s+(\S+)\s+HTTP/(\S+)$} ) {
 			$request->{method}  = $1;
@@ -33,7 +33,7 @@ sub parse ($data)
 		}
 	}
 
-	# Parse headers
+	# Parse the headers
 	for my $line (@lines) {
 		if ( $line =~ /^([^:]+):\s*(.*)$/ ) {
 			my ( $name, $value ) = ( $1, $2 );
@@ -53,7 +53,7 @@ sub build_response (%args)
 
 	my $response = "HTTP/1.1 $status $status_text\r\n";
 
-	# Add Content-Length if not specified
+	# Add Content-Length if the headers do not include it
 	unless ( exists $headers->{'Content-Length'} ) {
 		$headers->{'Content-Length'} = length($body);
 	}
@@ -63,7 +63,7 @@ sub build_response (%args)
 		$headers->{'Connection'} = 'keep-alive';
 	}
 
-	# Add headers
+	# Add the headers
 	for my $name ( keys %$headers ) {
 		$response .= "$name: $headers->{$name}\r\n";
 	}

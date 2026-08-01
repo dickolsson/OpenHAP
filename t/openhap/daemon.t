@@ -8,8 +8,8 @@ use FuguLib::Log;
 $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
 use File::Temp qw(tempdir);
 
-# Test daemon mode functionality. mDNS TXT record content is covered by
-# the spec-cited tests in t/conformance/hap-mdns.t.
+# Test the daemon mode functions. The spec-cited tests in
+# t/conformance/hap-mdns.t cover the mDNS TXT record content.
 
 # Test 1: MQTT connection with timeout
 {
@@ -20,13 +20,13 @@ use File::Temp qw(tempdir);
 		port => 1883,
 	);
 
-	# Test timeout parameter exists
+	# Make sure the timeout parameter exists
 	my $start = time;
 	my $result = $mqtt->mqtt_connect(2);  # 2 second timeout
 	my $elapsed = time - $start;
 
-	# Should fail quickly (within 3 seconds) if MQTT not available
-	# or succeed quickly if it is available
+	# The connect must fail quickly, in 3 seconds or less, if MQTT
+	# is not available. It must succeed quickly if MQTT is available.
 	ok($elapsed < 5, 'MQTT connect respects timeout');
 }
 
@@ -39,7 +39,7 @@ use File::Temp qw(tempdir);
 		port => 1883,
 	);
 
-	# Should have reconnect method
+	# The client must have a reconnect method
 	ok($mqtt->can('reconnect'), 'MQTT has reconnect method');
 }
 
@@ -56,19 +56,19 @@ use File::Temp qw(tempdir);
 		storage_path => $tmpdir,
 	);
 
-	# Should have private resubscribe method
+	# The HAP object must have a private resubscribe method
 	ok($hap->can('_mqtt_resubscribe_accessories'),
 	    'HAP has _mqtt_resubscribe_accessories method');
 }
 
-# Test 4: the unveil inventory builder - pure assembly, testable
-# without unveiling anything
+# Test 4: the unveil inventory builder. The builder only assembles
+# data. Thus the test does not unveil anything.
 {
 	use OpenHAP::Daemon;
 
 	my $tmpdir = tempdir(CLEANUP => 1);
 
-	# by_path(): index the pair list for assertions
+	# by_path(): index the pair list for the assertions
 	sub by_path (@paths)
 	{
 		return map { $_->[0] => $_ } @paths;
@@ -81,8 +81,9 @@ use File::Temp qw(tempdir);
 		script_lib  => $tmpdir,    # no OpenHAP/ inside: not a checkout
 	);
 
-	# Deterministic: same inputs, same ordered list (asserted before
-	# any hash access below can autovivify entries)
+	# The builder is deterministic. The same inputs give the same
+	# ordered list. Assert this before a hash access below can
+	# autovivify an entry.
 	my @again = OpenHAP::Daemon->unveil_paths(
 		db_path     => '/var/db/openhapd',
 		config_file => '/etc/openhapd.conf',
@@ -93,20 +94,20 @@ use File::Temp qw(tempdir);
 
 	my %row = by_path(@paths);
 
-	# Required rows: absent means a broken install
+	# Required rows: if one is absent, the install is broken
 	is($row{'/var/db/openhapd'}[1], 'rwc', 'db_path is rwc');
 	ok(!$row{'/var/db/openhapd'}[2]{optional}, 'db_path is required');
 	is($row{'/dev/urandom'}[1], 'r', '/dev/urandom readable');
 	ok(!$row{'/dev/urandom'}[2]{optional}, '/dev/urandom is required');
 
-	# The config file must never be a required row, even though the
-	# path was given: a fresh install has no /etc/openhapd.conf and
-	# must still boot
+	# The config file must never be a required row, even when the
+	# path is given. A fresh install has no /etc/openhapd.conf and
+	# must still boot.
 	ok($row{'/etc/openhapd.conf'}[2]{optional},
 	    'config file is optional');
 	is($row{'/etc/openhapd.conf'}[1], 'r', 'config file read-only');
 
-	# Optional rows that are legitimately absent on a working system
+	# These optional rows can be absent on a working system.
 	for my $optional (
 		'/var/log/openhapd.log', '/var/run/mdnsd.sock',
 		'/etc/resolv.conf',      '/etc/hosts',
@@ -119,9 +120,10 @@ use File::Temp qw(tempdir);
 	is($row{'/var/run/mdnsd.sock'}[1], 'rw',
 	    'mdnsd socket read-write for the update_txt reconnect');
 
-	# The library directories are the enumerated list, deduped -
-	# never live @INC, and never /usr/local/lib on an installed
-	# layout (script_lib without OpenHAP/ inside is excluded)
+	# The library directories are the enumerated list, with
+	# duplicates removed. The list never comes from live @INC. On an
+	# installed layout, it never has /usr/local/lib. The builder
+	# excludes a script_lib that has no OpenHAP/ inside.
 	my @lib_rows = grep { $_->[0] =~ m{^/perl/} } @paths;
 	is_deeply(
 		[map { $_->[0] } @lib_rows],
@@ -133,7 +135,7 @@ use File::Temp qw(tempdir);
 	ok((!grep { $_->[2]{optional} } @lib_rows),
 	    'library directories are required');
 
-	# A real checkout's lib is included read-only
+	# The builder includes the lib of a real checkout read-only
 	my %checkout = by_path(
 		OpenHAP::Daemon->unveil_paths(
 			db_path    => '/var/db/openhapd',
@@ -143,11 +145,11 @@ use File::Temp qw(tempdir);
 	is($checkout{"$RealBin/../../lib"}[1],
 	    'r', 'source checkout lib unveiled read-only');
 
-	# No execute permission anywhere: pledge withholds exec, and an
-	# unveil that grants x would contradict it in the source
+	# No row grants execute permission. Pledge withholds exec. An
+	# unveil that grants x would contradict pledge in the source.
 	ok((!grep { $_->[1] =~ /x/ } @paths), 'no x permission in the view');
 
-	# Without db_path the builder refuses outright
+	# The builder refuses outright when it gets no db_path
 	ok(!eval { OpenHAP::Daemon->unveil_paths(); 1 },
 	    'db_path is not optional to the builder');
 }
@@ -164,7 +166,7 @@ use File::Temp qw(tempdir);
 	is(OpenHAP::Daemon->read_pidfile($pidfile), $$,
 	    'read_pidfile returns the PID that was written');
 
-	# A path that cannot be opened is a recoverable error, not a die
+	# A path that does not open is a recoverable error, not a die
 	my $unwritable = "$tmpdir/nonexistent/openhapd.pid";
 	is(OpenHAP::Daemon->write_pidfile($unwritable), undef,
 	    'write_pidfile returns undef on an unopenable path');

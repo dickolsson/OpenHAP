@@ -6,11 +6,11 @@
 
 # SSH public key for VM authentication
 #
-# This key will be installed in the VM's /root/.ssh/authorized_keys during
-# initial installation. After installation, all SSH connections use SSH
-# agent authentication via SSH_AUTH_SOCK.
+# fuguvm installs this key in the VM's /root/.ssh/authorized_keys during
+# the initial installation. After the installation, all SSH connections
+# use SSH agent authentication through SSH_AUTH_SOCK.
 #
-# You can get your public key with: cat ~/.ssh/id_ed25519.pub
+# To get your public key, run: cat ~/.ssh/id_ed25519.pub
 # or: ssh-add -L
 #
 ssh_pubkey ssh-ed25519 AAAA... user@host
@@ -19,17 +19,18 @@ ssh_pubkey ssh-ed25519 AAAA... user@host
 # cached installed-image bases
 # cache_dir ~/.cache/fuguvm
 
-# Optional: reuse cached installed images instead of reinstalling
-# OpenBSD on every fresh disk (default: yes). See fuguvm(1).
+# Optional: reuse the cached installed images. Then fuguvm does not
+# reinstall OpenBSD on every fresh disk. The default is yes. See
+# fuguvm(1).
 # image_cache yes
 
-# Optional: default VM name when not specified
+# Optional: the default VM name when you do not specify one
 # default_vm default
 
 # VM definitions
 #
-# VMs can be defined in blocks here or in project .fuguvmrc files.
-# Project config takes precedence over global config.
+# You can define VMs in blocks here or in project .fuguvmrc files.
+# The project config overrides the global config.
 #
 # vm "default" {
 #     version      7.8

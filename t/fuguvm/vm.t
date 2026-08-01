@@ -7,7 +7,8 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use File::Temp qw(tempdir);
 
-# Check if module can be loaded (may fail if Net::SSH2 not available)
+# Check that the module loads. The load can fail if Net::SSH2 is
+# not available.
 BEGIN {
 	eval { require FuguVM::VM; 1 }
 	    or plan skip_all => 'FuguVM::VM dependencies not available';
@@ -53,13 +54,14 @@ use_ok('FuguVM::VM');
 		    'hardware acceleration pairs with host CPU');
 	}
 
-	# Host arch helper returns a non-empty machine string
+	# The host arch helper returns a non-empty machine string
 	ok(length(FuguVM::VM::_host_arch()), 'host arch detected');
 }
 
-# Bounded guest interaction: _bounded must return the code's value when
-# it finishes in time and undef (without hanging) when it does not, so a
-# wedged guest can never stall shutdown.
+# Bounded guest interaction: _bounded must return the code's value
+# when the code finishes in time. When it does not, _bounded must
+# return undef and must not hang. Thus a wedged guest can never
+# stall shutdown.
 {
 	my $vm = FuguVM::VM->new;
 	$vm->{log} = TestLog->new;    # swallow the timeout warning
@@ -88,8 +90,9 @@ use_ok('FuguVM::VM');
 	    'a config without cache_dir falls back to the default');
 }
 
-# Switching the cache off suppresses restore and save together: `up`
-# derives no key at all, so it can neither look one up nor publish one.
+# When the cache is off, `up` suppresses restore and save together.
+# It derives no key at all. Thus it can neither look one up nor
+# publish one.
 {
 	my $off = FuguVM::VM->new(
 		config => { cache_dir => '/var/cache/fuguvm', image_cache => 0 });
@@ -135,7 +138,8 @@ SKIP: {
 		log    => TestLog->new,
 	);
 
-	# Restore: overlay plus the state the installation would have left
+	# Restore: the overlay plus the state that the installation
+	# leaves behind
 	ok($vm->_cache_restore($cache, $key), 'restore reports a cache hit');
 	ok($state->disk_exists, 'the working disk exists after a restore');
 	ok($state->is_installed, 'the restored VM is marked installed');
@@ -188,8 +192,8 @@ SKIP: {
 
 done_testing();
 
-# Minimal log stub: counts warnings for _bounded and keeps errors so
-# diagnostics can be asserted on
+# Minimal log stub: it counts warnings for _bounded and keeps errors.
+# Thus the tests can assert on diagnostics.
 package TestLog;
 sub new { return bless { warned => 0, errors => [] }, shift }
 sub warning { my $self = shift; $self->{warned}++; return; }

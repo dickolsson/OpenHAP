@@ -23,7 +23,7 @@ use_ok('OpenHAP::Session');
 my $key_a2c = pack( 'H*', '11' x 32 );
 my $key_c2a = pack( 'H*', '22' x 32 );
 
-# Accessory-side session: encrypts with a2c, decrypts with c2a
+# The accessory-side session encrypts with a2c and decrypts with c2a
 sub accessory_session ()
 {
 	my $session = OpenHAP::Session->new( socket => 'dummy' );
@@ -31,7 +31,8 @@ sub accessory_session ()
 	return $session;
 }
 
-# Controller-side decrypt of an accessory frame, built from primitives
+# Decrypt an accessory frame on the controller side. The function
+# uses the crypto primitives directly.
 sub controller_decrypt ( $frame, $counter )
 {
 	my $aad        = substr( $frame, 0, 2 );
@@ -84,11 +85,11 @@ subtest '[HAP-Encryption §3] AAD is the length field' => sub {
 	my $session = accessory_session();
 	my $frame   = $session->encrypt('hello');
 
-	# Decrypting with the frame's own AAD succeeds
+	# A decrypt with the frame's own AAD succeeds
 	is( controller_decrypt( $frame, 0 ),
 		'hello', 'decrypts with length field as AAD' );
 
-	# Recomputing with a different AAD fails
+	# A decrypt with a different AAD fails
 	my $length     = unpack( 'v', substr( $frame, 0, 2 ) );
 	my $ciphertext = substr( $frame, 2, $length );
 	my $tag        = substr( $frame, 2 + $length, 16 );
@@ -104,7 +105,8 @@ subtest '[HAP-Encryption §4] nonce is 4 zero bytes + LE counter' => sub {
 	my $frame0  = $session->encrypt('first');
 	my $frame1  = $session->encrypt('second');
 
-	# Counter starts at 0 and increments per frame, per direction
+	# The counter starts at 0. It increments once for each frame in
+	# each direction.
 	is( controller_decrypt( $frame0, 0 ),
 		'first', 'first frame uses counter 0' );
 	is( controller_decrypt( $frame1, 1 ),
@@ -112,8 +114,9 @@ subtest '[HAP-Encryption §4] nonce is 4 zero bytes + LE counter' => sub {
 	ok( !defined controller_decrypt( $frame1, 0 ),
 		'frame does not decrypt under the wrong counter' );
 
-	# Direction counters are independent: controller->accessory
-	# counter starts at 0 regardless of accessory->controller traffic
+	# The direction counters are independent. The
+	# controller->accessory counter starts at 0. Accessory->controller
+	# traffic does not change it.
 	my $c2a_nonce = pack( 'x[4]Q<', 0 );
 	my ( $ciphertext, $tag ) =
 	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $key_c2a, $c2a_nonce,
@@ -170,7 +173,7 @@ subtest '[HAP-Encryption §7] ChaCha20-Poly1305 RFC 8439 vector' => sub {
 subtest '[HAP-Encryption §9] error handling' => sub {
 	my $session = accessory_session();
 
-	# Build a valid inbound frame, then tamper with it
+	# Build a valid inbound frame. Then tamper with it.
 	my $nonce = pack( 'x[4]Q<', 0 );
 	my ( $ciphertext, $tag ) =
 	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $key_c2a, $nonce,
@@ -194,7 +197,7 @@ subtest '[HAP-Encryption §9] error handling' => sub {
 	ok( !defined accessory_session()->decrypt($oversize),
 		'frame length over 1024 is an error' );
 
-	# Valid frame still decrypts (control)
+	# The valid frame still decrypts. This is the control check.
 	is( accessory_session()->decrypt($good),
 		'GET /accessories',
 		'[HAP-Encryption §5] control frame decrypts' );
@@ -202,7 +205,8 @@ subtest '[HAP-Encryption §9] error handling' => sub {
 
 subtest '[HAP-Encryption §1] session key derivation' => sub {
 
-	# Both directions derive from the shared secret with Control-Salt
+	# The keys for both directions derive from the shared secret
+	# with Control-Salt
 	my $shared = pack( 'H*', 'ab' x 32 );
 	my $read_key =
 	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
@@ -217,7 +221,7 @@ subtest '[HAP-Encryption §1] session key derivation' => sub {
 		unpack( 'H*', $write_key ),
 		'read and write keys differ' );
 
-	# The accessory session encrypts outbound with the read key
+	# The accessory session encrypts outbound data with the read key
 	my $session = OpenHAP::Session->new( socket => 'dummy' );
 	$session->set_encryption( $read_key, $write_key );
 	my $frame = $session->encrypt('response');
@@ -243,7 +247,7 @@ subtest '[HAP-Encryption §10] connection lifecycle' => sub {
 	is( $session->decrypt('plain'), 'plain',
 		'pre-verify inbound data is passed through' );
 
-	# After key setup every byte is framed and encrypted
+	# After key setup, the session frames and encrypts every byte
 	$session->set_encryption( $key_a2c, $key_c2a );
 	ok( $session->is_encrypted, 'session encrypted after key setup' );
 	isnt( $session->encrypt('plain'), 'plain',

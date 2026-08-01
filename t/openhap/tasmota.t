@@ -1,8 +1,8 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Unit tests for the Tasmota device modules: constructors, initial
-# state, and helper math. Protocol behavior (topics, payloads, message
-# handling) is covered by the spec-cited tests in t/conformance/.
+# state, and helper math. The spec-cited tests in t/conformance/
+# cover the protocol behavior (topics, payloads, message handling).
 
 use v5.36;
 use Test::More;

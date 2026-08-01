@@ -46,14 +46,15 @@ More text.
 Nothing cites this.
 EOF
 
-# Index file (stem without '-'): listed but not counted
+# Index file (stem without '-'): the tool lists it but does not count
+# it
 write_file( "$spec_dir/HAP.md", <<'EOF' );
 # Index
 
 ## 1. Glossary
 EOF
 
-# Unnumbered file: tolerated, nothing to cover
+# Unnumbered file: the tool tolerates it. It has nothing to cover.
 write_file( "$spec_dir/IMPLEMENTATIONS.md", <<'EOF' );
 # Implementations
 
@@ -62,7 +63,8 @@ write_file( "$spec_dir/IMPLEMENTATIONS.md", <<'EOF' );
 No numbered anchors here.
 EOF
 
-# A second topic family covering the MDNS branch of the citation regex
+# A second topic family that covers the MDNS branch of the citation
+# regex
 write_file( "$spec_dir/MDNS-Fixture1.md", <<'EOF' );
 # MDNS Fixture
 
@@ -75,9 +77,10 @@ Text.
 Nothing cites this.
 EOF
 
-# Citation strings are assembled at runtime so this file's own source
-# never matches the citation grep when the tool runs on the real tree.
-# The stem carries a digit to cover stems like HAP-TLV8.
+# The test assembles the citation strings at runtime. Thus this
+# file's own source never matches the citation grep when the tool runs
+# on the real tree. The stem carries a digit to cover stems like
+# HAP-TLV8.
 my $STEM      = 'HAP-' . 'Fixture8';
 my $MDNS_STEM = 'MDNS-' . 'Fixture1';
 
@@ -96,7 +99,7 @@ sub run_tool (@args)
 	return ( $? >> 8, $output );
 }
 
-# Basic run: citations parsed and joined
+# Basic run: the tool parses and joins the citations
 {
 	my ( $exit, $output ) = run_tool();
 	is( $exit, 0, 'exits 0 with no stale citations' );
@@ -163,7 +166,7 @@ EOF
 	unlink "$test_dir/stale2.t";
 }
 
-# Citation in a .pm helper under t/ is scanned too
+# The tool also scans a citation in a .pm helper under t/
 {
 	write_file( "$test_dir/Helper.pm", <<EOF );
 # [$STEM §3] helper-level citation

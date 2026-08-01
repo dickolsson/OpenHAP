@@ -11,9 +11,10 @@ use Time::HiRes qw(time);
 
 use_ok('FuguVM::QGA');
 
-# A QGA object wired to one end of a socketpair, with the peer returned
-# so the test can play the guest agent. Built through IO::Socket so both
-# ends autoflush exactly as the sockets the module itself opens do.
+# A QGA object wired to one end of a socketpair. The helper also
+# returns the peer, so the test can play the guest agent. It builds
+# the pair through IO::Socket. Thus both ends autoflush exactly as
+# the sockets the module itself opens do.
 sub paired_qga
 {
 	my ($ours, $theirs) =
@@ -48,12 +49,12 @@ sub paired_qga
 	    'run_command returns undef when not connected');
 }
 
-# A silent peer must not stall the caller. IO::Socket's timeout() does
-# not bound a read, so this used to block forever - and nothing answers
-# whenever the guest runs no agent, because QEMU, not the guest, serves
-# the socket. That is how 'fuguvm down' hung instead of falling back to
-# a force stop. Bounded here directly: the module's own READ_TIMEOUT is
-# too long to spend in a unit test.
+# A silent peer must not stall the caller. IO::Socket's timeout()
+# does not bound a read. Thus this used to block forever. Nothing
+# answers when the guest runs no agent, because QEMU, not the guest,
+# serves the socket. Thus 'fuguvm down' hung and did not fall back
+# to a force stop. The test bounds the read directly. The module's
+# own READ_TIMEOUT is too long for a unit test.
 {
 	my ($qga, $peer) = paired_qga();
 	SKIP: {
@@ -68,8 +69,8 @@ sub paired_qga
 	}
 }
 
-# A complete line is returned without its terminator, and anything the
-# peer sent past the newline stays for the next read.
+# The read returns a complete line without its terminator. Anything
+# the peer sent past the newline stays for the next read.
 {
 	my ($qga, $peer) = paired_qga();
 	SKIP: {
@@ -86,7 +87,8 @@ sub paired_qga
 	}
 }
 
-# A line split across segments is reassembled rather than truncated
+# The read reassembles a line split across segments and does not
+# truncate it
 {
 	my ($qga, $peer) = paired_qga();
 	SKIP: {

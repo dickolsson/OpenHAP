@@ -18,7 +18,8 @@ use_ok('FuguLib::MDNS');
 my $dir = tempdir( CLEANUP => 1 );
 my $n   = 0;
 
-# Group reply types, mirroring FuguLib::MDNS's pinned enum
+# Group reply types. These values mirror the pinned enum in
+# FuguLib::MDNS.
 my %REPLY = (
 	collision  => 12,
 	not_found  => 13,
@@ -29,13 +30,13 @@ my %REPLY = (
 );
 
 # start_server($behavior):
-#	Fork a fake mdnsd on a fresh socket path. The listener is
-#	created before the fork so the client can connect immediately.
-#	$behavior->($conn_no, $imsg, $dump_fh) runs per accepted
-#	connection and returns 0 to stop accepting. Received messages
-#	are asserted from the dump file in the parent - never from the
-#	child, which shares the TAP stream.
-#	Returns ($path, $dump_file, $pid).
+#	Fork a fake mdnsd on a fresh socket path. The function creates
+#	the listener before the fork. Thus the client can connect
+#	immediately. $behavior->($conn_no, $imsg, $dump_fh) runs once
+#	for each accepted connection. It returns 0 to stop the accept
+#	loop. The parent asserts the received messages from the dump
+#	file. The child shares the TAP stream, so the child never
+#	asserts. The function returns ($path, $dump_file, $pid).
 sub start_server ($behavior)
 {
 	my $path = "$dir/mdnsd" . $n . '.sock';
@@ -67,8 +68,8 @@ sub start_server ($behavior)
 }
 
 # dump_messages($imsg, $fh, $count):
-#	Read $count messages, log type, payload size and the leading
-#	NUL-terminated string of each payload
+#	Read $count messages. Log the type, the payload size, and the
+#	leading NUL-terminated string of each payload.
 sub dump_messages ( $imsg, $fh, $count )
 {
 	my @msgs;
@@ -83,7 +84,7 @@ sub dump_messages ( $imsg, $fh, $count )
 }
 
 # reply($imsg, $name, @types):
-#	Send group replies carrying the 256-byte padded group name
+#	Send group replies that carry the 256-byte padded group name.
 sub reply ( $imsg, $name, @types )
 {
 	$imsg->send( type => $REPLY{$_}, data => pack( 'Z256', $name ) )
@@ -225,7 +226,8 @@ subtest 'over-length fields are errors, not truncations' => sub {
 	ok( !defined $mdns->publish_service( %service, txt => 'x' x 256 ),
 		'256-byte TXT string is rejected' );
 
-	# The wire port field is a u16; pack would truncate modulo 65536
+	# The wire port field is a u16. Without a check, pack truncates
+	# the value modulo 65536.
 	ok( !defined $mdns->publish_service( %service, port => 70000 ),
 		'port above 65535 is rejected, not truncated' );
 	like( $mdns->error, qr/port out of range/, 'error says why' );
@@ -233,10 +235,11 @@ subtest 'over-length fields are errors, not truncations' => sub {
 
 subtest 'republish on a held connection is refused' => sub {
 
-	# mdnsd ignores the duplicate GROUP_ADD, drops the ADD_SERVICE,
-	# and answers the COMMIT with a success-looking sequence for the
-	# old records - so publish_service must not be callable while
-	# published; replacement goes through update_txt
+	# mdnsd ignores the duplicate GROUP_ADD and drops the
+	# ADD_SERVICE. It answers the COMMIT with a success-looking
+	# sequence for the old records. Thus publish_service must refuse
+	# calls while a service is published. Replacement goes through
+	# update_txt.
 	my ( $path, $dump, $pid ) = start_server(
 		sub ( $, $imsg, $fh ) {
 			my $msgs = dump_messages( $imsg, $fh, 3 ) or return 0;

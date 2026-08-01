@@ -29,16 +29,17 @@ use_ok('OpenHAP::TLV');
 
 # Test TLV order preservation
 {
-    # Encode with specific order (State before PublicKey before Salt)
-    # Use values that don't conflict with type bytes
+    # Encode with a specific order: State before PublicKey before
+    # Salt. Use values that do not conflict with the type bytes.
     my $encoded = OpenHAP::TLV::encode(
         0x06, pack('C', 0xAA),       # State = 0xAA (unique)
         0x03, 'public_key_data',     # PublicKey
         0x02, 'salt_data_here',      # Salt
     );
 
-    # Verify order is preserved by checking TLV header positions
-    # Look for type-length pairs to find the start of each TLV item
+    # Check the TLV header positions to make sure the encoder keeps
+    # the order. Look for type-length pairs to find the start of
+    # each TLV item.
     my $state_pos = index($encoded, pack('CC', 0x06, 1));   # Type 0x06, length 1
     my $pubkey_pos = index($encoded, pack('CC', 0x03, 15)); # Type 0x03, length 15
     my $salt_pos = index($encoded, pack('CC', 0x02, 14));   # Type 0x02, length 14
@@ -98,7 +99,7 @@ use_ok('OpenHAP::TLV');
 
     ok(length($encoded) > 0, 'Multiple pairing entries encoded');
 
-    # Verify separator is in the encoded data
+    # Make sure the separator is in the encoded data
     my $sep_found = 0;
     my $pos = 0;
     while ($pos < length($encoded)) {

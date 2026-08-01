@@ -8,7 +8,7 @@ our @ISA = qw(OpenHAP::Accessory);
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(
-		aid               => 1,    # Bridge is always accessory 1
+		aid               => 1,    # The bridge is always accessory 1
 		name              => $args{name}         // 'OpenHAP Bridge',
 		manufacturer      => $args{manufacturer} // 'OpenBSD',
 		model             => $args{model}        // 'OpenHAP',
@@ -18,8 +18,9 @@ sub new ( $class, %args )
 
 	$self->{bridged_accessories} = [];
 
-	# ProtocolInformation is required on the bridge accessory object
-	# itself; bridged accessories do not carry it (HAP-Services.md §3)
+	# The bridge accessory object itself must have the
+	# ProtocolInformation service. Bridged accessories do not
+	# carry it (HAP-Services.md §3).
 	$self->_add_protocol_info_service;
 
 	return $self;
@@ -53,7 +54,7 @@ sub add_bridged_accessory ( $self, $accessory )
 		$accessory->{aid}, $accessory->{name} );
 	push @{ $self->{bridged_accessories} }, $accessory;
 
-	# Forward event callbacks, preserving the device aid
+	# Forward the event callbacks. Keep the device aid unchanged.
 	$accessory->add_event_callback(
 		sub ( $aid, $iid ) {
 			for my $callback ( @{ $self->{event_callbacks} } ) {
@@ -87,10 +88,10 @@ sub to_json ($self)
 {
 	my @accessories;
 
-	# Add bridge itself
+	# Add the bridge itself
 	push @accessories, $self->SUPER::to_json();
 
-	# Add bridged accessories
+	# Add the bridged accessories
 	for my $acc ( @{ $self->{bridged_accessories} } ) {
 		push @accessories, $acc->to_json;
 	}

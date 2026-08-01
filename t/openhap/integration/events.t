@@ -50,8 +50,9 @@ $result = $subscriber->request('PUT', '/characteristics',
 	{ 'Content-Type' => 'application/hap+json' });
 is($result->{status}, 204, '[HAP-HTTP §14] subscription accepted');
 
-# Second controller on its own connection: added as a pairing by the
-# admin, then verified; it does NOT subscribe
+# Second controller on its own connection: the admin adds it as a
+# pairing, and then it verifies its own session. It does NOT
+# subscribe.
 my $bystander = $env->get_controller(controller_id => 'bystander-ctrl');
 $subscriber->add_pairing('bystander-ctrl', $bystander->{ltpk}, 1)
     or die 'add_pairing failed: ' . ( $subscriber->last_error // '?' ) . "\n";
@@ -74,8 +75,8 @@ ok(defined $event, '[HAP-HTTP §14] EVENT/1.0 message received')
 	. unpack('H*', $subscriber->{inbuf} // '')
 	. ' raw: ' . unpack('H*', $subscriber->{rawbuf} // ''));
 
-# Decode only a received event so a miss stays a normal failure and the
-# unpair teardown below still runs
+# Decode only a received event. Then a miss stays a normal failure,
+# and the unpair teardown below still runs.
 is($event ? $event->{headers}{'content-type'} : undef,
    'application/hap+json', '[HAP-HTTP §14] event content type');
 my $payload = $event ? eval { decode_json($event->{body}) } : undef;
@@ -84,8 +85,8 @@ my ($change) = grep { $_->{aid} == $aid && $_->{iid} == $iid }
     @{ $payload ? $payload->{characteristics} : [] };
 ok($change, '[HAP-HTTP §14] event carries the changed characteristic');
 
-# Test 3: Subscriptions are per-connection - the unsubscribed
-# controller receives nothing
+# Test 3: Subscriptions are per-connection. The unsubscribed
+# controller receives nothing.
 my $stray = $bystander->next_event(2);
 ok(!defined $stray,
    '[HAP-HTTP §14] unsubscribed connection receives no events');

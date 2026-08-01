@@ -18,7 +18,7 @@ use_ok('FuguVM::Proxy::MetaCache');
 {
 	my $cache = FuguVM::Proxy::MetaCache->new;
 
-	# Create a temp file with .tgz extension
+	# Create a temp file with a .tgz extension
 	my $tmp = File::Temp->new( SUFFIX => '.tgz' );
 	print $tmp "test content\n";
 	$tmp->flush;
@@ -91,7 +91,7 @@ use_ok('FuguVM::Proxy::MetaCache');
 {
 	my $cache = FuguVM::Proxy::MetaCache->new;
 
-	# Create and store temp file
+	# Create and store a temp file
 	my $tmp = File::Temp->new;
 	print $tmp "test content\n";
 	$tmp->flush;
@@ -103,12 +103,12 @@ use_ok('FuguVM::Proxy::MetaCache');
 	ok( defined $cache->lookup($url), 'Found after store' );
 
 	# Modify the file
-	sleep 1;    # Ensure mtime changes
+	sleep 1;    # Make sure that the mtime changes
 	open my $fh, '>>', $path or die "Cannot append: $!";
 	print $fh "more content\n";
 	close $fh;
 
-	# Should not find it (mtime/size changed)
+	# The lookup must miss because the mtime and size changed
 	ok( !defined $cache->lookup($url),
 		'Invalidated after file modification' );
 }

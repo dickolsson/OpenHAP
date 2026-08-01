@@ -35,9 +35,9 @@ sub make_hap (%extra)
 
 subtest '[HAP-mDNS §1] service type is hap over tcp' => sub {
 
-	# openhapd publishes app 'hap' over proto 'tcp'; mdnsd itself
-	# prepends the underscores to form _hap._tcp.local. Browsing
-	# _hap._tcp is asserted by the mdns integration test.
+	# openhapd publishes app 'hap' over proto 'tcp'. mdnsd itself
+	# prepends the underscores to form _hap._tcp.local. The mdns
+	# integration test asserts the browse of _hap._tcp.
 	my $mdns = FuguLib::MDNS->new;
 	ok( !defined $mdns->publish_service(
 			name  => 'mDNS Bridge',
@@ -105,9 +105,10 @@ subtest '[HAP-mDNS §9] complete TXT record' => sub {
 
 subtest '[HAP-mDNS §10] bridge advertises a single service' => sub {
 
-	# One mDNS service covers the bridge and all bridged accessories;
-	# individual bridged accessories are not advertised separately.
-	# openhapd formats exactly one TXT string for that one service.
+	# One mDNS service covers the bridge and all bridged accessories.
+	# openhapd does not advertise individual bridged accessories
+	# separately. openhapd formats exactly one TXT string for that
+	# one service.
 	my $hap = make_hap();
 	my $txt = $hap->get_mdns_txt_string;
 	ok( length($txt), 'single TXT string for the bridge' );
@@ -144,7 +145,7 @@ subtest '[HAP-mDNS §3.5] protocol version' => sub {
 	my $hap = make_hap();
 
 	# pv=1 rather than 1.1: mdnsd uses '.' as the TXT record
-	# delimiter and cannot escape it; HomeKit accepts pv=1
+	# delimiter and cannot escape it. HomeKit accepts pv=1.
 	is( $hap->get_mdns_txt_records->{pv},
 		'1', 'pv advertised (1, see mdnsd delimiter note)' );
 };
@@ -192,8 +193,8 @@ subtest '[HAP-mDNS §4] service instance name' => sub {
 	is( $hap->get_mdns_txt_records->{md},
 		'mDNS Bridge', 'model name matches the display name' );
 
-	# The display name is the instance name openhapd publishes: it
-	# lands in the name field of the advertised service
+	# The display name is the instance name that openhapd publishes.
+	# It goes into the name field of the advertised service.
 	my $mdns = FuguLib::MDNS->new;
 	$mdns->{service} = {
 		name  => $hap->{name},
@@ -208,8 +209,8 @@ subtest '[HAP-mDNS §4] service instance name' => sub {
 
 subtest '[HAP-mDNS §6] port' => sub {
 
-	# The advertised port is whatever openhapd listens on; it rides
-	# in the port field of the service structure
+	# The advertised port is the port that openhapd listens on. It
+	# goes into the port field of the service structure.
 	my $mdns = FuguLib::MDNS->new;
 	$mdns->{service} = {
 		name  => 'x',

@@ -30,8 +30,8 @@ use FuguVM::Proxy::Cache;
 use FuguVM::Proxy::MetaCache;
 
 # $class->run_child($port, $cache_dir):
-#	Entry point for spawned child process
-#	Sets up cache and runs the proxy server
+#	The entry point for the spawned child process. The method sets
+#	up the cache and runs the proxy server.
 sub run_child ( $class, $port, $cache_dir )
 {
 	my $log       = FuguLib::Log->new( mode => 'stderr', level => 'debug' );
@@ -46,7 +46,7 @@ sub run_child ( $class, $port, $cache_dir )
 	$log->info( 'Proxy starting on port %d', $port );
 	$log->info( 'Cache directory: %s',       $cache_dir );
 
-	# Pre-warm metadata cache
+	# Warm the metadata cache before the proxy serves requests
 	my $start_time = time;
 	$metacache->warm($cache);
 	my $warm_time = time - $start_time;
@@ -77,11 +77,11 @@ sub new ( $class, $state, $cache_dir )
 }
 
 # $self->start:
-#	Start the proxy server
-#	Returns port number on success, undef on failure
+#	Start the proxy server. The method returns the port number on
+#	success and undef on failure.
 sub start ($self)
 {
-	# Check if already running
+	# Check if the proxy already runs
 	if ( $self->is_running ) {
 		return $self->{state}->get_proxy_port;
 	}
@@ -94,7 +94,7 @@ sub start ($self)
 		return;
 	}
 
-	# Spawn proxy using FuguLib::Process
+	# Spawn the proxy with FuguLib::Process
 	my $log       = $self->{state}->vm_state_dir . "/proxy.log";
 	my $cache_dir = $self->{cache_dir};
 	my $result    = FuguLib::Process->spawn_perl(
@@ -106,7 +106,7 @@ sub start ($self)
 		check_alive => 1,
 		on_success  => sub ($pid) {
 
-			# Record state in callback
+			# Record the state in the callback
 			$self->{state}->set_proxy_pid($pid);
 			$self->{state}->set_proxy_port($port);
 		},
@@ -117,7 +117,7 @@ sub start ($self)
 
 	return unless $result->{success};
 
-	# Wait for proxy to be ready
+	# Wait until the proxy is ready
 	if ( !$self->wait_ready(CONNECT_TIMEOUT) ) {
 		warn "Proxy failed to become ready\n";
 		$self->stop;
@@ -128,7 +128,8 @@ sub start ($self)
 }
 
 # $self->stop:
-#	Stop the proxy server gracefully
+#	Stop the proxy server. Send SIGTERM first, then SIGKILL if the
+#	process stays.
 sub stop ($self)
 {
 	my $pid = $self->{state}->get_proxy_pid;
@@ -138,14 +139,14 @@ sub stop ($self)
 	if ( kill( 0, $pid ) ) {
 		kill( 'TERM', $pid );
 
-		# Wait for exit
+		# Wait until the process exits
 		my $waited = 0;
 		while ( $waited < 5 && kill( 0, $pid ) ) {
 			sleep 1;
 			$waited++;
 		}
 
-		# Force kill if needed
+		# Send SIGKILL if the process does not exit
 		if ( kill( 0, $pid ) ) {
 			kill( 'KILL', $pid );
 			sleep 1;
@@ -159,21 +160,22 @@ sub stop ($self)
 }
 
 # $self->is_running:
-#	Check if proxy is running
+#	Check if the proxy runs
 sub is_running ($self)
 {
 	return $self->{state}->is_proxy_running;
 }
 
 # $self->port:
-#	Get current proxy port
+#	Get the current proxy port
 sub port ($self)
 {
 	return $self->{state}->get_proxy_port;
 }
 
 # $self->guest_url:
-#	Get proxy URL for use from VM guest (via QEMU gateway)
+#	Get the proxy URL for use from the VM guest. The URL goes
+#	through the QEMU gateway.
 sub guest_url ($self)
 {
 	my $port = $self->port;
@@ -183,7 +185,8 @@ sub guest_url ($self)
 }
 
 # $self->host_url:
-#	Get proxy URL for use from host (localhost)
+#	Get the proxy URL for use from the host. The URL points to
+#	localhost.
 sub host_url ($self)
 {
 	my $port = $self->port;
@@ -193,7 +196,7 @@ sub host_url ($self)
 }
 
 # $self->wait_ready($timeout):
-#	Wait for proxy to accept connections
+#	Wait until the proxy accepts connections
 sub wait_ready ( $self, $timeout = CONNECT_TIMEOUT )
 {
 	my $port = $self->{state}->get_proxy_port;
@@ -243,7 +246,7 @@ sub _find_available_port ($self)
 }
 
 # $self->_run_proxy($port):
-#	Run the proxy server (called in child process)
+#	Run the proxy server. The child process calls this method.
 sub _run_proxy ( $self, $port )
 {
 	require HTTP::Daemon;
@@ -251,7 +254,7 @@ sub _run_proxy ( $self, $port )
 	require HTTP::Response;
 	require IO::Select;
 
-	# Ignore SIGPIPE - clients may disconnect mid-transfer
+	# Ignore SIGPIPE. Clients can disconnect during a transfer.
 	local $SIG{PIPE} = 'IGNORE';
 
 	my $daemon = HTTP::Daemon->new(
@@ -263,15 +266,15 @@ sub _run_proxy ( $self, $port )
 
 	$self->{log}->info( 'Proxy listening on 0.0.0.0:%d', $port );
 
-	# Self-pipe trick for reliable signal handling
+	# Use the self-pipe trick for reliable signal handling
 	pipe( my $sig_read, my $sig_write ) or die "pipe: $!";
 	$sig_read->blocking(0);
 	$sig_write->blocking(0);
 
-	# Use IO::Select to wait on both daemon and signal pipe
+	# Use IO::Select to wait on the daemon and the signal pipe
 	my $select = IO::Select->new( $daemon, $sig_read );
 
-	# Handle SIGTERM gracefully by writing to self-pipe
+	# On SIGTERM, write to the self-pipe. This stops the loop safely.
 	my $running = 1;
 	local $SIG{TERM} = sub {
 		$self->{log}->info('Received SIGTERM, shutting down');
@@ -281,13 +284,13 @@ sub _run_proxy ( $self, $port )
 
 	while ($running) {
 
-		# Wait for either client connection or signal
+		# Wait for a client connection or a signal
 		my @ready = $select->can_read;
 		last if !$running;
 
 		for my $fh (@ready) {
 
-			# Drain signal pipe if signaled
+			# Drain the signal pipe after a signal
 			if ( $fh == $sig_read ) {
 				my $buf;
 				sysread $sig_read, $buf, 100;
@@ -311,7 +314,7 @@ sub _handle_client ( $self, $client )
 {
 	while ( my $request = $client->get_request ) {
 
-		# Check if we can stream directly from cache
+		# Check if the proxy can stream directly from the cache
 		my $method      = $request->method;
 		my $url         = $request->uri->as_string;
 		my $client_addr = $client->peerhost;
@@ -359,19 +362,19 @@ sub _process_request ( $self, $request )
 	my $method = $request->method;
 	my $url    = $request->uri->as_string;
 
-	# Only handle GET and HEAD for caching
+	# Cache only GET and HEAD requests
 	if ( $method ne 'GET' && $method ne 'HEAD' ) {
 		return $self->_forward_request($request);
 	}
 
-	# Check cache first
+	# Check the cache first
 	my $cached = $self->{cache}->lookup($url);
 	if ( defined $cached ) {
 		$self->{log}->info( 'CACHE HIT (disk): %s', $url );
 		return $self->_serve_cached( $cached, $request );
 	}
 
-	# Fetch from upstream
+	# Fetch the response from the upstream server
 	$self->{log}->info( 'CACHE MISS: Fetching from upstream: %s', $url );
 	my $fetch_start   = time;
 	my $response      = $self->_forward_request($request);
@@ -385,7 +388,7 @@ sub _process_request ( $self, $request )
 	    ->info( 'Fetched %d bytes in %.3f seconds (%.2f MB/s) - Status: %d',
 		$content_size, $fetch_elapsed, $fetch_rate, $response->code );
 
-	# Cache if appropriate
+	# Cache the response if it is cacheable
 	if (       $response->is_success
 		&& $self->{cache}->is_cacheable( $url, $response->code ) )
 	{
@@ -420,7 +423,7 @@ sub _forward_request ( $self, $request )
 		agent   => 'FuguVM-Proxy/1.0',
 	);
 
-	# Clone request for forwarding
+	# Clone the request to forward it
 	my $url = $request->uri->as_string;
 	my $forwarded =
 	    HTTP::Request->new( $request->method, $url,
@@ -452,7 +455,7 @@ sub _serve_cached ( $self, $path, $request )
 	$response->header( 'Content-Length' => length($content) );
 	$response->header( 'X-Cache'        => 'HIT' );
 
-	# Guess content type from URL
+	# Guess the content type from the URL
 	my $url = $request->uri->as_string;
 	if ( $url =~ /\.tgz$/ ) {
 		$response->header( 'Content-Type' => 'application/x-gzip' );
@@ -466,7 +469,7 @@ sub _serve_cached ( $self, $path, $request )
 			'Content-Type' => 'application/octet-stream' );
 	}
 
-	# Only include content for GET requests
+	# Include the content only for GET requests
 	if ( $request->method eq 'GET' ) {
 		$response->content($content);
 	}
@@ -477,11 +480,11 @@ sub _serve_cached ( $self, $path, $request )
 # New optimized streaming implementation
 sub _serve_cached_streaming ( $self, $socket, $meta, $request )
 {
-	# Optimize socket for large transfers
-	# Disable Nagle's algorithm for immediate sends
+	# Set the socket options for large transfers. Disable Nagle's
+	# algorithm to send data immediately.
 	setsockopt( $socket, IPPROTO_TCP, TCP_NODELAY, 1 );
 
-	# Increase send buffer to 1MB to reduce syscall overhead
+	# Increase the send buffer to 1MB to reduce the syscall overhead
 	setsockopt( $socket, SOL_SOCKET, SO_SNDBUF, pack( 'I', 1048576 ) );
 
 	$self->{log}->debug('Applied TCP_NODELAY and 1MB send buffer');
@@ -491,7 +494,7 @@ sub _serve_cached_streaming ( $self, $socket, $meta, $request )
 	my $size   = $meta->{size};
 	my $etag   = $meta->{etag};
 
-	# Handle If-None-Match for 304 responses
+	# Send a 304 response when If-None-Match matches the ETag
 	my $if_none_match = $request->header('If-None-Match');
 	if ( defined $if_none_match && $if_none_match eq $etag ) {
 		$self->{log}->info('Sending 304 Not Modified (ETag match)');
@@ -500,7 +503,7 @@ sub _serve_cached_streaming ( $self, $socket, $meta, $request )
 		return;
 	}
 
-	# Send headers
+	# Send the headers
 	my $headers = {
 		'Content-Type'   => $meta->{content_type},
 		'Content-Length' => $size,
@@ -512,7 +515,7 @@ sub _serve_cached_streaming ( $self, $socket, $meta, $request )
 		200, 'OK', $size, $meta->{content_type} );
 	$self->_send_response_headers( $socket, 200, 'OK', $headers );
 
-	# Stream file body for GET requests
+	# Stream the file body for GET requests
 	if ( $method eq 'GET' ) {
 		$self->{log}
 		    ->debug( 'Starting stream: %s (%d bytes)', $path, $size );
@@ -538,7 +541,7 @@ sub _serve_cached_streaming ( $self, $socket, $meta, $request )
 	}
 }
 
-# Send HTTP response headers to socket
+# Send the HTTP response headers to the socket
 sub _send_response_headers ( $self, $socket, $code, $message, $headers )
 {
 	my $response = "HTTP/1.1 $code $message\r\n";
@@ -547,7 +550,7 @@ sub _send_response_headers ( $self, $socket, $code, $message, $headers )
 	}
 	$response .= "\r\n";
 
-	# Use syswrite to ensure all bytes are sent
+	# Use syswrite in a loop to make sure that all bytes go out
 	my $len    = length $response;
 	my $offset = 0;
 	while ( $offset < $len ) {
@@ -558,7 +561,7 @@ sub _send_response_headers ( $self, $socket, $code, $message, $headers )
 	}
 }
 
-# Stream file to socket using large buffers (256KB)
+# Stream the file to the socket with large 256KB buffers
 sub _stream_file_to_socket ( $self, $socket, $path, $size )
 {
 	open my $fh, '<', $path or do {
@@ -568,7 +571,7 @@ sub _stream_file_to_socket ( $self, $socket, $path, $size )
 	};
 	binmode $fh;
 
-	# Use 256KB chunks for optimal throughput
+	# Use 256KB chunks to get the best throughput
 	use constant CHUNK_SIZE => 262144;    # 256KB
 
 	my $bytes_sent = 0;
@@ -584,7 +587,7 @@ sub _stream_file_to_socket ( $self, $socket, $path, $size )
 			last;
 		}
 
-		# Handle partial writes
+		# Write the remaining bytes after a partial write
 		my $offset = 0;
 		while ( $offset < $n ) {
 			my $written =

@@ -71,7 +71,8 @@ subtest '[MQTT-Transport §1.3] topic tokens' => sub {
 	my $mqtt = OpenHAP::TestMock::MQTT->new;
 	my $base = make_base( $mqtt, fulltopic => 'home/%topic%/%prefix%/' );
 
-	# %topic% replaced by device topic, %prefix% by cmnd/stat/tele
+	# The builder replaces %topic% with the device topic and
+	# %prefix% with cmnd/stat/tele
 	my $built = $base->_build_topic( 'tele', 'SENSOR' );
 	like( $built, qr{home/device/tele/SENSOR},
 		'%topic% and %prefix% tokens substituted' );
@@ -113,7 +114,8 @@ subtest '[MQTT-Transport §2.3] query pattern' => sub {
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 
-	# On LWT Online the device state is queried with Status 11
+	# On LWT Online, the accessory queries the device state with
+	# Status 11
 	$mqtt->clear_published;
 	$mqtt->simulate_message( 'tele/device/LWT', 'Online' );
 	ok(
@@ -135,7 +137,8 @@ subtest '[MQTT-Transport §2.4] bidirectional flow' => sub {
 	);
 	$heater->subscribe_mqtt;
 
-	# Command out on cmnd/, state back in on stat/
+	# The command goes out on cmnd/. The state comes back in on
+	# stat/.
 	$mqtt->clear_published;
 	$heater->set_power(1);
 	ok( ( grep { $_->{topic} =~ m{^cmnd/} } $mqtt->get_published ),
@@ -200,7 +203,8 @@ subtest '[MQTT-Transport §5][MQTT-Transport §5.2] reconnection state refresh' 
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 
-	# After an Offline/Online cycle the state is re-queried
+	# After an Offline/Online cycle, the accessory queries the state
+	# again
 	$mqtt->simulate_message( 'tele/device/LWT', 'Offline' );
 	$mqtt->clear_published;
 	$mqtt->simulate_message( 'tele/device/LWT', 'Online' );

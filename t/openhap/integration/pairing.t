@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Integration test: complete HAP pairing workflow against the live
-# daemon, driven by OpenHAP::Test::Controller.
+# Integration test: the complete HAP pairing workflow against the
+# live daemon. OpenHAP::Test::Controller drives the workflow.
 
 use v5.36;
 use Test::More tests => 18;
@@ -19,8 +19,9 @@ $env->ensure_unpaired or die "Cannot reset pairing state\n";
 my $storage_dir = '/var/db/openhapd';
 ok(-d $storage_dir && -r $storage_dir, 'pairing storage directory exists');
 
-# Test 2: Pair-setup M1 rejects a stale "0x"-prefixed public key
-# (regression guard: Math::BigInt->as_hex once leaked its 0x prefix)
+# Test 2: Pair-setup M1 rejects a stale "0x"-prefixed public key.
+# This is a regression guard: Math::BigInt->as_hex once leaked its
+# 0x prefix.
 my $response = $env->http_request('POST', '/pair-setup',
 	"\x06\x01\x01\x00\x01\x00",
 	{'Content-Type' => 'application/pairing+tlv8'});
@@ -31,8 +32,8 @@ my $hex = unpack('H*', $body);
 unlike($hex, qr/03..0130783078/,
     '[HAP-Pairing §2.4] M2 public key does not contain ASCII "0x" prefix');
 
-# Close the raw M1 probe's connection now instead of leaving it
-# registered with the daemon until teardown
+# Close the raw M1 probe's connection now. Do not leave it
+# registered with the daemon until teardown.
 $env->close_sockets;
 
 # Restart cleanly so the M1 probe above does not hold the pairing lock
@@ -72,7 +73,8 @@ is(scalar @$pairings, 1, 'extra pairing removed');
 ok($controller->remove_pairing('ghost-ctrl'),
    '[HAP-Pairing §7.4] removing nonexistent pairing succeeds');
 
-# Test 8: Wrong-PIN attempt is rejected and counted after unpairing
+# Test 8: The daemon rejects and counts a wrong-PIN attempt after
+# unpairing.
 $controller->close;
 $env->ensure_unpaired or die "Cannot reset pairing state\n";
 

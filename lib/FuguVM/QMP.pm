@@ -19,8 +19,9 @@ use v5.36;
 
 # FuguVM::QMP - QEMU Machine Protocol client
 #
-# Provides programmatic control over QEMU via the QMP JSON protocol.
-# Connects to QEMU's QMP socket for reliable VM lifecycle management.
+# The module gives programmatic control over QEMU through the QMP
+# JSON protocol. It connects to the QMP socket of QEMU for reliable
+# VM lifecycle management.
 
 package FuguVM::QMP;
 
@@ -59,14 +60,14 @@ sub open_connection ($self)
 
 	$self->{sock} = $sock;
 
-	# Read greeting
+	# Read the greeting
 	my $greeting = $self->_read_response;
 	if ( !defined $greeting || !exists $greeting->{QMP} ) {
 		$self->disconnect;
 		return 0;
 	}
 
-	# Send qmp_capabilities to enter command mode
+	# Send qmp_capabilities to enter the command mode
 	my $result = $self->run_command('qmp_capabilities');
 	if ( !defined $result ) {
 		$self->disconnect;
@@ -89,7 +90,7 @@ sub disconnect ($self)
 }
 
 # $self->run_command($command, $arguments):
-#	Execute a QMP command and return the result
+#	Run a QMP command. The method returns the result.
 sub run_command ( $self, $command, $arguments = undef )
 {
 	return if !$self->{sock};
@@ -121,14 +122,16 @@ sub _read_response ($self)
 }
 
 # $self->_read_line($timeout):
-#	One line without its terminator, or undef on timeout, EOF or read
-#	error. Bounded with IO::Select against a wall-clock deadline:
-#	IO::Socket's timeout() governs only its own connect and accept, so a
-#	bare readline here blocks forever whenever QEMU stops answering on
-#	an otherwise open socket.
+#	Read one line without its terminator. The method returns undef
+#	on timeout, EOF, or read error. IO::Select bounds the read
+#	against a wall-clock deadline. The timeout() of IO::Socket
+#	governs only its own connect and accept. Thus a bare readline
+#	here blocks forever when QEMU stops answering on an otherwise
+#	open socket.
 #
-#	Bytes past the newline stay buffered for the next call, so a reply
-#	that arrives in the same segment as the following one is not lost.
+#	Bytes after the newline stay in the buffer for the next call.
+#	Thus the method does not lose a reply that arrives in the same
+#	segment as the next one.
 sub _read_line ( $self, $timeout )
 {
 	my $sock = $self->{sock};
@@ -160,8 +163,8 @@ sub _read_line ( $self, $timeout )
 # High-level commands
 
 # $self->query_status:
-#	Query VM running status
-#	Returns hashref with 'running' and 'status' keys
+#	Query the VM running status. The method returns a hashref with
+#	the 'running' and 'status' keys.
 sub query_status ($self)
 {
 	my $result = $self->run_command('query-status');
@@ -170,7 +173,7 @@ sub query_status ($self)
 }
 
 # $self->is_running:
-#	Check if VM is currently running
+#	Check if the VM runs now
 sub is_running ($self)
 {
 	my $status = $self->query_status;
@@ -179,7 +182,7 @@ sub is_running ($self)
 }
 
 # $self->powerdown:
-#	Request graceful guest shutdown via ACPI
+#	Ask the guest for a controlled shutdown through ACPI
 sub powerdown ($self)
 {
 	my $result = $self->run_command('system_powerdown');
@@ -187,7 +190,7 @@ sub powerdown ($self)
 }
 
 # $self->quit:
-#	Immediately terminate QEMU process
+#	Stop the QEMU process immediately
 sub quit ($self)
 {
 	my $result = $self->run_command('quit');

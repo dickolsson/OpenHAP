@@ -46,8 +46,9 @@ use constant {
 	EXIT_EXPECT_FAILED   => 9,
 	EXIT_DOWNLOAD_FAILED => 10,
 
-	# Scriptable: lets 'snapshot restore || provision-from-scratch'
-	# tell a missing layer from a real failure
+	# Scriptable: a script that runs
+	# 'snapshot restore || provision-from-scratch' can tell a
+	# missing layer from a real failure.
 	EXIT_SNAPSHOT_NOT_FOUND => 11,
 };
 
@@ -120,7 +121,7 @@ sub run ( $class, @argv )
 
 	my $self = $class->new(%opts);
 
-	# Load config if not init command
+	# Load the configuration if the command is not init
 	if ( $command ne 'init' && $command ne 'help' ) {
 		my $project_root = $opts{project}
 		    // FuguVM::Config->find_project_root;
@@ -131,7 +132,7 @@ sub run ( $class, @argv )
 			return EXIT_CONFIG_ERROR;
 		}
 
-		# Validate project path exists
+		# Make sure that the project path exists
 		if ( !-d $project_root ) {
 			$self->{log}->error(
 				"Project path does not exist: $project_root");
@@ -168,7 +169,7 @@ sub _load_vm ( $self, %opts )
 	);
 }
 
-# Idempotent: ensure VM is running
+# The command is idempotent. It makes sure that the VM runs.
 sub cmd_up ( $self, @args )
 {
 	my $no_cache = 0;
@@ -182,27 +183,27 @@ sub cmd_up ( $self, @args )
 	return $vm->up;
 }
 
-# Stop VM gracefully
+# Stop the VM gracefully
 sub cmd_down ( $self, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	return $vm->down;
 }
 
-# Stop VM and delete disk image
+# Stop the VM. Delete the disk image.
 sub cmd_destroy ( $self, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	return $vm->destroy;
 }
 
-# Show VM status
+# Show the VM status
 sub cmd_status ( $self, @args )
 {
 	my $vm     = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	my $status = $vm->status;
 
-	# Format and log status data
+	# Format the status data. Then log it.
 	for my $key ( sort keys %$status ) {
 		my $value = $status->{$key} // '';
 		$self->{log}->info("$key: $value");
@@ -211,14 +212,14 @@ sub cmd_status ( $self, @args )
 	return EXIT_SUCCESS;
 }
 
-# Start VM in background
+# Start the VM in the background
 sub cmd_start ( $self, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	return $vm->start;
 }
 
-# Stop VM
+# Stop the VM
 sub cmd_stop ( $self, @args )
 {
 	my $force  = 0;
@@ -231,14 +232,15 @@ sub cmd_stop ( $self, @args )
 	return $vm->stop($force);
 }
 
-# SSH into VM or run command
+# Open an SSH session into the VM, or run a command
 sub cmd_ssh ( $self, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 
-	# Uses SSH agent for authentication. Connect over IPv4: QEMU
-	# forwards the guest SSH port on 127.0.0.1 only, but 'localhost'
-	# resolves to ::1 first on dual-stack hosts (e.g. CI runners).
+	# The connection uses the SSH agent for authentication. Connect
+	# over IPv4: QEMU forwards the guest SSH port on 127.0.0.1 only.
+	# On dual-stack hosts, for example CI runners, 'localhost'
+	# resolves to ::1 first.
 	my $ssh = FuguVM::SSH->new(
 		host => '127.0.0.1',
 		port => $vm->ssh_port,
@@ -256,7 +258,7 @@ sub cmd_ssh ( $self, @args )
 	}
 }
 
-# Show console connection info
+# Show the console connection info
 sub cmd_console ( $self, @args )
 {
 	my $vm   = $self->_load_vm or return EXIT_VM_NOT_FOUND;
@@ -268,7 +270,7 @@ sub cmd_console ( $self, @args )
 	return EXIT_SUCCESS;
 }
 
-# Run expect script
+# Run an expect script
 sub cmd_expect ( $self, @args )
 {
 	my $script = shift @args;
@@ -296,7 +298,7 @@ sub cmd_wait ( $self, @args )
 	$parser->getoptionsfromarray( \@args, 'timeout=s' => \$timeout, )
 	    or return EXIT_INVALID_ARGS;
 
-	# Validate timeout is a positive integer
+	# Make sure that the timeout is a positive integer
 	if ( $timeout !~ /^\d+$/ ) {
 		$self->{log}->error("Invalid timeout value: $timeout");
 		return EXIT_INVALID_ARGS;
@@ -344,8 +346,8 @@ sub cmd_image ( $self, @args )
 		return EXIT_SUCCESS;
 	}
 
-	# 'download' action - show URL for manual download
-	# Images are cached by the proxy when VM boots
+	# The 'download' action shows the URL for a manual download.
+	# The proxy caches the images when the VM boots.
 	my $version = shift @args // '7.8';
 	my $path    = $image->path($version);
 
@@ -377,8 +379,9 @@ sub cmd_cache ( $self, @args )
 }
 
 # $self->_cache_list($cache):
-#	One line per cached entry, marking the one the invoked VM's
-#	configuration currently derives, then what the proxy holds.
+#	Show one line for each cached entry. Mark the entry that the
+#	configuration of the invoked VM currently derives. Then show
+#	what the proxy holds.
 sub _cache_list ( $self, $cache )
 {
 	my $entries = $cache->list;
@@ -412,10 +415,11 @@ sub _cache_list ( $self, $cache )
 }
 
 # $self->_proxy_list:
-#	What the proxy's download cache holds, one line per OpenBSD
-#	version. Reported by 'cache list' because it shares cache_dir with
-#	the images and is pruned by the same 'cache clear': a half of the
-#	directory that nothing printed was a half nobody knew to bound.
+#	Show what the download cache of the proxy holds, one line for
+#	each OpenBSD version. 'cache list' reports it because it shares
+#	cache_dir with the images, and the same 'cache clear' prunes
+#	it. A half of the directory that nothing printed was a half
+#	nobody knew to bound.
 sub _proxy_list ($self)
 {
 	my $cache = FuguVM::Proxy::Cache->new( $self->{config}->cache_dir );
@@ -426,10 +430,11 @@ sub _proxy_list ($self)
 		return EXIT_SUCCESS;
 	}
 
-	# Per version, since that is the granularity 'clear --stale'
-	# prunes at. A URL naming no version - nothing is_cacheable()
-	# admits today - is counted under '-' rather than dropped, so an
-	# unprunable entry is still visible as one.
+	# Group the sizes per version, because 'clear --stale' prunes
+	# at that granularity. The code counts a URL that names no
+	# version under '-' and does not drop it. is_cacheable() admits
+	# no such URL today. Thus an entry that cannot be pruned is
+	# still visible as one.
 	my %bytes;
 	for my $file (@$files) {
 		my ($version) =
@@ -450,10 +455,10 @@ sub _proxy_list ($self)
 }
 
 # $self->_cache_clear($cache, @args):
-#	Remove cached entries. Bare 'clear' removes them all; --stale
-#	keeps the one the VM named by --vm derives. Because the key inputs
-#	'version' and 'disk_size' are per-VM, --stale run for one VM does
-#	prune bases another VM would have hit.
+#	Remove cached entries. Bare 'clear' removes them all. --stale
+#	keeps the entry that the VM named by --vm derives. The key
+#	inputs 'version' and 'disk_size' are per-VM. Thus --stale run
+#	for one VM does prune bases that another VM would have hit.
 sub _cache_clear ( $self, $cache, @args )
 {
 	my $stale  = 0;
@@ -462,7 +467,8 @@ sub _cache_clear ( $self, $cache, @args )
 	$parser->getoptionsfromarray( \@args, 'stale' => \$stale )
 	    or return EXIT_INVALID_ARGS;
 
-	# Interrupted stores leave partial trees behind whichever form ran
+	# An interrupted store leaves partial trees behind. Both forms
+	# of 'clear' sweep them.
 	my $swept = $cache->sweep_temp;
 	$self->{log}->info("Removed $swept incomplete cache entries")
 	    if $swept;
@@ -489,9 +495,10 @@ sub _cache_clear ( $self, $cache, @args )
 			return EXIT_VM_RUNNING;
 		}
 
-		# A stopped disk can be rebuilt with 'fuguvm destroy', so
-		# this is a warning. It cannot cover checkouts other than
-		# this one, which share cache_dir but not state_dir.
+		# The user can rebuild a stopped disk with
+		# 'fuguvm destroy'. Thus this is a warning. The check
+		# cannot cover checkouts other than this one. Those
+		# checkouts share cache_dir but not state_dir.
 		for my $user (@$users) {
 			$self->{log}->warning(
 				sprintf(
@@ -516,14 +523,16 @@ sub _cache_clear ( $self, $cache, @args )
 }
 
 # $self->_proxy_clear($stale):
-#	The other half of cache_dir: the proxy's download cache. Bare
-#	'clear' empties it, --stale keeps the OpenBSD version the invoked
-#	VM installs - the same one-VM scope the image prune above has.
+#	Clear the other half of cache_dir: the download cache of the
+#	proxy. Bare 'clear' empties it. --stale keeps the OpenBSD
+#	version that the invoked VM installs. That is the same one-VM
+#	scope that the image prune above has.
 #
-#	Not reachable from the image loop, which is why this is a second
-#	pass rather than a branch inside it: the two caches share nothing
-#	but cache_dir, and the images have running-VM and orphaned-disk
-#	checks that a re-downloadable file set does not need.
+#	The image loop cannot reach this cache. That is why this is a
+#	second pass, not a branch inside the loop. The two caches share
+#	nothing but cache_dir. Also, the images have running-VM and
+#	orphaned-disk checks that a re-downloadable file set does not
+#	need.
 sub _proxy_clear ( $self, $stale )
 {
 	my $cache = FuguVM::Proxy::Cache->new( $self->{config}->cache_dir );
@@ -540,8 +549,8 @@ sub _proxy_clear ( $self, $stale )
 		return EXIT_SUCCESS;
 	}
 
-	# --stale got this far, so the VM resolves; keeping its version is
-	# the point of the flag.
+	# The --stale path got this far. Thus the VM resolves. To keep
+	# its version is the point of the flag.
 	my $vm      = $self->{config}->load_vm( $self->{vm_name} );
 	my $removed = $cache->prune( $vm->{version} );
 
@@ -557,8 +566,9 @@ sub _proxy_clear ( $self, $stale )
 }
 
 # $self->_current_cache_key($cache):
-#	The key the invoked VM's configuration derives, or undef when the
-#	VM or one of the key inputs cannot be resolved.
+#	Return the key that the configuration of the invoked VM
+#	derives. Return undef when the VM or one of the key inputs
+#	cannot be resolved.
 sub _current_cache_key ( $self, $cache )
 {
 	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
@@ -568,10 +578,11 @@ sub _current_cache_key ( $self, $cache )
 }
 
 # $self->_disks_backed_by($entry_dir):
-#	Every VM in this checkout whose working disk hangs off an image in
-#	$entry_dir, as [ { vm => name, running => bool } ]. Enumerated
-#	from the state directory rather than the configuration, so a disk
-#	counts whether or not a 'vm' block still declares it.
+#	Return every VM in this checkout whose working disk hangs off
+#	an image in $entry_dir, as [ { vm => name, running => bool } ].
+#	The method enumerates the state directory, not the
+#	configuration. Thus a disk counts whether a 'vm' block still
+#	declares it or not.
 sub _disks_backed_by ( $self, $entry_dir )
 {
 	my $state_dir = $self->{config}->state_dir;
@@ -648,9 +659,9 @@ sub cmd_snapshot ( $self, @args )
 }
 
 # $self->_snapshot_save($cache, $name):
-#	Flatten the stopped working disk into the cache under the base it
-#	was built on. A live overlay is not consistent, so a running VM is
-#	refused rather than copied.
+#	Flatten the stopped working disk into the cache, under the base
+#	it was built on. A live overlay is not consistent. Thus the
+#	command refuses a running VM and does not copy it.
 sub _snapshot_save ( $self, $cache, $name )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
@@ -670,9 +681,9 @@ sub _snapshot_save ( $self, $cache, $name )
 		return EXIT_ERROR;
 	}
 
-	# The snapshot belongs under whichever base the disk actually
-	# hangs off, directly or through another snapshot - re-saving
-	# after a restore is normal.
+	# The snapshot belongs under the base that the disk hangs off,
+	# directly or through another snapshot. To save again after a
+	# restore is normal.
 	my $key = $self->_disk_cache_key($cache);
 	if ( !defined $key ) {
 		$self->{log}->error(
@@ -705,9 +716,10 @@ sub _snapshot_save ( $self, $cache, $name )
 }
 
 # $self->_snapshot_restore($cache, $name):
-#	Replace the working disk with a fresh overlay on a snapshot and
-#	reseed the state that disk embodies. Works from nothing - no disk,
-#	no state - so a fresh checkout can restore before its first 'up'.
+#	Replace the working disk with a fresh overlay on a snapshot.
+#	Reseed the state that the disk embodies. The command works from
+#	nothing: no disk, no state. Thus a fresh checkout can restore
+#	before its first 'up'.
 sub _snapshot_restore ( $self, $cache, $name )
 {
 	my $vm    = $self->_load_vm or return EXIT_VM_NOT_FOUND;
@@ -730,8 +742,8 @@ sub _snapshot_restore ( $self, $cache, $name )
 		return EXIT_SNAPSHOT_NOT_FOUND;
 	}
 
-	# Disk::create returns early on an existing path, so without this
-	# a restore would report success and change nothing.
+	# Disk::create returns early on an existing path. Without this
+	# removal, a restore would report success and change nothing.
 	my $disk_path = $state->disk_path;
 	if ( -f $disk_path ) {
 		unlink $disk_path or do {
@@ -749,8 +761,8 @@ sub _snapshot_restore ( $self, $cache, $name )
 		return EXIT_ERROR;
 	}
 
-	# Reseed what the disk embodies. A checkout whose SSH key differs
-	# from the saved one is reconciled by the next 'fuguvm up'.
+	# Reseed what the disk embodies. The next 'fuguvm up' reconciles
+	# a checkout whose SSH key differs from the saved one.
 	my $meta = $found->{meta};
 	$state->mark_installed;
 	$state->set_root_password( $meta->{root_password} )
@@ -830,16 +842,16 @@ sub _snapshot_remove ( $self, $cache, $name )
 }
 
 # $self->_disk_cache_key($cache):
-#	The cache entry the working disk is built on, whether directly on
-#	its base image or through a snapshot of it.
+#	Return the cache entry that backs the working disk, directly
+#	with its base image or through a snapshot of it.
 sub _disk_cache_key ( $self, $cache )
 {
 	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
 	return if !defined $vm_config;
 
 	# Scalar context: backing_file returns an empty list for a
-	# standalone disk, which would reach key_for_path as no argument
-	# at all rather than as undef.
+	# standalone disk. Without scalar context, the empty list would
+	# reach key_for_path as no argument at all, not as undef.
 	my $disk    = FuguVM::Disk->new( $self->{config}->state_dir );
 	my $backing = $disk->backing_file( $vm_config->{name} );
 
@@ -864,7 +876,7 @@ sub cmd_disk ( $self, @args )
 			return EXIT_ERROR;
 		}
 
-		# Print info in a readable format
+		# Print the info in a readable format
 		for my $key ( sort keys %$info ) {
 			$self->{log}->info("$key: $info->{$key}");
 		}
@@ -892,7 +904,7 @@ sub cmd_disk ( $self, @args )
 	if ( $action eq 'repair' ) {
 		$self->{log}->info("Repairing disk image...");
 
-		# Check if VM is running first
+		# First, check if the VM runs
 		my $vm = $self->_load_vm;
 		if ( defined $vm && $vm->is_running ) {
 			$self->{log}
@@ -903,7 +915,8 @@ sub cmd_disk ( $self, @args )
 		my $ok = $disk->repair( $self->{vm_name} );
 		if ($ok) {
 
-			# Clear unclean shutdown state after successful repair
+			# Clear the unclean shutdown state after a
+			# successful repair
 			$self->{state}->clear_shutdown_state;
 			$self->{log}->info("Disk repaired");
 			return EXIT_SUCCESS;
@@ -916,7 +929,7 @@ sub cmd_disk ( $self, @args )
 	return EXIT_ERROR;
 }
 
-# Initialize project
+# Initialize the project
 sub cmd_init ( $self, @args )
 {
 	my $dir         = shift @args // '.';
@@ -929,7 +942,7 @@ sub cmd_init ( $self, @args )
 		return EXIT_SUCCESS;
 	}
 
-	# Check if directory is writable
+	# Check if the directory is writable
 	if ( !-d $dir ) {
 		$self->{log}->error("Directory does not exist: $dir");
 		return EXIT_ERROR;
@@ -950,8 +963,9 @@ sub cmd_init ( $self, @args )
 		return EXIT_ERROR;
 	}
 
-	# Create project config.  state_dir has to agree with the directory
-	# created above, so it derives from the same constant.
+	# Create the project configuration. state_dir must agree with
+	# the directory created above. Thus it derives from the same
+	# constant.
 	_write_file( $config_file, <<"EOF" );
 # FuguVM project configuration
 
@@ -960,7 +974,7 @@ state_dir = $data_dir/state
 default_vm = default
 EOF
 
-	# Create default VM config
+	# Create the default VM config
 	_write_file( "$fuguvm_dir/vms/default.conf", <<"EOF" );
 # Default OpenBSD VM
 
@@ -973,7 +987,7 @@ ssh_port = 2222
 console_port = 4444
 EOF
 
-	# Create .gitignore
+	# Create the .gitignore file
 	_write_file( "$fuguvm_dir/.gitignore", <<'EOF' );
 state/
 *.log

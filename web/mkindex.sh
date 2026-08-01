@@ -14,9 +14,9 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #
-# Emit the body of manuals.html from manual sources.  Grouping is by source
-# directory, which is already how the tree is organised, so the index cannot
-# drift as manuals are added.
+# Emit the body of manuals.html from manual sources.  The groups follow
+# the source directories, which is already how the tree is organized.
+# Thus the index cannot drift when you add manuals.
 # Usage: mkindex.sh <manpage|podfile>...
 
 set -eu
@@ -24,9 +24,10 @@ set -eu
 [ $# -gt 0 ] || { echo "usage: mkindex.sh <manpage|podfile>..." >&2; exit 1; }
 
 # describe <path>
-#	One-line description: the .Nd macro of an mdoc page, or the
-#	"Module - description" line of a POD =head1 NAME block.  Never
-#	retyped here -- the source page is the only copy.
+#	Print the one-line description: the .Nd macro of an mdoc page,
+#	or the "Module - description" line of a POD =head1 NAME block.
+#	This script never retypes the text.  The source page is the
+#	only copy.
 describe()
 {
 	case $1 in
@@ -53,10 +54,10 @@ describe()
 }
 
 # manual_name <path> <namespace>
-#	mdoc pages take their name from the file name, prefixed by the
-#	group's module namespace if it has one.  POD sidecars take theirs
-#	from the path under lib/, so lib/OpenHAP/Tasmota/Heater.pod is
-#	OpenHAP::Tasmota::Heater.
+#	An mdoc page takes its name from the file name, with the
+#	group's module namespace as a prefix if the group has one.  A
+#	POD sidecar takes its name from the path under lib/, so
+#	lib/OpenHAP/Tasmota/Heater.pod is OpenHAP::Tasmota::Heater.
 manual_name()
 {
 	case $1 in
@@ -86,8 +87,9 @@ manual_section()
 }
 
 # emit_entry <path> <namespace>
-#	The './' matters: a page is named FuguLib::Daemon.3p.html, and a
-#	relative URL whose first segment holds a colon reads as a scheme.
+#	The './' matters.  A page has a name such as
+#	FuguLib::Daemon.3p.html, and a relative URL whose first segment
+#	holds a colon reads as a scheme.
 emit_entry()
 {
 	name=$(manual_name "$1" "$2")
@@ -99,8 +101,9 @@ emit_entry()
 }
 
 # emit_group <heading> <anchor> <path prefix> <namespace> <path>...
-#	Emits nothing at all when no argument belongs to the group, so a
-#	group that has no manuals yet leaves no empty heading behind.
+#	The function emits nothing at all when no argument belongs to
+#	the group.  Thus a group that has no manuals yet leaves no
+#	empty heading behind.
 emit_group()
 {
 	heading=$1

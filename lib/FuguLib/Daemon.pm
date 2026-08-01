@@ -22,13 +22,13 @@ package FuguLib::Daemon;
 use POSIX qw(setsid);
 
 # $class->daemonize(%args):
-#	Fork into background, detach from terminal, and redirect
-#	standard file descriptors. Returns in child process only.
-#	Parent process exits successfully.
+#	Fork into the background. Detach from the terminal. Redirect
+#	the standard file descriptors. The method returns in the child
+#	process only. The parent process exits successfully.
 #
 #	%args:
-#		logfile => $path  # Where to redirect stdout/stderr (default: /dev/null)
-#		on_fork => sub($) # Callback after fork, receives PID in parent
+#		logfile => $path  # Target of stdout/stderr (default: /dev/null)
+#		on_fork => sub($) # Runs in the parent after the fork, with the PID
 sub daemonize ( $class, %args )
 {
 	my $logfile = $args{logfile} // '/dev/null';
@@ -50,7 +50,7 @@ sub daemonize ( $class, %args )
 	$DB::inhibit_exit = 0;
 	setsid() or die "Cannot start new session: $!";
 
-	# Redirect standard file descriptors
+	# Redirect the standard file descriptors
 	open STDIN,  '<',  '/dev/null' or die "Cannot read /dev/null: $!";
 	open STDOUT, '>>', $logfile    or die "Cannot write to $logfile: $!";
 	open STDERR, '>&', \*STDOUT    or die "Cannot dup STDOUT: $!";

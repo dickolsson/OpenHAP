@@ -5,7 +5,8 @@
 
 daemon="/usr/local/bin/openhapd"
 daemon_flags="-c /etc/openhapd.conf"
-# Note: daemon starts as root and drops to _openhap after privileged operations
+# Note: the daemon starts as root. It drops to _openhap after the
+# privileged operations.
 
 . /etc/rc.d/rc.subr
 

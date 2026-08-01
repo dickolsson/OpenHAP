@@ -2,8 +2,9 @@
 # ex:ts=8 sw=4:
 # Conformance tests for spec/HAP-Services.md
 #
-# Data-driven over the services OpenHAP implements; catalog rows are
-# cited as [HAP-Services §4/<Name>] and the UUID table as §6 rows.
+# The tests are data-driven over the services that OpenHAP
+# implements. The tests cite catalog rows as [HAP-Services §4/<Name>]
+# and UUID table entries as §6 rows.
 
 use v5.36;
 use Test::More;
@@ -22,7 +23,8 @@ use_ok('OpenHAP::Tasmota::Sensor');
 use_ok('OpenHAP::Tasmota::Thermostat');
 use_ok('OpenHAP::Tasmota::Lightbulb');
 
-# [HAP-Services §6] UUID table rows for every service OpenHAP defines
+# [HAP-Services §6] UUID table rows for every service that OpenHAP
+# defines
 my %uuid_table = (
 	AccessoryInformation => '3E',
 	ProtocolInformation  => 'A2',

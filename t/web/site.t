@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Tests for the static website produced by 'make web'
+# Tests for the static website that 'make web' produces
 
 use v5.36;
 use Test::More;
@@ -29,7 +29,7 @@ plan skip_all => 'lowdown not found' unless have('lowdown');
 plan skip_all => 'mandoc not found'  unless have('mandoc');
 
 # Build the whole site into a scratch directory.  WEBOUT points outside the
-# repository so the build cannot quietly rely on its default location.
+# repository. Thus the build cannot quietly rely on its default location.
 my $default_build = -e "$ROOT/web/build";
 my $OUT           = tempdir( CLEANUP => 1 );
 my $build_log     = `cd $ROOT && make web WEBOUT=$OUT 2>&1`;
@@ -57,25 +57,26 @@ my @NAV = (
 	'https://github.com/dickolsson/openhap',
 );
 
-# Manual sources in the tree, and the page each one must produce.  The list
-# is discovered rather than written down, so a manual that is added without
-# being published fails here instead of silently going missing.
+# Manual sources in the tree, and the page each one must produce.  The test
+# discovers the list rather than writes it down. Thus a manual that is
+# added but not published fails here. It does not silently go missing.
 my %MANUAL;
 for my $src ( sort glob("$ROOT/man/*/*") ) {
 	next unless $src =~ m{/man/([^/]+)/([^/]+)\.(1|3p|5|8)$};
 	my ( $dir, $stem, $section ) = ( $1, $2, $3 );
 
 	# FuguLib pages are module manuals: the source drops the namespace
-	# because make cannot have a colon in a target, the page keeps it
+	# because make cannot have a colon in a target. The page keeps the
+	# namespace.
 	my $name = $dir eq 'fugulib' ? "FuguLib::$stem" : $stem;
 	$MANUAL{$src} = "$name.$section.html";
 }
 
 ok( scalar keys %MANUAL, 'manual sources found in man/' );
 
-# The POD sidecars, and the page each one must produce.  Discovered the
-# same way the build discovers them, so a sidecar that is added without
-# being published shows up here as a missing file.
+# The POD sidecars, and the page each one must produce.  The test
+# discovers them the same way the build discovers them. Thus a sidecar
+# that is added but not published shows up here as a missing file.
 my %POD;
 File::Find::find(
 	sub {
@@ -101,8 +102,8 @@ for my $file ( @PAGES, @ASSETS ) {
 	ok( -s "$OUT/$file", "$file exists and is not empty" );
 }
 
-# Nothing outside WEBOUT is written: the default output directory must not
-# appear as a side effect of building somewhere else
+# The build writes nothing outside WEBOUT. The default output directory
+# must not appear as a side effect of a build somewhere else.
 SKIP: {
 	skip 'web/build predates this test', 1 if $default_build;
 	ok( !-e "$ROOT/web/build",
@@ -120,24 +121,25 @@ for my $page (@PAGES) {
 	my ($title) = $html =~ m{<title>([^<]*)</title>};
 	ok( defined $title && length $title, "$page has a title" );
 
-	# mkpage.sh substitutes the title with sed, so a title containing a
-	# slash, an ampersand or a newline would be mangled rather than
-	# escaped.  Assert no title ever does.
+	# mkpage.sh substitutes the title with sed. Thus sed would mangle,
+	# not escape, a title that contains a slash, an ampersand or a
+	# newline.  Assert that no title contains these characters.
 	unlike( $title // '', qr{[/&\n]}, "$page title is sed-safe" );
 
 	for my $link (@NAV) {
 		like( $html, qr/href="\Q$link\E"/, "$page links to $link" );
 	}
 
-	# Nothing may be root-absolute: the site is served from a project
-	# path, where a leading slash leaves the site entirely
+	# Nothing may be root-absolute: the host serves the site from a
+	# project path. There a leading slash leaves the site entirely.
 	my @refs = $html =~ m{(?:href|src)="([^"]+)"}g;
 	my @rooted = grep { m{^/} } @refs;
 	is( scalar @rooted, 0, "$page has no root-absolute reference" )
 	    or diag "offenders: @rooted";
 
-	# Every relative reference must resolve to a file that was built,
-	# and every fragment to an id that exists on the target page
+	# Every relative reference must resolve to a file that the build
+	# made. Every fragment must resolve to an id that exists on the
+	# target page.
 	for my $ref (@refs) {
 		unlike( $ref, qr{^file:}i, "$page: $ref is not a file: URL" );
 		next if $ref =~ m{^[a-z]+:};    # absolute: http, https, mailto
@@ -154,7 +156,7 @@ for my $page (@PAGES) {
 	}
 }
 
-# install.html is rendered from INSTALL.md, not retyped
+# The build renders install.html from INSTALL.md, not from retyped text
 {
 	my $html = slurp("$OUT/install.html");
 	like( $html, qr/Create the system user/,
@@ -182,7 +184,7 @@ for my $page (@PAGES) {
 		like( $index, qr{href="(?:\./)?\Q$page\E"},
 			"manuals.html links to $page" );
 
-		# '=head1 NAME' is followed by 'Module - description'
+		# 'Module - description' follows '=head1 NAME'
 		my ($desc) = slurp("$ROOT/$src")
 		    =~ m{^=head1\s+NAME\s*\n\s*\n\S+\s+-\s+(.+?)\s*$}m;
 		ok( defined $desc, "$src has a NAME description" ) or next;
@@ -192,8 +194,9 @@ for my $page (@PAGES) {
 	}
 }
 
-# The module reference covers every sidecar and nothing else.  FuguLib is
-# documented in mdoc, so its pages are not counted here.
+# The module reference covers every sidecar and nothing else.  The
+# FuguLib documentation is in mdoc. Thus the test does not count FuguLib
+# pages here.
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
 	my @module_pages =
@@ -204,9 +207,10 @@ for my $page (@PAGES) {
 		'one module page per .pod sidecar, and no more' );
 }
 
-# Cross-references: local pages link locally, everything else leaves for
-# man.openbsd.org.  mandoc decides this by looking in its working directory,
-# so this is the assertion that the staging directory is doing its job.
+# Cross-references: local pages link locally. Everything else leaves for
+# man.openbsd.org.  mandoc decides this from the contents of its working
+# directory. Thus this assertion shows that the staging directory does
+# its job.
 {
 	my $hapctl = slurp("$OUT/hapctl.8.html");
 	like( $hapctl, qr{<a class="Xr" href="\./openhapd\.8\.html">},
@@ -214,14 +218,14 @@ for my $page (@PAGES) {
 	like( $hapctl, qr{<a class="Xr" href="https://man\.openbsd\.org/rc\.8">},
 		'.Xr rc 8 leaves for man.openbsd.org' );
 
-	# Sibling module manuals cross-link, which only works because the
-	# staging directory holds them under their FuguLib:: names
+	# Sibling module manuals cross-link. This only works because the
+	# staging directory holds them under their FuguLib:: names.
 	my $daemon = slurp("$OUT/FuguLib::Daemon.3p.html");
 	like( $daemon, qr{<a class="Xr" href="\./FuguLib::State\.3p\.html">},
 		'.Xr FuguLib::State 3p links to the local page' );
 
-	# A relative URL whose first segment holds a colon is read as a
-	# scheme, so links to module manuals must keep their './'
+	# A browser reads a relative URL whose first segment holds a colon
+	# as a scheme. Thus links to module manuals must keep their './'.
 	for my $page (@PAGES) {
 		my @hrefs = slurp("$OUT/$page") =~ m{href="([^"]+)"}g;
 		my @bad   = grep {
@@ -244,7 +248,7 @@ for my $page (@PAGES) {
 	}
 }
 
-# Every page must be reachable by following links from the front page.
+# Every page must be reachable through links from the front page.
 # 404.html is the exception: the host serves it for unknown paths.
 {
 	my %seen  = ( 'index.html' => 1 );
@@ -285,8 +289,8 @@ for my $page (@PAGES) {
 	    or diag "unexpected: @unexpected";
 }
 
-# External links are collected and reported, never fetched: the build and
-# its tests touch no network
+# The test collects and reports external links. It never fetches them.
+# The build and its tests touch no network.
 {
 	my %external;
 	for my $page (@PAGES) {

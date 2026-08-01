@@ -3,7 +3,7 @@ use v5.36;
 package OpenHAP::MQTT;
 
 # MQTT client wrapper for OpenHAP
-# Integrates with IO::Select for event-driven message handling
+# The module works with IO::Select for event-driven message handling
 
 sub new ( $class, %args )
 {
@@ -28,10 +28,10 @@ sub mqtt_connect ( $self, $timeout = 10 )
 		'Connecting to MQTT broker at %s:%d (timeout: %ds)',
 		$self->{host}, $self->{port}, $timeout );
 
-	# Try to load Net::MQTT::Simple if available
+	# Try to load Net::MQTT::Simple if it is available
 	local $@;
 
-	# Capture warnings from Net::MQTT::Simple
+	# Capture the warnings from Net::MQTT::Simple
 	my @warnings;
 	local $SIG{__WARN__} = sub {
 		push @warnings, shift;
@@ -39,7 +39,7 @@ sub mqtt_connect ( $self, $timeout = 10 )
 
 	my $success = eval {
 
-		# Ensure site_perl is in @INC
+		# Make sure that site_perl is in @INC
 		unshift @INC, '/usr/local/libdata/perl5/site_perl'
 		    unless grep { $_ eq '/usr/local/libdata/perl5/site_perl' }
 		    @INC;
@@ -56,13 +56,14 @@ sub mqtt_connect ( $self, $timeout = 10 )
 
 		my $mqtt = Net::MQTT::Simple->new($server);
 
-		# Set login credentials if provided
+		# Set the login credentials if the configuration
+		# has a username
 		if ( defined $self->{username} ) {
 			$mqtt->login( $self->{username},
 				$self->{password} // '' );
 		}
 
-		alarm(0);    # Clear alarm
+		alarm(0);    # Clear the alarm
 
 		$self->{client}    = $mqtt;
 		$self->{connected} = 1;
@@ -70,13 +71,14 @@ sub mqtt_connect ( $self, $timeout = 10 )
 			'Successfully connected to MQTT broker');
 		return 1;
 	};
-	alarm(0);    # Ensure alarm is cleared on error path
+	alarm(0);    # Also clear the alarm on the error path
 
-	# Log captured warnings through our logging system
+	# Send the captured warnings to the logger
 	for my $warning (@warnings) {
 		chomp $warning;
 
-	     # Strip program name if present (e.g., "/usr/local/bin/openhapd: ")
+		# Remove the program name if it is present, for
+		# example "/usr/local/bin/openhapd: "
 		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
 		$OpenHAP::logger->debug( 'MQTT connection warning: %s',
 			$warning );
@@ -92,8 +94,8 @@ sub mqtt_connect ( $self, $timeout = 10 )
 }
 
 # $self->subscribe($topic, $callback):
-#	subscribe to an MQTT topic with a callback for messages
-#	$callback receives ($topic, $payload)
+#	Subscribe to an MQTT topic with a callback for messages.
+#	$callback receives ($topic, $payload).
 sub subscribe ( $self, $topic, $callback )
 {
 	$OpenHAP::logger->debug( 'Subscribing to MQTT topic: %s', $topic );
@@ -101,10 +103,10 @@ sub subscribe ( $self, $topic, $callback )
 
 	return unless $self->{connected} && $self->{client};
 
-	# Net::MQTT::Simple uses a different subscription model
-	# We register topics and poll for messages in tick().
-	# Since 1.33 it passes a retain flag as a third argument;
-	# accept and ignore any extra arguments.
+	# Net::MQTT::Simple uses a different subscription model.
+	# The module registers the topics and polls for messages in
+	# tick(). Since 1.33, Net::MQTT::Simple passes a retain flag
+	# as a third argument. Accept and ignore all extra arguments.
 	eval {
 		$self->{client}->subscribe(
 			$topic,
@@ -121,7 +123,7 @@ sub subscribe ( $self, $topic, $callback )
 }
 
 # $self->unsubscribe($topic):
-#	unsubscribe from an MQTT topic
+#	Unsubscribe from an MQTT topic.
 sub unsubscribe ( $self, $topic )
 {
 	delete $self->{subscriptions}{$topic};
@@ -157,17 +159,18 @@ sub publish ( $self, $topic, $payload, $retain = 0 )
 }
 
 # $self->tick($timeout):
-#	process pending MQTT messages, call from main event loop
-#	$timeout is maximum seconds to wait (default 0 = non-blocking)
-#	returns number of messages processed
+#	Process the pending MQTT messages. Call this method from the
+#	main event loop. $timeout is the maximum wait in seconds. The
+#	default is 0, which does not block. The method returns the
+#	number of processed messages.
 sub tick ( $self, $timeout = 0 )
 {
 	return 0 unless $self->{connected} && $self->{client};
 
 	my $processed = 0;
 
-	# Process any incoming messages with timeout
-	# Capture warnings from Net::MQTT::Simple's connection attempts
+	# Process the incoming messages with the timeout.
+	# Capture the warnings from Net::MQTT::Simple connection attempts.
 	my @warnings;
 	local $SIG{__WARN__} = sub {
 		push @warnings, shift;
@@ -175,18 +178,19 @@ sub tick ( $self, $timeout = 0 )
 
 	eval { $self->{client}->tick($timeout); };
 
-	# Log captured warnings through our logging system
+	# Send the captured warnings to the logger
 	for my $warning (@warnings) {
 		chomp $warning;
 
-	     # Strip program name if present (e.g., "/usr/local/bin/openhapd: ")
+		# Remove the program name if it is present, for
+		# example "/usr/local/bin/openhapd: "
 		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
 		$OpenHAP::logger->debug( 'MQTT: %s', $warning );
 	}
 
 	if ($@) {
 
-		# Connection may have been lost
+		# The connection is possibly lost
 		if ( $@ =~ /connection|socket|closed/i ) {
 			$self->{connected} = 0;
 			$OpenHAP::logger->warning( 'MQTT connection lost: %s',
@@ -196,7 +200,7 @@ sub tick ( $self, $timeout = 0 )
 		$OpenHAP::logger->error( 'MQTT tick error: %s', $@ );
 	}
 
-	# Process pending messages through callbacks
+	# Process the pending messages through the callbacks
 	while ( @{ $self->{pending_messages} } > 0 ) {
 		my $msg = shift @{ $self->{pending_messages} };
 		my ( $topic_received, $payload ) = @$msg;
@@ -210,8 +214,9 @@ sub tick ( $self, $timeout = 0 )
 }
 
 # $self->_dispatch_message($topic, $payload):
-#	dispatch a message to matching subscription callbacks
-#	$callback receives ($topic, $payload) - topic is the actual received topic
+#	Send the message to the subscription callbacks that match.
+#	$callback receives ($topic, $payload). The topic is the
+#	actual received topic.
 sub _dispatch_message ( $self, $topic, $payload )
 {
 	my $dispatched = 0;
@@ -233,14 +238,15 @@ sub _dispatch_message ( $self, $topic, $payload )
 }
 
 # $self->_topic_matches($pattern, $topic):
-#	check if a topic matches a subscription pattern
-#	supports + (single level) and # (multi level) wildcards
+#	Check if a topic matches a subscription pattern.
+#	The pattern supports the + (single level) and # (multi level)
+#	wildcards.
 sub _topic_matches ( $self, $pattern, $topic )
 {
 	# Exact match
 	return 1 if $pattern eq $topic;
 
-	# No wildcards, must be exact
+	# The pattern has no wildcards, so the match must be exact
 	return 0 unless $pattern =~ m{[+#]};
 
 	my @pattern_parts = split m{/}, $pattern;
@@ -249,25 +255,26 @@ sub _topic_matches ( $self, $pattern, $topic )
 	for my $i ( 0 .. $#pattern_parts ) {
 		my $p = $pattern_parts[$i];
 
-		# Multi-level wildcard matches everything remaining
+		# The multi-level wildcard matches all remaining levels
 		return 1 if $p eq '#';
 
-		# Topic is shorter than pattern (without #)
+		# The topic is shorter than the pattern (without #)
 		return 0 if $i > $#topic_parts;
 
-		# Single-level wildcard matches any single level
+		# The single-level wildcard matches any single level
 		next if $p eq '+';
 
-		# Exact level match required
+		# The level must match exactly
 		return 0 if $p ne $topic_parts[$i];
 	}
 
-	# Pattern exhausted, topic must also be exhausted
+	# The loop matched all pattern levels. The topic must not
+	# have more levels.
 	return @topic_parts == @pattern_parts;
 }
 
 # $self->resubscribe():
-#	resubscribe to all topics after reconnection
+#	Subscribe to all topics again after a reconnection.
 sub resubscribe ($self)
 {
 	return unless $self->{connected} && $self->{client};
@@ -291,8 +298,8 @@ sub resubscribe ($self)
 }
 
 # $self->reconnect():
-#	attempt to reconnect to the broker
-#	returns 1 on success, 0 on failure
+#	Try to connect to the broker again.
+#	The method returns 1 on success and 0 on failure.
 sub reconnect ($self)
 {
 	$OpenHAP::logger->debug('Attempting MQTT reconnection');
@@ -323,7 +330,7 @@ sub is_connected ($self)
 }
 
 # $self->subscriptions():
-#	return list of subscribed topics
+#	Return the list of subscribed topics.
 sub subscriptions ($self)
 {
 	return keys %{ $self->{subscriptions} };

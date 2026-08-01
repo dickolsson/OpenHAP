@@ -1,11 +1,11 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Unit tests for FuguLib::Sandbox: the no-op contract everywhere, real
-# enforcement on OpenBSD. Enforcement runs in child processes because
-# a pledge violation kills the violator with an uncatchable SIGABRT
-# and unveil restricts the caller for good - the parent must stay
-# unrestricted or it takes the rest of the suite down. Never assert in
-# the children: they share the TAP stream.
+# Unit tests for FuguLib::Sandbox: the no-op contract everywhere,
+# real enforcement on OpenBSD. Enforcement runs in child processes.
+# A pledge violation kills the violator with an uncatchable SIGABRT.
+# An unveil restricts the caller permanently. The parent must stay
+# unrestricted, or it takes down the rest of the suite. Never assert
+# in the children. The children share the TAP stream.
 
 use v5.36;
 use Test::More;
@@ -20,12 +20,12 @@ my $lib = "$RealBin/../../lib";
 my $dir = tempdir( CLEANUP => 1 );
 
 # run_child($source):
-#	Run perl code in a subprocess with core dumps disabled - the
-#	SIGABRT from a pledge violation would otherwise drop perl.core
-#	into the repository root. The shell must exec perl rather than
-#	fork it: a forked child's death-by-signal is reaped by the
-#	shell and reported as exit code 134, losing the signal from
-#	the wait status this returns.
+#	Run perl code in a subprocess with core dumps disabled.
+#	Without this, the SIGABRT from a pledge violation drops
+#	perl.core into the repository root. The shell must exec perl,
+#	not fork it. The shell reaps a forked child's death-by-signal
+#	and reports exit code 134. That loses the signal from the wait
+#	status this function returns.
 sub run_child ($source)
 {
 	my $script = "$dir/child-$$-" . int( rand 10000 ) . '.pl';
@@ -39,10 +39,10 @@ sub run_child ($source)
 	return $?;
 }
 
-# The child sources, rendered at file scope so the compile subtest
-# below syntax-checks them on every platform: the children themselves
-# only ever run on OpenBSD, and a heredoc interpolation slip in one
-# once hid until a VM run.
+# The test defines the child sources at file scope. Thus the compile
+# subtest below syntax-checks them on every platform. The children
+# themselves only run on OpenBSD. A heredoc interpolation slip in one
+# once stayed hidden until a VM run.
 my $violation_child = <<'EOF';
 use v5.36;
 use FuguLib::Sandbox;
@@ -53,8 +53,8 @@ socket(my $s, AF_INET, SOCK_STREAM, 0);
 POSIX::_exit(0);    # only reachable if the pledge did not enforce
 EOF
 
-# Exit codes pick the failing step apart: 1 = a file outside the view
-# stayed readable, 2 = the file inside did not
+# The exit codes identify the failing step. Exit 1: a file outside
+# the view stayed readable. Exit 2: the file inside did not open.
 my $unveil_child = <<EOF . <<'BODY';
 use v5.36;
 use FuguLib::Sandbox;
@@ -68,8 +68,9 @@ POSIX::_exit(2) unless open(my $in, '<', "$dir/inside.txt");
 POSIX::_exit(0);
 BODY
 
-# 3 = a missing required path was silently accepted, 4 = a missing
-# optional path was not skipped cleanly, 5 = on_skip did not report it
+# Exit 3: unveil silently accepted a missing required path. Exit 4:
+# unveil did not skip a missing optional path cleanly. Exit 5:
+# on_skip did not report the skipped path.
 my $dispositions_child = <<EOF . <<'BODY';
 use v5.36;
 use FuguLib::Sandbox;
@@ -144,7 +145,7 @@ subtest 'no-op platforms return success from every method' => sub {
 		1, 'unveil is a successful no-op' );
 	is( FuguLib::Sandbox->unveil_lock, 1, 'lock is a successful no-op' );
 
-	# And none of them restricted anything
+	# None of the methods restricted anything
 	ok( open( my $fh, '<', $0 ), 'filesystem still fully visible' );
 	close $fh if $fh;
 };
@@ -156,15 +157,15 @@ subtest 'pledge violation aborts the violator' => sub {
 	my $status = run_child($violation_child);
 	is( $status & 127, SIGABRT,
 		'socket(2) outside the promise set delivers SIGABRT' );
-	unlink 'perl.core';    # belt and braces: ulimit already forbids it
+	unlink 'perl.core';    # a second guard: ulimit already forbids it
 };
 
 subtest 'a bogus promise string dies rather than being accepted' => sub {
 	plan skip_all => 'pledge(2) only enforced on OpenBSD'
 	    unless FuguLib::Sandbox->is_supported;
 
-	# An unknown promise fails with EINVAL before anything is
-	# restricted, so this is safe in-process
+	# An unknown promise fails with EINVAL before any restriction
+	# starts. Thus this test is safe in-process.
 	ok( !eval {
 		FuguLib::Sandbox->pledge( promises => 'nosuchpromise' );
 		1;

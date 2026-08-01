@@ -22,7 +22,7 @@ use Exporter qw(import);
 our @EXPORT_OK = qw(normalize_pin validate_pin);
 
 # Invalid PINs per HAP specification
-# These are sequential or trivial patterns that should not be used
+# These are sequential or trivial patterns. Do not use them.
 use constant INVALID_PINS => qw(
     00000000 11111111 22222222 33333333 44444444
     55555555 66666666 77777777 88888888 99999999
@@ -30,31 +30,32 @@ use constant INVALID_PINS => qw(
 );
 
 # normalize_pin($pin):
-#	Strip dashes and spaces from PIN for internal use
-#	Returns: 8-digit numeric string or undef if invalid format
+#	Remove dashes and spaces from the PIN for internal use
+#	Returns: an 8-digit numeric string, or undef if the format
+#	is invalid
 sub normalize_pin ($pin)
 {
 	return unless defined $pin;
 
-	# Strip dashes and spaces
+	# Remove the dashes and spaces
 	$pin =~ s/[-\s]//g;
 
-	# Verify it's exactly 8 digits
+	# Make sure the PIN is exactly 8 digits
 	return unless $pin =~ /^\d{8}$/;
 
 	return $pin;
 }
 
 # validate_pin($pin):
-#	Validate PIN meets HAP requirements
-#	Returns: 1 if valid, undef if invalid
+#	Validate that the PIN meets the HAP requirements
+#	Returns: 1 if the PIN is valid, undef if it is invalid
 sub validate_pin ($pin)
 {
-	# Normalize first
+	# Normalize the PIN first
 	my $normalized = normalize_pin($pin);
 	return unless defined $normalized;
 
-	# Check against invalid PINs list
+	# Check the PIN against the list of invalid PINs
 	my %invalid = map { $_ => 1 } INVALID_PINS;
 	return if exists $invalid{$normalized};
 

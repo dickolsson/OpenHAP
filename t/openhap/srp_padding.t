@@ -19,11 +19,13 @@ BEGIN {
 use_ok('OpenHAP::SRP');
 use_ok('OpenHAP::Crypto');
 
-# Test that A and B are correctly padded to N_len (384 bytes) when computing
-# u, M1, and M2. This is critical for SRP-6a compatibility with HomeKit.
+# Test that the module pads A and B to N_len (384 bytes) when it
+# computes u, M1, and M2. This padding is critical for SRP-6a
+# compatibility with HomeKit.
 #
-# Bug: The original implementation did not pad A and B to 384 bytes before
-# hashing, causing proof verification failures with iOS Home app.
+# Bug: the original implementation did not pad A and B to 384 bytes
+# before hashing. This caused proof verification failures with the
+# iOS Home app.
 
 # Test padding of A and B in u computation
 {
@@ -32,21 +34,22 @@ use_ok('OpenHAP::Crypto');
     $srp->compute_verifier($salt, '123-45-678');
     my $B = $srp->generate_server_public();
 
-    # Create a client public key A that's shorter than 384 bytes when encoded
-    # For example, a small value like 256 (0x100) would be 2 bytes unpadded
+    # Create a client public key A that encodes to less than 384
+    # bytes. For example, a small value such as 256 (0x100) is 2
+    # bytes without padding.
     my $A_small = Math::BigInt->new(256);
     my $A_bytes_unpadded = OpenHAP::SRP::_bigint_to_bytes($A_small);
 
-    # Without padding, this would be 2 bytes
+    # Without padding, the value is 2 bytes
     ok(length($A_bytes_unpadded) < 384,
         'Small A is less than 384 bytes without padding');
 
-    # With padding, it should be 384 bytes
+    # With padding, the value must be 384 bytes
     my $A_bytes_padded = OpenHAP::SRP::_bigint_to_bytes($A_small, 384);
     is(length($A_bytes_padded), 384,
         '[HAP-Pairing §2.5] small A is left-padded to 384 bytes');
 
-    # Verify padding is with leading zeros
+    # Make sure the padding uses leading zeros
     is(unpack('H*', $A_bytes_padded), ('00' x 382) . '0100',
         '[HAP-Pairing §2.5] A is padded with leading zeros');
 }
@@ -58,8 +61,8 @@ use_ok('OpenHAP::Crypto');
     $srp->compute_verifier($salt, '123-45-678');
     $srp->generate_server_public();
     
-    # Create two different encodings of the same A value
-    # One with minimal encoding, one padded to 384 bytes
+    # Create two different encodings of the same A value. One
+    # encoding is minimal. The other one has padding to 384 bytes.
     my $A_val = Math::BigInt->new(12345);
     my $A_bytes_unpadded = OpenHAP::SRP::_bigint_to_bytes($A_val);
     my $A_bytes_padded = OpenHAP::SRP::_bigint_to_bytes($A_val, 384);
@@ -67,15 +70,15 @@ use_ok('OpenHAP::Crypto');
     isnt(length($A_bytes_unpadded), length($A_bytes_padded),
         'Padded and unpadded A have different lengths');
 
-    # Both should produce the same session key because internally
-    # compute_session_key pads A to 384 bytes before computing u
+    # Both encodings must give the same session key. Internally,
+    # compute_session_key pads A to 384 bytes before it computes u.
     my $K1 = $srp->compute_session_key($A_bytes_unpadded);
 
-    # Need a fresh SRP instance for second test
+    # Use a fresh SRP instance for the second test
     my $srp2 = OpenHAP::SRP->new(password => '123-45-678');
     $srp2->generate_salt();
     $srp2->compute_verifier($salt, '123-45-678');
-    # Copy the same b and B to ensure identical server state
+    # Copy the same b and B to keep the server state identical
     $srp2->{b} = $srp->{b};
     $srp2->{B} = $srp->{B};
     $srp2->{v} = $srp->{v};
@@ -89,40 +92,42 @@ use_ok('OpenHAP::Crypto');
         . 'wire encodings derive the same session key');
 }
 
-# Test full SRP exchange with known values to verify padding
+# Test full SRP exchange with known values to check the padding
 {
     # Set up SRP with known parameters
     my $password = '123-45-678';
     my $srp = OpenHAP::SRP->new(password => $password);
     
-    # Generate a known salt (for reproducibility, use a fixed value in real test)
+    # Generate a known salt. For reproducibility, use a fixed value
+    # in a real test.
     my $salt = $srp->generate_salt();
     $srp->compute_verifier($salt, $password);
     my $B = $srp->generate_server_public();
     
-    # Create a valid client public key A (must be non-zero mod N)
-    # For testing, use a small valid value
+    # Create a valid client public key A. It must be non-zero mod N.
+    # For the test, use a small valid value.
     my $A_int = Math::BigInt->new(2)->bmodpow(Math::BigInt->new(256), $srp->{N});
     my $A_bytes = OpenHAP::SRP::_bigint_to_bytes($A_int, 384);
     
-    # Compute session key (this internally computes u = H(PAD(A) | PAD(B)))
+    # Compute the session key. This internally computes
+    # u = H(PAD(A) | PAD(B)).
     my $K = $srp->compute_session_key($A_bytes);
     ok(defined $K, 'Session key computed successfully');
     is(length($K), 64,
         '[HAP-Pairing §2.6] session key K = H(S) is 64 bytes (SHA-512)');
     
-    # Verify internal A is stored correctly
+    # Make sure the object stores the internal A
     ok(defined $srp->{A}, 'A is stored in SRP object');
     
-    # Compute client proof M1
-    # The client would compute this, but we can verify our verification works
-    # For now, just test that verify_client_proof uses padded values
+    # Compute the client proof M1. The client usually computes this
+    # value, but the test can make sure that the verification works.
+    # For now, only test that verify_client_proof uses padded values.
     my $M1_dummy = 'X' x 64;  # Wrong proof for this test
     my $result = $srp->verify_client_proof($M1_dummy);
     ok(!$result, '[HAP-Pairing §2.6] wrong client proof M1 is rejected');
 }
 
-# Test N_len constant matches our padding expectation
+# Test that the N_len constant matches the padding expectation
 {
     # N is 3072 bits = 384 bytes
     my $N_len = length($OpenHAP::Crypto::N_3072);

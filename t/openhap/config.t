@@ -9,7 +9,7 @@ use File::Temp qw(tempdir);
 
 use_ok('OpenHAP::Config');
 
-# Create temporary config file
+# Create a temporary config file
 my $temp_dir    = tempdir(CLEANUP => 1);
 my $config_file = "$temp_dir/openhap_test.conf";
 open my $fh, '>', $config_file or die "Cannot create test config: $!";

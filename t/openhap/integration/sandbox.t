@@ -2,23 +2,24 @@
 # ex:ts=8 sw=4:
 # Integration test: the daemon really pledges and unveils.
 #
-# A pledge violation kills the process, so "the daemon is alive and its
-# trace shows no violation" is satisfied identically by a correctly
-# pledged daemon and a completely unpledged one - a null test. What is
-# observable is the syscall itself: this file traces the daemon from
-# exec with ktrace(1) and asserts that pledge(2) is called with exactly
-# the production promise set, that unveil(2) is called for the
-# inventory and then locked, and that startup still succeeds in the
-# configurations that worked before the sandbox existed. Remove the
-# pledge or unveil call from bin/openhapd and the corresponding
-# syscall is simply absent from the trace.
+# A pledge violation kills the process. Thus a correctly pledged
+# daemon and a completely unpledged one both satisfy "the daemon is
+# alive and its trace shows no violation". That check is a null
+# test. The syscall itself is observable. This file traces the
+# daemon from exec with ktrace(1). It asserts that the daemon calls
+# pledge(2) with exactly the production promise set. It asserts that
+# the daemon calls unveil(2) for the inventory and then locks the
+# view. It asserts that startup still succeeds in the configurations
+# that worked before the sandbox existed. If you remove the pledge
+# or unveil call from bin/openhapd, the corresponding syscall is
+# absent from the trace.
 #
-# Enforcement semantics (a violation aborts; a path outside the view
-# is unreachable) are proven by t/fugulib/sandbox.t's forked children.
-# No operator-supplied read path exists to probe enforcement through
-# the running daemon itself, so this file deliberately does not
-# pretend to: the trace proves the daemon's participation, the unit
-# tier proves the kernel's.
+# The forked children of t/fugulib/sandbox.t prove the enforcement
+# semantics: a violation aborts, and a path outside the view is
+# unreachable. No operator-supplied read path exists to probe
+# enforcement through the running daemon itself. Thus this file
+# deliberately makes no such probe. The trace proves the daemon's
+# participation. The unit tier proves the kernel's.
 
 use v5.36;
 use Test::More;
@@ -37,15 +38,15 @@ my $daemon      = -x '/usr/local/bin/openhapd'
     ? '/usr/local/bin/openhapd'
     : '/usr/local/sbin/openhapd';
 
-# The traced instance needs the HAP port, so stop the rc daemon first
+# The traced instance needs the HAP port. Stop the rc daemon first.
 system('rcctl stop openhapd >/dev/null 2>&1');
 sleep 1;
 
-# Run the daemon in the foreground under ktrace; -i follows any
-# children (there must be none, and that is asserted below). Invoke
-# perl on the script directly: the daemon's #!/usr/bin/env shebang
-# would put env in the trace, and env pledges "stdio exec" itself,
-# which would poison the promise assertions below.
+# Run the daemon in the foreground under ktrace. The -i flag follows
+# any children. There must be none, and the test asserts that below.
+# Invoke perl on the script directly. The daemon's #!/usr/bin/env
+# shebang would put env in the trace. env pledges "stdio exec"
+# itself, and that would poison the promise assertions below.
 my $pid = fork // die "fork: $!";
 if ($pid == 0) {
 	exec 'ktrace', '-i', '-f', $trace, $^X, $daemon, '-f', '-c',
@@ -56,8 +57,8 @@ if ($pid == 0) {
 ok($env->wait_for_hap_port, 'traced daemon serves HAP')
     or diag 'daemon did not open the HAP port under ktrace';
 
-# No child processes while it runs (phase 2's contract; what keeps
-# proc/exec out of the promise set)
+# No child processes while it runs. This is phase 2's contract. It
+# keeps proc/exec out of the promise set.
 chomp(my $children = `pgrep -P $pid 2>/dev/null`);
 is($children, '', 'traced daemon has no child processes');
 
@@ -68,17 +69,18 @@ my $kdump = `kdump -f $trace 2>&1`;
 ok(length $kdump, 'kdump produced a trace');
 
 # kdump folds long string records at the screen width with a
-# backslash-newline-tab continuation; the 49-byte promise string folds
-# mid-word, so joined lines are what the assertions must see
+# backslash-newline-tab continuation. The 49-byte promise string
+# folds mid-word. Thus the assertions must see joined lines.
 $kdump =~ s/\\\n\t//g;
 
-# The pledge syscall, with the promise-string argument exactly the
-# production set: an empty string, a typo, or a stray "proc exec"
-# all fail here. The kernel ktraces the copied-in promise string as a
-# structure record, which kdump renders as STRU promise="..."
-# (sys/kern/kern_pledge.c parsepledges, usr.bin/kdump/ktrstruct.c).
-# OpenBSD::Pledge dedupes and sorts the promises before the syscall,
-# so the on-the-wire string is the sorted form of the production set.
+# The pledge syscall must have exactly the production set as its
+# promise-string argument. An empty string, a typo, or a stray
+# "proc exec" all fail here. The kernel ktraces the copied-in
+# promise string as a structure record. kdump renders the record as
+# STRU promise="..." (sys/kern/kern_pledge.c parsepledges,
+# usr.bin/kdump/ktrstruct.c). OpenBSD::Pledge dedupes and sorts the
+# promises before the syscall. Thus the on-the-wire string is the
+# sorted form of the production set.
 my $promises = join ' ',
     sort qw(stdio rpath wpath cpath fattr flock inet dns unix);
 like($kdump, qr/CALL\s+pledge\(/, 'pledge(2) is called');
@@ -87,10 +89,10 @@ like($kdump, qr/STRU\s+promise="\Q$promises\E"/,
 unlike($kdump, qr/STRU\s+promise="[^"]*\b(?:proc|exec)\b[^"]*"/,
        'no promise set in the trace grants proc, exec or prot_exec');
 
-# The unveil syscalls: the daemon really builds a view (the permission
-# strings appear as STRU flags= records, and db_path's rwc is unique
-# to unveil - unlike a NAMI, which any open(2) would also leave), and
-# a final unveil(2) with both arguments NULL locks it
+# The unveil syscalls: the daemon really builds a view, and a final
+# unveil(2) with both arguments NULL locks it. The permission
+# strings appear as STRU flags= records. db_path's rwc is unique to
+# unveil. A NAMI is not, because any open(2) also leaves one.
 my @unveils = $kdump =~ /CALL\s+unveil\(([^)]*)\)/g;
 cmp_ok(scalar @unveils, '>=', 3,
        'unveil(2) called for the inventory');
@@ -99,8 +101,8 @@ like($kdump, qr/STRU\s+flags="rwc"/,
 like($kdump, qr/CALL\s+unveil\(0,0\)/, 'the view is locked');
 is($unveils[-1], '0,0', 'the lock is the last unveil call');
 
-# pledge comes after the lock, closing the ordering the call site
-# promises
+# pledge comes after the lock. This closes the ordering that the
+# call site promises.
 my ($lock_pos, $pledge_pos) = (-1, -1);
 while ($kdump =~ /CALL\s+unveil\(0,0\)/g) { $lock_pos   = $-[0] }
 while ($kdump =~ /CALL\s+pledge\(/g)      { $pledge_pos = $-[0] }
@@ -111,14 +113,15 @@ unlink $trace;
 
 # Permanent negative control: the identical trace pipeline over a
 # perl process that deliberately does not pledge or unveil must show
-# neither syscall. This is what proves the positive assertions above
-# can fail - the demonstration plan 005 required - without the
-# test-only daemon override it forbids: if the pledge or unveil call
-# were dropped from bin/openhapd, its trace would look exactly like
-# this one, and the assertions above would go red. It also pins the
-# detector itself: a kdump format drift that made the regexes match
-# ambient records would fail here. ktrace(1) itself calls neither
-# syscall, so any such record in this trace is a defect.
+# neither syscall. This control proves that the positive assertions
+# above can fail. Plan 005 required that demonstration. The control
+# needs no test-only daemon override, which plan 005 forbids. If
+# bin/openhapd dropped the pledge or unveil call, its trace would
+# look exactly like this one, and the assertions above would go red.
+# The control also pins the detector itself: a kdump format drift
+# that made the regexes match ambient records would fail here.
+# ktrace(1) itself calls neither syscall. Thus any such record in
+# this trace is a defect.
 my $neg_trace = "/tmp/openhapd-negctl-$$";
 system('ktrace', '-i', '-f', $neg_trace, $^X, '-e', 'exit 0');
 my $neg = `kdump -f $neg_trace 2>&1`;
@@ -135,8 +138,8 @@ unlike($neg, qr/CALL\s+unveil\(/,
 unlink $neg_trace;
 
 # Startup still succeeds in every configuration that worked before
-# the sandbox: a missing config file must be an optional unveil entry,
-# never a refusal to boot ...
+# the sandbox. A missing config file must be an optional unveil
+# entry, never a refusal to boot.
 my $absent_conf = "/tmp/absent-openhapd-$$.conf";
 $pid = fork // die "fork: $!";
 if ($pid == 0) {
@@ -149,9 +152,10 @@ ok($env->wait_for_hap_port, 'daemon serves with no config file at all');
 kill 'TERM', $pid;
 waitpid $pid, 0;
 
-# ... and -f on a host with no daemon log file (the row is optional;
-# -f never creates it). The rc daemon holds its own fd, so removing
-# the file underneath it is safe, and rcctl start recreates it below.
+# Startup also succeeds with -f on a host that has no daemon log
+# file. The log row is optional, and -f never creates the file. The
+# rc daemon holds its own fd. Thus the test can safely remove the
+# file underneath it. rcctl start recreates the file below.
 unlink '/var/log/openhapd.log';
 $pid = fork // die "fork: $!";
 if ($pid == 0) {

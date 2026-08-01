@@ -19,20 +19,21 @@ vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
 echo "==> Copying test files..."
 cd "${PROJECT_ROOT}"
 TARBALL="/tmp/tests-$$.tar.gz"
-# t/fugulib/sandbox.t rides along: its enforcement subtests (a pledge
-# violation aborts, unveil hides the filesystem, required paths are
-# fatal) are OpenBSD-only and skip on the Linux hosts `make check`
-# runs on, so this guest run is the one place CI executes them
+# The tarball also carries t/fugulib/sandbox.t. Its enforcement
+# subtests are OpenBSD-only: a pledge violation aborts, unveil hides
+# the filesystem, and required paths are fatal. They skip on the Linux
+# hosts that `make check` runs on. Thus this guest run is the one
+# place where CI executes them.
 tar czf "${TARBALL}" t/openhap/integration/ t/fugulib/sandbox.t \
     t/lib/ lib/OpenHAP/Test/
 vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/tests.tar.gz"
 rm -f "${TARBALL}"
 
 echo "==> Running integration tests..."
-# The heredoc runs under its own set -e so a broken guest setup step
-# fails the run loudly instead of reporting a half-prepared suite; the
-# host-side set -e is suspended so the failure diagnostics below stay
-# reachable when vm_run fails.
+# The heredoc runs under its own set -e. Thus a broken guest setup
+# step fails the run loudly and does not report a half-prepared suite.
+# The script suspends the host-side set -e. Thus the failure
+# diagnostics below stay reachable when vm_run fails.
 set +e
 vm_run <<'EOF'
 set -e

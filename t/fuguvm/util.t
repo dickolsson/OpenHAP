@@ -30,7 +30,8 @@ use_ok('FuguVM::Util');
     my $password = FuguVM::Util->generate_password(32);
     is(length($password), 32, 'generate_password returns correct length');
     
-    # Check it only contains URL-safe base64 characters
+    # Make sure that the password only contains URL-safe base64
+    # characters
     like($password, qr/^[A-Za-z0-9_-]+$/, 'generate_password uses URL-safe characters');
 }
 

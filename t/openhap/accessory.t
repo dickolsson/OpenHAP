@@ -48,7 +48,7 @@ use_ok('OpenHAP::Accessory');
     my @services = $accessory->get_services();
     ok(@services > 0, 'Accessory has services');
     
-    # First service should be Accessory Information
+    # The first service must be Accessory Information
     my $info_service = $services[0];
     ok(defined $info_service, 'Accessory Information service exists');
     is($info_service->{iid}, 1, 'Accessory Information has IID 1');
@@ -64,7 +64,7 @@ use_ok('OpenHAP::Accessory');
     $accessory->add_service($service);
     
     my @services = $accessory->get_services();
-    # Should have AccessoryInformation + Switch
+    # The accessory must have AccessoryInformation and Switch
     is(scalar @services, 2, 'Two services present');
 }
 
@@ -72,7 +72,7 @@ use_ok('OpenHAP::Accessory');
 {
     my $accessory = OpenHAP::Accessory->new(aid => 1);
     
-    # Get characteristic from AccessoryInformation service
+    # Get the characteristic from the AccessoryInformation service
     my $char = $accessory->get_characteristic(2);  # IID 2 is Identify
     ok(defined $char, 'Characteristic found');
 }

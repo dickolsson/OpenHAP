@@ -1,36 +1,36 @@
 name: Integration
 
 # This job boots an OpenBSD guest under TCG emulation and can run for
-# hours, so its trigger set is the narrowest in the repository: only an
-# edit that can change what runs inside the VM, or how the VM is built,
-# belongs here.  Explicit includes, never excludes - a new top-level
-# directory must not silently start costing three hours a push.
+# hours. Thus its trigger set is the narrowest in the repository. Only
+# an edit that can change what runs inside the VM, or how the VM is
+# built, belongs here. Use explicit includes, never excludes. A new
+# top-level directory must not silently cost three hours for each push.
 #
-# Everything hashed into the image cache key below also appears here.
-# That is deliberate: an input that can rotate the cache key but cannot
-# start a run would be rebuilt on the next unrelated push instead of the
-# one that changed it.
+# Every input that goes into the image cache key below also appears
+# here. That is deliberate. An input that rotates the cache key must
+# also start a run. If not, the rebuild occurs on the next unrelated
+# push, not on the push that changed the input.
 #
-# Anything left out - unit tests, docs, man pages, the website, spec/,
-# plans/ - is still reachable through workflow_dispatch and the weekly
+# This list omits unit tests, docs, man pages, the website, spec/, and
+# plans/. They stay reachable through workflow_dispatch and the weekly
 # schedule.
 on:
   push:
     branches: [main]
     paths:
-      # The daemon, library and files installed into the guest
+      # The daemon, the library, and the files that go into the guest
       - "bin/hapctl"
       - "bin/openhapd"
       - "lib/FuguLib/*.pm"
       - "lib/OpenHAP/**.pm"
       - "etc/rc.d/openhapd"
       - "share/openhap/examples/*.sample"
-      # The suite itself and the mocks it carries over
+      # The suite itself and the mocks that it carries over
       - "t/openhap/integration/*.t"
       - "t/fugulib/sandbox.t"
       - "t/lib/**.pm"
-      # The harness that installs the guest, provisions it and drives
-      # the run
+      # The harness that installs the guest, provisions it, and
+      # controls the run
       - "bin/fuguvm"
       - "lib/FuguVM/**.pm"
       - ".fuguvmrc"
@@ -42,14 +42,14 @@ on:
       - "scripts/integration"
       - "scripts/vm-provision"
       - "scripts/vm-up"
-      # Guest dependencies, and the package and install rules that put
-      # the checkout on the guest
+      # The guest dependencies, and the package and install rules that
+      # put the checkout on the guest
       - "cpanfile"
       - "deps/OpenBSD.txt"
-      # Host dependencies: QEMU, expect and telnet are what boots and
-      # drives the guest, and setup-perl hashes this file into its own
-      # cache key - so by the rule above it has to be able to start a
-      # run of its own
+      # The host dependencies. QEMU, expect and telnet boot and control
+      # the guest. Also, setup-perl hashes this file into its own cache
+      # key. Thus, by the rule above, this file must be able to start a
+      # run of its own.
       - "deps/Linux.txt"
       - "Makefile"
       - ".github/actions/setup-perl/action.yml"
@@ -83,10 +83,10 @@ on:
       - "Makefile"
       - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/integration.yml"
-  # Manual runs against any branch, e.g. to test workflow changes
-  # before merging
+  # Manual runs against any branch, for example to test workflow
+  # changes before a merge
   workflow_dispatch:
-  # Weekly run so regressions surface between pushes
+  # The weekly run makes regressions show between pushes
   schedule:
     - cron: "30 5 * * 1"
 
@@ -97,11 +97,11 @@ concurrency:
 jobs:
   integration:
     name: Integration tests (OpenBSD VM)
-    # arm64 runner: the OpenBSD guest is arm64, so the VM runs without
-    # cross-architecture translation. KVM is picked up automatically by
-    # fuguvm if the runner ever exposes /dev/kvm; until then QEMU falls
-    # back to TCG software emulation, which is why the timeouts below
-    # are generous.
+    # An arm64 runner. The OpenBSD guest is arm64, so the VM runs
+    # without cross-architecture translation. fuguvm uses KVM
+    # automatically if the runner ever exposes /dev/kvm. Until then,
+    # QEMU falls back to TCG software emulation. That is why the
+    # timeouts below are generous.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
 
@@ -117,34 +117,36 @@ jobs:
           dependencies: develop
 
       - name: Cache OpenBSD images and downloads
-        # `.fuguvm` is fully ephemeral: fuguvm rebuilds the state
-        # directory on every run from three things that all live in
-        # ~/.cache/fuguvm - the installed OpenBSD image, the
-        # provisioning layer snapshotted over it, and the proxy's copies
-        # of everything the installer downloaded. Nothing here depends on
-        # a previous run's state.
+        # `.fuguvm` is fully ephemeral. On every run, fuguvm rebuilds
+        # the state directory from three things that live in
+        # ~/.cache/fuguvm. They are the installed OpenBSD image, the
+        # provisioning layer that sits as a snapshot over it, and the
+        # proxy's copies of all installer downloads. Nothing here
+        # depends on the state of a previous run.
         #
-        # The proxy store is what makes a reinstall cheap rather than
-        # free: a rotated key restores the previous entry through
-        # restore-keys, so an install.exp edit re-runs the installer but
-        # reads the file sets off local disk. It is also the half of this
-        # directory that nothing bounded until `cache clear --stale`
-        # learned to prune it - see the cleanup step below.
+        # The proxy store makes a reinstall cheap rather than free.
+        # A rotated key restores the previous entry through
+        # restore-keys. Thus an install.exp edit runs the installer
+        # again, but reads the file sets from local disk. The proxy
+        # store is also the half of this directory that had no bound
+        # until `cache clear --stale` learned to prune it. See the
+        # cleanup step below.
         #
         # The key hashes every input that either fuguvm's own cache key
-        # or scripts/deps-key derives from. That is a constraint, not
-        # a courtesy: the post-step saves only on a primary-key MISS, so
-        # an input this key cannot see would rotate a cached name,
+        # or scripts/deps-key derives from. That is a constraint, not a
+        # courtesy. The post-step saves only on a primary-key MISS.
+        # Thus an input this key cannot see would rotate a cached name,
         # rebuild it, and then discard the result on every single run.
         #
-        # To force a cold-cache run (a fresh OpenBSD install from the
-        # miniroot), bump the v<N> suffix below or delete the cache from
-        # Actions -> Caches. A warm cache exists only after a green run:
-        # the post-step saves on success. On a warm run the log must show
-        # `Guest dependencies already present` rather than a re-run of
-        # `make deps` — provisioning is idempotent, so a broken cache
-        # still yields a green suite, just a slow one. Check wall clock
-        # against the job's timeout.
+        # A cold-cache run is a fresh OpenBSD install from the
+        # miniroot. To force one, bump the v<N> suffix below. As an
+        # alternative, delete the cache from Actions -> Caches. A warm
+        # cache exists only after a green run, because the post-step
+        # saves on success. On a warm run, the log must show `Guest
+        # dependencies already present`, not a new run of `make deps`.
+        # Provisioning is idempotent, so a broken cache still gives a
+        # green suite, only a slow one. Check the wall clock against
+        # the job's timeout.
         uses: actions/cache@v4
         with:
           path: ~/.cache/fuguvm
@@ -154,20 +156,21 @@ jobs:
             'deps/OpenBSD.txt', 'cpanfile', 'scripts/deps', 'scripts/deps-key',
             'scripts/vm-provision') }}
           # A key rotation still restores the miniroot and any base
-          # image fuguvm's own keying still considers valid, so only
-          # the parts that actually changed are rebuilt.
+          # image that fuguvm's own keying still accepts. Thus the run
+          # rebuilds only the parts that changed.
           restore-keys: |
             fuguvm-v1-${{ runner.arch }}-
 
       - name: Generate ephemeral SSH key for the VM
-        # The harness installs an authorized_keys entry on the guest and
-        # then uses key-based auth for every later `fuguvm ssh`/`scp`.
-        # Developers configure this in ~/.fuguvmrc; CI has no key, so
-        # mint a throwaway one per run. Write the public half to the
-        # GLOBAL rc (~/.fuguvmrc) rather than the project .fuguvmrc,
-        # which the cache key hashes and which must therefore stay
-        # stable. A restored image carries the previous run's key; the
-        # harness reinstalls this one over the guest's root password.
+        # The harness installs an authorized_keys entry on the guest.
+        # It then uses key-based auth for every later `fuguvm
+        # ssh`/`scp`. Developers configure this in ~/.fuguvmrc. CI has
+        # no key, so mint a throwaway one per run. Write the public
+        # half to the GLOBAL rc (~/.fuguvmrc), not to the project
+        # .fuguvmrc. The cache key hashes the project file, so that
+        # file must stay stable. A restored image carries the key of
+        # the previous run. The harness reinstalls this key over the
+        # guest's root password.
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           ssh-keygen -t ed25519 -N '' -C fuguvm-ci -f ~/.ssh/id_ed25519
@@ -176,20 +179,21 @@ jobs:
 
       - name: Run integration tests
         env:
-          # Expect-script step timeout and post-boot SSH wait, both far
-          # beyond the defaults to accommodate TCG emulation
+          # The expect-script step timeout and the post-boot SSH wait.
+          # Both are far above the defaults to allow for TCG emulation.
           FUGUVM_TIMEOUT: 1800
           FUGUVM_WAIT_TIMEOUT: 1800
         run: |
-          # `fuguvm ssh` authenticates via the SSH agent; load the key
-          # so the harness and the test scripts can reach the guest.
+          # `fuguvm ssh` authenticates through the SSH agent. Load the
+          # key so that the harness and the test scripts can reach the
+          # guest.
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_ed25519
           make integration
 
       - name: Show VM diagnostics on failure
-        # Not plain failure(): a timeout-minutes cancellation must
-        # still show the diagnostics
+        # Not plain failure(). A timeout-minutes cancellation must
+        # still show the diagnostics.
         if: always() && !success()
         run: |
           echo "==> fuguvm status"
@@ -202,25 +206,26 @@ jobs:
 
       - name: Shut down VM and bound cache growth
         # A clean shutdown keeps the qcow2 consistent for the snapshot
-        # machinery. `fuguvm down` is internally bounded (its guest
-        # interactions are time-limited and it force-stops the QEMU
-        # process as a last resort), so it cannot hang the job even when
-        # the guest is wedged.
+        # machinery. `fuguvm down` is internally bounded. Its guest
+        # interactions have time limits, and it force-stops the QEMU
+        # process as a last resort. Thus it cannot hang the job even
+        # when the guest does not respond.
         #
-        # `cache clear --stale` prunes both halves of ~/.cache/fuguvm:
-        # the images whose key the current configuration no longer
-        # derives, and the proxy's downloads for every OpenBSD version
-        # other than the one .fuguvmrc pins. It runs before the cache
-        # post-step, so what a version bump orphans is dropped on the run
-        # that bumped it rather than uploaded forever.
+        # `cache clear --stale` prunes both halves of ~/.cache/fuguvm.
+        # It removes the images whose key the current configuration no
+        # longer derives. It also removes the proxy's downloads for
+        # every OpenBSD version other than the one .fuguvmrc pins. It
+        # runs before the cache post-step. Thus the run that bumps a
+        # version also drops what the bump orphans, instead of
+        # uploading it forever.
         #
-        # Every command here is guarded. This step is `if: always()` and
-        # `run:` blocks are `bash -e`, while the cache post-step is
-        # `post-if: success()` - so a non-zero exit here would discard
-        # the cache this run just populated. No cleanup command may
-        # determine job status. The prune stays unconditional rather
-        # than gated on success, because a red run is exactly when the
-        # cache grows.
+        # Every command here is guarded. This step is `if: always()`,
+        # and `run:` blocks are `bash -e`, while the cache post-step is
+        # `post-if: success()`. Thus a non-zero exit here would discard
+        # the cache that this run just populated. No cleanup command
+        # may decide the job status. The prune stays unconditional, not
+        # gated on success, because a red run is exactly when the cache
+        # grows.
         if: always()
         run: |
           ./bin/fuguvm down || true

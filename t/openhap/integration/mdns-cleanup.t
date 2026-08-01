@@ -1,9 +1,9 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Integration test: mDNS advertisement lifetime and process hygiene.
-# The daemon speaks the mdnsd control protocol over a held socket:
-# there is no child process, no mdnsctl.log, and closing the socket
-# (daemon exit) is what withdraws the advertisement.
+# The daemon speaks the mdnsd control protocol over a held socket.
+# There is no child process and no mdnsctl.log. When the daemon
+# exits, the socket closes, and this withdraws the advertisement.
 
 use v5.36;
 use Test::More;
@@ -22,8 +22,8 @@ die "mdnsd required for mDNS lifetime tests\n"
 my $db_path = $env->get_config_value('db_path') // '/var/db/openhapd';
 my $hap_name = $env->get_config_value('hap_name') // 'OpenHAP';
 
-# Remove any mdnsctl.log a pre-rewrite daemon left behind, so the
-# assertion below fails only if the running daemon creates one
+# Remove any mdnsctl.log that a pre-rewrite daemon left behind. Then
+# the assertion below fails only if the running daemon creates one.
 unlink "$db_path/mdnsctl.log";
 
 # Restart openhapd so it publishes against the running mdnsd
@@ -49,8 +49,8 @@ while ($output !~ /\Q$hap_name\E/i && time < $deadline) {
 like($output, qr/\Q$hap_name\E/i,
      'service advertised while the daemon runs');
 
-# No child processes: the daemon publishes over a socket, it does not
-# spawn a helper. pgrep -P lists children of the daemon's pid.
+# No child processes: the daemon publishes over a socket. It does
+# not spawn a helper. pgrep -P lists children of the daemon's pid.
 chomp( my $daemon_pid = `pgrep -f 'perl.*openhapd' | head -1` );
 like($daemon_pid, qr/^\d+$/, 'daemon pid known');
 
@@ -60,8 +60,9 @@ is($children, '', 'daemon has no child processes at all');
 # No mdnsctl.log: the log file existed only for the mdnsctl child
 ok(!-e "$db_path/mdnsctl.log", 'no mdnsctl.log is created');
 
-# Stopping the daemon closes the control socket, which withdraws the
-# advertisement within a few seconds - no signal, no kill, no child
+# When the daemon stops, the control socket closes. The closed
+# socket withdraws the advertisement within a few seconds. This
+# needs no signal, no kill, and no child.
 system('rcctl stop openhapd >/dev/null 2>&1');
 sleep 2;
 ok(system('rcctl check openhapd >/dev/null 2>&1') != 0,
@@ -76,8 +77,8 @@ while ($output =~ /\Q$hap_name\E/i && time < $deadline) {
 unlike($output, qr/\Q$hap_name\E/i,
        'advertisement withdrawn after the daemon exits');
 
-# The daemon starts and serves with mdnsd stopped: discovery degrades,
-# HAP service does not
+# The daemon starts and serves with mdnsd stopped. Discovery
+# degrades, but the HAP service does not.
 system('rcctl stop mdnsd >/dev/null 2>&1');
 sleep 1;
 system('rcctl start openhapd >/dev/null 2>&1');

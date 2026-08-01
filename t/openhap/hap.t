@@ -72,7 +72,7 @@ use_ok('OpenHAP::Pairing');
     like($device_id, qr/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/, 'Device ID is MAC format');
 }
 
-# mDNS TXT record content is covered by t/conformance/hap-mdns.t
+# The tests in t/conformance/hap-mdns.t cover the mDNS TXT record content
 
 # Test event queue initialization ([HAP-HTTP §14] event notifications)
 {
@@ -107,7 +107,7 @@ use_ok('OpenHAP::Pairing');
     ok(defined $new_ltpk, 'New LTPK exists after regeneration');
     isnt($new_ltpk, $old_ltpk, 'LTPK changed after regeneration');
 
-    # Verify keys were persisted
+    # Make sure the storage has the new keys
     my ($stored_ltsk, $stored_ltpk) = $hap->{storage}->load_accessory_keys();
     is($stored_ltpk, $new_ltpk, 'New LTPK persisted to storage');
 }
@@ -127,12 +127,12 @@ use_ok('OpenHAP::Pairing');
     is($hap->update_config_number, 1,
         'unchanged database keeps c# stable');
 
-    # Restart with the same database: c# unchanged
+    # Restart with the same database: the c# does not change
     my $hap2 = OpenHAP::HAP->new(%args);
     is($hap2->update_config_number, 1,
         '[HAP-mDNS §8] c# persisted across restart');
 
-    # Restart with an added accessory: c# increments
+    # Restart with an added accessory: the c# increments
     require OpenHAP::Tasmota::Heater;
     require OpenHAP::TestMock::MQTT;
     my $hap3 = OpenHAP::HAP->new(%args);
@@ -148,9 +148,9 @@ use_ok('OpenHAP::Pairing');
     is($hap3->get_mdns_txt_records->{'c#'}, 2, 'TXT c# reflects change');
 }
 
-# TXT string formatter: key=value pairs joined with '.' in sorted key
-# order - mdnsd's TXT delimiter makes the ordering observable, so it
-# must be deterministic ([HAP-mDNS §2])
+# The TXT string formatter joins key=value pairs with '.' in sorted
+# key order. The TXT delimiter of mdnsd makes the order observable.
+# Thus the order must be deterministic ([HAP-mDNS §2]).
 {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $hap = OpenHAP::HAP->new(
@@ -206,7 +206,8 @@ use_ok('OpenHAP::Pairing');
     $hap->_refresh_mdns;
     is(scalar @{ $mdns->{updates} }, 0, 'no update without state change');
 
-    # Pairing added: sf flips to 0 and the TXT record is re-advertised
+    # Pairing added: sf flips to 0 and the bridge re-advertises the
+    # TXT record
     $hap->{storage}->save_pairing('controller', 'X' x 32, 1);
     $hap->_refresh_mdns;
     is(scalar @{ $mdns->{updates} }, 1,
@@ -214,14 +215,14 @@ use_ok('OpenHAP::Pairing');
     like($mdns->{updates}[0], qr/(?:^|\.)sf=0(?:\.|$)/,
         'advertised sf=0 once paired');
 
-    # Pairing removed: re-advertised again with sf=1
+    # Pairing removed: the bridge re-advertises with sf=1
     $hap->{storage}->remove_all_pairings;
     $hap->_refresh_mdns;
     like($mdns->{updates}[1], qr/(?:^|\.)sf=1(?:\.|$)/,
         '[HAP-mDNS §8] advertised sf=1 when pairing removed');
 
     # Unpublished handle: the pairing path must never drive an update
-    # onto it (the guard that used to live inside OpenHAP::MDNS)
+    # onto it. This guard was inside OpenHAP::MDNS before.
     $mdns->{published} = 0;
     $hap->{storage}->save_pairing('controller', 'X' x 32, 1);
     $hap->_refresh_mdns;
@@ -230,8 +231,8 @@ use_ok('OpenHAP::Pairing');
     $hap->{storage}->remove_all_pairings;
 }
 
-# Event emission behavior ([HAP-HTTP §14]) is covered end-to-end by
-# t/conformance/hap-http.t, which drives the PUT handler and the MQTT
-# device path against subscribed mock sessions.
+# The tests in t/conformance/hap-http.t cover the event emission
+# behavior ([HAP-HTTP §14]) end-to-end. They drive the PUT handler and
+# the MQTT device path against subscribed mock sessions.
 
 done_testing();

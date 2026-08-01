@@ -45,8 +45,8 @@ subtest '[HAP-Categories §3] category advertised in mDNS ci field' => sub {
 	ok( exists $txt->{ci}, 'ci field present in TXT records' );
 	like( $txt->{ci}, qr/^\d+$/, 'ci is a numeric identifier' );
 
-	# The category is a UI hint only; bridged accessories of any
-	# service type still live behind ci=2
+	# The category is a UI hint only. Bridged accessories of any
+	# service type stay behind ci=2.
 	is( $txt->{ci}, 2, 'bridge category regardless of bridged devices' );
 };
 

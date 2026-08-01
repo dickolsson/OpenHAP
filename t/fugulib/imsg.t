@@ -81,8 +81,8 @@ subtest 'write after peer close returns undef, does not die' => sub {
 
 	my $lived = eval {
 
-		# The first write may land in the socket buffer; a
-		# second is guaranteed to raise EPIPE
+		# The first write can land in the socket buffer. A
+		# second write always raises EPIPE.
 		$tx->send( type => 1, data => 'x' );
 		my $r = $tx->send( type => 1, data => 'x' );
 		ok( !defined $r, 'send to a closed peer returns undef' );
@@ -104,7 +104,8 @@ subtest 'invalid length poisons the connection' => sub {
 	    or die "socketpair: $!";
 	my $rx = FuguLib::Imsg->new( fh => $b );
 
-	# len = 4: below IMSG_HEADER_SIZE, invalid per the framing
+	# A len of 4 is less than IMSG_HEADER_SIZE. The framing makes
+	# it invalid.
 	syswrite $a, pack( 'L4', 1, 4, 0, 0 );
 	ok( !defined $rx->recv( timeout => 5 ), 'invalid len yields undef' );
 	ok( !defined $rx->recv( timeout => 0.1 ),

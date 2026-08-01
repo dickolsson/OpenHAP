@@ -66,30 +66,30 @@ sub new ( $class, %options )
 
 sub setup ($self)
 {
-	# Verify we're in integration test mode
+	# Make sure the tests run in integration test mode
 	die "OPENHAP_INTEGRATION_TEST not set\n"
 	    unless $ENV{OPENHAP_INTEGRATION_TEST};
 
-	# The controller drives the accessory's own crypto/pairing library
-	# code in this process, which logs through the $OpenHAP::logger the
-	# daemon normally installs. Give it a quiet logger so those calls
-	# do not die on an undefined logger, matching how the unit tests
-	# set one up per file.
+	# The controller drives the accessory's own crypto/pairing
+	# library code in this process. That code logs through the
+	# $OpenHAP::logger that the daemon normally installs. Give it
+	# a quiet logger. Then those calls do not die on an undefined
+	# logger. The unit tests set one up per file in the same way.
 	$OpenHAP::logger //= FuguLib::Log->new(
 		mode  => 'quiet',
 		ident => 'openhap-integration'
 	);
 
-	# Verify system prerequisites
+	# Check the system prerequisites
 	$self->_verify_system or die "System prerequisites not met\n";
 
-	# Parse configuration
+	# Parse the configuration
 	$self->_parse_config;
 
-	# Ensure daemon is running
+	# Make sure the daemon is running
 	$self->ensure_daemon_running or die "Cannot start openhapd daemon\n";
 
-	# Record log baseline for this test
+	# Record the log baseline for this test
 	$self->{log_baseline} = $self->_count_log_lines;
 
 	return 1;
@@ -106,7 +106,7 @@ sub teardown ($self)
 	# Close any open sockets
 	$self->close_sockets;
 
-	# Disconnect MQTT if connected
+	# Disconnect MQTT if it is connected
 	if ( defined $self->{mqtt} ) {
 		eval { undef $self->{mqtt}; };
 	}
@@ -116,7 +116,8 @@ sub teardown ($self)
 
 # $self->get_controller(%args):
 #	Construct an OpenHAP::Test::Controller for the configured
-#	host/port/PIN. The connection is tracked and closed in teardown.
+#	host/port/PIN. The harness tracks the connection and closes
+#	it in teardown.
 sub get_controller ( $self, %args )
 {
 	require OpenHAP::Test::Controller;
@@ -134,11 +135,11 @@ sub get_controller ( $self, %args )
 }
 
 # $self->ensure_unpaired():
-#	Guarantee the daemon is verifiably unpaired: when stored
-#	pairings exist, stop the daemon, wipe the pairing state
-#	(keeping the accessory identity), and start it again. The
-#	post-condition is probed with POST /identify, which succeeds
-#	only while unpaired (HAP-HTTP.md §3).
+#	Make sure the daemon is unpaired. When stored
+#	pairings exist, stop the daemon, wipe the pairing state, and
+#	start it again. The wipe keeps the accessory identity. A
+#	POST /identify probes the post-condition. It succeeds only
+#	while the daemon is unpaired (HAP-HTTP.md §3).
 sub ensure_unpaired ($self)
 {
 	if ( $self->_has_pairings ) {
@@ -159,10 +160,10 @@ sub ensure_unpaired ($self)
 }
 
 # $self->_has_pairings():
-#	True when the pairings database holds at least one entry. The
-#	daemon leaves comment headers in the file after its first save,
-#	so a size check cannot tell paired from unpaired - parse for
-#	non-comment lines instead.
+#	Return true when the pairings database holds at least one
+#	entry. The daemon leaves comment headers in the file after
+#	its first save. Thus a size check cannot tell paired from
+#	unpaired. Parse for non-comment lines instead.
 sub _has_pairings ($self)
 {
 	open my $fh, '<', PAIRINGS_FILE or return 0;
@@ -177,10 +178,11 @@ sub _has_pairings ($self)
 }
 
 # $self->_verify_unpaired():
-#	Probe the pairing state with POST /identify: 204 only when
-#	unpaired, 400 with {"status":-70401} when still paired
-#	(HAP-HTTP.md §3). Fails loudly on the paired answer. The probe
-#	socket is closed immediately rather than left registered with
+#	Probe the pairing state with POST /identify. The daemon
+#	returns 204 only when unpaired. It returns 400 with
+#	{"status":-70401} when still paired (HAP-HTTP.md §3). This
+#	sub fails loudly on the paired answer. It closes the probe
+#	socket immediately. The socket does not stay registered with
 #	the daemon until teardown.
 sub _verify_unpaired ($self)
 {
@@ -205,9 +207,9 @@ sub _verify_unpaired ($self)
 }
 
 # $self->close_sockets():
-#	Close and forget every raw socket opened by http_request, so a
-#	probe connection is not left registered with the daemon until
-#	teardown.
+#	Close and forget every raw socket that http_request opened.
+#	Then a probe connection does not stay registered with the
+#	daemon until teardown.
 sub close_sockets ($self)
 {
 	for my $socket ( @{ $self->{sockets} } ) {
@@ -230,7 +232,7 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 
 	push @{ $self->{sockets} }, $socket;
 
-	# Build request
+	# Build the request
 	print $socket "$method $path HTTP/1.1\r\n";
 	print $socket "Host: 127.0.0.1:$self->{hap_port}\r\n";
 
@@ -246,14 +248,14 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 	print $socket $body if defined $body;
 	$socket->flush;
 
-	# Read response headers
+	# Read the response headers
 	my $response = '';
 	while ( my $line = <$socket> ) {
 		$response .= $line;
 		last if $line =~ /^\r?\n$/;
 	}
 
-	# Read body if Content-Length present
+	# Read the body if the response has a Content-Length header
 	if ( $response =~ /Content-Length:\s*(\d+)/i ) {
 		my $content_length = $1;
 		my $response_body;
@@ -310,16 +312,18 @@ sub ensure_daemon_running ($self)
 		return if system('rcctl check openhapd >/dev/null 2>&1') != 0;
 	}
 
-	# Running per rcctl is not serving: startup publishes the mDNS
-	# advertisement (waiting for mdnsd's replies) before the HAP
-	# listener opens, so wait for the port rather than a fixed sleep
+	# A daemon that runs per rcctl does not serve yet. At
+	# startup, the daemon publishes the mDNS advertisement and
+	# waits for the mdnsd replies. The HAP listener opens after
+	# that. Thus wait for the port, not for a fixed sleep.
 	return $self->wait_for_hap_port;
 }
 
 # $self->wait_for_hap_port($timeout):
-#	Wait until the HAP port accepts connections, polling every
-#	quarter second up to $timeout seconds (default 30, generous
-#	for TCG emulation). Returns 1 when serving, undef on deadline.
+#	Wait until the HAP port accepts connections. Poll every
+#	quarter second, up to $timeout seconds. The default is 30
+#	seconds, which is generous for TCG emulation. Return 1 when
+#	the daemon serves. Return undef on the deadline.
 sub wait_for_hap_port ( $self, $timeout = 30 )
 {
 	my $port     = $self->get_config_value('hap_port') // DEFAULT_HAP_PORT;
@@ -353,12 +357,12 @@ sub ensure_daemon_stopped ($self)
 }
 
 # $self->ensure_mdnsd_running():
-#	Ensure mdnsd is running and stays running: start it if needed,
-#	then re-check across a settle window, because a point-in-time
-#	probe races green when mdnsd starts and then exits shortly
-#	after. On failure, captured diagnostics are emitted so a dead
-#	mdnsd is diagnosable from the test output instead of failing
-#	bare.
+#	Make sure that mdnsd runs and continues to run. Start it if
+#	necessary. Then check again across a settle window. A
+#	point-in-time probe races green when mdnsd starts and then
+#	exits shortly after. On failure, emit the captured
+#	diagnostics. Then a dead mdnsd is diagnosable from the test
+#	output, and the sub does not fail bare.
 sub ensure_mdnsd_running ($self)
 {
 	my $check = 'rcctl check mdnsd >/dev/null 2>&1';
@@ -380,8 +384,9 @@ sub ensure_mdnsd_running ($self)
 }
 
 # $self->_warn_mdnsd_diagnostics($reason):
-#	Emit captured mdnsd state - rcctl views, the process list, and
-#	recent syslog lines - as warnings for the failure diagnostics.
+#	Emit the captured mdnsd state as warnings for the failure
+#	diagnostics. The state holds the rcctl views, the process
+#	list, and recent syslog lines.
 sub _warn_mdnsd_diagnostics ( $self, $reason )
 {
 	my $syslog = SYSLOG_FILE;
@@ -400,14 +405,14 @@ sub _warn_mdnsd_diagnostics ( $self, $reason )
 
 sub ensure_mqtt_running ($self)
 {
-	# Check if already running
+	# Check if the broker is already running
 	return 1 if system('rcctl check mosquitto >/dev/null 2>&1') == 0;
 
-	# Attempt to start
+	# Try to start the broker
 	system('rcctl start mosquitto >/dev/null 2>&1');
 	sleep 1;
 
-	# Verify it started
+	# Make sure the broker started
 	return system('rcctl check mosquitto >/dev/null 2>&1') == 0;
 }
 
@@ -415,7 +420,7 @@ sub clear_logs ($self)
 {
 	return unless -w SYSLOG_FILE;
 
-	# Truncate would require root, so we just record a new baseline
+	# A truncate requires root. Thus record a new baseline instead.
 	$self->{log_baseline} = $self->_count_log_lines;
 
 	return 1;
@@ -449,10 +454,10 @@ sub get_mqtt ($self)
 	eval { require Net::MQTT::Simple; };
 	return if $@;
 
-	# Ensure broker is running
+	# Make sure the broker is running
 	return unless $self->ensure_mqtt_running;
 
-	# Create connection
+	# Create the connection
 	eval {
 		$self->{mqtt} = Net::MQTT::Simple->new(
 			"$self->{mqtt_host}:$self->{mqtt_port}");
@@ -463,19 +468,19 @@ sub get_mqtt ($self)
 
 sub _verify_system ($self)
 {
-	# Check required binaries
+	# Check the required binaries
 	return unless -x '/usr/sbin/rcctl';
 	return unless -x '/usr/local/bin/openhapd';
 	return unless -x '/usr/local/bin/hapctl';
 
-	# Check configuration exists
+	# Check that the configuration exists
 	return unless -f $self->{config_file};
 	return unless -r $self->{config_file};
 
-	# Check system user exists
+	# Check that the system user exists
 	return unless system('id _openhap >/dev/null 2>&1') == 0;
 
-	# Check data directory exists
+	# Check that the data directory exists
 	return unless -d '/var/db/openhapd';
 
 	return 1;
@@ -513,7 +518,7 @@ sub _parse_config ($self)
 		# Simple key = value
 		if (/^\s*(\w+)\s*=\s*(.+)/) {
 			my ( $key, $value ) = ( $1, $2 );
-			$value =~ s/^"(.*)"$/$1/;    # Remove quotes
+			$value =~ s/^"(.*)"$/$1/;    # Remove the quotes
 
 			if ( defined $device ) {
 				$device->{$key} = $value;
@@ -524,7 +529,7 @@ sub _parse_config ($self)
 
 			$config{$key} = $value;
 
-			# Update hap_port if configured
+			# Update hap_port if the config sets it
 			$self->{hap_port} = $value if $key eq 'hap_port';
 		}
 	}

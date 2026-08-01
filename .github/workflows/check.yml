@@ -1,29 +1,29 @@
 name: Check
 
-# Explicit includes, never excludes: a path that no job reads must not be
-# able to start this workflow just because nobody remembered to exclude it.
-# The list is the union of what the three jobs below actually consume.
+# Use explicit includes, never excludes. A path that no job reads must
+# not start this workflow only because nobody excluded it. The list is
+# the union of the paths that the three jobs below read.
 on:
   push:
     branches: [main]
     paths:
-      # Perl that tidy, lint and the syntax sweep read.  bin/ and
-      # scripts/ are extensionless, so a glob over the directory is the
-      # only way to name all of it.
+      # The Perl files that tidy, lint and the syntax sweep read. The
+      # files in bin/ and scripts/ have no extension. Thus a glob over
+      # each directory is the only way to name all of them.
       - "bin/*"
       - "scripts/*"
       - "lib/**.pm"
       - ".perlcriticrc"
       - ".perltidyrc"
-      # Prettier formats every Markdown, JSON and YAML file in the tree,
-      # so this workflow has to see all of them.  The YAML glob is also
-      # what makes the workflow re-run on edits to itself and to the
+      # Prettier formats every Markdown, JSON and YAML file in the
+      # tree, so this workflow must see all of them. The YAML glob also
+      # makes the workflow run again on edits to itself and to the
       # composite action under .github/.
       - "**.md"
       - "**.json"
       - "**.yml"
       - ".prettierrc"
-      # The toolchain the jobs install and drive
+      # The toolchain that the jobs install and use
       - "Makefile"
       - "cpanfile"
       - "deps/*.txt"

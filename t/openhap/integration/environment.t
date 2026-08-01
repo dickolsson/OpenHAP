@@ -43,9 +43,10 @@ ok(-d '/var/db/openhapd', 'data directory exists');
 ok(-f '/etc/rc.d/openhapd', 'rc.d script installed');
 
 # Test 11: SRP obtains the GMP Math::BigInt backend. The try => 'GMP'
-# selection falls back silently to pure Perl, which reintroduces
-# multi-minute pair-setups under TCG emulation - a missing backend
-# must be a hard, visible failure here, not a slow-but-green run.
+# selection falls back silently to pure Perl. The pure Perl path
+# reintroduces multi-minute pair-setups under TCG emulation. A
+# missing backend must be a hard, visible failure here, not a
+# slow-but-green run.
 require OpenHAP::SRP;
 is(Math::BigInt->config->{lib}, 'Math::BigInt::GMP',
    'Math::BigInt uses the GMP backend');

@@ -2,18 +2,20 @@
 # ex:ts=8 sw=4:
 # Guards for .github/actions/setup-perl and the workflows that use it
 #
-# Nothing else in the tree checks CI wiring: a workflow that stops
-# passing an environment, or a cache key that stops covering an input
-# that decides what gets installed, both fail on a runner - the first as
-# a job that installs the wrong dependency set, the second as a tree
-# that is silently rebuilt and re-cached under a stale key on every run.
+# Nothing else in the tree checks CI wiring. Two failures show only
+# on a runner. One is a workflow that stops passing an environment.
+# The other is a cache key that stops covering an input that decides
+# what gets installed. The first fails as a job that installs the
+# wrong dependency set. The second fails as a tree that every run
+# silently rebuilds and re-caches under a stale key.
 #
-# Text, not YAML: a parser is not in base perl and the invariants here
-# are all about which literal strings appear, not about structure - with
-# one exception, the cache key, whose shell is extracted and run.  Reading
-# it was not enough: interpolating the hashFiles expression straight after
-# $prefix made the digest part of the variable NAME, which produced an
-# empty key and failed every job at the restore step.
+# Text, not YAML: a parser is not in base perl, and the invariants
+# here are all about which literal strings appear, not about
+# structure. The one exception is the cache key. The test extracts
+# its shell and runs it.  To read the shell was not enough: an
+# interpolation of the hashFiles expression straight after $prefix
+# made the digest part of the variable NAME. That produced an empty
+# key and failed every job at the restore step.
 
 use v5.36;
 use Test::More;
@@ -24,9 +26,9 @@ my $root     = "$RealBin/../..";
 my $action   = "$root/.github/actions/setup-perl/action.yml";
 my $workflow = "$root/.github/workflows";
 
-# The environments deps/<OS>.txt names, and the make target each one
-# selects. deps-develop and deps-test have their own targets; runtime is
-# plain `make deps`.
+# The environments that deps/<OS>.txt names, and the make target that
+# each one selects. deps-develop and deps-test have their own targets.
+# runtime is plain `make deps`.
 my %TARGET = (
 	runtime => 'deps',
 	test    => 'deps-test',
@@ -49,8 +51,8 @@ sub _slurp ($path)
 }
 
 # _run_block($yml, $step_name):
-#	The `run: |` script of the named step, dedented to column zero so
-#	it can be handed to a shell. Undef when the step or its block is
+#	The `run: |` script of the named step, dedented to column zero
+#	so that a shell can run it. Undef when the step or its block is
 #	not there.
 sub _run_block ( $yml, $name )
 {
@@ -61,7 +63,7 @@ sub _run_block ( $yml, $name )
 		$seen = 1 if $lines[$i] =~ /^\s+-\s+name:\s*\Q$name\E\s*$/;
 		next unless $seen;
 
-		# A later step begins, so the block is over
+		# A later step begins. The block is over.
 		last if @block && $lines[$i] =~ /^\s+-\s+name:/;
 
 		if ( !defined $indent ) {
@@ -93,8 +95,8 @@ subtest 'the action takes one environment input' => sub {
 	like( $yml, qr/^\s+default:\s*"?test"?\s*$/m,
 		'defaults to the test environment' );
 
-	# Every environment resolves, and only through the input: a
-	# workflow must not have to know the target names.
+	# Every environment resolves, and only through the input. A
+	# workflow must not need to know the target names.
 	for my $env ( sort keys %TARGET ) {
 		like( $yml, qr/\b\Q$env\E\b/,
 			"resolves the $env environment" );
@@ -108,10 +110,11 @@ subtest 'the action takes one environment input' => sub {
 };
 
 subtest 'the cache key covers what decides the tree' => sub {
-	# One computed key, read twice. actions/cache/save rejects a write
-	# to an existing key, so a restore and a save that disagreed would
-	# miss on every run and then fail to store the result - which is
-	# why neither step may spell the key out for itself.
+	# One computed key, read twice. actions/cache/save rejects a
+	# write to an existing key. Thus a restore and a save that
+	# disagreed would miss on every run and then fail to store the
+	# result. This is why neither step may spell the key out for
+	# itself.
 	my @refs = $yml =~ /^\s+key:\s*(.*)$/mg;
 	is( scalar @refs, 2, 'a restore key and a save key' );
 	is_deeply(
@@ -125,14 +128,14 @@ subtest 'the cache key covers what decides the tree' => sub {
 	like( $yml, qr/prefix=\S*\$\{\{\s*inputs\.dependencies\s*\}\}/,
 		'the key names the environment' );
 
-	# The tree holds compiled XS, so it is only valid for the perl that
-	# built it.
+	# The tree holds compiled XS. Thus it is only valid for the perl
+	# that built it.
 	like( $yml, qr/\$Config\{version\}/,  'the key names perl version' );
 	like( $yml, qr/\$Config\{archname\}/, 'the key names the archname' );
 
 	# Fail closed: hashFiles over a path that matches nothing returns
-	# an empty string rather than an error, so a renamed input would
-	# quietly collapse the key instead of rotating it.
+	# an empty string rather than an error. Thus a renamed input
+	# would quietly collapse the key, not rotate it.
 	my ($hashed) = $yml =~ /hashFiles\(([^)]*)\)/;
 	ok( defined $hashed, 'the key hashes files' ) or return;
 
@@ -141,7 +144,7 @@ subtest 'the cache key covers what decides the tree' => sub {
 	ok( -f "$root/$_", "hashed path $_ exists" ) for @paths;
 
 	# The two inputs that decide which modules end up installed.
-	# Anything else - the Makefile above all - changes for unrelated
+	# Anything else, the Makefile above all, changes for unrelated
 	# reasons and would rebuild the tree from source each time.
 	for my $want ( 'deps/Linux.txt', 'scripts/deps' ) {
 		ok( scalar( grep { $_ eq $want } @paths ),
@@ -156,10 +159,10 @@ subtest 'the cache key covers what decides the tree' => sub {
 };
 
 subtest 'the cache key shell actually composes a key' => sub {
-	# The step is legal YAML and legal shell either way, so nothing
+	# The step is legal YAML and legal shell either way. Thus nothing
 	# above can tell a working key from an empty one. Run it: the
-	# runner interpolates the expressions before bash sees them, so do
-	# the same with stand-in values and read the outputs back.
+	# runner interpolates the expressions before bash sees them. Do
+	# the same with stand-in values. Then read the outputs back.
 	my $shell = _run_block( $yml, 'Compute the cache key' );
 	ok( defined $shell, 'the key-computing step has a shell block' )
 	    or return;
@@ -187,7 +190,7 @@ subtest 'the cache key shell actually composes a key' => sub {
 	ok( length( $got{key}    // '' ), 'it emits a non-empty key' );
 
 	# The bug: $prefix followed by the digest read as one variable
-	# name, so key= was empty and restore-keys= was fine - which is
+	# name. Thus key= was empty and restore-keys= was fine. This is
 	# why only the composition catches it.
 	is( $got{key}, ( $got{prefix} // '' ) . $digest,
 		'and the key is exactly the prefix plus the digest' );
@@ -217,8 +220,8 @@ subtest 'workflows delegate installing to the action' => sub {
 		is( scalar @own, 0, "$file runs no deps target of its own" )
 		    or diag( join "\n", @own );
 
-		# Whatever a workflow does pass has to be an environment
-		# the action accepts.
+		# Whatever a workflow does pass must be an environment
+		# that the action accepts.
 		for my $i ( 0 .. $#lines ) {
 			next
 			    unless $lines[$i] =~
@@ -236,8 +239,8 @@ subtest 'workflows delegate installing to the action' => sub {
 				}
 			}
 
-			# Omitting it is fine - that is what the default
-			# is for - but a value that is not an environment
+			# To omit it is fine. That is what the default
+			# is for. But a value that is not an environment
 			# is a job that installs nothing.
 			ok( !defined $env || exists $TARGET{$env},
 				"$file line @{[$i + 1]}: "

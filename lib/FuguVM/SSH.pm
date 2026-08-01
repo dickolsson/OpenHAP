@@ -44,8 +44,9 @@ sub new ( $class, %args )
 }
 
 # $self->_connect:
-#	Establish SSH connection and authenticate using SSH agent
-#	or password fallback. Returns Net::SSH2 object on success.
+#	Open the SSH connection. Authenticate with the SSH agent first,
+#	then with the password as a fallback. The method returns a
+#	Net::SSH2 object on success.
 sub _connect ($self)
 {
 	my $ssh2 = Net::SSH2->new;
@@ -55,14 +56,15 @@ sub _connect ($self)
 		return;
 	}
 
-	# Try SSH agent authentication first if SSH_AUTH_SOCK is set
+	# Try the SSH agent authentication first when SSH_AUTH_SOCK is set
 	if ( defined $ENV{SSH_AUTH_SOCK} ) {
 		if ( $ssh2->auth_agent( $self->{user} ) ) {
 			return $ssh2;
 		}
 	}
 
-	# Fallback to password authentication if provided
+	# Fall back to the password authentication when a password is
+	# available
 	if ( defined $self->{password} ) {
 		if ( $ssh2->auth_password( $self->{user}, $self->{password} ) )
 		{
@@ -80,7 +82,8 @@ sub wait_available ( $self, $timeout = 120, $sig = undef )
 
 	while ( time - $start < $timeout ) {
 
-		# Check for interrupt if signal handler provided
+		# Check for an interrupt if the caller gave a signal
+		# handler
 		if ( defined $sig && FuguLib::Signal::check_interrupted() ) {
 			return 0;
 		}
@@ -154,8 +157,9 @@ sub run_command ( $self, $command )
 
 sub interactive ($self)
 {
-	# For interactive sessions, fall back to system ssh command
-	# Net::SSH2 doesn't provide proper TTY handling for interactive use
+	# For interactive sessions, fall back to the system ssh command.
+	# Net::SSH2 does not give correct TTY control for interactive
+	# use.
 	my @cmd = (
 		'ssh',
 		'-o',
@@ -169,18 +173,20 @@ sub interactive ($self)
 		"$self->{user}\@$self->{host}",
 	);
 
-	# Return the child's exit code, not the raw wait status: callers
-	# (and ultimately the fuguvm exit status) expect a 0-255 code. A
-	# raw status of, say, 256 for a remote exit code of 1 would become
-	# exit(256) -> 0, silently turning a failed remote command (e.g. a
-	# failing `prove` run driven over stdin) into success.
+	# Return the child's exit code, not the raw wait status. The
+	# callers, and finally the fuguvm exit status, expect a 0-255
+	# code. A raw status of 256 for a remote exit code of 1 would
+	# become exit(256) -> 0. That result silently turns a failed
+	# remote command into success, for example a failed `prove` run
+	# driven over stdin.
 	return _exit_code( system(@cmd) );
 }
 
 # _exit_code($status):
-#	Map a raw system()/$? wait status to a 0-255 exit code: the low
-#	byte encodes the terminating signal, the high byte the exit code.
-#	system() returns -1 when the child could not be run at all.
+#	Map a raw system()/$? wait status to a 0-255 exit code. The low
+#	byte encodes the terminating signal. The high byte encodes the
+#	exit code. system() returns -1 when it cannot start the child
+#	at all.
 sub _exit_code ($status)
 {
 	return EXIT_ERROR               if $status == -1;
@@ -189,7 +195,7 @@ sub _exit_code ($status)
 }
 
 # $self->write_file($remote_path, $content, $mode):
-#	Write content directly to a remote file via SFTP
+#	Write the content directly to a remote file with SFTP
 sub write_file ( $self, $remote_path, $content, $mode = 0644 )
 {
 	my $ssh2 = $self->_connect;
@@ -212,7 +218,7 @@ sub write_file ( $self, $remote_path, $content, $mode = 0644 )
 	}
 
 	$remote_fh->write($content);
-	undef $remote_fh;    # Close file handle
+	undef $remote_fh;    # Close the file handle
 	$ssh2->disconnect;
 
 	return EXIT_SUCCESS;

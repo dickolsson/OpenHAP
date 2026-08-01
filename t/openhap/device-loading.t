@@ -8,7 +8,7 @@ use FuguLib::Log;
 $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
 
 # Test device loading through OpenHAP::DeviceLoader with a mock config,
-# mock MQTT client and a recording HAP stand-in.
+# a mock MQTT client, and a recording HAP stand-in.
 
 use_ok('OpenHAP::DeviceLoader');
 
@@ -55,7 +55,7 @@ sub add_accessory ( $self, $accessory )
 
 package main;
 
-# Valid device is loaded and added to the bridge
+# The loader loads a valid device and adds it to the bridge
 {
 	my $config = MockConfig->new( {
 		type    => 'tasmota',
@@ -80,7 +80,7 @@ package main;
 		'Device subscribed to MQTT topics' );
 }
 
-# Device missing name is rejected
+# The loader rejects a device without a name
 {
 	my $config = MockConfig->new( {
 		type    => 'tasmota',
@@ -95,7 +95,7 @@ package main;
 	is( $count, 0, 'Device without name is skipped' );
 }
 
-# Device missing topic is rejected
+# The loader rejects a device without a topic
 {
 	my $config = MockConfig->new( {
 		type    => 'tasmota',
@@ -110,7 +110,7 @@ package main;
 	is( $count, 0, 'Device without topic is skipped' );
 }
 
-# Device missing id falls back to topic as serial
+# A device without an id uses the topic as the serial
 {
 	my $config = MockConfig->new( {
 		type    => 'tasmota',
@@ -128,7 +128,7 @@ package main;
 	is( $device->{serial}, 'test_heater', 'Topic used as serial fallback' );
 }
 
-# Unsupported device type is skipped
+# The loader skips an unsupported device type
 {
 	my $config = MockConfig->new( {
 		type    => 'zigbee',
@@ -144,7 +144,8 @@ package main;
 	is( $count, 0, 'Unsupported device type is skipped' );
 }
 
-# MQTT subscription deferred when broker not connected
+# The loader defers the MQTT subscription while the broker is not
+# connected
 {
 	my $config = MockConfig->new( {
 		type    => 'tasmota',
@@ -162,7 +163,8 @@ package main;
 		0, 'Subscription deferred while disconnected' );
 }
 
-# Mixed configuration: AIDs assigned sequentially, invalid entries skipped
+# Mixed configuration: the loader assigns AIDs in sequence and skips
+# the invalid entries
 {
 	my $config = MockConfig->new(
 		{

@@ -19,9 +19,9 @@ use v5.36;
 
 package FuguVM::Proxy::MetaCache;
 
-# In-memory metadata cache for file serving optimization
-# Caches file metadata (path, size, mtime, content_type, etag)
-# to avoid repeated stat() calls and content-type detection
+# The in-memory metadata cache makes file serving faster. It caches
+# the file metadata: path, size, mtime, content_type, and etag. This
+# prevents repeated stat() calls and repeated content-type detection.
 
 sub new ($class)
 {
@@ -31,15 +31,16 @@ sub new ($class)
 }
 
 # $self->lookup($url):
-#	Lookup cached metadata for a URL
-#	Returns metadata hashref if found and still valid, undef otherwise
-#	Validates that file still exists and hasn't been modified
+#	Look up the cached metadata for a URL. The method returns the
+#	metadata hashref if the entry is present and still valid, and
+#	undef otherwise. It makes sure that the file still exists and
+#	did not change.
 sub lookup ( $self, $url )
 {
 	my $entry = $self->{entries}{$url};
 	return unless $entry;
 
-	# Verify file still exists and hasn't been modified
+	# Make sure that the file still exists and did not change
 	my @stat = stat $entry->{path};
 	return unless @stat;
 
@@ -50,9 +51,9 @@ sub lookup ( $self, $url )
 }
 
 # $self->store($url, $path):
-#	Store metadata for a URL
-#	Stats the file and caches all relevant metadata
-#	Returns metadata hashref on success, undef on failure
+#	Store the metadata for a URL. The method stats the file and
+#	caches all applicable metadata. It returns the metadata hashref
+#	on success and undef on failure.
 sub store ( $self, $url, $path )
 {
 	my @stat = stat $path;
@@ -87,8 +88,8 @@ sub clear ($self)
 }
 
 # $self->warm($cache):
-#	Pre-warm the metadata cache by scanning all cached files
-#	Takes a FuguVM::Proxy::Cache object
+#	Warm the metadata cache with a scan of all cached files. The
+#	method takes a FuguVM::Proxy::Cache object.
 sub warm ( $self, $cache )
 {
 	my $cache_dir = $cache->{cache_dir};
@@ -104,7 +105,7 @@ sub warm ( $self, $cache )
 }
 
 # $self->_guess_content_type($path):
-#	Guess content type from file extension
+#	Guess the content type from the file extension
 sub _guess_content_type ( $self, $path )
 {
 	return 'application/x-gzip'       if $path =~ /\.tgz$/;
@@ -118,7 +119,7 @@ sub _guess_content_type ( $self, $path )
 }
 
 # $self->_generate_etag($mtime, $size):
-#	Generate an ETag from file modification time and size
+#	Generate an ETag from the file modification time and size
 #	Format: "mtime-size" in hex
 sub _generate_etag ( $self, $mtime, $size )
 {
@@ -126,8 +127,9 @@ sub _generate_etag ( $self, $mtime, $size )
 }
 
 # $self->_walk_cache_dir($dir, $cache_dir, $callback):
-#	Recursively walk cache directory and invoke callback for each file
-#	Reconstructs URLs from filesystem paths
+#	Walk the cache directory recursively. Call the callback for
+#	each file. The method reconstructs the URLs from the filesystem
+#	paths.
 sub _walk_cache_dir ( $self, $dir, $cache_dir, $callback )
 {
 	opendir my $dh, $dir or return;
@@ -143,7 +145,7 @@ sub _walk_cache_dir ( $self, $dir, $cache_dir, $callback )
 		}
 		elsif ( -f $path ) {
 
-			# Reconstruct URL from path
+			# Reconstruct the URL from the path
 			# Path format: $cache_dir/proxy/$host/$path
 			my $url = $self->_path_to_url( $path, $cache_dir );
 			$callback->( $url, $path ) if defined $url;
@@ -152,13 +154,13 @@ sub _walk_cache_dir ( $self, $dir, $cache_dir, $callback )
 }
 
 # $self->_path_to_url($path, $cache_dir):
-#	Convert cache filesystem path back to URL
+#	Convert the cache filesystem path back to the URL
 sub _path_to_url ( $self, $path, $cache_dir )
 {
 	my $proxy_dir = "$cache_dir/proxy";
 	return unless $path =~ s{^\Q$proxy_dir\E/}{};
 
-	# Split into host and path
+	# Split the string into the host and the path
 	my ( $host, @parts ) = split m{/}, $path;
 	return unless defined $host && @parts;
 

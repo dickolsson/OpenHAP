@@ -44,7 +44,7 @@ sub new ( $class, $project_root )
 	return $self;
 }
 
-# Walk up directory tree looking for .fuguvmrc
+# Walk up the directory tree to find .fuguvmrc
 sub find_project_root ($class)
 {
 	my $dir = File::Spec->rel2abs('.');
@@ -54,7 +54,7 @@ sub find_project_root ($class)
 		return $dir if -f $config_file;
 
 		my $parent = dirname($dir);
-		last if $parent eq $dir;    # Reached root
+		last if $parent eq $dir;    # The walk reached the root
 		$dir = $parent;
 	}
 
@@ -63,13 +63,13 @@ sub find_project_root ($class)
 
 sub _load_configs ($self)
 {
-	# Load global config from home directory
+	# Load the global config from the home directory
 	my $home          = $ENV{HOME} // '/root';
 	my $global_config = "$home/" . GLOBAL_CONFIG;
 	$self->{global} =
 	    -f $global_config ? $self->_parse_config($global_config) : {};
 
-	# Load project config from project root
+	# Load the project config from the project root
 	my $project_config = "$self->{project_root}/" . PROJECT_CONFIG;
 	$self->{project} =
 	    -f $project_config ? $self->_parse_config($project_config) : {};
@@ -77,7 +77,7 @@ sub _load_configs ($self)
 	return $self;
 }
 
-# Parse OpenBSD-style config with optional block syntax:
+# Parse an OpenBSD-style config with the optional block syntax:
 #
 #   key value
 #
@@ -99,8 +99,8 @@ sub _parse_config ( $self, $path )
 
 	while (<$fh>) {
 		chomp;
-		s/#.*//;           # Remove comments
-		s/^\s+|\s+$//g;    # Trim whitespace
+		s/#.*//;           # Remove the comments
+		s/^\s+|\s+$//g;    # Trim the whitespace
 		next if $_ eq '';
 
 		# Block start: vm "name" { or vm name {
@@ -124,11 +124,12 @@ sub _parse_config ( $self, $path )
 			next;
 		}
 
-		# Key-value pair (inside or outside block)
-		# Supports both "key value" and "key = value" syntax
+		# A key-value pair, inside or outside a block. The parser
+		# supports both the "key value" and the "key = value"
+		# syntax.
 		if (/^(\w+)\s+(.+)$/) {
 			my ( $key, $value ) = ( $1, $2 );
-			$value =~ s/^=\s*//;      # Strip leading '=' if present
+			$value =~ s/^=\s*//;       # Remove a leading '=' if any
 			$value =~ s/^\s+|\s+$//g;
 			$value =~ s/^"(.*)"$/$1/;
 			if ( defined $block_data ) {
@@ -146,10 +147,11 @@ sub _parse_config ( $self, $path )
 
 sub load_vm ( $self, $name )
 {
-	# First check for VM block in project config, then global config
+	# First check for a VM block in the project config. Then check
+	# the global config.
 	my $vm = $self->{project}{vm}{$name} // $self->{global}{vm}{$name};
 
-	# Fall back to separate VM file for backwards compatibility
+	# Fall back to a separate VM file for backwards compatibility
 	if ( !defined $vm ) {
 		my $vm_file = "$self->{data_dir}/vms/$name.conf";
 		$vm = $self->_parse_config($vm_file) if -f $vm_file;
@@ -157,7 +159,7 @@ sub load_vm ( $self, $name )
 
 	return if !defined $vm;
 
-	# Apply defaults
+	# Apply the defaults
 	$vm->{name}         //= $name;
 	$vm->{version}      //= DEFAULT_VERSION;
 	$vm->{memory}       //= DEFAULT_MEMORY;
@@ -165,13 +167,14 @@ sub load_vm ( $self, $name )
 	$vm->{ssh_port}     //= DEFAULT_SSH_PORT;
 	$vm->{console_port} //= DEFAULT_CONSOLE_PORT;
 
-	# Include ssh_pubkey from global/project config
+	# Include ssh_pubkey from the global or project config
 	$vm->{ssh_pubkey} //= $self->ssh_pubkey;
 
-	# Include the resolved cache_dir so VM operations (proxy cache,
-	# installed-image cache) all use the configured location. Without
-	# it 'fuguvm up' would write its images under $HOME while the
-	# cache subcommands worked on a different tree.
+	# Include the resolved cache_dir. Then the VM operations, the
+	# proxy cache and the installed-image cache, all use the
+	# configured location. Without it, 'fuguvm up' would write its
+	# images under $HOME while the cache subcommands worked on a
+	# different tree.
 	$vm->{cache_dir} //= $self->cache_dir;
 
 	# Normalize the installed-image cache switch, whether it came from
@@ -196,8 +199,9 @@ sub cache_dir ($self)
 }
 
 # $self->image_cache:
-#	Whether 'fuguvm up' may use the installed-image cache. Project
-#	configuration wins over global; the default is on.
+#	Return whether 'fuguvm up' may use the installed-image cache.
+#	The project configuration wins over the global one. The default
+#	is on.
 sub image_cache ($self)
 {
 	my $value = $self->{project}{image_cache}
@@ -208,9 +212,9 @@ sub image_cache ($self)
 }
 
 # _parse_bool($value, $default):
-#	Accept the spellings an OpenBSD-style configuration file uses for
-#	a switch. An unrecognized value warns and falls back rather than
-#	silently meaning its opposite.
+#	Accept the spellings that an OpenBSD-style configuration file
+#	uses for a switch. An unrecognized value warns and falls back.
+#	It does not silently mean its opposite.
 sub _parse_bool ( $value, $default )
 {
 	my $normalized = lc $value;
@@ -235,7 +239,7 @@ sub state_dir ($self)
 {
 	my $dir = $self->{project}{state_dir} // "$self->{data_dir}/state";
 
-	# Make relative paths absolute to project root
+	# Make relative paths absolute to the project root
 	if ( $dir !~ m{^/} ) {
 		$dir = "$self->{project_root}/$dir";
 	}

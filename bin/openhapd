@@ -28,7 +28,7 @@ GetOptions(
 	'h|help'       => \&usage,
 ) or usage();
 
-# Load configuration
+# Load the configuration
 my $config = OpenHAP::Config->new( file => $config_file );
 $config->load() if -f $config_file;
 
@@ -37,18 +37,19 @@ if ($check_config) {
 	exit 0;
 }
 
-# Daemonize first, before initializing logging
-# This ensures syslog connection is opened in the child process
+# Daemonize first, before the log setup. This makes sure that the
+# child process opens the syslog connection.
 if ( !$foreground ) {
 	OpenHAP::Daemon->daemonize('/var/log/openhapd.log');
 }
 
-# Initialize logging after daemonizing
+# Set up logging after the daemonize step
 my $log_level    = $config->get( 'log_level',    'info' );
 my $log_facility = $config->get( 'log_facility', 'daemon' );
 my $log_mode     = $foreground ? 'stderr' : 'syslog';
 
-# Create logger and set as package variable for all OpenHAP modules
+# Create the logger. Set it as the package variable for all OpenHAP
+# modules.
 $OpenHAP::logger = FuguLib::Log->new(
 	mode     => $log_mode,
 	ident    => 'openhapd',
@@ -58,13 +59,13 @@ $OpenHAP::logger = FuguLib::Log->new(
 
 $OpenHAP::logger->info('OpenHAP daemon initializing');
 
-# Get HAP settings
+# Get the HAP settings
 my $hap_name = $config->get( 'hap_name', 'OpenHAP Bridge' );
 my $hap_port = $config->get( 'hap_port', 51827 );
 my $hap_pin  = $config->get( 'hap_pin',  '1995-1018' );
 my $db_path  = $config->get( 'db_path',  '/var/db/openhapd' );
 
-# Create HAP server
+# Create the HAP server
 my $hap = OpenHAP::HAP->new(
 	port         => $hap_port,
 	pin          => $hap_pin,
@@ -72,7 +73,7 @@ my $hap = OpenHAP::HAP->new(
 	storage_path => $db_path,
 );
 
-# Initialize MQTT client
+# Set up the MQTT client
 my $mqtt_host = $config->get( 'mqtt_host', '127.0.0.1' );
 my $mqtt_port = $config->get( 'mqtt_port', 1883 );
 my $mqtt_user = $config->get('mqtt_user');
@@ -85,7 +86,7 @@ my $mqtt = OpenHAP::MQTT->new(
 	password => $mqtt_pass,
 );
 
-# Try to connect to MQTT with timeout
+# Try to connect to MQTT with a timeout
 if ( $mqtt->mqtt_connect(5) ) {
 	$OpenHAP::logger->info( 'Connected to MQTT broker at %s:%d',
 		$mqtt_host, $mqtt_port );
@@ -94,29 +95,29 @@ if ( $mqtt->mqtt_connect(5) ) {
 else {
 	$OpenHAP::logger->warning(
 		'MQTT broker not available, will retry in background');
-	$hap->set_mqtt_client($mqtt);    # Set client anyway for reconnection
+	$hap->set_mqtt_client($mqtt);    # Set it anyway for reconnection
 }
 
-# Load devices from configuration
+# Load the devices from the configuration
 my $loader = OpenHAP::DeviceLoader->new();
 $loader->load_devices( $config, $hap, $mqtt );
 
 # Bump c# if the accessory database changed since the last run
 $hap->update_config_number();
 
-# Create the mDNS handle (connection and publish happen after the
-# privilege drop); the HAP server re-advertises the TXT record on
-# pairing changes
+# Create the mDNS handle. The connect and publish steps happen after
+# the privilege drop. The HAP server advertises the TXT record again
+# on pairing changes.
 my $mdns = FuguLib::MDNS->new;
 $hap->set_mdns($mdns);
 
-# Drop privileges before talking to mdnsd, so the daemon opens and
-# holds the control socket as _openhap - the held socket is the
-# advertisement's lifetime, and it must not be a root fd
+# Drop privileges before the daemon talks to mdnsd. Then the daemon
+# opens and holds the control socket as _openhap. The held socket is
+# the lifetime of the advertisement. It must not be a root fd.
 if ( $> == 0 ) {
 
-	# Ensure db_path is owned by _openhap before dropping privileges
-	# so pairings and device state stay writable
+	# Make sure that _openhap owns db_path before the privilege
+	# drop. Then pairings and device state stay writable.
 	my ( $uid, $gid ) = ( getpwnam('_openhap') )[ 2, 3 ];
 	if ( defined $uid && -d $db_path ) {
 		chown $uid, $gid, $db_path
@@ -142,8 +143,9 @@ if ( $> == 0 ) {
 	use FuguLib::Privdrop;
 	FuguLib::Privdrop->drop_privileges( user => '_openhap' );
 
-	# Reinitialize logging after dropping privileges
-	# The syslog connection opened as root needs to be reopened as _openhap
+	# Set up logging again after the privilege drop. The process
+	# opened the syslog connection as root. It must open the
+	# connection again as _openhap.
 	$OpenHAP::logger = undef;
 	$OpenHAP::logger = FuguLib::Log->new(
 		mode     => $log_mode,
@@ -156,9 +158,9 @@ if ( $> == 0 ) {
 }
 
 # Publish the mDNS advertisement after the privilege drop. The daemon
-# speaks the mdnsd control protocol directly (spec/MDNS-Control.md) and
-# keeps the socket open: closing it is what withdraws the service. A
-# missing mdnsd degrades discovery, never HAP service.
+# uses the mdnsd control protocol directly (spec/MDNS-Control.md) and
+# keeps the socket open. A close of the socket withdraws the service.
+# A missing mdnsd degrades discovery. It never degrades HAP service.
 if ( $mdns->connect ) {
 	if (
 		$mdns->publish_service(
@@ -186,30 +188,32 @@ else {
 		$mdns->error // 'unknown' );
 }
 
-# Restrict the process for good; FuguLib::Sandbox is a no-op off
-# OpenBSD. Four steps whose order is load-bearing, all after the
-# privilege drop (unveil only removes reachability, so applying it as
-# _openhap keeps the root-only chown loop above working):
+# Restrict the process for good. FuguLib::Sandbox is a no-op off
+# OpenBSD. Four steps follow, and their order is load-bearing. All of
+# them come after the privilege drop. unveil only removes
+# reachability. Thus an unveil done as _openhap keeps the root-only
+# chown loop above working:
 #
-#	1. resolve the lazy load - it reads from the library tree
+#	1. resolve the lazy load, which reads from the library tree
 #	2. unveil the filesystem view
 #	3. lock the view
 #	4. pledge the syscall surface
 #
-# Step 1: Net::MQTT::Simple is pure Perl, so this is not about
-# prot_exec - it is about its transitive dependencies (sockets, and
-# whatever getprotobyname touches) being resolved while @INC is still
-# fully reachable. It stays optional: it is the only cpan runtime
-# dependency, and openhapd keeps serving HomeKit without it, so an
-# unguarded require would turn a missing optional dependency into a
-# startup failure. If a future change introduces another lazily-loaded
-# module, it belongs here.
+# Step 1: Net::MQTT::Simple is pure Perl. Thus this step is not about
+# prot_exec. The step resolves the transitive dependencies of the
+# module while @INC is still fully reachable. Those dependencies are
+# sockets, and whatever getprotobyname touches. The module stays
+# optional. It is the only cpan runtime dependency, and openhapd
+# keeps serving HomeKit without it. Thus an unguarded require would
+# turn a missing optional dependency into a startup failure. If a
+# future change introduces another lazily-loaded module, it belongs
+# here.
 eval { require Net::MQTT::Simple; 1 };
 
-# Steps 2 and 3: the inventory (with its required/optional
-# dispositions) is assembled by OpenHAP::Daemon->unveil_paths;
-# Storage's make_path already created $db_path via HAP->new, so a
-# $db_path that is still missing is a hard failure, and correctly so
+# Steps 2 and 3: OpenHAP::Daemon->unveil_paths assembles the
+# inventory with its required/optional dispositions. Storage's
+# make_path already created $db_path through HAP->new. Thus a $db_path
+# that is still missing is a hard failure. That failure is correct.
 FuguLib::Sandbox->unveil(
 	paths => [
 		OpenHAP::Daemon->unveil_paths(
@@ -225,8 +229,8 @@ FuguLib::Sandbox->unveil(
 );
 FuguLib::Sandbox->unveil_lock;
 
-# Step 4: one promise set, applied once, before any network input is
-# handled:
+# Step 4: apply one promise set once, before the daemon reads any
+# network input:
 #
 #	stdio	always
 #	rpath	/dev/urandom (Crypto), Storage reads, lazy require
@@ -236,14 +240,14 @@ FuguLib::Sandbox->unveil_lock;
 #	flock	Storage locking
 #	inet	the HAP listener, MQTT connects and reconnects
 #	dns	resolving mqtt_host when it is a name
-#	unix	reconnecting to mdnsd: update_txt withdraws and
-#		republishes over a fresh control socket, so socket(2)
-#		and connect(2) on the AF_UNIX path happen after this
-#		point (spec/MDNS-Control.md §8)
+#	unix	reconnecting to mdnsd. update_txt withdraws and
+#		publishes again over a fresh control socket. Thus
+#		socket(2) and connect(2) on the AF_UNIX path happen
+#		after this point (spec/MDNS-Control.md §8)
 #
-# proc, exec and prot_exec are deliberately absent: the daemon spawns
-# nothing, and every shared object is loaded by a compile-time use
-# before this line.
+# proc, exec and prot_exec are deliberately absent. The daemon spawns
+# nothing. A compile-time use loads every shared object before this
+# line.
 my $promises = 'stdio rpath wpath cpath fattr flock inet dns unix';
 FuguLib::Sandbox->pledge( promises => $promises );
 $OpenHAP::logger->info( 'Pledged: %s', $promises )
@@ -254,7 +258,7 @@ if ( !$hap->is_paired() ) {
 		$hap_pin );
 }
 
-# Setup signal handlers for graceful shutdown
+# Set up the signal handlers for a graceful shutdown
 my $sig = FuguLib::Signal->new;
 $sig->add_cleanup(
 	sub ($signal) {
@@ -262,15 +266,15 @@ $sig->add_cleanup(
 			'Received signal %s, shutting down gracefully',
 			$signal );
 
-		# Closing the mdnsd control socket withdraws the
+		# A close of the mdnsd control socket withdraws the
 		# advertisement
 		$mdns->withdraw;
 
-		$OpenHAP::logger = undef;    # Close logger
+		$OpenHAP::logger = undef;    # Close the logger
 	} );
 $sig->setup_graceful_exit( 'INT', 'TERM', 'HUP' );
 
-# Run server
+# Run the server
 $OpenHAP::logger->info('Starting OpenHAP server');
 $hap->run();
 

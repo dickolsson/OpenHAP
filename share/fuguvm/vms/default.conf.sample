@@ -1,8 +1,8 @@
 # Sample FuguVM VM configuration block
 #
-# Add VM definitions to ~/.fuguvmrc (global) or .fuguvmrc (project)
+# Add VM definitions to the global ~/.fuguvmrc or the project .fuguvmrc
 #
-# Project config takes precedence over global config for the same VM name.
+# The project config overrides the global config for the same VM name.
 
 vm "default" {
 	version      7.8

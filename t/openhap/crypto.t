@@ -8,7 +8,7 @@ $OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
 
 # Test Crypto module
 BEGIN {
-    # Skip tests if crypto modules not available
+    # Skip the tests if the crypto modules are not available
     eval {
         require Crypt::Curve25519;
         require Crypt::Ed25519;
@@ -91,7 +91,7 @@ use_ok('OpenHAP::Crypto');
     ok(defined $key, 'HKDF key derived');
     is(length($key), 32, 'HKDF key has correct length');
     
-    # Verify deterministic
+    # Make sure the derivation is deterministic
     my $key2 = OpenHAP::Crypto::hkdf_sha512($ikm, $salt, $info, 32);
     is($key, $key2, 'HKDF is deterministic');
 }

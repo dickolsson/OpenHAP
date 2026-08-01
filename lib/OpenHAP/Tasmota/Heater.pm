@@ -23,7 +23,7 @@ sub new ( $class, %args )
 
 	$self->{power_state} = 0;
 
-	# Add Switch/Outlet service
+	# Add the Switch/Outlet service
 	my $switch = OpenHAP::Service->new(
 		type    => 'Switch',
 		iid     => 10,
@@ -47,7 +47,8 @@ sub new ( $class, %args )
 
 sub subscribe_mqtt ($self)
 {
-	# Call base class to set up standard subscriptions (C1, C2, C3)
+	# Call the base class to set up the standard subscriptions
+	# (C1, C2, C3)
 	$self->SUPER::subscribe_mqtt();
 
 	return unless $self->{mqtt_client}->is_connected();
@@ -56,7 +57,8 @@ sub subscribe_mqtt ($self)
 		'Heater %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# M2: Subscribe to plain-text POWER response (SetOption4 support)
+	# M2: Subscribe to the plain-text POWER response
+	# (SetOption4 support)
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', $self->_get_power_key() ),
 		sub ( $recv_topic, $payload ) {
@@ -67,7 +69,7 @@ sub subscribe_mqtt ($self)
 		} );
 }
 
-# Override _on_power_update to update our power state
+# Override _on_power_update to update the power state
 sub _on_power_update ( $self, $state )
 {
 	if ( $self->{power_state} != $state ) {

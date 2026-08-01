@@ -2,11 +2,12 @@ name: Build
 
 on:
   workflow_run:
-    # Gate releases on the test suite, which is also what filters this
-    # workflow: workflow_run takes no paths of its own. Test declares an
-    # explicit include list of the sources a release is built from, so a
-    # merge that touches nothing on that list produces no release; the
-    # commit-count-derived tag simply skips ahead on the next one.
+    # The test suite gates releases. The same suite filters this
+    # workflow, because workflow_run takes no paths of its own. Test
+    # declares an explicit include list of the sources that go into a
+    # release. Thus a merge that touches no path on that list makes no
+    # release. The tag comes from the commit count, so it skips ahead
+    # on the next release.
     workflows: ["Test"]
     types:
       - completed

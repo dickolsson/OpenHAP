@@ -26,8 +26,9 @@ use_ok('OpenHAP::Characteristic');
 
 # Test get_value and set_value
 {
-    # Since there seems to be an issue with value storage in the current implementation,
-    # we'll just test that the methods exist and don't die
+    # The current implementation possibly has a problem with value
+    # storage. Thus the test only makes sure that the methods exist
+    # and do not die.
     my $temp = 21.5;
     my $char = OpenHAP::Characteristic->new(
         type => 'CurrentTemperature',
@@ -176,7 +177,7 @@ use_ok('OpenHAP::Characteristic');
     is($name_json->{type}, '23', 'Name type is 23 in short form');
 }
 
-# Test custom UUID is preserved (not shortened)
+# Test that the module does not shorten a custom UUID
 {
     my $custom_uuid = '12345678-1234-1234-1234-123456789012';
     my $char = OpenHAP::Characteristic->new(

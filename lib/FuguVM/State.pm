@@ -26,7 +26,7 @@ use constant { MAX_VM_NAME_LENGTH => 255, };
 
 sub new ( $class, $state_dir, $vm_name, %opts )
 {
-	# Validate VM name length
+	# Validate the VM name length
 	if ( length($vm_name) > MAX_VM_NAME_LENGTH ) {
 		warn "VM name too long (max "
 		    . MAX_VM_NAME_LENGTH
@@ -34,7 +34,8 @@ sub new ( $class, $state_dir, $vm_name, %opts )
 		return;
 	}
 
-	# Validate VM name characters (no path separators or null bytes)
+	# Validate the VM name characters. Path separators and null
+	# bytes are not permitted.
 	if ( $vm_name =~ m{[/\x00]} ) {
 		warn "VM name contains invalid characters\n";
 		return;
@@ -64,13 +65,13 @@ sub _ensure_dir ($self)
 {
 	my $dir = $self->{vm_state_dir};
 
-	# Check for symlinks (refuse to follow for security)
+	# Check for symlinks. For security, refuse to follow them.
 	if ( -l $dir ) {
 		warn "State directory is a symlink: $dir\n";
 		return 0;
 	}
 
-	# Check if path exists but is not a directory
+	# Check if the path exists but is not a directory
 	if ( -e $dir && !-d $dir ) {
 		warn "State path exists but is not a directory: $dir\n";
 		return 0;
@@ -159,7 +160,7 @@ sub is_vm_running ($self)
 	my $pid = $self->get_vm_pid;
 	return 0 if !defined $pid;
 
-	# Check if process is alive
+	# Check if the process is alive
 	return kill( 0, $pid ) ? 1 : 0;
 }
 
@@ -198,7 +199,7 @@ sub is_proxy_running ($self)
 	my $pid = $self->get_proxy_pid;
 	return 0 if !defined $pid;
 
-	# Check if process is alive
+	# Check if the process is alive
 	return kill( 0, $pid ) ? 1 : 0;
 }
 
@@ -224,15 +225,15 @@ sub clear_proxy_port ($self)
 
 # Proxy lifecycle management
 # $self->ensure_proxy($cache_dir):
-#	Start proxy if not running, return Proxy object
-#	Returns undef if proxy cannot be started
+#	Start the proxy if it does not run. Return the Proxy object.
+#	Return undef if the proxy cannot start.
 sub ensure_proxy ( $self, $cache_dir )
 {
 	require FuguVM::Proxy;
 
 	my $proxy = FuguVM::Proxy->new( $self, $cache_dir );
 
-	# Already running? Return existing proxy
+	# If the proxy already runs, return the existing object
 	if ( $proxy->is_running ) {
 		return $proxy;
 	}
@@ -245,7 +246,8 @@ sub ensure_proxy ( $self, $cache_dir )
 }
 
 # $self->get_proxy($cache_dir):
-#	Get Proxy object if running, undef if not
+#	Return the Proxy object if the proxy runs. Return undef if it
+#	does not.
 sub get_proxy ( $self, $cache_dir )
 {
 	require FuguVM::Proxy;
@@ -255,7 +257,7 @@ sub get_proxy ( $self, $cache_dir )
 }
 
 # $self->stop_proxy($cache_dir):
-#	Stop proxy if running
+#	Stop the proxy if it runs.
 sub stop_proxy ( $self, $cache_dir )
 {
 	require FuguVM::Proxy;
@@ -293,7 +295,8 @@ sub mark_installed ($self)
 	return $self;
 }
 
-# Root password management (stored securely in state for initial setup)
+# Root password management. The state stores the password securely
+# for the initial setup.
 sub set_root_password ( $self, $password )
 {
 	$self->{data}{root_password} = $password;
@@ -307,9 +310,9 @@ sub get_root_password ($self)
 }
 
 # SSH key installation state
-# Tracks both whether an SSH key has been installed and which specific key
-# was installed. This allows the system to detect when the configured SSH
-# key has changed and automatically reinstall the new key.
+# The state tracks whether an SSH key is installed, and also which
+# specific key. Thus the system can detect when the configured SSH key
+# changed. Then it automatically installs the new key.
 sub is_ssh_key_installed ($self)
 {
 	return $self->{data}{ssh_key_installed} ? 1 : 0;
@@ -349,7 +352,8 @@ sub data ($self)
 }
 
 # Shutdown state tracking
-# Tracks whether VM was shutdown cleanly to detect filesystem corruption risk
+# The state records whether the VM was shut down cleanly. This detects
+# the risk of filesystem corruption.
 
 sub mark_clean_shutdown ($self)
 {
@@ -380,14 +384,15 @@ sub mark_running ($self)
 
 sub was_unclean_shutdown ($self)
 {
-	# If explicitly marked as unclean
+	# The state explicitly marks the shutdown as unclean
 	if ( exists $self->{data}{shutdown_clean}
 		&& !$self->{data}{shutdown_clean} )
 	{
 		return 1;
 	}
 
-	# If marked running but VM process is dead = crashed/killed
+	# The state says running, but the VM process is dead. Thus the
+	# VM crashed or was killed.
 	if ( $self->{data}{running} && !$self->is_vm_running ) {
 		return 1;
 	}

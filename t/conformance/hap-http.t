@@ -2,9 +2,9 @@
 # ex:ts=8 sw=4:
 # Conformance tests for spec/HAP-HTTP.md
 #
-# Drives OpenHAP::HAP request dispatch in-process (no sockets); the
-# session's verification state is set directly to model the paired and
-# unpaired cases.
+# The tests drive OpenHAP::HAP request dispatch in-process, without
+# sockets. The tests set the session's verified state directly to
+# model the paired and unpaired cases.
 
 use v5.36;
 use Test::More;
@@ -124,7 +124,7 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 			    . 'without pair-verify' );
 	}
 
-	# Pairing endpoints do not require verification
+	# Pairing endpoints do not need a verified session
 	my $m1 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
@@ -136,7 +136,7 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 	);
 	OpenHAP::Pairing->clear_pairing_state();
 
-	# Pair-verify is likewise open and answers with TLV
+	# Pair-verify is also open and answers with TLV
 	my $pv_m1 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_PublicKey(), 'X' x 32,
@@ -243,7 +243,7 @@ subtest '[HAP-HTTP §8] GET /characteristics' => sub {
 	ok( exists $data->{characteristics}[0]{value},
 		'[HAP-HTTP §16.1] response carries the value' );
 
-	# meta/perms/type parameters include optional fields
+	# The meta/perms/type parameters include the optional fields
 	( $status, undef, $body ) = dispatch( $hap, 'GET',
 		"/characteristics?id=$aid.$iid&meta=1&perms=1&type=1" );
 	$data = $json->decode($body);
@@ -268,7 +268,7 @@ subtest '[HAP-HTTP §9] PUT /characteristics' => sub {
 	    dispatch( $hap, 'GET', '/accessories' );
 	my ( $aid, $iid ) = find_char( $json->decode($acc_body), '25' );
 
-	# Successful write returns 204 No Content
+	# A successful write returns 204 No Content
 	my $put = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, value => 1 } ] } );
 	my ( $status, undef, $body ) =
@@ -320,7 +320,8 @@ subtest '[HAP-HTTP §10] PUT /prepare timed write' => sub {
 	is( $json->decode($body)->{status},
 		-70410, 'missing ttl/pid has status -70410' );
 
-	# POST also accepted (spec shows POST in the endpoint table)
+	# The server also accepts POST. The spec shows POST in the
+	# endpoint table.
 	( $status, undef, undef ) =
 	    dispatch( $hap, 'POST', '/prepare', $prepare, $session );
 	is( $status, 200, 'POST /prepare also accepted' );
@@ -416,7 +417,7 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 	like( $body, qr/\xFF\x00/,
 		'entries separated by zero-length 0xFF separator' );
 
-	# Remove a pairing that does not exist returns success
+	# The removal of a pairing that does not exist returns success
 	my $remove_ghost = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
@@ -428,7 +429,7 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
 		'removing nonexistent pairing returns success' );
 
-	# Removing the last admin clears all pairings
+	# The removal of the last admin clears all pairings
 	my $remove_admin = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
@@ -457,7 +458,7 @@ subtest '[HAP-HTTP §15][HAP-HTTP §15.1] JSON value encoding' => sub {
 	    dispatch( $hap, 'GET', '/accessories' );
 	my ( $aid, $iid ) = find_char( $json->decode($acc_body), '25' );
 
-	# bool encodes as JSON true/false, not 1/0
+	# A bool encodes as JSON true/false, not 1/0
 	my ( undef, undef, $body ) =
 	    dispatch( $hap, 'GET', "/characteristics?id=$aid.$iid" );
 	like( $body, qr/"value"\s*:\s*(?:true|false)/,
@@ -470,7 +471,7 @@ subtest '[HAP-HTTP §15][HAP-HTTP §15.1] JSON value encoding' => sub {
 	    dispatch( $hap, 'GET', "/characteristics?id=$aid.$iid" );
 	like( $body, qr/"value"\s*:\s*true/, 'true after write of 1' );
 
-	# string characteristics encode as JSON strings
+	# The string characteristics encode as JSON strings
 	my ( undef, $name_iid ) = find_char( $json->decode($acc_body), '23' );
 	( undef, undef, $body ) =
 	    dispatch( $hap, 'GET', "/characteristics?id=$aid.$name_iid" );
@@ -533,8 +534,8 @@ sub encrypted_session ( $sock, $id )
 	return $session;
 }
 
-# decrypt_event($sock, $counter): decrypt one event frame written to a
-# mock socket and return the plaintext EVENT/1.0 message
+# decrypt_event($sock, $counter): decrypt one event frame from the
+# mock socket. Return the plaintext EVENT/1.0 message.
 sub decrypt_event ( $sock, $counter = 0 )
 {
 	my $frame  = $sock->{written};
@@ -550,7 +551,8 @@ sub decrypt_event ( $sock, $counter = 0 )
 }
 
 # flush_until($hap, $sock): run the coalescing flush until the socket
-# has data or the deadline passes (resilient to timing variations)
+# has data or the deadline passes. This makes the test resilient to
+# timing variations.
 sub flush_until ( $hap, $sock )
 {
 	require Time::HiRes;
@@ -570,8 +572,9 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	    dispatch( $hap, 'GET', '/accessories' );
 	my ( $aid, $iid ) = find_char( $json->decode($acc_body), '25' );
 
-	# Three encrypted sessions: a subscriber, the writer (also
-	# subscribed), and a bystander that never subscribes
+	# Three encrypted sessions: a subscriber, the writer, and a
+	# bystander. The writer is also subscribed. The bystander never
+	# subscribes.
 	my $sub_sock    = MockSocket->new;
 	my $sub_sess    = encrypted_session( $sub_sock, 'subscriber' );
 	my $writer_sock = MockSocket->new;
@@ -587,9 +590,9 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 		is( $status, 204, 'subscription accepted' );
 	}
 
-	# A write through the PUT handler queues an event; the On type
-	# is not exempt from coalescing, so delivery happens on the
-	# post-window flush
+	# A write through the PUT handler queues an event. The On type
+	# is not exempt from coalescing. Thus delivery occurs on the
+	# post-window flush.
 	my $put = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, value => \1 } ] } );
 	my ( $status, undef, undef ) =
@@ -605,7 +608,7 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	is( $writer_sock->{written}, '',
 		'originating connection receives no event for its own write' );
 
-	# Decrypt the frame and check the EVENT/1.0 message format
+	# Decrypt the frame. Check the EVENT/1.0 message format.
 	my $plain = decrypt_event($sub_sock);
 	like( $plain, qr{^EVENT/1\.0 200 OK\r\n},
 		'event starts with EVENT/1.0 200 OK' );
@@ -618,7 +621,7 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	ok( $data->{characteristics}[0]{value},
 		'event carries the new value (true)' );
 
-	# Unsubscribing via ev:false stops delivery
+	# An unsubscribe with ev:false stops delivery
 	$sub_sock->{written} = '';
 	my $unsubscribe = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, ev => \0 } ] } );
@@ -633,7 +636,7 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	is( $sub_sock->{written}, '',
 		'unsubscribed session receives nothing' );
 
-	# A disconnecting session loses all its subscriptions
+	# A session that disconnects loses all its subscriptions
 	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
 	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{$sub_sess},
 		'session re-subscribed' );
@@ -641,7 +644,7 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	ok( !exists $hap->{event_subscriptions}{"$aid.$iid"}{$sub_sess},
 		'subscriptions purged on disconnect' );
 
-	# Event coalescing delay is 250ms
+	# The event coalescing delay is 250ms
 	is( OpenHAP::HAP::EVENT_COALESCE_DELAY(),
 		0.250, 'coalescing delay is 250ms' );
 };
@@ -670,8 +673,8 @@ subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
 		    [ { aid => 2, iid => 11, ev => \1 } ] } );
 	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
 
-	# A Tasmota state report reaches the subscriber as an event
-	# carrying the device aid, not the bridge's
+	# A Tasmota state report reaches the subscriber as an event.
+	# The event carries the device aid, not the bridge aid.
 	$mqtt->simulate_message( 'stat/heater/POWER', 'ON' );
 	flush_until( $hap, $sub_sock );
 

@@ -25,7 +25,7 @@ use_ok('OpenHAP::SRP');
     my $bytes = OpenHAP::SRP::_bigint_to_bytes($n);
     is(unpack('H*', $bytes), '05', '_bigint_to_bytes converts 5 correctly');
 
-    # Test that 0x prefix is stripped
+    # Test that the function removes the 0x prefix
     my $n2 = Math::BigInt->new(255);
     my $bytes2 = OpenHAP::SRP::_bigint_to_bytes($n2);
     is(unpack('H*', $bytes2), 'ff', '_bigint_to_bytes strips 0x prefix');
@@ -36,8 +36,8 @@ use_ok('OpenHAP::SRP');
     is(unpack('H*', $bytes3), '00000005', '_bigint_to_bytes pads to 4 bytes');
     is(length($bytes3), 4, 'Padded output is 4 bytes');
 
-    # Test odd-length hex gets padded with leading zero
-    my $n4 = Math::BigInt->new(4095);  # 0xFFF - 3 hex digits
+    # Test that the function pads odd-length hex with a leading zero
+    my $n4 = Math::BigInt->new(4095);  # 0xFFF has 3 hex digits
     my $bytes4 = OpenHAP::SRP::_bigint_to_bytes($n4);
     is(unpack('H*', $bytes4), '0fff', '_bigint_to_bytes pads odd-length hex');
 
@@ -76,7 +76,7 @@ use_ok('OpenHAP::SRP');
     isa_ok($srp->{N}, 'Math::BigInt', 'N is BigInt');
     isa_ok($srp->{g}, 'Math::BigInt', 'g is BigInt');
 
-    # g should be 5
+    # The g parameter must be 5
     is($srp->{g}->numify(), 5, 'g parameter is 5');
 }
 
@@ -126,7 +126,7 @@ use_ok('OpenHAP::SRP');
     $srp->compute_verifier($salt, '123-45-678');
     $srp->generate_server_public();
 
-    # Create dummy client public key (32 bytes)
+    # Create a dummy client public key (32 bytes)
     my $A = 'A' x 32;
 
     my $K = $srp->compute_session_key($A);
@@ -142,12 +142,12 @@ use_ok('OpenHAP::SRP');
     $srp->compute_verifier($salt, '123-45-678');
     $srp->generate_server_public();
 
-    # Test with A = 0 (should be rejected)
+    # Test with A = 0. The module must reject it.
     my $A_zero = "\x00" x 384;  # 3072 bits = 384 bytes
     my $K = $srp->compute_session_key($A_zero);
     ok(!defined $K, '[HAP-Pairing §2.6] session key rejected when A is zero');
 
-    # Test with A = N (should be rejected since A mod N == 0)
+    # Test with A = N. The module must reject it because A mod N == 0.
     # Get N as bytes
     my $N_hex = $srp->{N}->as_hex();
     $N_hex =~ s/^0x//;
@@ -183,7 +183,7 @@ use_ok('OpenHAP::SRP');
     my $A = 'A' x 32;
     $srp->compute_session_key($A);
 
-    # generate_server_proof should die because verify_client_proof was not called
+    # generate_server_proof must die without a verify_client_proof call
     eval {
         $srp->generate_server_proof();
     };
@@ -198,7 +198,7 @@ use_ok('OpenHAP::SRP');
     $srp->compute_verifier($salt, '123-45-678');
     $srp->generate_server_public();
 
-    # generate_server_proof should die because compute_session_key was not called
+    # generate_server_proof must die without a compute_session_key call
     eval {
         $srp->generate_server_proof();
     };

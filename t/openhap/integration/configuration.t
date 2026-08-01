@@ -41,7 +41,7 @@ ok(defined $hap_port, 'configuration has hap_port');
 ok($hap_port =~ /^\d+$/ && $hap_port >= 1024 && $hap_port <= 65535,
    'hap_port is valid');
 
-# Test 7: Device count reported by hapctl matches parsed configuration
+# Test 7: The hapctl device count matches the parsed configuration
 my ($reported_count) = $check_output =~ /Configured devices:\s*(\d+)/;
 my @device_topics = $env->get_device_topics;
 is($reported_count, scalar @device_topics,
@@ -52,7 +52,8 @@ sleep 0.5;
 my $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
 ok($running, 'daemon still running');
 
-# Test 9: Can restart daemon (reload may not be supported)
+# Test 9: The daemon can restart. The daemon possibly does not
+# support reload.
 system('rcctl restart openhapd >/dev/null 2>&1');
 sleep 1;
 $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;

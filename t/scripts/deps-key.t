@@ -2,10 +2,10 @@
 # ex:ts=8 sw=4:
 # Unit tests for scripts/deps-key against fixture trees
 #
-# The provisioning key is consumed by scripts/vm-up (which restores the
-# snapshot named after it) and scripts/vm-provision (which saves it), so
-# the framing is a contract, not an implementation detail. These tests
-# pin it.
+# Two scripts consume the provisioning key: scripts/vm-up restores
+# the snapshot named after it, and scripts/vm-provision saves that
+# snapshot. Thus the framing is a contract, not an implementation
+# detail. These tests pin it.
 
 use v5.36;
 use Test::More;
@@ -18,8 +18,8 @@ my $script = "$RealBin/../../scripts/deps-key";
 ok( -x $script, 'deps-key script is executable' );
 
 # A deps layer whose markers are indented, as they are in the real
-# scripts/vm-provision: they sit inside an 'else' block. Anchoring the
-# extraction on '^#' once matched nothing at all, which silently dropped
+# scripts/vm-provision: they sit inside an 'else' block. An extraction
+# anchored on '^#' once matched nothing at all. That silently dropped
 # this input from the digest.
 my $PROVISION = <<'EOF';
 #!/bin/sh
@@ -46,8 +46,9 @@ sub write_file ( $path, $content )
 }
 
 # build_fixture(%override):
-#	A minimal project root. Any of the four digest inputs can be
-#	overridden; passing undef for cpanfile omits the file entirely.
+#	A minimal project root. The caller can override any of the four
+#	digest inputs. Pass undef for cpanfile to omit the file
+#	entirely.
 sub build_fixture (%override)
 {
 	my %file = (
@@ -92,8 +93,9 @@ sub key_for ($root)
 		'prints exactly 12 lowercase hex characters' );
 }
 
-# Golden vector: the framing contract, recomputed independently so a
-# change to it fails with a readable diff rather than a mystery hex
+# Golden vector: the test recomputes the framing contract
+# independently. Thus a change to the contract fails with a readable
+# diff, not a mystery hex.
 {
 	my $root = build_fixture();
 	my $expected = substr sha256_hex(
@@ -115,8 +117,8 @@ sub key_for ($root)
 		'key matches an independently computed SHA-256 of the framing' );
 }
 
-# Determinism and path independence. Path independence is what lets
-# vm-up and vm-provision agree wherever the checkout lives.
+# Determinism and path independence. Path independence lets vm-up
+# and vm-provision agree wherever the checkout lives.
 {
 	my $root = build_fixture();
 	is( key_for($root), key_for($root), 'same tree gives the same key' );
@@ -143,9 +145,9 @@ sub key_for ($root)
 		'an absent cpanfile is tolerated and gives a distinct key' );
 }
 
-# Only the deps layer of vm-provision counts: the OpenHAP layer runs on
-# every provision and never enters the snapshot, so editing it must not
-# invalidate the cached dependencies.
+# Only the deps layer of vm-provision counts: the OpenHAP layer runs
+# on every provision and never enters the snapshot. Thus an edit to it
+# must not invalidate the cached dependencies.
 {
 	my $base = key_for( build_fixture() );
 
@@ -160,8 +162,8 @@ sub key_for ($root)
 		'a change outside the markers leaves the key alone' );
 }
 
-# The labels exist so a boundary shift between two inputs cannot
-# silently produce the same digest
+# The labels make sure that a boundary shift between two inputs
+# cannot silently produce the same digest
 {
 	my $shifted = key_for(
 		build_fixture(
@@ -174,7 +176,7 @@ sub key_for ($root)
 }
 
 # Fail closed. A digest over silently-missing inputs is worse than no
-# digest: it looks valid and caches a stale layer forever.
+# digest. It looks valid and caches a stale layer forever.
 {
 	my $no_begin = $PROVISION;
 	$no_begin =~ s/^\t# BEGIN deps layer\n//m;
@@ -189,7 +191,8 @@ sub key_for ($root)
 		'no key is printed when the markers are missing' );
 }
 
-# BEGIN with no END: the case the shell version's line count let through
+# BEGIN with no END: the case that the shell version's line count let
+# through
 {
 	my $no_end = $PROVISION;
 	$no_end =~ s/^\t# END deps layer\n//m;
@@ -220,8 +223,9 @@ sub key_for ($root)
 	isnt( $exit, 0, 'a nonexistent root exits non-zero' );
 }
 
-# The real tree is well-formed, so a marker accidentally deleted from
-# scripts/vm-provision fails here rather than at provisioning time
+# The real tree is well-formed. Thus, if a marker is deleted from
+# scripts/vm-provision by accident, the test fails here, not at
+# provisioning time.
 {
 	my ( $exit, $output ) = run_tool();
 	is( $exit, 0, 'the real project tree produces a key' );

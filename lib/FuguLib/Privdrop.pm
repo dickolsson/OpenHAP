@@ -22,25 +22,26 @@ package FuguLib::Privdrop;
 use POSIX qw(setuid setgid);
 
 # $class->drop_privileges(%args):
-#	Drop privileges from root to specified user and group.
-#	This is a common pattern in OpenBSD daemons - start as root
-#	to bind privileged ports and fork privileged processes,
-#	then drop to unprivileged user for the main event loop.
+#	Drop privileges from root to the specified user and group.
+#	This is a common pattern in OpenBSD daemons. The daemon starts
+#	as root to bind privileged ports and fork privileged
+#	processes. It then drops to an unprivileged user for the main
+#	event loop.
 #
 #	%args:
 #		user  => $username  # Username to drop to (required)
-#		group => $groupname # Group to drop to (optional, defaults to user's primary group)
+#		group => $groupname # Group to drop to (optional, default: the user's primary group)
 #
-#	Returns 1 on success, dies on error.
+#	The method returns 1 on success. It dies on error.
 #
 #	Example:
-#		# Start as root, do privileged operations
+#		# Start as root. Do the privileged operations.
 #		$state->chown_runtime_files();
 #
-#		# Drop privileges before entering event loop
+#		# Drop privileges before you start the event loop
 #		FuguLib::Privdrop->drop_privileges(user => '_openhap');
 #
-#		# Now running as _openhap
+#		# The process now runs as _openhap
 #		$server->run();
 sub drop_privileges ( $class, %args )
 {
@@ -48,16 +49,17 @@ sub drop_privileges ( $class, %args )
 	    or die "user parameter required for drop_privileges";
 	my $group = $args{group};
 
-	# Already non-root? Nothing to do
+	# If the process is already non-root, there is nothing to do
 	return 1 if $> != 0;
 
-	# Get user info
+	# Get the user info
 	my ( $uid, $gid ) = ( getpwnam($user) )[ 2, 3 ];
 	unless ( defined $uid ) {
 		die "Cannot get UID for user '$user': $!";
 	}
 
-	# Get group info if specified, otherwise use user's primary group
+	# Get the group info if the caller gives a group. Otherwise
+	# use the user's primary group.
 	if ( defined $group ) {
 		$gid = getgrnam($group);
 		unless ( defined $gid ) {
@@ -65,26 +67,26 @@ sub drop_privileges ( $class, %args )
 		}
 	}
 
-	# Drop group privileges first (must be done before setuid)
+	# Drop the group privileges first. Do this before setuid.
 	unless ( POSIX::setgid($gid) ) {
 		die "Cannot setgid to $gid: $!";
 	}
-	$( = $gid;    # Set effective GID
-	$) = $gid;    # Set real GID
+	$( = $gid;    # Set the real GID
+	$) = $gid;    # Set the effective GID
 
-	# Drop user privileges
+	# Drop the user privileges
 	unless ( POSIX::setuid($uid) ) {
 		die "Cannot setuid to $uid: $!";
 	}
-	$< = $uid;    # Set effective UID
-	$> = $uid;    # Set real UID
+	$< = $uid;    # Set the real UID
+	$> = $uid;    # Set the effective UID
 
-	# Verify we can't get root back
+	# Make sure the process cannot get root back
 	if ( $> == 0 || $< == 0 ) {
 		die "Failed to drop privileges - still running as root";
 	}
 
-	# Try to escalate (should fail)
+	# Try to escalate. The attempt must fail.
 	eval {
 		POSIX::setuid(0);
 		if ( $> == 0 || $< == 0 ) {

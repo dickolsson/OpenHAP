@@ -19,8 +19,9 @@ use v5.36;
 
 # FuguVM::QGA - QEMU Guest Agent client
 #
-# Provides communication with QEMU Guest Agent running inside the VM.
-# Used for reliable filesystem operations (freeze/thaw/sync) before shutdown.
+# The module talks to the QEMU Guest Agent that runs inside the VM.
+# FuguVM uses it for reliable filesystem operations before shutdown.
+# These operations are freeze, thaw, and sync.
 
 package FuguVM::QGA;
 
@@ -85,7 +86,7 @@ sub is_available ($self)
 }
 
 # $self->run_command($command, $arguments):
-#	Execute a QGA command and return the result
+#	Run a QGA command. The method returns the result.
 sub run_command ( $self, $command, $arguments = undef )
 {
 	return if !$self->{sock};
@@ -117,15 +118,17 @@ sub _read_response ($self)
 }
 
 # $self->_read_line($timeout):
-#	One line without its terminator, or undef on timeout, EOF or read
-#	error. Bounded with IO::Select against a wall-clock deadline:
-#	IO::Socket's timeout() governs only its own connect and accept, so a
-#	bare readline here blocks forever whenever nothing answers - and
-#	nothing answers whenever the guest runs no agent, which leaves the
-#	socket open and silent because QEMU, not the guest, serves it.
+#	Read one line without its terminator. The method returns undef
+#	on timeout, EOF, or read error. IO::Select bounds the read
+#	against a wall-clock deadline. The timeout() of IO::Socket
+#	governs only its own connect and accept. Thus a bare readline
+#	here blocks forever when nothing answers. Nothing answers when
+#	the guest runs no agent. The socket then stays open and silent,
+#	because QEMU, not the guest, serves it.
 #
-#	Bytes past the newline stay buffered for the next call, so a reply
-#	that arrives in the same segment as the following one is not lost.
+#	Bytes after the newline stay in the buffer for the next call.
+#	Thus the method does not lose a reply that arrives in the same
+#	segment as the next one.
 sub _read_line ( $self, $timeout )
 {
 	my $sock = $self->{sock};
@@ -157,18 +160,19 @@ sub _read_line ( $self, $timeout )
 # High-level commands
 
 # $self->sync:
-#	Sync guest filesystems (flush all buffers to disk)
-#	Returns true on success
+#	Sync the guest filesystems. The operation flushes all buffers
+#	to the disk. The method returns true on success.
 sub sync ($self)
 {
-	# guest-sync is used to synchronize the protocol, not filesystems
-	# We use guest-exec to run sync command for actual filesystem sync
+	# The guest-sync command synchronizes the protocol, not the
+	# filesystems. The module uses guest-exec to run the sync
+	# command for the real filesystem sync.
 	return $self->_exec_sync_command;
 }
 
 sub _exec_sync_command ($self)
 {
-	# Execute 'sync' command in guest
+	# Run the 'sync' command in the guest
 	my $result = $self->run_command(
 		'guest-exec',
 		{
@@ -181,7 +185,7 @@ sub _exec_sync_command ($self)
 	my $pid = $result->{return}{pid};
 	return 0 if !defined $pid;
 
-	# Wait for completion
+	# Wait until the command completes
 	my $start = time;
 	while ( time - $start < 10 ) {
 		my $status =
@@ -198,8 +202,9 @@ sub _exec_sync_command ($self)
 }
 
 # $self->freeze_filesystems:
-#	Freeze all mounted filesystems (quiesce for snapshot)
-#	Returns number of frozen filesystems on success, undef on failure
+#	Freeze all mounted filesystems. This makes them quiescent for a
+#	snapshot. The method returns the number of frozen filesystems
+#	on success and undef on failure.
 sub freeze_filesystems ($self)
 {
 	my $result = $self->run_command('guest-fsfreeze-freeze');
@@ -208,8 +213,8 @@ sub freeze_filesystems ($self)
 }
 
 # $self->thaw_filesystems:
-#	Thaw all frozen filesystems
-#	Returns number of thawed filesystems on success, undef on failure
+#	Thaw all frozen filesystems. The method returns the number of
+#	thawed filesystems on success and undef on failure.
 sub thaw_filesystems ($self)
 {
 	my $result = $self->run_command('guest-fsfreeze-thaw');
@@ -218,8 +223,8 @@ sub thaw_filesystems ($self)
 }
 
 # $self->fsfreeze_status:
-#	Get current filesystem freeze status
-#	Returns 'thawed', 'frozen', or undef on error
+#	Get the current filesystem freeze status. The method returns
+#	'thawed', 'frozen', or undef on error.
 sub fsfreeze_status ($self)
 {
 	my $result = $self->run_command('guest-fsfreeze-status');
@@ -228,7 +233,7 @@ sub fsfreeze_status ($self)
 }
 
 # $self->ping:
-#	Check if guest agent is responsive
+#	Check if the guest agent responds
 sub ping ($self)
 {
 	my $result = $self->run_command('guest-ping');
@@ -236,14 +241,14 @@ sub ping ($self)
 }
 
 # $self->shutdown($mode):
-#	Request guest to shutdown
+#	Ask the guest to shut down
 #	$mode: 'powerdown' (default), 'halt', or 'reboot'
 sub shutdown ( $self, $mode = 'powerdown' )
 {
 	my $result = $self->run_command( 'guest-shutdown', { mode => $mode } );
 
-	# guest-shutdown doesn't return a response on success
-	# (the guest shuts down immediately)
+	# The guest-shutdown command returns no response on success.
+	# The guest shuts down immediately.
 	return 1;
 }
 

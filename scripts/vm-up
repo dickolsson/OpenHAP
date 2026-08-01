@@ -1,6 +1,6 @@
 #!/bin/sh
 # ex:ts=8 sw=4:
-# Bring up the OpenBSD VM, restoring the cached deps layer if there is one
+# Bring up the OpenBSD VM. Restore the cached deps layer if there is one.
 #
 # Usage: ./vm-up [--fresh]
 
@@ -16,8 +16,8 @@ if [ ! -x "${FUGUVM}" ]; then
 	exit 1
 fi
 
-# Read a field from 'fuguvm status'. fuguvm logs to stderr, so stderr
-# has to be folded in for the value to be readable at all.
+# Read a field from 'fuguvm status'. fuguvm logs to stderr. Thus the
+# function folds stderr in. Without that, the value is not readable.
 vm_status() {
 	"${FUGUVM}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
 }
@@ -47,15 +47,15 @@ if [ ${FRESH} -eq 1 ]; then
 	"${FUGUVM}" destroy 2>/dev/null || true
 fi
 
-# Restore the cached provisioning layer before the VM is created, so a
-# warm cache boots straight into a guest that already has its packages
-# and Perl modules. Only when there is no working disk yet: an existing
-# disk already carries whatever it carries, and replacing it would throw
-# away local state.
+# Restore the cached provisioning layer before the script creates the
+# VM. Then a warm cache boots straight into a guest that already has
+# its packages and Perl modules. Restore only when there is no working
+# disk yet. An existing disk already carries whatever it carries. A
+# replacement would throw away local state.
 #
-# A miss is normal - it exits 11 - so absorb it here rather than let
-# set -e abort; vm-provision then installs the deps layer and saves
-# it for next time.
+# A miss is normal. It exits 11. Thus absorb it here rather than let
+# set -e abort. vm-provision then installs the deps layer and saves
+# it for the next time.
 if [ "$(vm_status disk_exists)" != "1" ]; then
 	DEPS_SNAPSHOT="deps-$("${SCRIPT_DIR}/deps-key")"
 	if ! "${FUGUVM}" snapshot restore "${DEPS_SNAPSHOT}"; then
@@ -63,8 +63,9 @@ if [ "$(vm_status disk_exists)" != "1" ]; then
 	fi
 fi
 
-# Bring up VM (idempotent). Under TCG emulation (e.g. CI runners
-# without hardware acceleration) boot and install take far longer than
-# under HVF/KVM, so the wait timeout is overridable.
+# Bring up the VM. This step is idempotent. Under TCG emulation, for
+# example on CI runners without hardware acceleration, boot and install
+# take far longer than under HVF/KVM. Thus you can override the wait
+# timeout.
 "${FUGUVM}" up
 "${FUGUVM}" wait --timeout "${FUGUVM_WAIT_TIMEOUT:-120}"

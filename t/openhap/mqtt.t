@@ -104,14 +104,14 @@ SKIP: {
 {
     my $mqtt = OpenHAP::MQTT->new();
     
-    # Should not die, just return early
+    # The publish must not die. It returns early.
     eval {
         $mqtt->publish('test/topic', 'test payload');
     };
     ok(!$@, 'Publish when not connected does not die');
 }
 
-# Test topic matching - exact match
+# Test topic matching: exact match
 {
     my $mqtt = OpenHAP::MQTT->new();
     
@@ -121,7 +121,7 @@ SKIP: {
         'Different topic no match');
 }
 
-# Test topic matching - single level wildcard (+)
+# Test topic matching: single level wildcard (+)
 {
     my $mqtt = OpenHAP::MQTT->new();
     
@@ -135,7 +135,7 @@ SKIP: {
         'Single wildcard only matches one level');
 }
 
-# Test topic matching - multi level wildcard (#)
+# Test topic matching: multi level wildcard (#)
 {
     my $mqtt = OpenHAP::MQTT->new();
     
@@ -149,7 +149,7 @@ SKIP: {
         'Multi wildcard prefix must match');
 }
 
-# Test topic matching - combined wildcards
+# Test topic matching: combined wildcards
 {
     my $mqtt = OpenHAP::MQTT->new();
     
@@ -233,10 +233,11 @@ SKIP: {
     is($result, 0, 'tick returns 0 when not connected');
 }
 
-# The internal buffer callback registered with Net::MQTT::Simple must
-# tolerate extra arguments: since 1.33 the library passes a retain flag
-# as a third argument, and a two-argument signature dies on every
-# incoming message (regression from the integration suite)
+# The internal buffer callback that the module registers with
+# Net::MQTT::Simple must accept extra arguments. Since 1.33 the
+# library passes a retain flag as a third argument. A two-argument
+# signature dies on every incoming message. The integration suite
+# found this regression.
 {
     package StubMQTTClient;
 
@@ -265,7 +266,8 @@ SKIP: {
         [['stat/device/POWER', 'ON']],
         'message buffered without the retain flag');
 
-    # resubscribe re-registers callbacks with the same tolerance
+    # A resubscribe registers the callbacks again. They also accept
+    # a third argument.
     $mqtt->{pending_messages} = [];
     $stub->{callbacks}        = {};
     $mqtt->resubscribe();
@@ -290,26 +292,28 @@ SKIP: {
     skip 'Net::MQTT::Simple not available', 2 unless eval { require Net::MQTT::Simple; 1 };
     
     my $mqtt = OpenHAP::MQTT->new(
-        host => '192.0.2.1',  # TEST-NET-1 (guaranteed unreachable)
+        host => '192.0.2.1',  # TEST-NET-1, always unreachable
         port => 9999,
     );
     
-    # Capture STDERR to ensure no warnings leak through
+    # Capture STDERR to make sure that no warnings leak through
     my $stderr = '';
     {
         local *STDERR;
         open STDERR, '>', \$stderr or die "Cannot redirect STDERR: $!";
         
-        # Try to connect with short timeout - should fail silently
+        # Try to connect with a short timeout. The attempt must
+        # fail silently.
         $mqtt->mqtt_connect(1);
     }
     
-    # No warnings should have leaked to STDERR (they should be logged instead)
+    # No warnings must leak to STDERR. The module logs them instead.
     ok(!$stderr, 'Connection failures do not print to STDERR')
         or diag("Leaked to STDERR: $stderr");
     
-    # Note: This may or may not succeed depending on whether 192.0.2.1:9999
-    # is actually reachable, so we just check that warnings were captured
+    # Note: the connect can succeed or fail, because 192.0.2.1:9999
+    # can be reachable or not. Thus the test only makes sure that
+    # the warnings are captured.
     pass('Connection attempt completed');
 }
 

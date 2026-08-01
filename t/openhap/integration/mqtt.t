@@ -78,7 +78,7 @@ eval {
 };
 ok($received || !$@, 'MQTT publish/subscribe works');
 
-# Test 9: Multiple MQTT messages handled
+# Test 9: The broker accepts multiple MQTT messages
 my $multiple_ok = 1;
 eval {
 	for my $i (1..5) {

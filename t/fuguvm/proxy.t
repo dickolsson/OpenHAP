@@ -31,12 +31,13 @@ use_ok('FuguVM::Proxy::Cache');
 	    "$tmpdir/proxy/cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz",
 	    'Cache path derived correctly');
 
-	# Test directory traversal is completely rejected (returns undef)
+	# Test that the cache rejects directory traversal completely
+	# and returns undef
 	my $bad_path = $cache->cache_path(
 	    'http://cdn.openbsd.org/../../../etc/passwd');
 	is($bad_path, undef, 'Directory traversal rejected');
 
-	# Test various traversal patterns are rejected
+	# Test that the cache rejects various traversal patterns
 	is($cache->cache_path('http://example.com/foo/../bar'), undef,
 	    'Mid-path traversal rejected');
 	is($cache->cache_path('http://example.com/..'), undef,
@@ -50,7 +51,7 @@ use_ok('FuguVM::Proxy::Cache');
 	my $tmpdir = tempdir(CLEANUP => 1);
 	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
 
-	# Should be cacheable
+	# These URLs are cacheable
 	ok($cache->is_cacheable(
 	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz'),
 	    'File set is cacheable');
@@ -67,7 +68,7 @@ use_ok('FuguVM::Proxy::Cache');
 	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256.sig'),
 	    'SHA256.sig is cacheable');
 
-	# Should not be cacheable
+	# These URLs are not cacheable
 	ok(!$cache->is_cacheable('http://example.com/random.html'),
 	    'Random HTML is not cacheable');
 	ok(!$cache->is_cacheable(
@@ -83,19 +84,19 @@ use_ok('FuguVM::Proxy::Cache');
 	my $url = 'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256';
 	my $content = "SHA256 (base78.tgz) = abc123\n";
 
-	# Initially not in cache
+	# The URL is not in the cache initially
 	is($cache->lookup($url), undef, 'URL not in cache initially');
 
-	# Store content
+	# Store the content
 	my $stored_path = $cache->store($url, $content);
 	ok(defined $stored_path, 'Content stored');
 	ok(-f $stored_path, 'Cache file exists');
 
-	# Lookup should now succeed
+	# The lookup now succeeds
 	my $cached_path = $cache->lookup($url);
 	is($cached_path, $stored_path, 'Lookup returns stored path');
 
-	# Verify content
+	# Make sure that the content matches
 	open my $fh, '<', $cached_path;
 	my $read_content = do { local $/; <$fh> };
 	close $fh;
@@ -179,7 +180,7 @@ use_ok('FuguVM::Proxy::Cache');
 	my $cache_dir = tempdir(CLEANUP => 1);
 	my $state = FuguVM::State->new($state_dir, 'test');
 
-	# Manually set port to test URL generation
+	# Set the port manually to test the URL generation
 	$state->set_proxy_port(8080);
 
 	my $proxy = FuguVM::Proxy->new($state, $cache_dir);
@@ -188,7 +189,7 @@ use_ok('FuguVM::Proxy::Cache');
 	is($url, 'http://10.0.2.2:8080', 'Proxy guest_url correct');
 }
 
-# Test Proxy start/stop (integration test - may be slow)
+# Test Proxy start/stop (integration test, can be slow)
 SKIP: {
 	skip 'Set FUGUVM_TEST_PROXY=1 to run proxy integration tests', 4
 	    unless $ENV{FUGUVM_TEST_PROXY};

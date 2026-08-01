@@ -17,8 +17,9 @@ our %SERVICE_TYPES = (
 	'Lightbulb'            => '00000043-0000-1000-8000-0026BB765291',
 );
 
-# _uuid_to_short($uuid) - Convert full UUID to short form for JSON
-# Returns short hex string for Apple UUIDs, full UUID for custom ones
+# _uuid_to_short($uuid) - Convert the full UUID to the short form
+# for JSON. The function returns a short hex string for Apple
+# UUIDs. It returns the full UUID for custom UUIDs.
 sub _uuid_to_short ($uuid)
 {
 	my $base = HAP_BASE_UUID;

@@ -1,8 +1,9 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Unit tests for OpenHAP::Test::Controller: constructor, transport
-# injection and error paths. Full protocol exchanges are covered by
-# t/conformance/hap-pairing-exchange.t.
+# injection and error paths. The conformance tests in
+# t/conformance/hap-pairing-exchange.t cover the full protocol
+# exchanges.
 
 use v5.36;
 use Test::More;
@@ -60,7 +61,7 @@ use_ok('OpenHAP::Pairing');
 		2, 'headers parsed and lowercased' );
 }
 
-# Connection refused: pair_setup fails with last_error set
+# Connection refused: pair_setup fails and sets last_error
 {
 	my $controller = OpenHAP::Test::Controller->new(
 		host    => '127.0.0.1',
@@ -74,7 +75,8 @@ use_ok('OpenHAP::Pairing');
 		'error mentions the connection failure' );
 }
 
-# Malformed TLV response: error recorded, no crash
+# Malformed TLV response: the controller records the error and does
+# not crash
 {
 	my $transport = sub ($request) {
 		my $body = "\x06\xFF\x01";    # length past end of buffer
@@ -92,7 +94,7 @@ use_ok('OpenHAP::Pairing');
 	ok( defined $controller->last_error, 'last_error set' );
 }
 
-# TLV error response: the error code is exposed via last_error
+# TLV error response: last_error exposes the error code
 {
 	my $transport = sub ($request) {
 		my $body = OpenHAP::TLV::encode(

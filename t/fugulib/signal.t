@@ -43,7 +43,7 @@ use_ok('FuguLib::Signal');
 	ok( !FuguLib::Signal::check_interrupted(), 'Not interrupted before signal' );
 
 	kill 'USR1', $$;
-	sleep 0.1;    # Give signal time to be delivered
+	sleep 0.1;    # Give the signal time to arrive
 
 	ok( FuguLib::Signal::check_interrupted(), 'Interrupted after signal' );
 
@@ -64,7 +64,7 @@ use_ok('FuguLib::Signal');
 		}
 	);
 
-	# Manually trigger cleanup
+	# Trigger the cleanup manually
 	$sig->_run_cleanup_handlers('TEST');
 
 	is( $cleanup_called, 1,      'Cleanup handler called' );

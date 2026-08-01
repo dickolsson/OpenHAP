@@ -105,7 +105,8 @@ use_ok('OpenHAP::Service');
     my $service = OpenHAP::Service->new(type => 'Switch', iid => 10);
     my $json = $service->to_json();
 
-    # Switch UUID is 00000049-0000-1000-8000-0026BB765291, short form is "49"
+    # The Switch UUID is 00000049-0000-1000-8000-0026BB765291. The
+    # short form is "49".
     is($json->{type}, '49', 'Service type is in short form');
 
     # Test AccessoryInformation (3E)
@@ -119,7 +120,7 @@ use_ok('OpenHAP::Service');
     is($therm_json->{type}, '4A', 'Thermostat type is 4A in short form');
 }
 
-# Test custom UUID is preserved (not shortened)
+# Test that the module does not shorten a custom UUID
 {
     my $custom_uuid = '12345678-1234-1234-1234-123456789012';
     my $service = OpenHAP::Service->new(type => $custom_uuid, iid => 30);

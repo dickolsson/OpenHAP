@@ -38,7 +38,7 @@ sub new ( $class, %args )
 	$self->{heating_state}        = 0;              # 0=Off, 1=Heat, 2=Cool
 	$self->{target_heating_state} = 0;
 
-	# Add Thermostat service
+	# Add the Thermostat service
 	my $thermostat = OpenHAP::Service->new(
 		type => 'Thermostat',
 		iid  => 10,
@@ -105,7 +105,8 @@ sub new ( $class, %args )
 
 sub subscribe_mqtt ($self)
 {
-	# Call base class to set up standard subscriptions (C1, C2, C3)
+	# Call the base class to set up the standard subscriptions
+	# (C1, C2, C3)
 	$self->SUPER::subscribe_mqtt();
 
 	return unless $self->{mqtt_client}->is_connected();
@@ -114,7 +115,8 @@ sub subscribe_mqtt ($self)
 		'Thermostat %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# M2: Subscribe to plain-text POWER response (SetOption4 support)
+	# M2: Subscribe to the plain-text POWER response
+	# (SetOption4 support)
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', $self->_get_power_key() ),
 		sub ( $recv_topic, $payload ) {
@@ -135,24 +137,26 @@ sub subscribe_mqtt ($self)
 			$self->_handle_status8($payload);
 		} );
 
-	# Subscribe to STATUS10 for sensor data (recommended per spec)
+	# Subscribe to STATUS10 for sensor data. The spec recommends
+	# this query.
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', 'STATUS10' ),
 		sub ( $recv_topic, $payload ) {
 			$self->_handle_status10($payload);
 		} );
 
-	# Query sensor status immediately
+	# Query the sensor status immediately
 	$self->query_status(10);
 }
 
-# Override to process sensor data from SENSOR messages
+# Override the base method to process the sensor data from
+# SENSOR messages
 sub _process_sensor_data ( $self, $data )
 {
 	$self->_extract_temperature($data);
 }
 
-# Override to handle power state updates
+# Override the base method to process the power state updates
 sub _on_power_update ( $self, $state )
 {
 	if ( $self->{heating_state} != $state ) {
@@ -163,7 +167,7 @@ sub _on_power_update ( $self, $state )
 	}
 }
 
-# Handle STATUS8 response
+# Process the STATUS8 response
 sub _handle_status8 ( $self, $payload )
 {
 	eval {
@@ -171,7 +175,8 @@ sub _handle_status8 ( $self, $payload )
 
 		if ( exists $data->{StatusSNS} ) {
 
-			# Extract temperature unit if present (H4)
+			# Extract the temperature unit if it is
+			# present (H4)
 			if ( exists $data->{StatusSNS}{TempUnit} ) {
 				$self->{temp_unit} =
 				    $data->{StatusSNS}{TempUnit};
@@ -187,7 +192,7 @@ sub _handle_status8 ( $self, $payload )
 	}
 }
 
-# Handle STATUS10 response (recommended sensor query)
+# Process the STATUS10 response (recommended sensor query)
 sub _handle_status10 ( $self, $payload )
 {
 	eval {
@@ -209,14 +214,14 @@ sub _handle_status10 ( $self, $payload )
 }
 
 # $self->_extract_temperature($data):
-#	Extract temperature from sensor data (H4, H5).
+#	Extract the temperature from the sensor data (H4, H5).
 sub _extract_temperature ( $self, $data )
 {
 	my $temp = $self->_find_temperature($data);
 
 	if ( defined $temp ) {
 
-		# Convert to Celsius if needed (H4)
+		# Convert the value to Celsius if necessary (H4)
 		$temp = $self->convert_temperature($temp);
 
 		$OpenHAP::logger->debug(
@@ -229,14 +234,14 @@ sub _extract_temperature ( $self, $data )
 }
 
 # $self->_find_temperature($data):
-#	Find temperature value in sensor data (H5).
+#	Find the temperature value in the sensor data (H5).
 sub _find_temperature ( $self, $data )
 {
-	# If sensor type is specified, look for that specific sensor
+	# If the configuration sets a sensor type, look for that sensor
 	if ( defined $self->{sensor_type} ) {
 		my $key = $self->{sensor_type};
 
-		# Handle indexed sensors (e.g., DS18B20-1)
+		# Add the index for indexed sensors, for example DS18B20-1
 		if ( defined $self->{sensor_index} ) {
 			$key .= '-' . $self->{sensor_index};
 		}
@@ -253,7 +258,7 @@ sub _find_temperature ( $self, $data )
 			return $data->{$type}{Temperature};
 		}
 
-		# Check for indexed sensors (e.g., DS18B20-1)
+		# Check for indexed sensors, for example DS18B20-1
 		for my $i ( 1 .. 8 ) {
 			my $indexed = "$type-$i";
 			if ( exists $data->{$indexed} ) {
@@ -293,12 +298,12 @@ sub _check_thermostat_logic ($self)
 
 	if ( $self->{target_heating_state} == 0 ) {
 
-		# Target is OFF
+		# The target is OFF
 		$self->set_power(0) if $self->{heating_state};
 	}
 	elsif ( $self->{target_heating_state} == 1 ) {
 
-		# Target is HEAT
+		# The target is HEAT
 		if ( $current < $target - $hysteresis ) {
 			$self->set_power(1);
 		}

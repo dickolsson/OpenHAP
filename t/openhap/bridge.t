@@ -130,7 +130,7 @@ use_ok('OpenHAP::Bridge');
     my $acc = OpenHAP::Accessory->new(aid => 2, name => 'Device');
     $bridge->add_bridged_accessory($acc);
     
-    # Trigger event on bridged accessory
+    # Trigger an event on the bridged accessory
     $acc->notify_change(10);
     
     ok($callback_called, 'Bridge callback called from bridged accessory');

@@ -16,14 +16,16 @@ use_ok('FuguLib::Imsg');
 use_ok('FuguLib::MDNS');
 
 # The layout literals below are LP64 and little-endian, as measured
-# for the platforms OpenHAP deploys to; on anything else the daemon's
-# own struct differs and byte-exact replay is meaningless
+# for the platforms that OpenHAP deploys to. On other platforms the
+# daemon's own struct differs. There a byte-exact replay is
+# meaningless.
 my $lp64_le = $Config{ptrsize} == 8
     && unpack( 'S', "\x01\x00" ) == 1;
 
 # harness(%replies): a FuguLib::MDNS whose connection is one end of a
-# socketpair, with the given replies already queued on the peer end.
-# Returns ($mdns, $peer) - sent bytes are read back from $peer.
+# socketpair. The harness queues the given replies on the peer end.
+# It returns ($mdns, $peer). Tests read the sent bytes back from
+# $peer.
 sub harness (@reply_types)
 {
 	socketpair( my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
@@ -54,7 +56,7 @@ sub publish_example ($mdns)
 	);
 }
 
-# read_all($peer): drain everything the client sent
+# read_all($peer): drain everything that the client sent
 sub read_all ($peer)
 {
 	my $wire = '';
@@ -96,11 +98,11 @@ subtest '[MDNS-Control §4] struct mdns_service against a literal' => sub {
 		txt   => 'c#=1.sf=1',
 	};
 
-	# The whole buffer, built field by field at the spec's offsets:
-	# zeroed LIST_ENTRY, NUL padding of every fixed field, the
-	# internal padding at 858, and INADDR_ANY - a field-by-field
+	# The test builds the whole buffer field by field at the spec's
+	# offsets. It writes a zeroed LIST_ENTRY, NUL padding of every
+	# fixed field, the internal padding at 858, and INADDR_ANY. A field-by-field
 	# comparison would pass even with the total size or padding
-	# wrong, so the assertion is on the entire 864 bytes
+	# wrong. Thus the assertion is on the entire 864 bytes.
 	my $expected = "\0" x 864;
 	substr( $expected, 16,  3 )  = 'hap';
 	substr( $expected, 80,  3 )  = 'tcp';
@@ -134,8 +136,9 @@ subtest '[MDNS-Control §10] the publish conversation, byte-exact' => sub {
 	my $name_payload = 'OpenHAP Bridge' . ( "\0" x 242 );
 
 	# Message 1: GROUP_ADD. The pid bytes are sender-specific
-	# [MDNS-Imsg §3], so they are asserted as the test process's
-	# pid and the rest byte-for-byte against the spec literal
+	# [MDNS-Imsg §3]. Thus the test asserts them as the test
+	# process's pid. The test asserts the rest byte-for-byte against
+	# the spec literal.
 	my $m1 = substr( $wire, 0, 272 );
 	is( substr( $m1, 0, 4 ), "\x08\x00\x00\x00", 'type = 8' );
 	is( substr( $m1, 4, 4 ), "\x10\x01\x00\x00", 'len = 272' );
@@ -168,8 +171,8 @@ subtest '[MDNS-Control §10] the publish conversation, byte-exact' => sub {
 
 subtest '[MDNS-Control §6.1] progress replies are not terminal' => sub {
 
-	# PROBING and ANNOUNCING alone do not finish the publish; only
-	# PUBLISHED does
+	# PROBING and ANNOUNCING alone do not finish the publish. Only
+	# PUBLISHED does.
 	my ( $mdns, $peer ) = harness( 15, 16 );
 	ok( !defined $mdns->publish_service(
 			name  => 'OpenHAP Bridge',
@@ -205,8 +208,9 @@ subtest '[MDNS-Control §7] group name equals the instance name' => sub {
 	is( $group, $name,
 		'GROUP_ADD payload and struct name field are identical' );
 
-	# The unusable combination is inexpressible: publish_service
-	# has no separate group parameter to disagree with the name
+	# The API cannot express the unusable combination:
+	# publish_service has no separate group parameter to disagree
+	# with the name
 	ok( !FuguLib::MDNS->can('publish_group'),
 		'no API takes a separate group name' );
 };
@@ -278,7 +282,7 @@ subtest '[MDNS-Control §5] TXT travels as one verbatim string' => sub {
 	    unless $lp64_le;
 
 	# Several key=value pairs joined with '.' are a single wire
-	# field; nothing is escaped or re-encoded
+	# field. The code does not escape or re-encode anything.
 	my $mdns = FuguLib::MDNS->new;
 	$mdns->{service} = {
 		name  => 'x',

@@ -19,7 +19,7 @@ use_ok('FuguLib::Log');
 	my $log = FuguLib::Log->new( mode => 'quiet' );
 	ok( defined $log, 'Created quiet logger' );
 
-	# Capture STDERR to prove quiet mode produces no output
+	# Capture STDERR to show that the quiet mode writes no output
 	my $stderr = '';
 	{
 		local *STDERR;
@@ -34,7 +34,8 @@ use_ok('FuguLib::Log');
 {
 	my $log = FuguLib::Log->new( mode => 'quiet', level => 'warning' );
 
-	# Can't easily test output, but can verify methods exist
+	# A direct test of the output is not easy. Make sure that the
+	# methods exist.
 	eval {
 		$log->debug('debug message');
 		$log->info('info message');

@@ -1,12 +1,12 @@
 # Perl::Critic configuration for OpenHAP
-# Following OpenBSD pkg_add style (see style.pod)
+# The rules follow OpenBSD pkg_add style. See style.pod.
 severity = 4
 
 #-----------------------------------------------------------------------------
-# Allowed by OpenBSD style
+# OpenBSD style allows these constructs
 #-----------------------------------------------------------------------------
 
-# File permissions are intentionally octal (0644, 0600, etc.)
+# File permissions are octal by design (for example 0644 and 0600)
 [-ValuesAndExpressions::ProhibitLeadingZeros]
 
 # use constant is the OpenBSD way for constants
@@ -15,46 +15,46 @@ severity = 4
 # Multiple packages per file is fine for related classes
 [-Modules::ProhibitMultiplePackages]
 
-# our @ISA is preferred over 'use parent' in OpenBSD style
+# OpenBSD style prefers our @ISA over 'use parent'
 [-ClassHierarchies::ProhibitExplicitISA]
 
-# File handles need to stay open during flock operations
+# File handles must stay open during flock operations
 [-InputOutput::RequireBriefOpen]
 
-# Modern Perl signatures handle prototypes differently
+# Modern Perl signatures use the prototype syntax in a different way
 [-Subroutines::ProhibitSubroutinePrototypes]
 
 # Postfix if/unless is fine for simple statements
 [-ControlStructures::ProhibitPostfixControls]
 
-# Empty parentheses on method calls without args is discouraged
-# in OpenBSD style: $obj->method not $obj->method()
+# OpenBSD style discourages empty parentheses on method calls
+# without args: $obj->method not $obj->method()
 [-CodeLayout::ProhibitParensWithBuiltins]
 
 #-----------------------------------------------------------------------------
-# Relaxed for practical reasons
+# The configuration relaxes these rules for practical reasons
 #-----------------------------------------------------------------------------
 
-# Void subroutines don't need explicit return statements
+# Void subroutines do not need explicit return statements
 [-Subroutines::RequireFinalReturn]
 
 # Allow unless for simple conditions
 [-ControlStructures::ProhibitUnlessBlocks]
 
-# Regex can use modifiers without /x for simple patterns
+# A regex can use modifiers without /x for simple patterns
 [-RegularExpressions::RequireExtendedFormatting]
 
 # Magic numbers are acceptable in context
 [-ValuesAndExpressions::ProhibitMagicNumbers]
 
 #-----------------------------------------------------------------------------
-# Tabs are required (8-char tabs per style(9))
+# style(9) requires tabs of 8 characters
 #-----------------------------------------------------------------------------
 [CodeLayout::ProhibitHardTabs]
 allow_leading_tabs = 1
 
 #-----------------------------------------------------------------------------
-# POD documentation - separate .pod files are acceptable
+# POD documentation. Separate .pod files are acceptable.
 #-----------------------------------------------------------------------------
 [-Documentation::RequirePodSections]
 [-Documentation::RequirePodAtEnd]

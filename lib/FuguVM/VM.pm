@@ -19,8 +19,8 @@ use v5.36;
 
 # FuguVM::VM - OpenBSD VM management for macOS/arm64
 #
-# Opinionated VM controller for running OpenBSD guests on Apple Silicon.
-# Uses QMP for reliable VM lifecycle management.
+# This module is an opinionated VM controller for OpenBSD guests on
+# Apple Silicon. It uses QMP for reliable VM lifecycle management.
 
 package FuguVM::VM;
 
@@ -51,7 +51,8 @@ use constant {
 	MEMORY_DEFAULT => '1G',
 	CPU_COUNT      => 2,
 
-	# Guest CPU model under TCG emulation (no host passthrough)
+	# The guest CPU model under TCG emulation. TCG does not use host
+	# passthrough.
 	TCG_CPU => 'cortex-a57',
 };
 
@@ -68,18 +69,19 @@ sub new ( $class, %args )
 	return $self;
 }
 
-# Idempotent: ensure VM is running
+# The operation is idempotent. It makes sure that the VM runs.
 sub up ($self)
 {
 	my $config = $self->{config};
 	my $state  = $self->{state};
 	my $log    = $self->{log};
 
-	# Check if already running
+	# Check if the VM already runs
 	if ( $self->_is_running ) {
 
-		# If VM is running but SSH key needs to be installed or updated
-		# (first boot failed, or key changed in config)
+		# The VM runs, but the SSH key is not installed or is not
+		# current. This occurs when the first boot failed, or when
+		# the key changed in the configuration.
 		if ( $state->is_installed && $self->_needs_ssh_key_update ) {
 			return $self->_complete_ssh_setup;
 		}
@@ -88,16 +90,16 @@ sub up ($self)
 		return EXIT_SUCCESS;
 	}
 
-	# Verify the disk's backing chain before anything else looks at the
-	# disk. A base image missing from the cache is not corruption, and
-	# the unclean-shutdown check below would report it as such and
-	# recommend 'fuguvm disk repair' - which cannot recreate a missing
-	# backing file.
+	# Verify the backing chain of the disk before other checks read
+	# the disk. A base image that is missing from the cache is not
+	# corruption. The unclean-shutdown check below would report it as
+	# corruption and recommend 'fuguvm disk repair'. That command
+	# cannot make a missing backing file again.
 	if ( $state->disk_exists && !$self->_verify_backing_chain ) {
 		return EXIT_ERROR;
 	}
 
-	# Check for unclean shutdown and verify disk integrity
+	# Check for an unclean shutdown. Then check the disk integrity.
 	if ( $state->was_unclean_shutdown ) {
 		$log->warning("Detected unclean shutdown, checking disk...");
 		my $disk  = FuguVM::Disk->new( $state->{state_dir} );
@@ -112,10 +114,11 @@ sub up ($self)
 		$state->clear_shutdown_state;
 	}
 
-	# Derive the installed-image cache key exactly once, before the
-	# installer runs: key() hashes install.exp at call time, so a key
-	# re-derived after a tens-of-minutes install would publish the
-	# image the OLD installer produced under the NEW digest.
+	# Derive the installed-image cache key one time only, before the
+	# installer runs. key() hashes install.exp at call time. An
+	# install takes tens of minutes. A key derived again after the
+	# install would publish the image the OLD installer made under
+	# the NEW digest.
 	my $cache     = $self->_image_cache;
 	my $cache_key = defined $cache ? $cache->key($config) : undef;
 
@@ -124,11 +127,12 @@ sub up ($self)
 		$self->_cache_restore( $cache, $cache_key );
 	}
 
-	# Start caching proxy for VM installation (packages downloaded by VM)
-	# Also used for downloading the miniroot image on first run
+	# Start the caching proxy for the VM installation. The VM
+	# downloads its packages through the proxy. The first run also
+	# uses the proxy to download the miniroot image.
 	my $cache_dir = $self->_cache_dir;
 	my $proxy     = $state->ensure_proxy($cache_dir);
-	my $proxy_vm_url;    # For VM-side downloads (inside OpenBSD)
+	my $proxy_vm_url;    # For downloads inside the OpenBSD guest
 
 	if ( defined $proxy ) {
 		$proxy_vm_url = $proxy->guest_url;
@@ -139,10 +143,11 @@ sub up ($self)
 			"Proxy not available, VM downloads will not be cached");
 	}
 
-	# Ensure the miniroot is available (download via proxy if needed).
-	# Only the installer boots it: an installed system - freshly
-	# installed or restored from the image cache - boots its own disk,
-	# and must not fail here because the miniroot has been pruned.
+	# Make sure that the miniroot is available. Download it through
+	# the proxy if necessary. Only the installer boots the miniroot.
+	# An installed system boots its own disk, whether it was freshly
+	# installed or restored from the image cache. Such a system must
+	# not fail here because the miniroot was pruned.
 	my $image_path;
 
 	if ( !$state->is_installed ) {
@@ -163,7 +168,7 @@ sub up ($self)
 		$log->info("Using cached image: $image_path");
 	}
 
-	# Ensure disk exists
+	# Make sure that the disk exists
 	my $disk_path = $state->disk_path;
 
 	if ( !$state->disk_exists ) {
@@ -177,10 +182,10 @@ sub up ($self)
 		}
 	}
 
-	# Start VM
+	# Start the VM
 	$log->info("Starting VM...");
 
-	# Only attach install media if not already installed
+	# Attach the install media only when the system is not installed
 	my $boot_image = $state->is_installed ? undef : $image_path;
 	my $pid        = $self->_start_qemu($boot_image);
 	if ( !defined $pid ) {
@@ -190,11 +195,13 @@ sub up ($self)
 
 	$log->info("Started $config->{name} (PID: $pid)");
 
-	# Install if needed
+	# Install the system if necessary
 	if ( !$state->is_installed ) {
 
-      # Proxy is already running (started above for image download)
-      # Use VM-accessible URL for installation (VM connects to host via gateway)
+		# The proxy already runs. The code above started it for the
+		# image download. Use the VM-accessible URL for the
+		# installation. The VM connects to the host through the
+		# gateway.
 		my $install_proxy_url = $proxy_vm_url // 'none';
 
 		# Generate a strong random password for this installation
@@ -208,7 +215,7 @@ sub up ($self)
 			port => $config->{console_port},
 		);
 
-		# Use the generated password for installation
+		# Use the generated password for the installation
 		my $install_config = {
 			%$config,
 			root_password => $root_password,
@@ -223,10 +230,11 @@ sub up ($self)
 		$state->mark_installed;
 		$log->info("Installation complete");
 
-		# Stop VM via QMP (graceful). The image cache captures the
-		# disk at exactly this point - installed, pristine, before
-		# the per-checkout SSH key goes in - so the capture must
-		# know that QEMU is really gone, not assume it.
+		# Stop the VM gracefully through QMP. The image cache
+		# captures the disk at exactly this point: installed,
+		# pristine, and without the per-checkout SSH key. Thus the
+		# capture must know that QEMU is really gone. It must not
+		# assume it.
 		$log->info("Stopping installation VM...");
 		$self->_qmp_quit;
 		my $clean_exit = $self->_wait_exit(30);
@@ -241,8 +249,8 @@ sub up ($self)
 		$state->clear_vm_pid;
 
 		# Publish the installed disk as a cached base image. A VM
-		# that had to be killed may have left the disk mid-write,
-		# so that capture is skipped rather than published.
+		# that was force stopped can leave the disk mid-write. Thus
+		# the code skips that capture and does not publish it.
 		if ( defined $cache_key ) {
 			if ($clean_exit) {
 				$self->_cache_store( $cache, $cache_key,
@@ -255,7 +263,7 @@ sub up ($self)
 			}
 		}
 
-		# Restart VM without install media
+		# Restart the VM without the install media
 		$log->info("Restarting installed system...");
 		$pid = $self->_start_qemu;    # No boot image, no exit_on_halt
 		if ( !defined $pid ) {
@@ -264,14 +272,15 @@ sub up ($self)
 		}
 		$log->info("Started $config->{name} (PID: $pid)");
 
-		# Wait for SSH with password auth
+		# Wait for SSH with password authentication
 		$log->info("Waiting for SSH...");
 		if ( !$self->_wait_ssh_password( $root_password, 120 ) ) {
 			$log->error("Timeout waiting for SSH");
 			return EXIT_TIMEOUT;
 		}
 
-		# Install SSH authorized key for future key-based auth
+		# Install the SSH authorized key for future key-based
+		# authentication
 		if ( !$self->_install_ssh_key($root_password) ) {
 			$log->error("Failed to install SSH key");
 			return EXIT_ERROR;
@@ -282,15 +291,17 @@ sub up ($self)
 		return EXIT_SUCCESS;
 	}
 
-	# VM is installed - check if SSH key needs to be installed or updated
+	# The VM is installed. Check if the SSH key must be installed or
+	# updated.
 	if ( $self->_needs_ssh_key_update ) {
 
-		# SSH key not installed or changed in config
-		# Use password auth to wait for SSH and install the key
+		# The SSH key is not installed, or it changed in the
+		# configuration. Use password authentication to wait for
+		# SSH. Then install the key.
 		return $self->_complete_ssh_setup;
 	}
 
-	# Wait for SSH (key-based auth for already installed VMs)
+	# Wait for SSH. An installed VM uses key-based authentication.
 	$log->info("Waiting for SSH...");
 	if ( !$self->wait_ssh(120) ) {
 		$log->error("Timeout waiting for SSH");
@@ -302,11 +313,12 @@ sub up ($self)
 }
 
 # $self->_image_cache:
-#	Installed-image cache for this VM's configured cache_dir, or undef
-#	when caching is switched off - by 'up --no-cache' for a single
-#	invocation, or by 'image_cache no' in the configuration. Both
-#	suppress restore and save together: a half-cached run would leave
-#	an overlay whose base nothing published.
+#	Return the installed-image cache for this VM's configured
+#	cache_dir. Return undef when caching is off. 'up --no-cache'
+#	turns caching off for a single invocation. 'image_cache no'
+#	turns it off in the configuration. Both stop restore and save
+#	together. A half-cached run would leave an overlay with a base
+#	that nothing published.
 sub _image_cache ($self)
 {
 	return if $self->{no_cache};
@@ -318,11 +330,11 @@ sub _image_cache ($self)
 }
 
 # $self->_verify_backing_chain:
-#	Confirm that the working disk's backing image, if it has one, is
-#	present. Returns true when the chain resolves; on a break, logs
-#	the missing file and a remedy and returns false, so a pruned or
-#	evicted cache entry fails with an explanation rather than an
-#	opaque QEMU open error at boot.
+#	Make sure that the backing image of the working disk, if the
+#	disk has one, is present. Return true when the chain resolves.
+#	On a break, log the missing file and a remedy, and return
+#	false. Thus a pruned or evicted cache entry fails with an
+#	explanation, not with an opaque QEMU open error at boot.
 sub _verify_backing_chain ($self)
 {
 	my $config = $self->{config};
@@ -348,10 +360,10 @@ sub _verify_backing_chain ($self)
 }
 
 # $self->_cache_restore($cache, $key):
-#	Create the working disk as an overlay on a cached base image and
-#	seed the state the installation would have written. Returns true
-#	on a cache hit, false on a miss or any failure - both of which
-#	simply leave the caller to install from scratch.
+#	Create the working disk as an overlay on a cached base image.
+#	Seed the state that the installation would have written. Return
+#	true on a cache hit. Return false on a miss or on any failure.
+#	In both cases the caller then installs from scratch.
 sub _cache_restore ( $self, $cache, $key )
 {
 	my $config = $self->{config};
@@ -373,10 +385,10 @@ sub _cache_restore ( $self, $cache, $key )
 		return 0;
 	}
 
-	# The base was captured from an installed system, so the state
-	# the installer would have written comes from its metadata. The
-	# root password is what the later SSH key install authenticates
-	# with, and it is baked into the image.
+	# The base was captured from an installed system. Thus the state
+	# that the installer would have written comes from the metadata
+	# of the base. The later SSH key install authenticates with the
+	# root password. That password is baked into the image.
 	$state->mark_installed;
 	my $password = $hit->{meta}{root_password};
 	$state->set_root_password($password) if defined $password;
@@ -388,10 +400,11 @@ sub _cache_restore ( $self, $cache, $key )
 }
 
 # $self->_cache_store($cache, $key, $root_password):
-#	Publish the freshly installed disk as a cached base image and
-#	replace the working disk with an overlay on it. Best effort: any
-#	failure leaves the standalone disk in place and warns, because
-#	'up' must never fail because caching failed.
+#	Publish the freshly installed disk as a cached base image. Then
+#	replace the working disk with an overlay on that image. The
+#	operation is best effort. On any failure it keeps the
+#	standalone disk in place and warns. 'up' must never fail
+#	because caching failed.
 sub _cache_store ( $self, $cache, $key, $root_password )
 {
 	my $config = $self->{config};
@@ -425,8 +438,9 @@ sub _cache_store ( $self, $cache, $key, $root_password )
 
 # $self->_reparent_disk($base):
 #	Replace the working disk with a fresh overlay backed by $base.
-#	The old disk is moved aside rather than deleted, so a failure to
-#	create the overlay cannot leave the VM without a disk.
+#	The method moves the old disk aside and does not delete it.
+#	Thus a failure to create the overlay cannot leave the VM
+#	without a disk.
 sub _reparent_disk ( $self, $base )
 {
 	my $config = $self->{config};
@@ -442,8 +456,8 @@ sub _reparent_disk ( $self, $base )
 		return 0;
 	};
 
-	# Disk::create returns early on an existing path, so the rename
-	# above is what makes this actually create the overlay.
+	# Disk::create returns early on an existing path. Thus the
+	# rename above is what makes this call create the overlay.
 	my $disk = FuguVM::Disk->new( $state->{state_dir} );
 	my $path = $disk->create( $config->{name}, undef, $base, 'qcow2' );
 	if ( !defined $path ) {
@@ -462,7 +476,7 @@ sub down ($self)
 	my $log    = $self->{log};
 	my $config = $self->{config};
 
-	# Stop proxy if running
+	# Stop the proxy if it runs
 	my $cache_dir = $self->_cache_dir;
 	if ( $state->is_proxy_running ) {
 		$state->stop_proxy($cache_dir);
@@ -476,7 +490,7 @@ sub down ($self)
 
 	$log->info("Shutting down VM...");
 
-	# Try graceful shutdown with filesystem sync
+	# Try a graceful shutdown with a filesystem sync
 	if ( $self->_graceful_shutdown ) {
 		$state->mark_clean_shutdown;
 		$state->clear_vm_pid;
@@ -484,7 +498,7 @@ sub down ($self)
 		return EXIT_SUCCESS;
 	}
 
-	# Emergency force quit - filesystem may be corrupted
+	# Emergency force quit. The filesystem can be corrupt.
 	$log->warning(
 		"Graceful shutdown failed, force stopping (risk of corruption)"
 	);
@@ -502,19 +516,19 @@ sub destroy ($self)
 	my $log    = $self->{log};
 	my $config = $self->{config};
 
-	# Stop proxy if running
+	# Stop the proxy if it runs
 	my $cache_dir = $self->_cache_dir;
 	if ( $state->is_proxy_running ) {
 		$state->stop_proxy($cache_dir);
 		$log->info("Proxy stopped");
 	}
 
-	# Stop if running
+	# Stop the VM if it runs
 	if ( $self->_is_running ) {
 		$self->stop(1);
 	}
 
-	# Remove disk
+	# Remove the disk
 	my $disk_path = $state->disk_path;
 	if ( -f $disk_path ) {
 		$log->info("Removing disk image...");
@@ -524,11 +538,11 @@ sub destroy ($self)
 		};
 	}
 
-	# Remove QMP socket
+	# Remove the QMP socket
 	my $qmp_path = $self->_qmp_socket_path;
 	unlink $qmp_path if -S $qmp_path;
 
-	# Clear state
+	# Clear the state
 	$state->{data} = {};
 	$state->save;
 
@@ -583,7 +597,7 @@ sub stop ( $self, $force = 0 )
 		return EXIT_SUCCESS;
 	}
 
-	# Try graceful shutdown with filesystem sync
+	# Try a graceful shutdown with a filesystem sync
 	$log->info("Shutting down VM gracefully...");
 	if ( $self->_graceful_shutdown ) {
 		$state->mark_clean_shutdown;
@@ -592,7 +606,7 @@ sub stop ( $self, $force = 0 )
 		return EXIT_SUCCESS;
 	}
 
-	# If graceful shutdown times out, force stop
+	# If the graceful shutdown times out, force stop the VM
 	$log->warning(
 "Graceful shutdown timed out, force stopping (risk of corruption)"
 	);
@@ -611,7 +625,7 @@ sub status ($self)
 	my $running = $self->_is_running;
 	my $pid     = $state->get_vm_pid;
 
-	# Query QEMU status via QMP if running
+	# Query the QEMU status through QMP if the VM runs
 	my $qemu_status;
 	if ($running) {
 		my $qmp = $self->_qmp_connect;
@@ -658,7 +672,7 @@ sub wait_ssh ( $self, $timeout = 120, $sig = undef )
 {
 	my $config = $self->{config};
 
-	# Uses SSH agent for authentication
+	# The connection uses the SSH agent for authentication
 	my $ssh = FuguVM::SSH->new(
 		host => '127.0.0.1',
 		port => $config->{ssh_port},
@@ -669,8 +683,9 @@ sub wait_ssh ( $self, $timeout = 120, $sig = undef )
 }
 
 # $self->_wait_ssh_password($password, $timeout):
-#	Wait for SSH to become available using password authentication
-#	Used during initial installation before SSH key is installed
+#	Wait for SSH to become available with password authentication.
+#	The initial installation uses this method before the SSH key
+#	goes in.
 sub _wait_ssh_password ( $self, $password, $timeout = 120 )
 {
 	my $config = $self->{config};
@@ -686,8 +701,8 @@ sub _wait_ssh_password ( $self, $password, $timeout = 120 )
 }
 
 # $self->_needs_ssh_key_update:
-#	Check if SSH key needs to be installed or updated.
-#	Returns true if no key is installed, or if the configured key
+#	Check if the SSH key must be installed or updated. Return true
+#	if no key is installed. Also return true if the configured key
 #	differs from the installed key.
 sub _needs_ssh_key_update ($self)
 {
@@ -697,13 +712,13 @@ sub _needs_ssh_key_update ($self)
 	my $configured_key = $config->{ssh_pubkey};
 	my $installed_key  = $state->get_installed_ssh_pubkey;
 
-	# No key configured - nothing to install
+	# No key is configured. There is nothing to install.
 	return 0 if !defined $configured_key || $configured_key eq '';
 
-	# No key installed yet
+	# No key is installed yet
 	return 1 if !defined $installed_key;
 
-	# Compare keys (normalize whitespace for comparison)
+	# Compare the keys. Normalize the whitespace for the comparison.
 	my $configured_normalized = $configured_key =~ s/\s+/ /gr;
 	my $installed_normalized  = $installed_key  =~ s/\s+/ /gr;
 
@@ -711,10 +726,10 @@ sub _needs_ssh_key_update ($self)
 }
 
 # $self->_complete_ssh_setup():
-#	Install or update the SSH key on the VM.
-#	Uses the stored root password to authenticate.
-#	Called when recovering from a failed first boot or when the
-#	configured SSH key has changed.
+#	Install or update the SSH key on the VM. The method
+#	authenticates with the stored root password. It runs to recover
+#	from a failed first boot, or when the configured SSH key
+#	changed.
 sub _complete_ssh_setup ($self)
 {
 	my $state  = $self->{state};
@@ -730,14 +745,14 @@ sub _complete_ssh_setup ($self)
 
 	$log->info("Updating SSH key...");
 
-	# Wait for SSH with password auth
+	# Wait for SSH with password authentication
 	$log->info("Waiting for SSH...");
 	if ( !$self->_wait_ssh_password( $root_password, 120 ) ) {
 		$log->error("Timeout waiting for SSH");
 		return EXIT_TIMEOUT;
 	}
 
-	# Install SSH authorized key
+	# Install the SSH authorized key
 	if ( !$self->_install_ssh_key($root_password) ) {
 		$log->error("Failed to install SSH key");
 		return EXIT_ERROR;
@@ -749,22 +764,23 @@ sub _complete_ssh_setup ($self)
 }
 
 # $self->_install_ssh_key($password):
-#	Install the SSH public key from config into authorized_keys
-#	Uses password authentication since key is not yet installed
+#	Install the SSH public key from the configuration into
+#	authorized_keys. The method uses password authentication,
+#	because the key is not yet installed.
 sub _install_ssh_key ( $self, $password )
 {
 	my $config = $self->{config};
 	my $state  = $self->{state};
 	my $log    = $self->{log};
 
-	# Get SSH public key from config
+	# Get the SSH public key from the configuration
 	my $ssh_pubkey = $config->{ssh_pubkey};
 	if ( !defined $ssh_pubkey || $ssh_pubkey eq '' ) {
 		$log->error("No ssh_pubkey configured in ~/.fuguvmrc");
 		return 0;
 	}
 
-	# Connect with password
+	# Connect with the password
 	my $ssh = FuguVM::SSH->new(
 		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
@@ -772,14 +788,14 @@ sub _install_ssh_key ( $self, $password )
 		password => $password,
 	);
 
-	# Create .ssh directory
+	# Create the .ssh directory
 	my $result =
 	    $ssh->run_command('mkdir -p /root/.ssh && chmod 700 /root/.ssh');
 	if ( $result->{exit_code} != 0 ) {
 		return 0;
 	}
 
-	# Write authorized_keys file
+	# Write the authorized_keys file
 	my $authkeys_content = $ssh_pubkey . "\n";
 	if (
 		$ssh->write_file(
@@ -791,14 +807,14 @@ sub _install_ssh_key ( $self, $password )
 		return 0;
 	}
 
-	# Store which pubkey was installed for future comparison
+	# Store the installed pubkey for a future comparison
 	$state->mark_ssh_key_installed($ssh_pubkey);
 	return 1;
 }
 
 # P1: Graceful shutdown with filesystem sync
-# Tries multiple methods in order of reliability:
-# 1. SSH sync + ACPI powerdown (sync via SSH, powerdown via QMP)
+# The method tries these procedures in order of reliability:
+# 1. SSH sync + ACPI powerdown (sync through SSH, powerdown through QMP)
 # 2. QGA guest-shutdown (if available)
 # 3. Direct ACPI powerdown
 sub _graceful_shutdown ($self)
@@ -806,12 +822,13 @@ sub _graceful_shutdown ($self)
 	my $config = $self->{config};
 	my $log    = $self->{log};
 
-	# Best-effort filesystem sync over SSH before pulling the power.
-	# Hard-bounded: a wedged guest must never stall shutdown, and
-	# libssh2 does not reliably honor its own timeout on the connect
-	# and handshake. A failure or timeout here is fine - the ACPI
-	# powerdown below runs the guest's own orderly shutdown (which
-	# syncs), and a force stop is the ultimate fallback.
+	# Do a best-effort filesystem sync over SSH before the code
+	# pulls the power. The sync has a hard time bound. A wedged
+	# guest must never stall the shutdown. Also, libssh2 does not
+	# reliably obey its own timeout on the connect and handshake. A
+	# failure or a timeout here is acceptable. The ACPI powerdown
+	# below runs the orderly shutdown of the guest, which syncs. A
+	# force stop is the ultimate fallback.
 	$self->_bounded(
 		FuguVM::SSH::DEFAULT_TIMEOUT + 5,
 		sub {
@@ -823,13 +840,14 @@ sub _graceful_shutdown ($self)
 			return $ssh->run_command('sync; sync; sync');
 		} );
 
-	# Ask the guest to power off via the ACPI power button, then wait.
+	# Ask the guest to power off through the ACPI power button. Then
+	# wait.
 	if ( $self->_qmp_powerdown && $self->_wait_exit(60) ) {
 		$log->info("Shutdown via ACPI powerdown");
 		return 1;
 	}
 
-	# Guest-agent shutdown, if the agent is available.
+	# Do a guest-agent shutdown if the agent is available.
 	my $qga = $self->_qga_connect;
 	if ($qga) {
 		$qga->sync;
@@ -846,10 +864,10 @@ sub _graceful_shutdown ($self)
 }
 
 # $self->_bounded($seconds, $code):
-#	Run $code under a hard wall-clock deadline so a blocking guest
-#	interaction cannot stall the caller. Returns $code's return value,
-#	or undef if the deadline elapsed. Mirrors the alarm guard used for
-#	the MQTT connect in OpenHAP::MQTT.
+#	Run $code under a hard wall-clock deadline. Thus a blocked
+#	guest interaction cannot stall the caller. Return the return
+#	value of $code, or undef if the deadline elapsed. The guard
+#	mirrors the alarm guard for the MQTT connect in OpenHAP::MQTT.
 sub _bounded ( $self, $seconds, $code )
 {
 	my $result;
@@ -868,10 +886,11 @@ sub _bounded ( $self, $seconds, $code )
 }
 
 # $self->_force_stop:
-#	Terminate the QEMU process deterministically: SIGTERM (QEMU exits
-#	and flushes its disk caches), escalating to SIGKILL if it lingers.
-#	Unlike a QMP 'quit', this cannot hang on an unresponsive monitor
-#	socket, so it is a safe last resort.
+#	Stop the QEMU process deterministically. Send SIGTERM first:
+#	QEMU exits and flushes its disk caches. Escalate to SIGKILL if
+#	the process stays. Unlike a QMP 'quit', this method cannot hang
+#	on an unresponsive monitor socket. Thus it is a safe last
+#	resort.
 sub _force_stop ($self)
 {
 	my $pid = $self->{state}->get_vm_pid;
@@ -923,10 +942,10 @@ sub _is_running ($self)
 	my $pid = $self->{state}->get_vm_pid;
 	return 0 if !defined $pid;
 
-	# Check if process is alive
+	# Check if the process is alive
 	return 0 if !kill( 0, $pid );
 
-	# Optionally verify via QMP (more reliable)
+	# Check through QMP when possible. QMP is more reliable.
 	my $qmp = $self->_qmp_connect;
 	if ($qmp) {
 		my $running = $qmp->is_running;
@@ -934,7 +953,7 @@ sub _is_running ($self)
 		return $running;
 	}
 
-	# Fall back to process check
+	# Fall back to the process check
 	return 1;
 }
 
@@ -957,7 +976,8 @@ sub _start_qemu ( $self, $boot_image = undef )
 
 	my @cmd = (QEMU_BINARY);
 
-	# Machine type for arm64, acceleration by host capability
+	# Set the machine type for arm64. Select the accelerator by the
+	# host capability.
 	push @cmd, '-M', 'virt,highmem=off';
 	push @cmd, $self->_accel_args;
 
@@ -971,7 +991,8 @@ sub _start_qemu ( $self, $boot_image = undef )
 		push @cmd, '-bios', $bios;
 	}
 
-	# Main disk with safe cache mode (writethrough syncs on each write)
+	# The main disk with the safe cache mode. The writethrough mode
+	# syncs on each write.
 	my $disk_path = $state->disk_path;
 	push @cmd, '-drive',
 	    "file=$disk_path,format=qcow2,if=virtio,cache=writethrough";
@@ -1011,19 +1032,19 @@ sub _start_qemu ( $self, $boot_image = undef )
 	# No graphics display (headless)
 	push @cmd, '-display', 'none';
 
-	# Spawn QEMU using FuguLib::Process
+	# Use FuguLib::Process to spawn QEMU
 	my $log_file = "$state->{vm_state_dir}/qemu.log";
 	my $result   = FuguLib::Process->spawn_command(
 		cmd         => \@cmd,
 		daemonize   => 1,
 		stdout      => $log_file,
 		stderr      => $log_file,
-		check_alive => 0,    # Don't check, QEMU writes its own PID file
+		check_alive => 0,   # Do not check. QEMU writes its own PID file
 	);
 
 	return unless $result->{success};
 
-	# Wait for QEMU to write PID file
+	# Wait until QEMU writes the PID file
 	my $start = time;
 	my $pid;
 	while ( time - $start < 5 ) {
@@ -1037,7 +1058,7 @@ sub _start_qemu ( $self, $boot_image = undef )
 		usleep(100_000);    # 0.1 seconds
 	}
 
-	# Fallback: use forked PID from FuguLib::Process
+	# Fallback: use the forked PID from FuguLib::Process
 	unless ( defined $pid ) {
 		my $forked = $result->{pid};
 		if ( kill( 0, $forked ) ) {
@@ -1052,11 +1073,11 @@ sub _start_qemu ( $self, $boot_image = undef )
 		return;
 	}
 
-	# Confirm QEMU is actually accepting console connections before the
-	# installer tries to attach. A QEMU that exited at startup (bad
-	# accelerator, missing firmware) leaves the port closed; catching
-	# that here fails fast with the QEMU log instead of a long telnet
-	# timeout later.
+	# Make sure that QEMU accepts console connections before the
+	# installer tries to attach. A QEMU that exited at startup, for
+	# example with a bad accelerator or missing firmware, leaves the
+	# port closed. This check fails fast with the QEMU log, not with
+	# a long telnet timeout later.
 	unless ( $self->_wait_console_ready( $config->{console_port}, 30 ) ) {
 		$self->{log}
 		    ->error( 'QEMU console port %d not listening after start',
@@ -1069,10 +1090,10 @@ sub _start_qemu ( $self, $boot_image = undef )
 }
 
 # $self->_wait_console_ready($port, $timeout):
-#	Poll the console TCP port until it accepts a connection, so the
-#	installer's telnet attaches to a live console. The bind happens
-#	at QEMU startup (before guest boot), so this is quick when QEMU
-#	is healthy and bounded when it is not.
+#	Poll the console TCP port until it accepts a connection. Thus
+#	the telnet of the installer attaches to a live console. QEMU
+#	binds the port at startup, before the guest boots. Thus the
+#	poll is quick when QEMU is healthy, and bounded when it is not.
 sub _wait_console_ready ( $self, $port, $timeout )
 {
 	require IO::Socket::INET;
@@ -1090,7 +1111,7 @@ sub _wait_console_ready ( $self, $port, $timeout )
 			return 1;
 		}
 
-		# Give up early if QEMU has already exited
+		# Stop the wait early if QEMU already exited
 		my $qemu_pid = $self->{state}->get_vm_pid;
 		return 0 if defined $qemu_pid && !kill( 0, $qemu_pid );
 
@@ -1101,8 +1122,9 @@ sub _wait_console_ready ( $self, $port, $timeout )
 }
 
 # $self->_dump_qemu_log($log_file):
-#	Emit the tail of the QEMU log so a startup failure is visible in
-#	CI output instead of requiring shell access to the runner.
+#	Show the tail of the QEMU log. Thus a startup failure is
+#	visible in the CI output, and shell access to the runner is not
+#	necessary.
 sub _dump_qemu_log ( $self, $log_file )
 {
 	open my $fh, '<', $log_file or return;
@@ -1117,10 +1139,11 @@ sub _dump_qemu_log ( $self, $log_file )
 }
 
 # $self->_accel_args():
-#	Pick the QEMU accelerator for the host: HVF on macOS, KVM on
-#	aarch64 Linux hosts with /dev/kvm, TCG software emulation
-#	otherwise or when --emulate was given. Host CPU passthrough is
-#	only valid with hardware acceleration; TCG needs a named model.
+#	Pick the QEMU accelerator for the host. Use HVF on macOS. Use
+#	KVM on aarch64 Linux hosts with /dev/kvm. Use TCG software
+#	emulation in the other cases, or when --emulate was given. Host
+#	CPU passthrough is only valid with hardware acceleration. TCG
+#	needs a named model.
 sub _accel_args ($self)
 {
 	my $accel;
@@ -1144,7 +1167,7 @@ sub _accel_args ($self)
 }
 
 # _host_arch():
-#	Host machine architecture from uname
+#	Return the host machine architecture from uname.
 sub _host_arch ()
 {
 	require POSIX;
@@ -1166,7 +1189,7 @@ sub _find_efi_firmware ($self)
 		return $path if -f $path;
 	}
 
-	# Try glob for versioned Homebrew paths
+	# Try a glob for the versioned Homebrew paths
 	my @glob_paths =
 	    glob('/opt/homebrew/Cellar/qemu/*/share/qemu/edk2-aarch64-code.fd');
 	return $glob_paths[0] if @glob_paths;
@@ -1175,9 +1198,9 @@ sub _find_efi_firmware ($self)
 }
 
 # $self->_cache_dir:
-#	Configured cache directory, injected into the per-VM config by
-#	FuguVM::Config::load_vm. The fallback only serves VM objects
-#	built without a configuration.
+#	Return the configured cache directory. FuguVM::Config::load_vm
+#	injects it into the per-VM config. The fallback only serves VM
+#	objects built without a configuration.
 sub _cache_dir ($self)
 {
 	my $configured = $self->{config}{cache_dir};

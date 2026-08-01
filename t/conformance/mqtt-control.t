@@ -96,7 +96,7 @@ subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
 	is( $so26->_get_power_key, 'POWER1',
 		'SetOption26 uses POWER1 even for a single relay' );
 
-	# FullTopic composes with relay index
+	# FullTopic composes with the relay index
 	my $custom = OpenHAP::Tasmota::Base->new(
 		aid         => 5,
 		name        => 'Custom',
@@ -182,7 +182,7 @@ subtest '[MQTT-Control §3.2] Color RGB formats' => sub {
 	$mqtt->simulate_message( 'stat/light/RESULT', '{"Color":"0,0,255"}' );
 	is( $light->{hue}, 240, 'decimal color blue parsed (hue 240)' );
 
-	# RGB -> HSB conversion per the spec value ranges
+	# RGB -> HSB conversion follows the spec value ranges
 	my ( $h, $s, $b ) = $light->_rgb_to_hsb( 255, 0, 0 );
 	is_deeply( [ $h, $s, $b ], [ 0, 100, 100 ],
 		'pure red is 0,100,100' );
@@ -203,7 +203,7 @@ subtest '[MQTT-Control §4] color temperature range' => sub {
 		'CT command topic' );
 	is( last_published($mqtt)->{payload}, '300', 'CT in mireds' );
 
-	# Range is 153..500 mireds
+	# The range is 153..500 mireds
 	$mqtt->clear_published;
 	$light->_set_ct(100);
 	is( last_published($mqtt)->{payload},
@@ -232,14 +232,14 @@ subtest '[MQTT-Control §5] status queries' => sub {
 		'Status 10 (sensor information) queried on subscribe'
 	);
 
-	# STATUS8 (legacy sensor) responses are handled
+	# The thermostat parses STATUS8 (legacy sensor) responses
 	$mqtt->simulate_message( 'stat/thermostat/STATUS8',
 		'{"StatusSNS":{"DS18B20":{"Temperature":23},"TempUnit":"C"}}'
 	);
 	is( $thermostat->{current_temp}, 23,
 		'STATUS8 response updates temperature' );
 
-	# STATUS10 responses are handled
+	# The sensor parses STATUS10 responses
 	my $sensor = OpenHAP::Tasmota::Sensor->new(
 		aid         => 3,
 		name        => 'Sensor',
@@ -256,7 +256,7 @@ subtest '[MQTT-Control §5] status queries' => sub {
 	is( $sensor->{current_temp}, 26,
 		'STATUS10 response updates temperature' );
 
-	# STATUS11 (full state) responses are handled
+	# The heater parses STATUS11 (full state) responses
 	my $heater = make_heater($mqtt);
 	$heater->subscribe_mqtt;
 	ok( ( grep { $_ eq 'stat/device/STATUS11' }

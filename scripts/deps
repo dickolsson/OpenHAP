@@ -16,19 +16,21 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-# deps: install the OS packages and CPAN modules named by deps/<OS>.txt.
+# deps: install the OS packages and CPAN modules that deps/<OS>.txt names.
 #
 # usage: deps [--dry-run] [--os NAME] <runtime|test|develop>
 #
-# deps/<OS>.txt is read relative to the current directory, not to this
-# script: the guest runs 'cd /tmp/openhap-* && make deps' out of the
-# extracted tarball, which is a different tree from any checkout.
+# The script reads deps/<OS>.txt relative to the current directory,
+# not relative to this script. The guest runs
+# 'cd /tmp/openhap-* && make deps' out of the extracted tarball. That
+# tree is different from any checkout.
 #
-# This is the bootstrap - nothing it needs may be something it installs -
-# so only core modules, and no v5.36: macOS still ships perl 5.34 and
-# requiring 5.36 would mean installing a perl with the script that
-# installs things.  The 5.34 bundle turns on strict but not warnings
-# (that starts at 5.35), so warnings is asked for by name.
+# This script is the bootstrap. Nothing it needs may be something it
+# installs. Thus it uses only core modules and no v5.36. macOS still
+# ships perl 5.34. A v5.36 floor would make the script that installs
+# things install a perl first.  The 5.34 bundle turns on strict but not
+# warnings. Warnings start at 5.35. Thus the script asks for warnings
+# by name.
 use v5.34;
 use warnings;
 use experimental 'signatures';
@@ -53,8 +55,8 @@ my $env = shift @ARGV;
 defined $env
     or die "usage: deps [--dry-run] [--os NAME] <runtime|test|develop>\n";
 
-# An unrecognised environment selects nothing, and the shell version
-# then reported success for having installed it. Say so instead.
+# An unrecognized environment selects nothing. The shell version then
+# reported success for having installed it. Say so instead.
 grep { $_ eq $env } ENVIRONMENTS
     or die "deps: unknown environment '$env' (expected "
     . join( ', ', ENVIRONMENTS ) . ")\n";
@@ -62,11 +64,11 @@ grep { $_ eq $env } ENVIRONMENTS
 $os //= ( uname() )[0];
 
 # _run(@cmd):
-#	Run a command, list form, and die on anything but a clean exit.
-#	List form is the point: the shell version wrote
-#	'pkg_add $PKG_PACKAGES' and leaned on word splitting, so a
-#	package name containing a space installed two wrong packages.
-#	Every caller passes at least two elements, so perl never falls
+#	Run a command in list form. Die on anything but a clean exit.
+#	List form is the point. The shell version wrote
+#	'pkg_add $PKG_PACKAGES' and leaned on word splitting. Thus a
+#	package name that contains a space installed two wrong packages.
+#	Every caller passes at least two elements. Thus perl never falls
 #	back to a shell.
 sub _run (@cmd)
 {
@@ -90,9 +92,9 @@ sub _run (@cmd)
 }
 
 # _quote($word):
-#	Shell-quote a word for the trace line only. Nothing is ever
-#	handed to a shell; this exists so a --dry-run reader (and the
-#	tests) can see that an argument with a space is one argument.
+#	Shell-quote a word for the trace line only. The script never
+#	gives a word to a shell. This function lets a --dry-run reader
+#	and the tests see that an argument with a space is one argument.
 sub _quote ($word)
 {
 	return $word unless $word eq '' || $word =~ /[^\w.\/:=-]/;
@@ -104,8 +106,8 @@ sub _quote ($word)
 }
 
 # _which($program):
-#	First executable $program on PATH, or undef. Core-only stand-in
-#	for command -v; File::Which is not in base.
+#	Return the first executable $program on PATH, or undef. This is
+#	a core-only stand-in for command -v. File::Which is not in base.
 sub _which ($program)
 {
 	for my $dir ( split /:/, ( $ENV{PATH} // '' ) ) {
@@ -119,13 +121,13 @@ sub _which ($program)
 
 # _read_manifest($file, $want):
 #	Parse deps/<OS>.txt into (\@pkgs, \@cpan) for environment $want.
-#	Fields are whitespace-separated, as sh's 'read env type name'
+#	Whitespace separates the fields, as sh's 'read env type name'
 #	read them.
 #
-#	Every non-comment line is validated, not just the ones matching
-#	$want: the shell version filtered first, so a malformed develop
-#	line stayed invisible to 'make deps' until someone ran
-#	'make deps-develop'.
+#	The function validates every non-comment line, not only the
+#	lines that match $want. The shell version filtered first. Thus a
+#	malformed develop line stayed invisible to 'make deps' until
+#	someone ran 'make deps-develop'.
 sub _read_manifest ( $file, $want )
 {
 	open my $fh, '<', $file
@@ -139,8 +141,8 @@ sub _read_manifest ( $file, $want )
 		next unless defined $env;
 		next if index( $env, '#' ) == 0;
 
-		# split with a limit leaves the tail intact, so trailing
-		# whitespace has to go the way IFS would have taken it
+		# split with a limit keeps the tail intact. Remove the
+		# trailing whitespace, as IFS would have removed it.
 		$name =~ s/\s+\z// if defined $name;
 
 		if ( !defined $type || !defined $name || $name eq '' ) {
@@ -163,7 +165,7 @@ sub _read_manifest ( $file, $want )
 }
 
 # _install_packages($os, @pkgs):
-#	Hand the package list to the platform's package manager.
+#	Give the package list to the platform's package manager.
 sub _install_packages ( $os, @pkgs )
 {
 	say 'Installing OS packages: ', join ' ', @pkgs;
@@ -188,11 +190,11 @@ sub _install_packages ( $os, @pkgs )
 # _install_cpanm():
 #	Bootstrap cpanm when it is not already on PATH.
 #
-#	The download goes through scripts/ftp, our own cross-platform
-#	fetcher, rather than curl: curl is not in OpenBSD base, so the
-#	shell version's 'curl -L https://cpanmin.us | perl -' could only
-#	ever have worked because vm-provision installs cpanm with
-#	'cpan -T' before this script first runs on a fresh guest.
+#	The download goes through scripts/ftp, the repository's own cross-platform
+#	fetcher, not through curl. curl is not in OpenBSD base. The
+#	shell version used 'curl -L https://cpanmin.us | perl -'. That
+#	only worked because vm-provision installs cpanm with 'cpan -T'
+#	before this script first runs on a fresh guest.
 sub _install_cpanm ()
 {
 	say 'Installing cpanminus...';
@@ -212,8 +214,9 @@ sub _install_cpanm ()
 }
 
 # _install_cpan(@modules):
-#	Install CPAN modules with cpanm, into PERL_LOCAL_LIB_ROOT when
-#	the environment names one (local::lib, and CI's setup-perl).
+#	Install CPAN modules with cpanm. Install into
+#	PERL_LOCAL_LIB_ROOT when the environment names one. local::lib
+#	and CI's setup-perl set that variable.
 sub _install_cpan (@modules)
 {
 	say 'Installing CPAN modules: ', join ' ', @modules;

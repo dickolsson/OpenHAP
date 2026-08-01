@@ -19,16 +19,18 @@ use v5.36;
 
 package OpenHAP::Test::Controller::SRP;
 
-# Match the server: prefer the GMP backend so the controller's own
-# 3072-bit modexp is not the bottleneck when it runs inside the slow
-# emulated test guest. Falls back to pure-Perl Calc when GMP is absent.
+# Prefer the GMP backend to match the server. Then the controller's
+# own 3072-bit modexp is not the bottleneck inside the slow emulated
+# test guest. When GMP is absent, Math::BigInt falls back to the
+# pure-Perl Calc backend.
 use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
 use OpenHAP::Crypto;
 use OpenHAP::PIN qw(normalize_pin);
 
-# SRP-6a client role for tests (HAP-Pairing.md §2.5): the controller
-# side of the exchange OpenHAP::SRP serves. Same 3072-bit RFC 5054
+# This module is the SRP-6a client role for tests
+# (HAP-Pairing.md §2.5). It is the controller side of the exchange
+# that OpenHAP::SRP serves. It uses the same 3072-bit RFC 5054
 # group, SHA-512 hash, and 384-byte padding rules as the server.
 
 use constant N_LEN => 384;
@@ -83,9 +85,10 @@ sub compute_public ($self)
 }
 
 # $self->compute_proof($salt, $B_bytes):
-#	Complete the client side with the server's salt and public key
-#	B: derive the session key K and return the client proof M1.
-#	Returns undef if B mod N == 0 (bogus server value).
+#	Complete the client side with the server's salt and public
+#	key B. Derive the session key K and return the client proof
+#	M1. Return undef if B mod N == 0, which is a bogus server
+#	value.
 sub compute_proof ( $self, $salt, $B_bytes )
 {
 	die 'SRP: compute_public not called' unless defined $self->{A};

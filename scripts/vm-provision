@@ -3,9 +3,9 @@
 # Provision OpenHAP in the OpenBSD VM
 #
 # Two layers. The deps layer installs the guest's packages and Perl
-# modules and is cached as a fuguvm snapshot, because under TCG
-# emulation it costs as much as the OS install itself. The OpenHAP layer
-# installs this checkout and runs every time.
+# modules. A fuguvm snapshot caches this layer, because under TCG
+# emulation it costs as much as the OS install itself. The OpenHAP
+# layer installs this checkout and runs every time.
 
 set -e
 
@@ -13,8 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
 
-# Read a field from 'fuguvm status'. fuguvm logs to stderr, so stderr
-# has to be folded in for the value to be readable at all.
+# Read a field from 'fuguvm status'. fuguvm logs to stderr. Thus the
+# function folds stderr in. Without that, the value is not readable.
 vm_status() {
 	"${FUGUVM}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
 }
@@ -43,9 +43,9 @@ fi
 echo "Using tarball: ${TARBALL}"
 
 # make deps only exists inside the extracted tarball, along with deps/
-# and scripts/deps which it reads relative to cwd. So the package has
-# to reach the guest before the deps layer runs, not with make install
-# after it.
+# and scripts/deps. make deps reads those relative to the cwd. Thus
+# the package must reach the guest before the deps layer runs, not
+# with make install after it.
 copy_and_extract() {
 	vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
 	vm_run <<'EOF'
@@ -55,11 +55,11 @@ EOF
 }
 
 # The guest itself says whether the deps layer is already present. A
-# host-side flag could not: vm-up and vm-provision are sibling
-# make recipes in separate shells, so nothing can be handed over. The
-# marker travels inside the snapshot, which also answers the local case
-# where nothing was restored but the working disk already carries the
-# dependencies.
+# host-side flag could not. vm-up and vm-provision are sibling
+# make recipes in separate shells. Thus they cannot give data to each
+# other. The marker travels inside the snapshot. Thus it also answers
+# the local case where the script restored nothing, but the working
+# disk already carries the dependencies.
 if vm_run "test -f ${DEPS_MARKER}"; then
 	echo "==> Guest dependencies already present (${DEPS_SNAPSHOT}), skipping"
 else
@@ -67,19 +67,19 @@ else
 	copy_and_extract
 
 	# BEGIN deps layer
-	# Everything between these markers is hashed into DEPS_KEY by
-	# scripts/deps-key: editing it invalidates the cached layer.
-	# Guest heredocs run under set -e so a failed pkg_add/cpan/make
+	# scripts/deps-key hashes everything between these markers into
+	# DEPS_KEY. An edit here invalidates the cached layer.
+	# Guest heredocs run under set -e. Thus a failed pkg_add/cpan/make
 	# cannot report a provisioned guest.
 	#
 	# Every command here that might read stdin needs </dev/null. The
-	# remote shell reads THIS SCRIPT from stdin, so a command that reads
-	# stdin consumes the rest of the script as its own input: cpan(1)
-	# answering its configuration prompts swallowed 'make deps', the
-	# cleanup and the marker below, and the truncated block still exited
-	# 0 - so set -e never fired, the layer was cached without any
-	# dependencies in it, and provisioning failed much later on
-	# 'rcctl enable mosquitto'.
+	# remote shell reads THIS SCRIPT from stdin. Thus a command that
+	# reads stdin consumes the rest of the script as its own input.
+	# Once, cpan(1) answered its configuration prompts and swallowed
+	# 'make deps', the cleanup, and the marker below. The truncated
+	# block still exited 0. Thus set -e never fired. The cache then
+	# held a layer without any dependencies in it, and provisioning
+	# failed much later on 'rcctl enable mosquitto'.
 	vm_run <<EOF
 set -e
 pkg_add -u </dev/null 2>/dev/null || true
@@ -105,24 +105,24 @@ touch ${DEPS_MARKER}
 EOF
 	# END deps layer
 
-	# The layer has to have finished, not merely exited 0: the marker
-	# is its last statement, so its absence means the block was cut
-	# short. Check before snapshotting, or an incomplete layer enters
-	# the cache and every later run restores it.
+	# The layer must have finished, not merely exited 0. The marker
+	# is its last statement. Thus a missing marker means the block
+	# ended early. Check before the snapshot. Otherwise an incomplete
+	# layer enters the cache and every later run restores it.
 	if ! vm_run "test -f ${DEPS_MARKER}"; then
 		echo "Error: deps layer did not complete; not caching" >&2
 		exit 1
 	fi
 
-	# The snapshot verbs run under set -e, and a base-image cache
-	# miss legitimately leaves a standalone disk that cannot be
-	# snapshotted. Guard them here rather than softening the verb: a
-	# cache miss must not abort provisioning.
+	# The snapshot verbs run under set -e. A base-image cache miss
+	# legitimately leaves a standalone disk. fuguvm cannot snapshot
+	# such a disk. Guard the verbs here. Do not soften the verb
+	# itself. A cache miss must not abort provisioning.
 	echo "==> Caching guest dependencies as ${DEPS_SNAPSHOT}..."
 	"${FUGUVM}" down
 	if "${FUGUVM}" snapshot save "${DEPS_SNAPSHOT}"; then
-		# Safe to prune: snapshots are flattened onto the base
-		# image, so no deps-* layer is another one's parent.
+		# The prune is safe. fuguvm flattens snapshots onto the
+		# base image. Thus no deps-* layer is another one's parent.
 		for old in $("${FUGUVM}" snapshot list --names || true); do
 			case "${old}" in
 			deps-*)
@@ -152,7 +152,7 @@ if [ -f /etc/rc.d/openhapd ]; then
 	rcctl stop openhapd 2>/dev/null || true
 	rcctl disable openhapd 2>/dev/null || true
 	cd /tmp/openhap-* && make uninstall 2>/dev/null || true
-	# Remove config to ensure fresh installation for testing
+	# Remove the config so that the test installation is fresh
 	rm -f /etc/openhapd.conf
 fi
 
@@ -183,7 +183,7 @@ rm -f /var/db/openhapd/pairings.db /var/db/openhapd/auth_attempts
 # Clean up
 cd /tmp && rm -rf openhap-* openhap.tar.gz
 
-# Enable and start services (start fails when already running, e.g.
+# Enable and start services (start fails when already running, for example
 # on a warm-cached disk where rc started it at boot)
 rcctl enable mosquitto
 rcctl check mosquitto >/dev/null || rcctl start mosquitto
@@ -191,12 +191,13 @@ rcctl check mosquitto >/dev/null || rcctl start mosquitto
 # Configure and start mdnsd on the primary network interface. The
 # openmdns package ships an rc script whose default flags name an
 # interface this guest does not have (em0), and mdnsd exits fatally
-# on an unknown interface - so the flags must always be set to a real
-# interface here. Guard on the rc script, NOT on 'rcctl get': its exit
-# status reflects whether the service is enabled, which is false on
-# every fresh disk and silently skipped this whole block.
-# Prefer the default-route interface, fall back to the first UP, non
-# loopback interface, and verify the daemon actually came up.
+# on an unknown interface. Thus the flags must always name a real
+# interface here. Guard on the rc script, NOT on 'rcctl get'. The
+# 'rcctl get' exit status shows whether the service is enabled. That
+# is false on every fresh disk and would silently skip this whole
+# block.
+# Prefer the default-route interface. Fall back to the first UP, non
+# loopback interface. Then make sure the daemon started.
 if [ -x /etc/rc.d/mdnsd ]; then
 	IFACE=$(route -n show -inet 2>/dev/null |
 		awk '/^default/ { print $NF; exit }')
@@ -209,9 +210,9 @@ if [ -x /etc/rc.d/mdnsd ]; then
 		rcctl enable mdnsd
 		rcctl set mdnsd flags "${IFACE}"
 		rcctl restart mdnsd || true
-		# Settle-then-verify: an immediate point-in-time check
+		# Settle, then check: an immediate point-in-time check
 		# races green when mdnsd starts and then exits shortly
-		# after. Require it to stay up across the window.
+		# after. Make sure it stays up across the window.
 		mdnsd_up=1
 		for probe in 1 2 3; do
 			sleep 2
@@ -221,9 +222,10 @@ if [ -x /etc/rc.d/mdnsd ]; then
 			fi
 		done
 		if [ "${mdnsd_up}" -ne 1 ]; then
-			# Surface why mdnsd would not stay up so the mDNS
-			# integration tests are diagnosable from CI logs
-			# instead of just reporting a missing daemon.
+			# Show why mdnsd did not stay up.  This makes
+			# the mDNS integration tests diagnosable from
+			# the CI logs, not only from a missing-daemon
+			# report.
 			echo "WARNING: mdnsd did not stay up on ${IFACE}; diagnostics:"
 			rcctl get mdnsd || true
 			ifconfig "${IFACE}" || true
@@ -242,21 +244,22 @@ if [ -x /etc/rc.d/openhapd ]; then
 	rcctl enable openhapd
 
 	# rc.subr gives a daemon 30 seconds to background itself.
-	# openhapd generates its accessory identity keys on first start,
-	# and the 3072-bit SRP work behind that is slow enough under TCG
-	# emulation to blow that budget on a fresh disk.  A warm disk
-	# already carries the keys and starts immediately, which is why
-	# this only bites on the run after the deps layer is rebuilt -
-	# rare enough to look like a flake and stay unfixed.
+	# openhapd generates its accessory identity keys on first start.
+	# The 3072-bit SRP work behind that is slow under TCG emulation.
+	# On a fresh disk it can take more than those 30 seconds.  A warm
+	# disk already carries the keys and starts immediately.  Thus the
+	# timeout hits only on the run after a deps layer rebuild.  That
+	# is rare enough to look like a flake and stay unfixed.
 	# scripts/integration raises OPENHAP_TEST_TIMEOUT for the same
-	# reason; this is the same allowance at the rc layer.
+	# reason.  This is the same allowance at the rc layer.
 	rcctl set openhapd timeout 300
 
 	if ! rcctl check openhapd >/dev/null && ! rcctl start openhapd; then
-		# Say why.  A bare "openhapd(timeout)" is indistinguishable
-		# from a config error, a missing module and a slow start,
-		# and provisioning dies here before the test step's own
-		# diagnostics can run.  Same reasoning as mdnsd above.
+		# Say why.  A bare "openhapd(timeout)" does not show the
+		# cause: a config error, a missing module, and a slow start
+		# all look the same.  Provisioning dies here before the test
+		# step's own diagnostics can run.  Same reasoning as mdnsd
+		# above.
 		echo "WARNING: openhapd would not start; diagnostics:"
 		rcctl get openhapd || true
 		echo "-- config test --"

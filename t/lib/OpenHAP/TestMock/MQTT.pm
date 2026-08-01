@@ -17,9 +17,10 @@
 
 use v5.36;
 
-# Mock MQTT client for host-side tests. Records subscriptions and
-# publishes, and delivers simulated messages to matching subscription
-# callbacks, including + and # wildcard patterns.
+# This module is a mock MQTT client for host-side tests. It records
+# subscriptions and published messages. It delivers simulated
+# messages to the matching subscription callbacks. The match
+# includes the + and # wildcard patterns.
 
 package OpenHAP::TestMock::MQTT;
 
