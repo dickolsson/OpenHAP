@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::Process
-.Nd spawn, monitor and reap child processes
+.Nd child process management
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::Process;
@@ -93,7 +93,7 @@ A
 call with signal 0 shows that the child is still there.
 These tests catch an exec that fails for a reason that the fork cannot
 report,
-for example a command that does not exist.
+for example, a command that does not exist.
 .Ss is_alive
 .Fn is_alive "$pid"
 reports if a process exists and is not a zombie.

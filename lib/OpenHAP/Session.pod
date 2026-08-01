@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Session - Encrypted session state for HAP connections
+OpenHAP::Session - encrypted session state for HAP connections
 
 =head1 SYNOPSIS
 

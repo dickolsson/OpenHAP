@@ -12,7 +12,7 @@ This document tells you how to install OpenHAP on OpenBSD. See
 ## Dependencies
 
 The `make deps` command installs the runtime dependencies. The manifests under
-`deps/` list them for each platform, for example `deps/OpenBSD.txt`.
+`deps/` list them for each platform, for example, `deps/OpenBSD.txt`.
 
 ## Install
 
@@ -96,7 +96,7 @@ openhapd -n -c /etc/openhapd.conf  # Do a check of the configuration
 tail /var/log/daemon | grep openhap
 ```
 
-**The Home app does not show the bridge:**
+**The iOS Home app does not show the bridge:**
 
 ```sh
 rcctl check mdnsd

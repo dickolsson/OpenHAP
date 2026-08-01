@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::DeviceLoader - Loads and instantiates devices from the configuration
+OpenHAP::DeviceLoader - loader for the devices in the configuration
 
 =head1 SYNOPSIS
 

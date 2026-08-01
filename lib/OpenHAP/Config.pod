@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Config - Configuration file parser
+OpenHAP::Config - configuration file parser
 
 =head1 SYNOPSIS
 

@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Accessory - Base class for HAP accessories
+OpenHAP::Accessory - base class for HAP accessories
 
 =head1 SYNOPSIS
 

@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::Daemon
-.Nd detach a Perl program from its controlling terminal
+.Nd daemonization for Perl programs
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::Daemon;
@@ -55,7 +55,7 @@ The child then appends standard output to
 .Fa logfile
 and duplicates standard output onto standard error.
 .Pp
-The arguments are:
+These are the arguments:
 .Bl -tag -width "logfileXX"
 .It Fa logfile
 The path for standard output and standard error.
@@ -93,7 +93,7 @@ dies and does not return if the fork fails, if
 .Xr setsid 2
 fails, or if the module cannot redirect one of the three standard
 descriptors.
-A daemon cannot recover from these start-up conditions.
+A daemon cannot recover from these startup conditions.
 .Sh SEE ALSO
 .Xr setsid 2 ,
 .Xr daemon 3 ,

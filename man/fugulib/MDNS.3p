@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::MDNS
-.Nd publish mDNS services through mdnsd
+.Nd mDNS service publication through mdnsd
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::MDNS;
@@ -123,7 +123,7 @@ on input that is too long.
 This is an error, never a silent truncation.
 The method also returns
 .Dv undef
-on an absent connection, on an error reply (for example a name
+on an absent connection, on an error reply (for example, a name
 collision),
 on an end-of-file, or on a timeout.
 .Ss update_txt

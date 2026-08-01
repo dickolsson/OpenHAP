@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::HAP - Main HAP server
+OpenHAP::HAP - main HAP server
 
 =head1 SYNOPSIS
 

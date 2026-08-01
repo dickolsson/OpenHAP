@@ -24,7 +24,7 @@ makes sure that the process cannot get root again.</dd>
 
 <dt>FuguLib::Process</dt>
 <dd>The module spawns and execs children, and makes sure that a child is
-alive after start-up.  It stops a child with a grace period before
+alive after startup.  It stops a child with a grace period before
 <code>SIGKILL</code>, reaps zombies, and waits for exit.</dd>
 
 <dt>FuguLib::Signal</dt>
@@ -46,7 +46,7 @@ with <code>FuguLib::Process</code>.</dd>
 <a href="https://man.openbsd.org/pledge.2">pledge(2)</a> and
 <a href="https://man.openbsd.org/unveil.2">unveil(2)</a>: the calls are real
 on OpenBSD and do nothing on other platforms.  Thus the callers do not
-examine the operating system.  A failure stops the process; there is no
+examine the operating system.  A method that fails dies; there is no
 warn-and-continue mode.</dd>
 
 <dt>FuguLib::Imsg</dt>
@@ -64,7 +64,7 @@ socket.</dd>
 <h2>Reference</h2>
 
 <p>Each module has a section 3p manual page, and OpenHAP installs the pages
-&mdash; thus <code>man FuguLib::Daemon</code> operates on a machine that has
+&mdash; thus <code>man FuguLib::Daemon</code> finds the page on a machine that has
 OpenHAP.  The pages are also listed under
 <a href="manuals.html#fugulib">FuguLib in the manuals</a>.</p>
 

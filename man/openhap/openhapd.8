@@ -33,7 +33,7 @@ on
 .Ox .
 .Pp
 .Nm
-is a bridge between HomeKit controllers, for example the iOS Home app,
+is a bridge between HomeKit controllers, for example, the iOS Home app,
 and devices that MQTT controls.
 It changes HAP requests into MQTT commands.
 It sends changes of the device state back to HomeKit.
@@ -75,9 +75,9 @@ In that condition, the daemon starts, writes a warning to the log,
 and serves the paired controllers.
 Discovery is not available until you restart
 .Nm
-with
+while
 .Xr mdnsd 8
-active.
+runs.
 .Pp
 On
 .Ox ,
@@ -163,7 +163,7 @@ If a necessary path is absent, this is a fatal configuration error.
 .It perl library directories
 (necessary, read) the library tree of the interpreter, for the one
 module that the daemon loads late, on the MQTT reconnect path.
-.It Pa config file
+.It Pa configuration file
 (optional, read) the file that the
 .Fl c
 option names.
@@ -267,7 +267,7 @@ daemon was first available in 2025.
 .Sh CAVEATS
 For correct operation,
 .Nm
-needs an MQTT broker, for example
+needs an MQTT broker, for example,
 .Xr mosquitto 8 ,
 and
 .Xr mdnsd 8 .

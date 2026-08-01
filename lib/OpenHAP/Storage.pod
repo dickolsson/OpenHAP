@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Storage - Persistent storage for pairing data
+OpenHAP::Storage - persistent storage for pairing data
 
 =head1 SYNOPSIS
 

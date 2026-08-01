@@ -108,7 +108,7 @@ KVM on aarch64 Linux hosts with
 .Pa /dev/kvm ,
 and TCG on all other hosts.
 .It Fl h , Fl Fl help
-Show usage information.
+Show the usage message.
 .El
 .Pp
 These commands are available:
@@ -213,11 +213,11 @@ the installed-image cache that
 describes,
 and the downloads that the built-in proxy keeps for the installer.
 .Cm list
-prints one line for each cached image
+shows one line for each cached image
 .Pq key, size, creation time, snapshot count .
 It puts a mark on the entry that the invoked VM's configuration
 derives at this time.
-Then it prints the proxy's downloads by
+Then it shows the proxy's downloads by
 .Ox
 version.
 .Cm clear
@@ -327,7 +327,7 @@ Stop the VM before you run
 .Cm info
 shows the image details.
 .It Cm help
-Show usage information.
+Show the usage message.
 .El
 .Sh IMAGE CACHE
 An installation of
@@ -348,7 +348,7 @@ are a cheap factory reset.
 .Pp
 Entries are under
 .Ar cache_dir ,
-beside the proxy cache that holds the miniroot and the install sets:
+adjacent to the proxy cache that holds the miniroot and the install sets:
 .Bd -literal -offset indent
 <cache_dir>/proxy/...                            miniroot, install sets
 <cache_dir>/installed/<key>/base.qcow2           mode 0400, compacted
@@ -392,7 +392,7 @@ Entries are immutable and write-once.
 .Nm
 builds each entry whole in a temporary directory,
 and then publishes the entry with a rename of that directory.
-Thus a reader never sees the base image of one installation beside the
+Thus a reader never sees the base image of one installation adjacent to the
 metadata of a different installation.
 .Pp
 A snapshot is an immutable, named layer over the base image of an
@@ -514,7 +514,7 @@ $ fuguvm --vm minimal up
 .Sh HISTORY
 The
 .Nm
-utility first appeared in 2025.
+utility was first available in 2025.
 Its initial purpose was to run the
 .Xr openhapd 8
 test suite against a real
@@ -534,7 +534,7 @@ also stores the password in the
 of that entry
 .Pq mode 0600 .
 The cache makes the life of this secret longer:
-the password survives
+the password stays after
 .Cm destroy ,
 and it changes only when the base key changes.
 .Pp

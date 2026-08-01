@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::HTTP - HTTP/1.1 parser for HAP protocol
+OpenHAP::HTTP - HTTP/1.1 parser for the HAP protocol
 
 =head1 SYNOPSIS
 

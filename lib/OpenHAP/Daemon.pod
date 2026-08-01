@@ -1,6 +1,6 @@
 =head1 NAME
 
-OpenHAP::Daemon - Daemonization and process management
+OpenHAP::Daemon - daemonization and process management
 
 =head1 SYNOPSIS
 
@@ -60,7 +60,7 @@ hold a valid PID.
 
     my $pid = $class->check_running($pidfile)
 
-This method uses the PID file to find if a daemon runs. It returns
+This method uses the PID file to report if a daemon runs. It returns
 the PID if the process exists. If not, it returns undef. The method
 reads the PID file. Then it uses kill(0) to make sure that the
 process runs.

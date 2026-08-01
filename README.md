@@ -20,11 +20,11 @@ Website and manuals: <https://www.openhap.org/>
 
 ```sh
 make deps
-make install
-cp /etc/examples/openhapd.conf /etc/openhapd.conf
-vi /etc/openhapd.conf
-rcctl enable mosquitto openhapd
-rcctl start mosquitto openhapd
+doas make install
+doas cp /etc/examples/openhapd.conf /etc/openhapd.conf
+doas vi /etc/openhapd.conf
+doas rcctl enable mosquitto mdnsd openhapd
+doas rcctl start mosquitto mdnsd openhapd
 ```
 
 See [INSTALL.md](INSTALL.md) for the complete installation instructions.
