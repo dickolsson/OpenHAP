@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::Process
-.Nd spawn, supervise and reap child processes
+.Nd spawn, monitor and reap child processes
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::Process;
@@ -35,65 +35,70 @@ FuguLib::Process->terminate($result->{pid}) if $result->{success};
 .Ed
 .Sh DESCRIPTION
 .Nm
-covers the parts of running a child process that are easy to get wrong:
-telling a child that started from one that exited immediately,
-escalating from
+does the parts of child-process control that are easy to get wrong.
+It shows the difference between a child that runs and a child that
+exits immediately.
+It sends
 .Dv SIGTERM
-to
+first and sends
 .Dv SIGKILL
-on a schedule,
-and reaping zombies without blocking.
+after a delay.
+It reaps zombies and does not block.
 .Pp
-The module keeps no state;
-every method is a class method.
+The module keeps no state.
+Every method is a class method.
 .Ss spawn_command
 .Fn spawn_command "%args"
 forks,
 redirects the standard descriptors,
-and executes a command.
+and runs a command.
 .Pp
-The arguments are as follows:
+These are the arguments:
 .Bl -tag -width "check_aliveXX"
 .It Fa cmd
-Array reference holding the command and its arguments.
-Required, and must not be empty.
+An array reference that holds the command and its arguments.
+This argument is necessary and must not be empty.
 .It Fa daemonize
-If true, the child calls
+If this argument is true, the child calls
 .Xr setsid 2
 before exec.
 The default is false.
 .It Fa stdin , Fa stdout , Fa stderr
-Paths for the child's standard descriptors.
-Each defaults to
+The paths for the child's standard descriptors.
+The default for each path is
 .Pa /dev/null .
 .It Fa check_alive
-Seconds to wait before confirming the child survived.
-The default is 1;
-0 skips the check and returns as soon as the fork succeeds.
+The number of seconds to wait before the check that the child continues
+to run.
+The default is 1.
+If the value is 0, the method does not do the check and returns when
+the fork succeeds.
 .It Fa on_success
-Code reference called with the child's process ID once the spawn is
-judged successful.
+A code reference that the method calls with the child's process ID when
+the spawn is successful.
 .It Fa on_error
-Code reference called with a message when the spawn fails.
+A code reference that the method calls with a message when the spawn
+fails.
 .El
 .Pp
 When
 .Fa check_alive
-is non-zero the parent sleeps for that many seconds and then makes two
-tests: a non-blocking
-.Xr waitpid 2 ,
-which reaps the child and proves it exited,
-and
+is not zero,
+the parent sleeps for that number of seconds and then does two tests.
+A
+.Xr waitpid 2
+call that does not block reaps the child and shows that it exited.
+A
 .Xr kill 2
-with signal 0,
-which proves it is still there.
-This is what catches an exec that failed for a reason the fork could not
-report, such as a command that does not exist.
+call with signal 0 shows that the child is still there.
+These tests catch an exec that fails for a reason that the fork cannot
+report,
+for example a command that does not exist.
 .Ss is_alive
 .Fn is_alive "$pid"
-reports whether a process exists and is not a zombie.
-A zombie child is reaped as a side effect of the check and then reported
-as not alive.
+reports if a process exists and is not a zombie.
+The check reaps a zombie child as a side effect and then reports it as
+not alive.
 .Ss terminate
 .Fn terminate "$pid" "%args"
 sends
@@ -101,85 +106,87 @@ sends
 waits,
 and sends
 .Dv SIGKILL
-if that was not enough.
+if the process continues to run.
 .Pp
-The arguments are as follows:
+These are the arguments:
 .Bl -tag -width "grace_periodXX"
 .It Fa grace_period
-Seconds to wait between the two signals.
+The number of seconds to wait between the two signals.
 The default is 5.
 .It Fa on_kill
-Code reference called once the process is gone.
+A code reference that the method calls when the process is gone.
 .El
 .Ss reap
 .Fn reap "$pid"
-reaps one zombie child without blocking.
+reaps one zombie child and does not block.
 .Ss reap_all
 .Fn reap_all
-reaps every zombie child that is ready,
-without blocking,
-and returns how many there were.
+reaps each zombie child that is ready and does not block.
+It returns the number of children that it reaped.
 .Ss wait_exit
 .Fn wait_exit "$pid" "$timeout"
-polls until the process exits or the timeout expires.
+polls until the process exits or until the timeout ends.
+The default for
 .Fa $timeout
-defaults to 30 seconds.
+is 30 seconds.
 .Ss spawn_perl
 .Fn spawn_perl "%args"
-runs Perl code in a child process,
-passing through the
+runs Perl code in a child process.
+It gives the child the parent's
 .Ic -I
-paths the parent picked up from
+paths.
+The parent gets these paths from
 .Ic -I ,
 .Ic use lib
 or
-.Ev PERL5LIB ,
-so the child sees the same modules.
+.Ev PERL5LIB .
+Thus the child sees the same modules.
 .Pp
 .Fa code
-is the program text and
+is the program text.
 .Fa args
-an array reference of arguments for it;
-every other argument is handed to
+is an array reference of arguments for the program.
+The method gives all other arguments to
 .Fn spawn_command .
 .Sh RETURN VALUES
 .Fn spawn_command
 and
 .Fn spawn_perl
 return a hash reference.
-On success it holds
+On success, the hash holds
 .Fa success
 set to 1 and
 .Fa pid .
-On failure
+On failure,
 .Fa success
 is 0 and
 .Fa error
-describes what went wrong;
+gives the cause.
+When the spawn makes a child and the child dies,
+the hash also holds
 .Fa pid
 and
-.Fa exit_code
-are also present when the child was reached and died.
+.Fa exit_code .
 .Pp
 .Fn is_alive
 returns 1 or 0.
 .Pp
 .Fn terminate
-returns 1 if the process is gone,
-0 if it survived
+returns 1 if the process is gone.
+It returns 0 if the process continues after
 .Dv SIGKILL .
 .Pp
 .Fn reap
-returns 1 if the child was reaped or was never there,
-0 if it is still running.
+returns 1 when it reaps the child or when the child does not exist.
+It returns 0 when the child continues to run.
 .Fn reap_all
 returns a count.
 .Pp
 .Fn wait_exit
-returns 1 if the process exited within the timeout,
-0 otherwise.
+returns 1 if the process exits in the timeout period.
+If not, it returns 0.
 .Sh EXAMPLES
-Run a helper and stop it again:
+This example runs a helper and then stops it:
 .Bd -literal -offset indent
 my $r = FuguLib::Process->spawn_command(
     cmd      => [ 'mdnsctl', 'publish', $name, '_hap', 'tcp', $port ],
@@ -191,11 +198,11 @@ FuguLib::Process->terminate($r->{pid}, grace_period => 10)
 .Ed
 .Sh ERRORS
 No method dies.
-Failures are reported through the returned hash reference or the boolean
-return value,
-and through
+The methods report failures through the hash reference or the boolean
+value that they return.
+When you give an
 .Fa on_error
-when one was supplied.
+callback, the methods also report the failure through it.
 .Sh SEE ALSO
 .Xr kill 2 ,
 .Xr setsid 2 ,
@@ -210,32 +217,34 @@ blocks the caller for
 .Fa check_alive
 seconds.
 The check is a plain
-.Xr sleep 3 ,
-so a program that spawns several children pays for each one in turn.
+.Xr sleep 3 .
+Thus a program that spawns several children waits the full time for
+each child in sequence.
 .Pp
-A child that legitimately finishes inside the
+The method reports a child that correctly stops in the
 .Fa check_alive
-window is reported as a failure,
-with an
+window as a failure.
+The
 .Fa error
-saying it completed immediately and an
+says that the child stopped immediately, and the
 .Fa exit_code
-of 0.
-Use
+is 0.
+Set
 .Fa check_alive
-set to 0 for commands that are expected to be short.
+to 0 for commands that stop quickly.
 .Pp
 .Fn is_alive
 and
 .Fn reap
 call
 .Xr waitpid 2 ,
-which only ever reaps children of the calling process.
-For any other process they fall back to
+which reaps only the children of the caller.
+For all other processes, they use
 .Xr kill 2
-with signal 0,
-which cannot distinguish a live process from a zombie.
+with signal 0.
+This signal cannot show the difference between a live process and a
+zombie.
 .Pp
-Process IDs are recycled.
-Nothing here can tell the process that was asked about from a later one
-that inherited its number.
+The operating system uses process IDs again for new processes.
+The module cannot show the difference between the initial process and a
+later process with the same number.

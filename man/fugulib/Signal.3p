@@ -36,53 +36,58 @@ until (FuguLib::Signal::check_interrupted()) {
 .Ed
 .Sh DESCRIPTION
 .Nm
-installs signal handlers so that a program can be interrupted without
-leaving temporary files, child processes or half-written state behind.
+installs signal handlers so that a signal can interrupt a program
+safely.
+The program does not leave temporary files, child processes or
+half-written state behind.
 .Pp
 There are two shapes.
 .Fn setup_graceful_exit
-runs the cleanup handlers and exits from inside the signal handler,
-which suits a program whose work can be abandoned at any point.
+runs the cleanup handlers and exits from inside the signal handler.
+This shape is correct for a program that can stop its work at all
+times.
 .Fn setup_interrupt_flag
-only raises a flag,
-leaving the program to notice it and stop where stopping is safe.
+only sets a flag.
+The program must do a check of the flag and stop where a stop is safe.
 .Pp
-Either way the previous handlers are remembered and put back by
-.Fn restore ,
-which the destructor calls,
-so a scoped object leaves the process as it found it.
+In each shape, the object keeps the previous handlers.
+.Fn restore
+puts them back,
+and the destructor calls
+.Fn restore .
+Thus a scoped object leaves the process in its initial state.
 .Ss new
 .Fn new
 creates a signal handler manager.
-It installs nothing on its own.
+It does not install handlers.
 .Ss setup_graceful_exit
 .Fn setup_graceful_exit "@signals"
-installs a handler for each named signal that sets the interrupt flag,
+installs a handler for each named signal.
+The handler sets the interrupt flag,
 runs the cleanup handlers,
 and exits with status 130.
 .Ss setup_interrupt_flag
 .Fn setup_interrupt_flag "@signals"
-installs a handler for each named signal that sets the interrupt flag and
-returns.
-Nothing else happens until the program looks at the flag.
+installs a handler for each named signal.
+The handler sets the interrupt flag and returns.
+No other action occurs until the program reads the flag.
 .Ss add_cleanup
 .Fn add_cleanup "$handler"
-adds a code reference to be called,
+adds a code reference that runs,
 with the signal name as its argument,
 before
 .Fn setup_graceful_exit
 exits.
-Handlers run in the order they were added,
-each inside an
-.Ic eval ,
-so one that dies does not stop the rest.
+The handlers run in the sequence in which you add them.
+Each handler runs inside an
+.Ic eval .
+Thus a handler that dies does not stop the others.
 .Ss restore
 .Fn restore
-puts back the handlers that were in place before this object installed
-its own.
+puts back the handlers that this object replaced.
 .Ss check_interrupted
 .Fn check_interrupted
-reports whether a handled signal has arrived.
+reports if a handled signal came.
 It is a plain function, not a method.
 .Ss reset_interrupted
 .Fn reset_interrupted
@@ -96,13 +101,13 @@ returns a signal handler manager.
 .Fn add_cleanup
 and
 .Fn restore
-return the object,
-so they chain.
+return the object.
+Thus the calls can chain.
 .Pp
 .Fn check_interrupted
-returns true if a handled signal has arrived.
+returns true if a handled signal came.
 .Sh EXAMPLES
-Stop between items rather than in the middle of one:
+This example stops between items and not in the middle of one:
 .Bd -literal -offset indent
 my $sig = FuguLib::Signal->new;
 $sig->setup_interrupt_flag('INT', 'TERM');
@@ -114,7 +119,7 @@ for my $item (@items) {
 .Ed
 .Sh ERRORS
 No method dies.
-A cleanup handler that dies is caught and ignored.
+If a cleanup handler dies, the module catches the error and ignores it.
 .Sh SEE ALSO
 .Xr perlipc 1 ,
 .Xr kill 2 ,
@@ -123,19 +128,20 @@ A cleanup handler that dies is caught and ignored.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-The interrupt flag and the list of cleanup handlers are package globals,
+The interrupt flag and the list of cleanup handlers are package
+globals,
 not per-object.
-Two managers in one process share both:
-a cleanup handler added through one runs for a signal caught by the other,
-and
+Two managers in one process share the flag and the list.
+A cleanup handler that you add through one manager runs for a signal
+that the other manager catches.
 .Fn reset_interrupted
-clears the flag for both.
+clears the flag for each manager.
 .Pp
-The cleanup list is emptied once it has run,
-so a second signal after a graceful exit has begun finds nothing left to
-clean up.
+The module empties the cleanup list after the list runs.
+Thus a second signal that comes after the start of a graceful exit
+finds no handlers.
 .Pp
-Handlers are ordinary Perl signal handlers and run between opcodes,
+The handlers are standard Perl signal handlers and run between opcodes,
 not immediately.
-A program blocked in a system call notices the signal when the call
+A program that a system call blocks sees the signal when the call
 returns.

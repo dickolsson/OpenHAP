@@ -19,7 +19,7 @@
 .Os
 .Sh NAME
 .Nm FuguLib::State
-.Nd PID file handling
+.Nd PID file management
 .Sh SYNOPSIS
 .Bd -literal
 use FuguLib::State;
@@ -34,9 +34,9 @@ $state->write_pid;
 .Ed
 .Sh DESCRIPTION
 .Nm
-reads and writes a PID file and answers whether the process it names is
-still there.
-It exists so that a daemon,
+reads and writes a PID file.
+It also tells if the process that the file names is still there.
+The module exists so that a daemon,
 its
 .Xr rc.d 8
 script,
@@ -46,37 +46,39 @@ and a control utility can all agree on the same question.
 creates a state object for the named file.
 The argument is positional,
 not a keyword pair.
-The file is neither created nor read at this point.
+The method does not create and does not read the file at this point.
 .Ss write_pid
 .Fn write_pid "$pid"
 writes
-.Fa $pid ,
-followed by a newline,
-to the PID file,
-truncating whatever was there.
 .Fa $pid
-defaults to the calling process.
-The file is locked with
+and a newline to the PID file.
+It truncates the previous contents.
+The default for
+.Fa $pid
+is the process ID of the caller.
+The method locks the file with
 .Xr flock 2
 between the open and the write.
 .Ss read_pid
 .Fn read_pid
-returns the process ID recorded in the file.
-The first line must be a run of decimal digits;
-anything else, including a missing file, reads as no PID at all.
+returns the process ID that the file holds.
+The first line must be a sequence of decimal digits.
+If the contents are different, or if the file is missing, the method
+returns no PID.
 .Ss remove
 .Fn remove
-deletes the PID file.
+removes the PID file.
 .Ss is_running
 .Fn is_running
-returns the recorded process ID if that process is alive,
-as judged by
-.Xr FuguLib::Process 3p .
+returns the process ID from the file if that process is alive.
+The method uses
+.Xr FuguLib::Process 3p
+for the liveness check.
 .Ss is_stale
 .Fn is_stale
-reports whether the PID file names a process that is no longer alive:
-the condition under which a daemon may take the file over rather than
-refusing to start.
+reports if the PID file names a process that is not alive now.
+In this condition, a daemon can take the file and does not refuse to
+start.
 .Sh RETURN VALUES
 .Fn new
 returns a state object,
@@ -88,7 +90,8 @@ is
 .Dv undef .
 .Pp
 .Fn write_pid
-returns 1 on success and 0 if the file could not be opened or locked.
+returns 1 on success.
+It returns 0 if it cannot open or lock the file.
 .Pp
 .Fn read_pid
 and
@@ -96,18 +99,19 @@ and
 return a process ID,
 or
 .Dv undef
-when there is none to report.
+when there is no process ID to report.
 .Pp
 .Fn remove
-returns 1 if the file was already absent,
-otherwise the result of
+returns 1 if the file is already absent.
+If not, it returns the result of
 .Xr unlink 2 .
 .Pp
 .Fn is_stale
-returns 0 when the file holds no readable PID,
-so a missing PID file is not stale.
+returns 0 when the file holds no readable PID.
+Thus a missing PID file is not stale.
 .Sh EXAMPLES
-Refuse to start twice, and clean up after a crash:
+This example prevents a second start and removes the file after a
+crash:
 .Bd -literal -offset indent
 my $state = FuguLib::State->new('/var/run/mydaemon.pid');
 
@@ -122,8 +126,9 @@ FuguLib::Daemon->daemonize(
 .Ed
 .Sh ERRORS
 No method dies.
-Failures to open, lock or unlink the file are reported through the return
-value, and the reason is left in
+The methods report a failure to open, lock or unlink the file through
+the return value.
+The reason stays in
 .Va $! .
 .Sh SEE ALSO
 .Xr flock 2 ,
@@ -133,25 +138,22 @@ value, and the reason is left in
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-The lock taken by
 .Fn write_pid
-is released when the file is closed,
-at the end of that call.
-It serialises two concurrent writes;
-it does not hold the PID file for the lifetime of the daemon,
-and
+releases its lock when it closes the file,
+at the end of the call.
+The lock puts two concurrent writes in sequence.
+It does not hold the PID file for the life of the daemon.
 .Fn read_pid
-does not take a lock at all.
+does not take a lock.
 .Pp
-Checking
+A check with
 .Fn is_running
-and then acting on the answer is inherently racy:
-the process may exit,
-or another may claim the file,
-in between.
+and then an action on the answer is a race condition.
+In between, the process can exit,
+or a different process can claim the file.
 .Pp
 .Fn is_running
-inherits the limits of
-.Xr FuguLib::Process 3p Ns 's
-liveness check,
-which cannot tell a recycled process ID from the original.
+has the same limits as the liveness check of
+.Xr FuguLib::Process 3p .
+That check cannot show the difference between the initial process and a
+later process with the same ID.

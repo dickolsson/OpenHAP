@@ -28,48 +28,51 @@ FuguLib::Privdrop->drop_privileges(user => '_openhap');
 .Ed
 .Sh DESCRIPTION
 .Nm
-implements the privilege drop an
+does the privilege drop that an
 .Ox
-daemon performs once its privileged work is done:
-bind the reserved port,
-fork the helper that needs root,
-then give up root for good and run the event loop as an unprivileged user.
+daemon does when its privileged work is complete.
+The daemon binds the reserved port and forks the helper that must have
+root.
+Then the daemon gives up root permanently and runs the event loop as an
+unprivileged user.
 .Pp
-The module keeps no state and has a single class method.
+The module keeps no state and has one class method.
 .Ss drop_privileges
 .Fn drop_privileges "%args"
-switches the process to the given user and group and verifies that root
-cannot be regained.
+switches the process to the given user and group.
+It then makes sure that the process cannot get root again.
 .Pp
-The arguments are as follows:
+These are the arguments:
 .Bl -tag -width "groupXX"
 .It Fa user
-Name of the user to become.
-Required.
+The name of the user to become.
+This argument is necessary.
 .It Fa group
-Name of the group to become.
-Optional;
-the user's primary group is used if it is omitted.
+The name of the group to become.
+This argument is optional.
+If you omit it, the method uses the user's primary group.
 .El
 .Pp
-The method returns immediately if the effective user ID is not 0,
-so a program that is already unprivileged may call it unconditionally.
-Otherwise it resolves the user and group,
-calls
+If the effective user ID is not 0,
+the method returns immediately.
+Thus a program that is already unprivileged can call it in all cases.
+In the other case, the method resolves the user and the group.
+It calls
 .Xr setgid 2
 before
-.Xr setuid 2 ,
-assigns the real and effective IDs,
-and then confirms both that neither ID is 0 any more and that calling
+.Xr setuid 2
+and sets the real and effective IDs.
+Then it makes sure that the two IDs are not 0.
+It also makes sure that a call to
 .Xr setuid 2
 with 0 does not bring root back.
 .Sh RETURN VALUES
 .Fn drop_privileges
-returns 1 on success,
-including the case where the process was already unprivileged.
-It never returns on failure.
+returns 1 on success.
+A call from a process that is already unprivileged is a success.
+The method never returns on failure.
 .Sh EXAMPLES
-Bind a reserved port as root, then run as
+This example binds a reserved port as root and then runs as
 .Ar _myapp :
 .Bd -literal -offset indent
 my $socket = IO::Socket::INET->new(
@@ -86,20 +89,26 @@ while (my $client = $socket->accept) {
 .Ed
 .Sh ERRORS
 .Fn drop_privileges
-dies,
-rather than returning a failure indication,
-when
+does not return a failure code.
+It dies in these conditions:
+.Bl -bullet -offset indent
+.It
+The
 .Fa user
-is missing,
-when the user or group cannot be resolved,
-when
+argument is missing.
+.It
+The method cannot resolve the user or the group.
+.It
 .Xr setgid 2
 or
 .Xr setuid 2
-fails,
-or when the process still holds root afterwards.
-A privilege drop that half succeeded is not something a caller can be
-allowed to continue past.
+fails.
+.It
+The process holds root after the calls.
+.El
+.Pp
+The caller must not continue after a privilege drop that is not
+complete.
 .Sh SEE ALSO
 .Xr setgid 2 ,
 .Xr setuid 2 ,
@@ -108,14 +117,14 @@ allowed to continue past.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-Supplementary groups are not changed.
-A process that was started as root keeps whatever supplementary groups
-it inherited,
-which on
-.Ox
-is how a daemon retains access to the
+The method does not change the supplementary groups.
+A process that starts as root keeps the supplementary groups that it
+inherits.
+On
+.Ox ,
+this is how a daemon keeps access to the
 .Xr mdnsd 8
-socket after dropping to its own user.
-Callers that need the groups cleared must call
+socket after it drops to its own user.
+To remove the groups, call
 .Xr setgroups 2
-themselves before dropping.
+before the privilege drop.
