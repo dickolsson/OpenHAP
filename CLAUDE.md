@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+> **CRITICAL: Write all output and all artifacts in ASD-STE100 Simplified
+> Technical English.** This rule applies to the README, `INSTALL.md`, man pages,
+> `.pod` sidecars, website text, code comments, commit messages, and chat
+> replies. Use the active voice and the approved words. Keep each instruction
+> shorter than 20 words and each descriptive sentence shorter than 25 words.
+> Write one instruction in each sentence. Do not change technical names,
+> commands, or code examples.
+
 OpenHAP is a HomeKit Accessory Protocol (HAP) server for **OpenBSD**, written in
 Perl (v5.36, base-system Perl, minimal dependencies). It bridges MQTT-connected
 Tasmota devices to Apple HomeKit: SRP-6a pairing, Ed25519, X25519,
