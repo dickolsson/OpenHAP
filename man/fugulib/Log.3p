@@ -36,13 +36,13 @@ $log->err('cannot open %s: %s', $path, $!);
 .Ed
 .Sh DESCRIPTION
 .Nm
-gives a program one logging interface whether it is running as a daemon
-or in the foreground.
-The destination is chosen once,
-when the logger is created,
-and every call site is written the same way regardless.
+gives a program one logging interface whether the program runs as a
+daemon or in the foreground.
+The caller selects the destination one time, when it creates the
+logger.
+Every call site then has the same form for all destinations.
 .Pp
-Messages below the configured level are discarded.
+The logger discards messages below the configured level.
 The levels, from lowest to highest, are
 .Cm debug ,
 .Cm info ,
@@ -54,51 +54,51 @@ and
 .Ss new
 .Fn new "%args"
 creates a logger.
-The arguments are as follows:
+The arguments are:
 .Bl -tag -width "facilityXX"
 .It Fa mode
-Where messages go.
-One of:
+The destination for messages.
+The value is one of:
 .Pp
 .Bl -tag -width "syslogXX" -compact
 .It Cm syslog
-Through
+Messages go through
 .Xr syslog 3 .
+The logger calls
 .Xr openlog 3
-is called immediately with the
+immediately with the
 .Cm ndelay
 and
 .Cm pid
 options.
 .It Cm stderr
-To standard error,
-one line per message,
-prefixed with a local-time stamp and the upper-cased level.
+Messages go to standard error, with one line for each message.
+Each line starts with a local-time stamp and the level in upper case.
 .It Cm quiet
-Nowhere.
-Messages are discarded before the level is even considered.
+Messages go nowhere.
+The logger discards them before it does a check of the level.
 .El
 .Pp
 The default is
 .Cm stderr .
 .It Fa level
-Lowest level to emit.
+The lowest level to emit.
 The default is
 .Cm info .
 .It Fa ident
-Program name passed to
+The program name that the logger passes to
 .Xr openlog 3 .
 The default is
 .Ql fugulib .
-Ignored unless
+The logger uses this argument only when
 .Fa mode
 is
 .Cm syslog .
 .It Fa facility
-Syslog facility,
-either a
+The syslog facility.
+The value is a
 .Xr Sys::Syslog 3p
-constant or one of the names
+constant, or one of the names
 .Cm daemon ,
 .Cm user
 or
@@ -113,30 +113,32 @@ The default is
 $log->info($fmt, @args);
 .Ed
 .Pp
-Log one message at the level named by the method.
+Each method logs one message at the level that its name gives.
 When
 .Fa @args
-is non-empty the message is
+is not empty, the method formats
 .Fa $fmt
-formatted through
-.Xr sprintf 3 ;
-otherwise
+through
+.Xr sprintf 3 .
+When
+.Fa @args
+is empty, the method uses
 .Fa $fmt
-is used literally.
+as a literal string.
 .Pp
 .Fn warn
 is a synonym for
-.Fn warning
+.Fn warning ,
 and
 .Fn err
-for
-.Fn error ,
-so that either the syslog or the English spelling reads naturally at the
-call site.
+is a synonym for
+.Fn error .
+Thus the call site can use the syslog spelling or the English
+spelling.
 .Ss set_level
 .Fn set_level "$level"
-changes the lowest level to emit on an existing logger.
-Anything not recognised as a level name is treated as
+changes the lowest level to emit on a logger after its creation.
+If the value is not a known level name, the logger uses
 .Cm info .
 .Sh RETURN VALUES
 .Fn new
@@ -145,8 +147,8 @@ The logging methods and
 .Fn set_level
 have no useful return value.
 .Sh EXAMPLES
-Log to standard error in the foreground and to syslog otherwise,
-without changing any call site:
+This example logs to standard error in the foreground, and to syslog
+in the background, with no change to the call sites:
 .Bd -literal -offset indent
 my $log = FuguLib::Log->new(
     mode  => $foreground ? 'stderr' : 'syslog',
@@ -159,14 +161,14 @@ my $log = FuguLib::Log->new(
 dies if
 .Fa mode
 is not one of the three names above.
-An unrecognised
+An unknown
 .Fa level
 or
 .Fa facility
-is not an error:
-the level falls back to
-.Cm info
-and the facility to
+is not an error.
+The level becomes
+.Cm info ,
+and the facility becomes
 .Dv LOG_DAEMON .
 .Sh SEE ALSO
 .Xr syslog 3 ,
@@ -176,19 +178,19 @@ and the facility to
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-The format string is passed to
+The logging methods pass the format string to
 .Xr sprintf 3
 only when arguments follow it.
-A message that happens to contain a percent sign is therefore safe on its
-own but not once an argument is added,
-so log variable text as
-.Ql %s
-rather than interpolating it into the format.
+Thus a message that has a percent sign is safe alone, but not when an
+argument follows.
+Log variable text with
+.Ql %s .
+Do not interpolate the text into the format string.
 .Pp
-A single process should create one syslog-mode logger.
+A process must create no more than one syslog-mode logger.
 .Xr openlog 3
 and
 .Xr closelog 3
-act on process-wide state,
-so a second logger going out of scope closes the connection the first one
-is still using.
+act on process-wide state.
+Thus, when a second logger goes out of scope, it closes the connection
+that the first logger still uses.
