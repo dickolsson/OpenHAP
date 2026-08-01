@@ -99,7 +99,7 @@ sub up ($self)
 		return EXIT_ERROR;
 	}
 
-	# Check for an unclean shutdown. Then verify the disk integrity.
+	# Check for an unclean shutdown. Then check the disk integrity.
 	if ( $state->was_unclean_shutdown ) {
 		$log->warning("Detected unclean shutdown, checking disk...");
 		my $disk  = FuguVM::Disk->new( $state->{state_dir} );
@@ -814,7 +814,7 @@ sub _install_ssh_key ( $self, $password )
 
 # P1: Graceful shutdown with filesystem sync
 # The method tries these procedures in order of reliability:
-# 1. SSH sync + ACPI powerdown (sync via SSH, powerdown via QMP)
+# 1. SSH sync + ACPI powerdown (sync through SSH, powerdown through QMP)
 # 2. QGA guest-shutdown (if available)
 # 3. Direct ACPI powerdown
 sub _graceful_shutdown ($self)
@@ -945,7 +945,7 @@ sub _is_running ($self)
 	# Check if the process is alive
 	return 0 if !kill( 0, $pid );
 
-	# Verify through QMP when possible. QMP is more reliable.
+	# Check through QMP when possible. QMP is more reliable.
 	my $qmp = $self->_qmp_connect;
 	if ($qmp) {
 		my $running = $qmp->is_running;

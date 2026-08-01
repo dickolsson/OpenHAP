@@ -12,7 +12,7 @@
 # view. It asserts that startup still succeeds in the configurations
 # that worked before the sandbox existed. If you remove the pledge
 # or unveil call from bin/openhapd, the corresponding syscall is
-# simply absent from the trace.
+# absent from the trace.
 #
 # The forked children of t/fugulib/sandbox.t prove the enforcement
 # semantics: a violation aborts, and a path outside the view is

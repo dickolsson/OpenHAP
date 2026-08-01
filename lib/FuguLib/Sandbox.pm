@@ -74,7 +74,7 @@ sub pledge ( $, %args )
 #	Restrict the filesystem view. The list is ordered, not a hash.
 #	unveil(2) replaces rather than merges a path's permissions.
 #	Thus the parent-then-child order is load-bearing, and hash key
-#	order would randomise it. Each entry may carry
+#	order would randomize it. Each entry may carry
 #	{ optional => 1 } as a third element. The method skips a
 #	missing optional path and reports it through on_skip. A
 #	missing required path dies. To accept a typo'd path silently

@@ -1,7 +1,7 @@
 name: Test
 
 # Use explicit includes, never excludes. Only what `make test` and
-# `make spec-coverage` actually load may start a run. Note that the
+# `make spec-coverage` load may start a run. Note that the
 # Build workflow releases from a successful run of this one. Thus a
 # path that this list omits is also a change that never ships.
 on:

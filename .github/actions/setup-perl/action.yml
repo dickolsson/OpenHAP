@@ -32,7 +32,7 @@ runs:
       env:
         DEPENDENCIES: ${{ inputs.dependencies }}
       run: |
-        # Fail closed. Fail first. An unrecognised environment selects
+        # Fail closed. Fail first. An unrecognized environment selects
         # nothing. `make deps-typo` would then be a no-op, or an error
         # many minutes into the job.
         case "$DEPENDENCIES" in
@@ -53,7 +53,7 @@ runs:
       shell: bash
       run: |
         # Only the bootstrap. Everything else comes from
-        # deps/Linux.txt via `make deps*` below, which is the single
+        # deps/Linux.txt with `make deps*` below, which is the single
         # authoritative list. This step installs cpanminus from a
         # package instead of leaving it to scripts/deps. Otherwise
         # scripts/deps would fetch and build App::cpanminus from
@@ -143,7 +143,7 @@ runs:
       # packages. Also, cpanm over an already-complete tree is a
       # version check per module, not a build. scripts/deps is
       # idempotent, so this step also makes sure that a restored tree
-      # is actually usable.
+      # is usable.
       run: make ${{ steps.env.outputs.target }}
 
     - name: Save the CPAN tree

@@ -55,7 +55,7 @@ my $env = shift @ARGV;
 defined $env
     or die "usage: deps [--dry-run] [--os NAME] <runtime|test|develop>\n";
 
-# An unrecognised environment selects nothing. The shell version then
+# An unrecognized environment selects nothing. The shell version then
 # reported success for having installed it. Say so instead.
 grep { $_ eq $env } ENVIRONMENTS
     or die "deps: unknown environment '$env' (expected "
@@ -190,7 +190,7 @@ sub _install_packages ( $os, @pkgs )
 # _install_cpanm():
 #	Bootstrap cpanm when it is not already on PATH.
 #
-#	The download goes through scripts/ftp, our own cross-platform
+#	The download goes through scripts/ftp, the repository's own cross-platform
 #	fetcher, not through curl. curl is not in OpenBSD base. The
 #	shell version used 'curl -L https://cpanmin.us | perl -'. That
 #	only worked because vm-provision installs cpanm with 'cpan -T'

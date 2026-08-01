@@ -212,7 +212,7 @@ eval { require Net::MQTT::Simple; 1 };
 
 # Steps 2 and 3: OpenHAP::Daemon->unveil_paths assembles the
 # inventory with its required/optional dispositions. Storage's
-# make_path already created $db_path via HAP->new. Thus a $db_path
+# make_path already created $db_path through HAP->new. Thus a $db_path
 # that is still missing is a hard failure. That failure is correct.
 FuguLib::Sandbox->unveil(
 	paths => [

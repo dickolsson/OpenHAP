@@ -80,7 +80,7 @@ sub setup ($self)
 		ident => 'openhap-integration'
 	);
 
-	# Verify the system prerequisites
+	# Check the system prerequisites
 	$self->_verify_system or die "System prerequisites not met\n";
 
 	# Parse the configuration
@@ -135,7 +135,7 @@ sub get_controller ( $self, %args )
 }
 
 # $self->ensure_unpaired():
-#	Make sure the daemon is verifiably unpaired. When stored
+#	Make sure the daemon is unpaired. When stored
 #	pairings exist, stop the daemon, wipe the pairing state, and
 #	start it again. The wipe keeps the accessory identity. A
 #	POST /identify probes the post-condition. It succeeds only

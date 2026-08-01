@@ -25,7 +25,7 @@ use Time::HiRes qw(time);
 
 # FuguLib::Imsg - the base-system imsg(3) framing over a connected
 # stream socket. Each message is a fixed native-endian header followed
-# by a payload. The module does serialisation only. It never opens or
+# by a payload. The module does serialization only. It never opens or
 # names a socket itself, and it never logs. The callers decide what an
 # error means.
 

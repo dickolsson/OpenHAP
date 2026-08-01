@@ -32,7 +32,7 @@ SKIP: {
 	like( $@, qr/Cannot get GID for group/, 'drop_privileges fails with invalid group' );
 }
 
-# Test 5: drop_privileges when already non-root (should be no-op)
+# Test 5: drop_privileges when already non-root (a no-op)
 SKIP: {
 	skip 'Running as root, cannot test non-root behavior', 1 if $> == 0;
 	

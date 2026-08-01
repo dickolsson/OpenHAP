@@ -88,7 +88,7 @@ subtest '[HAP-Pairing §2.2][HAP-Pairing §2.8] full pair-setup M1-M6' =>
 	is( length( $controller->{accessory_ltpk} ),
 		32, 'accessory LTPK is a 32-byte Ed25519 key' );
 
-	# The accessory is actually paired now
+	# The accessory is paired now
 	ok( $hap->is_paired, 'accessory is paired after M6' );
 	my $pairings = $hap->{storage}->load_pairings;
 	ok( exists $pairings->{'openhap-test-ctrl'},

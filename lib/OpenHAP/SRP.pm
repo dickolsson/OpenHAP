@@ -121,7 +121,7 @@ sub compute_session_key ( $self, $A_bytes )
 {
 	my $A = Math::BigInt->from_hex( unpack( 'H*', $A_bytes ) );
 
-	# Security: verify A mod N != 0. This is an SRP-6a
+	# Security: make sure that A mod N != 0. This is an SRP-6a
 	# requirement per HAP-Pairing.md §2.6. A malicious
 	# controller can send A = 0, N, or 2N to make the shared
 	# secret predictable and thus bypass authentication.

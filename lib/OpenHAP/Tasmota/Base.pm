@@ -404,7 +404,7 @@ sub blink ( $self, $on = 1 )
 
 # $self->query_status($type):
 #	Query the device status.
-#	$type: 0 = all, 8 = sensors, 11 = full state, etc.
+#	$type: 0 = all, 8 = sensors, 11 = full state, and other STATUS codes
 sub query_status ( $self, $type = 11 )
 {
 	$self->{mqtt_client}

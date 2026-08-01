@@ -122,7 +122,7 @@ SKIP: {
     is($result, 2, 'negative timeout returns EXIT_INVALID_ARGS');
 }
 
-# Issue 1: Long VM name via CLI
+# Issue 1: A long VM name from the CLI
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     my $orig_dir = getcwd();

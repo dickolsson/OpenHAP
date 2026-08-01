@@ -328,7 +328,7 @@ sub _dispatch ( $self, $request, $session )
 	my $path   = $request->{path};
 	my $method = $request->{method};
 
-	# Pairing endpoints. These need no verification.
+	# Pairing endpoints. These need no verified session.
 	if ( $path eq '/pair-setup' && $method eq 'POST' ) {
 		return $self->_handle_pair_setup( $request, $session );
 	}
@@ -342,7 +342,7 @@ sub _dispatch ( $self, $request, $session )
 		return $self->_handle_identify( $request, $session );
 	}
 
-	# All other endpoints need verification
+	# All other endpoints need a verified session
 	unless ( $session->is_verified() ) {
 		return OpenHAP::HTTP::build_response(
 			status  => 470,    # Connection Authorization Required
@@ -711,7 +711,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	$OpenHAP::logger->debug( 'Add pairing request for: %s',
 		$identifier // 'unknown' );
 
-	# Verify the admin permissions. Only admins can add pairings.
+	# Check the admin permissions. Only admins can add pairings.
 	my $pairings           = $self->{storage}->load_pairings();
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
@@ -773,7 +773,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	$OpenHAP::logger->debug( 'Remove pairing request for: %s',
 		$identifier // 'unknown' );
 
-	# Verify the admin permissions
+	# Check the admin permissions
 	my $pairings           = $self->{storage}->load_pairings();
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
@@ -826,7 +826,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 {
 	$OpenHAP::logger->debug('List pairings request');
 
-	# Verify the admin permissions
+	# Check the admin permissions
 	my $pairings           = $self->{storage}->load_pairings();
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};

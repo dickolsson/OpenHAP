@@ -84,7 +84,7 @@ is($result->{status}, 207,
 is(decode_json($result->{body})->{characteristics}[0]{status}, -70409,
    '[HAP-HTTP §12] invalid iid has HAP status -70409');
 
-# Test 8: Timed write via /prepare with a pid
+# Test 8: Timed write through /prepare with a pid
 $result = $controller->request('PUT', '/prepare',
 	encode_json({ ttl => 2500, pid => 424242 }),
 	{ 'Content-Type' => 'application/hap+json' });

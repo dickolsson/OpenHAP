@@ -132,7 +132,7 @@ SKIP: {
 	FuguLib::Process->terminate( $result->{pid} );
 }
 
-# Test 11: Graceful vs forced termination
+# Test 11: Graceful and forced termination
 {
 	# A process that ignores SIGTERM (sleep handles it)
 	my $result = FuguLib::Process->spawn_command(

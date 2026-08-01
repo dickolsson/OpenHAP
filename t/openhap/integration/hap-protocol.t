@@ -12,7 +12,7 @@ use OpenHAP::Test::Integration;
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
 
-# Test 1: HAP server is reachable via HTTP
+# Test 1: The HAP server is reachable over HTTP
 my $response = $env->http_request('GET', '/');
 ok(defined $response && $response =~ /^HTTP\/1\.[01]/, 'server reachable');
 

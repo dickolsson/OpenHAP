@@ -99,8 +99,8 @@ subtest '[MDNS-Control §4] struct mdns_service against a literal' => sub {
 	};
 
 	# The test builds the whole buffer field by field at the spec's
-	# offsets: zeroed LIST_ENTRY, NUL padding of every fixed field,
-	# the internal padding at 858, and INADDR_ANY. A field-by-field
+	# offsets. It writes a zeroed LIST_ENTRY, NUL padding of every
+	# fixed field, the internal padding at 858, and INADDR_ANY. A field-by-field
 	# comparison would pass even with the total size or padding
 	# wrong. Thus the assertion is on the entire 864 bytes.
 	my $expected = "\0" x 864;

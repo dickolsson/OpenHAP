@@ -15,7 +15,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 #
 # Emit the body of manuals.html from manual sources.  The groups follow
-# the source directories, which is already how the tree is organised.
+# the source directories, which is already how the tree is organized.
 # Thus the index cannot drift when you add manuals.
 # Usage: mkindex.sh <manpage|podfile>...
 

@@ -84,7 +84,7 @@ sub clear_pairing_state ( $class_or_self, $session = undef )
 }
 
 # reset_auth_attempts() - Reset the failed authentication counter
-# The server calls this after successful SRP proof verification.
+# The server calls this after the SRP proof verification succeeds.
 # Administrative actions also call it.
 sub reset_auth_attempts ($class_or_self)
 {

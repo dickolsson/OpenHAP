@@ -8,7 +8,7 @@
 #
 # fuguvm installs this key in the VM's /root/.ssh/authorized_keys during
 # the initial installation. After the installation, all SSH connections
-# use SSH agent authentication via SSH_AUTH_SOCK.
+# use SSH agent authentication through SSH_AUTH_SOCK.
 #
 # To get your public key, run: cat ~/.ssh/id_ed25519.pub
 # or: ssh-add -L

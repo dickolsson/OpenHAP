@@ -367,7 +367,7 @@ subtest '[HAP-Pairing §2.5][HAP-Pairing §2.6] M3 -> M4 SRP proof' => sub {
 	my $proof = tlv_field( $m4, OpenHAP::Pairing::kTLVType_Proof() );
 	is( length($proof), 64, 'M4 proof is 64 bytes (SHA-512)' );
 
-	# M2 = H(PAD(A) | M1 | K). The test verifies it on the client
+	# M2 = H(PAD(A) | M1 | K). The test checks it on the client
 	# side.
 	is( unpack( 'H*', $proof ),
 		unpack( 'H*', sha512( $A . $M1 . $K ) ),
@@ -664,8 +664,8 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 	is( OpenHAP::Pairing->get_failed_attempts(),
 		1, 'attempt counter restored from storage on restart' );
 
-	# The counter resets only after a successful SRP proof
-	# verification
+	# The counter resets only after the SRP proof
+	# verification succeeds
 	my ( $pairing3, undef, undef ) = make_pairing($storage);
 	my ($m4) = run_m1_to_m4( $pairing3, $PIN );
 	ok( !defined error_code($m4), 'successful SRP proof' );

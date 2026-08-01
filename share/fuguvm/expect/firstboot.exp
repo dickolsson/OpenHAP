@@ -71,7 +71,7 @@ expect {
 }
 
 expect "#" {
-    # Enable root login via SSH with pubkey
+    # Enable root login over SSH with pubkey
     send "sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config\r"
 }
 

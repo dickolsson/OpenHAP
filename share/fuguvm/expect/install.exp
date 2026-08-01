@@ -1,6 +1,6 @@
 #!/usr/bin/expect -f
 #
-# Automated OpenBSD installation via serial console
+# Automated OpenBSD installation over the serial console
 #
 # Usage: install.exp <host> <port> [root_password] [proxy_url]
 #
@@ -215,7 +215,7 @@ expect {
 # The install is complete once the system halts. Do NOT wait for eof.
 # OpenBSD's halt stops at the "press any key to reboot" prompt and
 # does not close the console. Thus telnet stays connected and no eof
-# ever arrives. fuguvm stops QEMU via QMP once this script returns.
+# ever arrives. fuguvm stops QEMU through QMP once this script returns.
 # Then fuguvm restarts from the installed disk.
 set timeout [env_timeout 120]
 expect {

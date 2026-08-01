@@ -3,7 +3,7 @@
 # Conformance tests for spec/HAP-HTTP.md
 #
 # The tests drive OpenHAP::HAP request dispatch in-process, without
-# sockets. The tests set the session's verification state directly to
+# sockets. The tests set the session's verified state directly to
 # model the paired and unpaired cases.
 
 use v5.36;
@@ -124,7 +124,7 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 			    . 'without pair-verify' );
 	}
 
-	# Pairing endpoints do not require verification
+	# Pairing endpoints do not need a verified session
 	my $m1 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
@@ -621,7 +621,7 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	ok( $data->{characteristics}[0]{value},
 		'event carries the new value (true)' );
 
-	# An unsubscribe via ev:false stops delivery
+	# An unsubscribe with ev:false stops delivery
 	$sub_sock->{written} = '';
 	my $unsubscribe = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, ev => \0 } ] } );

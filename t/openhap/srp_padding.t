@@ -92,7 +92,7 @@ use_ok('OpenHAP::Crypto');
         . 'wire encodings derive the same session key');
 }
 
-# Test full SRP exchange with known values to verify padding
+# Test full SRP exchange with known values to check the padding
 {
     # Set up SRP with known parameters
     my $password = '123-45-678';

@@ -157,7 +157,7 @@ jobs:
             'scripts/vm-provision') }}
           # A key rotation still restores the miniroot and any base
           # image that fuguvm's own keying still accepts. Thus the run
-          # rebuilds only the parts that actually changed.
+          # rebuilds only the parts that changed.
           restore-keys: |
             fuguvm-v1-${{ runner.arch }}-
 
