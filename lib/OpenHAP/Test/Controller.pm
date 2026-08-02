@@ -21,7 +21,8 @@ package OpenHAP::Test::Controller;
 
 use IO::Socket::INET;
 use IO::Select;
-use OpenHAP::Crypto;
+use FuguLib::Crypto;
+use FuguLib::HTTP;
 use OpenHAP::TLV;
 use OpenHAP::Pairing;
 use OpenHAP::Test::Controller::SRP;
@@ -32,6 +33,12 @@ use OpenHAP::Test::Controller::SRP;
 # TCP, or runs in-process through an injected transport code ref.
 
 use constant MAX_FRAME => 1024;
+
+# The bound on one response that the controller accumulates. The
+# accessory database of a bridge with many accessories is the largest
+# message HAP sends, so the limit is well above the server's own
+# request limit.
+use constant MAX_MESSAGE => 1048576;
 
 sub new ( $class, %args )
 {
@@ -72,7 +79,7 @@ sub new ( $class, %args )
 	}, $class;
 
 	( $self->{ltsk}, $self->{ltpk} ) =
-	    OpenHAP::Crypto::generate_keypair_ed25519();
+	    FuguLib::Crypto->ed25519_keypair;
 
 	return $self;
 }
@@ -153,22 +160,13 @@ sub _round_trip ( $self, $request )
 		      $self->{encrypted}
 		    ? $self->_decrypt_peek($raw)
 		    : $raw;
-		last if defined $plain && _message_complete($plain);
+		last
+		    if defined $plain
+		    && FuguLib::HTTP::message_complete( $plain,
+			max_size => MAX_MESSAGE );
 	}
 
 	return $raw;
-}
-
-# _message_complete($text):
-#	Return true when $text holds a complete HTTP message. That
-#	is the headers plus Content-Length bytes of body.
-sub _message_complete ($text)
-{
-	return unless $text =~ /\r\n\r\n/;
-	my ( $head, $body ) = split /\r\n\r\n/, $text, 2;
-	my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
-	return 1 unless $length;
-	return length($body) >= $length;
 }
 
 # --- session framing (HAP-Encryption.md §2-§5) -------------------------
@@ -181,7 +179,7 @@ sub _encrypt ( $self, $data )
 		my $aad   = pack( 'v',      length($chunk) );
 		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
 		my ( $ciphertext, $tag ) =
-		    OpenHAP::Crypto::chacha20_poly1305_encrypt(
+		    FuguLib::Crypto->chacha20poly1305_encrypt(
 			$self->{encrypt_key},
 			$nonce, $chunk, $aad );
 		$out .= $aad . $ciphertext . $tag;
@@ -218,7 +216,7 @@ sub _decrypt ( $self, $data )
 
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 		my $plain =
-		    OpenHAP::Crypto::chacha20_poly1305_decrypt(
+		    FuguLib::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 		return unless defined $plain;
 		$out .= $plain;
@@ -230,17 +228,12 @@ sub _decrypt ( $self, $data )
 
 sub _build_request ( $self, $method, $path, $body = undef, $headers = {} )
 {
-	my $request = "$method $path HTTP/1.1\r\n";
-	$request .= "Host: $self->{host}:$self->{port}\r\n";
-	for my $name ( sort keys %$headers ) {
-		$request .= "$name: $headers->{$name}\r\n";
-	}
-	if ( defined $body ) {
-		$request .= 'Content-Length: ' . length($body) . "\r\n";
-	}
-	$request .= "\r\n";
-	$request .= $body if defined $body;
-	return $request;
+	return FuguLib::HTTP::build_request(
+		method  => $method,
+		path    => $path,
+		body    => $body,
+		headers => { Host => "$self->{host}:$self->{port}", %$headers },
+	);
 }
 
 sub _parse_response ( $self, $raw )
@@ -250,23 +243,13 @@ sub _parse_response ( $self, $raw )
 		return;
 	}
 
-	my ( $head, $body ) = split /\r\n\r\n/, $raw, 2;
-	my ($status) = $head =~ m{^HTTP/1\.[01]\s+(\d+)};
-	unless ( defined $status ) {
+	my $response = FuguLib::HTTP::parse_response($raw);
+	unless ( defined $response ) {
 		$self->{last_error} = 'malformed response';
 		return;
 	}
 
-	my %headers;
-	for my $line ( split /\r\n/, $head ) {
-		$headers{ lc $1 } = $2 if $line =~ /^([^:]+):\s*(.*)$/;
-	}
-
-	return {
-		status  => $status,
-		headers => \%headers,
-		body    => $body // '',
-	};
+	return $response;
 }
 
 # $self->request($method, $path, $body?, $headers?):
@@ -293,13 +276,12 @@ sub request ( $self, $method, $path, $body = undef, $headers = {} )
 	# Keep the bytes after the first complete message for
 	# next_event. For example, an event can arrive back-to-back
 	# with the response.
-	if ( $response =~ /\A(.*?\r\n\r\n)(.*)\z/s ) {
-		my ( $head, $rest ) = ( $1, $2 );
-		my ($length) = $head =~ /Content-Length:\s*(\d+)/i;
-		$length //= 0;
-		my $body = substr( $rest, 0, $length );
-		$self->{inbuf} .= substr( $rest, $length );
-		$response = $head . $body;
+	my $length =
+	    FuguLib::HTTP::message_complete( $response,
+		max_size => MAX_MESSAGE );
+	if ($length) {
+		$self->{inbuf} .= substr( $response, $length );
+		$response = substr( $response, 0, $length );
 	}
 
 	return $self->_parse_response($response);
@@ -376,15 +358,15 @@ sub pair_setup ($self)
 
 	# M5 -> M6
 	my $K           = $srp->session_key;
-	my $encrypt_key = OpenHAP::Crypto::hkdf_sha512( $K,
+	my $encrypt_key = FuguLib::Crypto->hkdf_sha512( $K,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
-	my $ios_x = OpenHAP::Crypto::hkdf_sha512(
+	my $ios_x = FuguLib::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Controller-Sign-Salt',
 		'Pair-Setup-Controller-Sign-Info', 32
 	);
-	my $signature = OpenHAP::Crypto::sign_ed25519(
+	my $signature = FuguLib::Crypto->ed25519_sign(
 		$ios_x . $self->{controller_id} . $self->{ltpk},
 		$self->{ltsk}, $self->{ltpk} );
 
@@ -395,7 +377,7 @@ sub pair_setup ($self)
 		OpenHAP::Pairing::kTLVType_Signature() => $signature,
 	);
 	my ( $encrypted, $tag ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $encrypt_key,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg05', $inner );
 
 	my $m6 = $self->_tlv_request(
@@ -411,7 +393,7 @@ sub pair_setup ($self)
 	}
 	my $m6_tag = substr( $m6_data, -16, 16, '' );
 	my $m6_plain =
-	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $encrypt_key,
+	    FuguLib::Crypto->chacha20poly1305_decrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg06',
 		$m6_data, $m6_tag );
 	unless ( defined $m6_plain ) {
@@ -424,13 +406,13 @@ sub pair_setup ($self)
 	my $acc_ltpk = $m6_inner{ OpenHAP::Pairing::kTLVType_PublicKey() };
 	my $acc_sig  = $m6_inner{ OpenHAP::Pairing::kTLVType_Signature() };
 
-	my $acc_x = OpenHAP::Crypto::hkdf_sha512(
+	my $acc_x = FuguLib::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
 	);
 	unless (
-		OpenHAP::Crypto::verify_ed25519(
+		FuguLib::Crypto->ed25519_verify(
 			$acc_sig, $acc_x . $acc_id . $acc_ltpk, $acc_ltpk
 		) )
 	{
@@ -452,7 +434,7 @@ sub pair_verify ($self)
 {
 	$self->{last_error} = undef;
 
-	my ( $secret, $public ) = OpenHAP::Crypto::generate_keypair_x25519();
+	my ( $secret, $public ) = FuguLib::Crypto->x25519_keypair;
 
 	# M1 -> M2
 	my $m2 = $self->_tlv_request(
@@ -469,13 +451,13 @@ sub pair_verify ($self)
 	}
 
 	my $shared =
-	    OpenHAP::Crypto::derive_shared_secret( $secret, $acc_public );
-	my $pv_key = OpenHAP::Crypto::hkdf_sha512( $shared,
+	    FuguLib::Crypto->x25519_shared_secret( $secret, $acc_public );
+	my $pv_key = FuguLib::Crypto->hkdf_sha512( $shared,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
 	my $m2_tag = substr( $m2_data, -16, 16, '' );
 	my $m2_plain =
-	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $pv_key,
+	    FuguLib::Crypto->chacha20poly1305_decrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg02',
 		$m2_data, $m2_tag );
 	unless ( defined $m2_plain ) {
@@ -491,7 +473,7 @@ sub pair_verify ($self)
 	# the accessory LTPK
 	if ( defined $self->{accessory_ltpk} ) {
 		unless (
-			OpenHAP::Crypto::verify_ed25519(
+			FuguLib::Crypto->ed25519_verify(
 				$acc_sig,
 				$acc_public . $acc_id . $public,
 				$self->{accessory_ltpk} ) )
@@ -502,7 +484,7 @@ sub pair_verify ($self)
 	}
 
 	# M3 -> M4
-	my $signature = OpenHAP::Crypto::sign_ed25519(
+	my $signature = FuguLib::Crypto->ed25519_sign(
 		$public . $self->{controller_id} . $acc_public,
 		$self->{ltsk}, $self->{ltpk} );
 	my $inner = OpenHAP::TLV::encode(
@@ -511,7 +493,7 @@ sub pair_verify ($self)
 		OpenHAP::Pairing::kTLVType_Signature() => $signature,
 	);
 	my ( $encrypted, $tag ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $pv_key,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg03', $inner );
 
 	$self->_tlv_request(
@@ -523,10 +505,10 @@ sub pair_verify ($self)
 	# Session keys: the controller writes with the Write key and
 	# reads with the Read key (HAP-Encryption.md §1)
 	$self->{encrypt_key} =
-	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
+	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Write-Encryption-Key', 32 );
 	$self->{decrypt_key} =
-	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
+	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	$self->{encrypt_count} = 0;
 	$self->{decrypt_count} = 0;
@@ -712,7 +694,7 @@ sub _drain_frames ($self)
 
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 		my $plain =
-		    OpenHAP::Crypto::chacha20_poly1305_decrypt(
+		    FuguLib::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 		return unless defined $plain;
 		$out .= $plain;

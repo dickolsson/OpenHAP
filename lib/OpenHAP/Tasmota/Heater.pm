@@ -1,6 +1,8 @@
 use v5.36;
 
 package OpenHAP::Tasmota::Heater;
+
+use FuguLib::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
 use OpenHAP::Service;
@@ -53,7 +55,7 @@ sub subscribe_mqtt ($self)
 
 	return unless $self->{mqtt_client}->is_connected();
 
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Heater %s subscribing to additional MQTT topics',
 		$self->{name} );
 
@@ -63,7 +65,8 @@ sub subscribe_mqtt ($self)
 		$self->_build_topic( 'stat', $self->_get_power_key() ),
 		sub ( $recv_topic, $payload ) {
 			$self->{power_state} = ( $payload eq 'ON' ) ? 1 : 0;
-			$OpenHAP::logger->debug( 'Heater %s power state: %s',
+			FuguLib::Log->default->debug(
+				'Heater %s power state: %s',
 				$self->{name}, $payload );
 			$self->notify_change(11);
 		} );
@@ -74,7 +77,7 @@ sub _on_power_update ( $self, $state )
 {
 	if ( $self->{power_state} != $state ) {
 		$self->{power_state} = $state;
-		$OpenHAP::logger->debug( 'Heater %s power updated: %s',
+		FuguLib::Log->default->debug( 'Heater %s power updated: %s',
 			$self->{name}, $state ? 'ON' : 'OFF' );
 		$self->notify_change(11);
 	}

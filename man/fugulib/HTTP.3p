@@ -1,0 +1,219 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt FuguLib::HTTP 3p
+.Os
+.Sh NAME
+.Nm FuguLib::HTTP
+.Nd one HTTP/1.1 codec, for both ends of a connection
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::HTTP;
+
+# A server frames, then parses
+while (1) {
+	my $length = FuguLib::HTTP::message_complete($buffer,
+	    max_size => 65536);
+	last unless defined $length;	# over the limit, close
+	last if $length == 0;		# read more
+
+	my $message = substr $buffer, 0, $length, '';
+	my $request = FuguLib::HTTP::parse_request($message);
+	...
+}
+
+# and answers
+print $sock FuguLib::HTTP::build_response(
+    status  => 200,
+    headers => { 'Content-Type' => 'application/hap+json' },
+    body    => $json,
+);
+
+# A client builds and parses the other way round
+my $bytes    = FuguLib::HTTP::build_request(method => 'GET', path => '/');
+my $response = FuguLib::HTTP::parse_response($answer);
+.Ed
+.Sh DESCRIPTION
+.Nm
+is functions over strings.
+It opens no socket, holds no connection state, and never logs.
+A server calls
+.Fn parse_request
+and
+.Fn build_response ;
+a client calls
+.Fn build_request
+and
+.Fn parse_response .
+The two ends thus read and write the same bytes, and no second parser
+can drift from the first.
+.Pp
+The module knows nothing about any protocol built on HTTP.
+A status code that belongs to one application, and the header
+defaults that one application wants, are arguments.
+.Ss message_complete
+.Fn message_complete "$buffer" "%args"
+reports how many bytes at the front of
+.Fa $buffer
+form one whole message.
+.Pp
+This is the framing, and a stream server needs it.
+A socket gives a reader whatever arrived, which is not a message: a
+request can span two reads, and two requests can share one.
+A reader that parses each read as a whole message drops the second
+request and mangles the split one.
+The caller keeps a buffer and asks this function how much of it is a
+message.
+.Pp
+These are the arguments:
+.Bl -tag -width "max_sizeXX"
+.It Fa max_size
+Refuse a message larger than this.
+The default is 65536 bytes.
+.El
+.Ss parse_request
+.Fn parse_request "$data"
+parses one request message.
+The function returns a hash reference with
+.Va method ,
+.Va path ,
+.Va version ,
+.Va headers
+and
+.Va body .
+.Pp
+The header names are lowercase.
+A peer chooses their case, and a caller must not depend on the choice.
+A repeated header keeps its last value.
+.Ss parse_response
+.Fn parse_response "$data"
+parses one response message.
+The function returns a hash reference with
+.Va status ,
+.Va reason ,
+.Va version ,
+.Va headers
+and
+.Va body .
+.Ss build_request
+.Fn build_request "%args"
+builds one request message.
+.Pp
+These are the arguments:
+.Bl -tag -width "versionXX"
+.It Fa method
+The default is GET.
+.It Fa path
+The default is /.
+.It Fa version
+The default is 1.1.
+.It Fa headers
+A hash reference, sent in sorted order.
+.It Fa body
+The body bytes.
+.El
+.Pp
+The function adds Content-Length when the caller gave a body and no
+such header.
+A peer cannot frame a body without it.
+.Ss build_response
+.Fn build_response "%args"
+builds one response message.
+.Pp
+These are the arguments:
+.Bl -tag -width "status_textXX"
+.It Fa status
+The default is 200.
+.It Fa status_text
+The default comes from the code.
+.It Fa version
+The default is 1.1.
+.It Fa headers
+A hash reference, sent in sorted order.
+.It Fa body
+The body bytes.
+.El
+.Pp
+The function always adds Content-Length.
+A response with no length and no close is a response that the peer
+waits out.
+.Pp
+The header order is stable.
+Two calls with the same arguments give the same bytes, which a
+conformance test needs.
+.Ss status_text
+.Fn status_text "$code"
+returns the reason phrase of a status code.
+.Sh RETURN VALUES
+.Fn message_complete
+returns the length of the message, 0 when more bytes are necessary,
+and
+.Dv undef
+when the message is over the limit.
+.Pp
+.Fn parse_request
+and
+.Fn parse_response
+return a hash reference, or
+.Dv undef
+when the first line is not a request line or a status line.
+.Pp
+.Fn build_request
+and
+.Fn build_response
+return the message bytes.
+.Fn status_text
+returns a string, and
+.Sq Unknown
+for a code it does not hold.
+.Sh EXAMPLES
+An application with a status code of its own passes the text:
+.Bd -literal -offset indent
+FuguLib::HTTP::build_response(
+    status      => 470,
+    status_text => 'Connection Authorization Required',
+);
+.Ed
+.Sh ERRORS
+No function dies.
+A malformed message gives
+.Dv undef ,
+and the caller decides what to answer.
+.Pp
+A caller that gets
+.Dv undef
+from
+.Fn message_complete
+closes the connection.
+The peer is either broken or hostile, and no further byte can make the
+message valid.
+.Sh SEE ALSO
+.Xr FuguLib::JSONSocket 3p ,
+.Xr FuguLib::Proxy 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+The module frames by Content-Length only.
+It does not do chunked transfer encoding, and it does not do
+compression.
+A peer that sends either is a peer this codec cannot read.
+.Pp
+.Fn message_complete
+reads the declared length, not the bytes that arrived.
+A peer that declares more than it sends holds a slot until the caller
+times it out.
+An event loop, not this module, owns that deadline.

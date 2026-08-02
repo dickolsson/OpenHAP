@@ -1,9 +1,11 @@
 use v5.36;
 
 package OpenHAP::Pairing;
+
+use FuguLib::Log;
 use OpenHAP::TLV;
 use OpenHAP::SRP;
-use OpenHAP::Crypto;
+use FuguLib::Crypto;
 
 use OpenHAP::PIN qw(normalize_pin);
 use Digest::SHA  qw(sha512);
@@ -123,14 +125,14 @@ sub handle_pair_setup ( $self, $body, $session )
 
 	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 			'Pair-setup rejected: malformed TLV request');
 		return $self->_error_response( kTLVError_Unknown, 2 );
 	}
 
 	my $state  = unpack( 'C', $request{ kTLVType_State() } );
 	my $method = unpack( 'C', $request{ kTLVType_Method() } // "\x00" );
-	$OpenHAP::logger->debug( 'Pair-setup M%d received (method=%d)',
+	FuguLib::Log->default->debug( 'Pair-setup M%d received (method=%d)',
 		$state, $method );
 
 	# Validate the method (0x00 = PairSetup, 0x01 = PairSetupWithAuth)
@@ -156,7 +158,7 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	# Check if the failed attempts exceed the maximum
 	# (HAP-Pairing.md §8)
 	if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 			'Pair-setup rejected: max attempts exceeded');
 		return $self->_error_response( kTLVError_MaxTries, 2 );
 	}
@@ -168,7 +170,7 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	if ( $method == 0 ) {
 		my $pairings = $self->{storage}->load_pairings();
 		if ( keys %$pairings > 0 ) {
-			$OpenHAP::logger->debug(
+			FuguLib::Log->default->debug(
 				'Pair-setup rejected: already paired');
 			return $self->_error_response( kTLVError_Unavailable,
 				2 );
@@ -177,7 +179,7 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 
 	# Check for a concurrent pairing attempt (HAP-Pairing.md §2.4)
 	if ( $pairing_in_progress && $pairing_session_id != $session ) {
-		$OpenHAP::logger->debug(
+		FuguLib::Log->default->debug(
 			'Pair-setup rejected: another pairing in progress');
 		return $self->_error_response( kTLVError_Busy, 2 );
 	}
@@ -190,20 +192,16 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	my $srp  = OpenHAP::SRP->new( password => $self->{pin} );
 	my $salt = $srp->generate_salt();
 	$srp->compute_verifier( $salt, $self->{pin} );
-	my $B = $srp->generate_server_public();
+	$srp->generate_server_public();
 
 	# Store the SRP session
 	$session->{pairing_state}{srp} = $srp;
 
-	# M2: Send the salt and the public key
-	my $B_hex = $B->as_hex();
-	$B_hex =~ s/^0x//;                              # Remove the 0x prefix
-	$B_hex = '0' . $B_hex if length($B_hex) % 2;    # Make the length even
-	my $response = OpenHAP::TLV::encode(
-		kTLVType_State,     pack( 'C',  2 ),
-		kTLVType_PublicKey, pack( 'H*', $B_hex ),
-		kTLVType_Salt,      $salt,
-	);
+	# M2: Send the salt and the public key. The key goes out padded
+	# to the length of N, which is what both sides hash.
+	my $response = OpenHAP::TLV::encode( kTLVType_State, pack( 'C', 2 ),
+		kTLVType_PublicKey, $srp->server_public_bytes,
+		kTLVType_Salt,      $salt, );
 
 	return $response;
 }
@@ -221,7 +219,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	my $K = $srp->compute_session_key($A);
 	unless ( defined $K ) {
 		$self->_record_failed_attempt;
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 			'Pair-setup M3 rejected: invalid public key A');
 		if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
 			return $self->_error_response( kTLVError_MaxTries, 4 );
@@ -231,7 +229,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 
 	unless ( $srp->verify_client_proof($M1) ) {
 		$self->_record_failed_attempt;
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 'Pair-setup M3 proof verification failed (attempt %d/%d)',
 			$failed_auth_attempts, MAX_AUTH_ATTEMPTS
 		);
@@ -246,7 +244,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 
 	# Generate the server proof
 	my $M2 = $srp->generate_server_proof();
-	$OpenHAP::logger->debug('Pair-setup M3 verified, sending M4');
+	FuguLib::Log->default->debug('Pair-setup M3 verified, sending M4');
 
 	# M4: Send the proof
 	my $response = OpenHAP::TLV::encode( kTLVType_State, pack( 'C', 4 ),
@@ -265,14 +263,14 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 
 	# Derive the encryption key from the SRP session key
 	my $session_key = $srp->get_session_key();
-	my $encrypt_key = OpenHAP::Crypto::hkdf_sha512( $session_key,
+	my $encrypt_key = FuguLib::Crypto->hkdf_sha512( $session_key,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
 	# Decrypt the data
 	my $nonce    = pack('x[4]') . 'PS-Msg05';
 	my $auth_tag = substr( $encrypted_data, -16, 16, '' );
 	my $decrypted =
-	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $encrypt_key, $nonce,
+	    FuguLib::Crypto->chacha20poly1305_decrypt( $encrypt_key, $nonce,
 		$encrypted_data, $auth_tag );
 
 	return $self->_error_response( kTLVError_Authentication, 6 )
@@ -285,7 +283,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	my $ios_device_signature  = $inner{ kTLVType_Signature() };
 
 	# Verify the signature
-	my $ios_device_x = OpenHAP::Crypto::hkdf_sha512(
+	my $ios_device_x = FuguLib::Crypto->hkdf_sha512(
 		$session_key,
 		'Pair-Setup-Controller-Sign-Salt',
 		'Pair-Setup-Controller-Sign-Info', 32
@@ -294,7 +292,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	    $ios_device_x . $ios_device_pairing_id . $ios_device_ltpk;
 
 	unless (
-		OpenHAP::Crypto::verify_ed25519(
+		FuguLib::Crypto->ed25519_verify(
 			$ios_device_signature, $ios_device_info,
 			$ios_device_ltpk
 		) )
@@ -305,7 +303,8 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	# Save the pairing
 	$self->{storage}
 	    ->save_pairing( $ios_device_pairing_id, $ios_device_ltpk, 1 );
-	$OpenHAP::logger->debug( 'Pair-setup M5 verified, pairing saved for %s',
+	FuguLib::Log->default->debug(
+		'Pair-setup M5 verified, pairing saved for %s',
 		$ios_device_pairing_id );
 
 	# The pairing is successful. Reset the attempt counter.
@@ -315,7 +314,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	$pairing_session_id  = undef;
 
 	# Generate the accessory signature
-	my $accessory_x = OpenHAP::Crypto::hkdf_sha512(
+	my $accessory_x = FuguLib::Crypto->hkdf_sha512(
 		$session_key,
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
@@ -323,7 +322,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
 	my $accessory_info =
 	    $accessory_x . $accessory_pairing_id . $self->{accessory_ltpk};
-	my $accessory_signature = OpenHAP::Crypto::sign_ed25519(
+	my $accessory_signature = FuguLib::Crypto->ed25519_sign(
 		$accessory_info,
 		$self->{accessory_ltsk},
 		$self->{accessory_ltpk} );
@@ -338,7 +337,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	# Encrypt the response
 	my $response_nonce = pack('x[4]') . 'PS-Msg06';
 	my ( $response_encrypted, $response_tag ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $encrypt_key,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $encrypt_key,
 		$response_nonce, $response_tlv );
 
 	# M6: Send the encrypted data
@@ -357,13 +356,13 @@ sub handle_pair_verify ( $self, $body, $session )
 
 	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 			'Pair-verify rejected: malformed TLV request');
 		return $self->_error_response( kTLVError_Unknown, 2 );
 	}
 
 	my $state = unpack( 'C', $request{ kTLVType_State() } );
-	$OpenHAP::logger->debug( 'Pair-verify M%d received', $state );
+	FuguLib::Log->default->debug( 'Pair-verify M%d received', $state );
 
 	if ( $state == 1 ) {
 		return $self->_pair_verify_m1_m2( \%request, $session );
@@ -379,15 +378,16 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 {
 
 	my $ios_public_key = $request->{ kTLVType_PublicKey() };
-	$OpenHAP::logger->debug('Pair-verify M1: generating ephemeral keypair');
+	FuguLib::Log->default->debug(
+		'Pair-verify M1: generating ephemeral keypair');
 
 	# Generate the accessory ephemeral keypair
 	my ( $accessory_secret, $accessory_public ) =
-	    OpenHAP::Crypto::generate_keypair_x25519();
+	    FuguLib::Crypto->x25519_keypair;
 
 	# Compute the shared secret
 	my $shared_secret =
-	    OpenHAP::Crypto::derive_shared_secret( $accessory_secret,
+	    FuguLib::Crypto->x25519_shared_secret( $accessory_secret,
 		$ios_public_key );
 
 	# Store the state for the next step
@@ -400,7 +400,7 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
 	my $accessory_info =
 	    $accessory_public . $accessory_pairing_id . $ios_public_key;
-	my $accessory_signature = OpenHAP::Crypto::sign_ed25519(
+	my $accessory_signature = FuguLib::Crypto->ed25519_sign(
 		$accessory_info,
 		$self->{accessory_ltsk},
 		$self->{accessory_ltpk} );
@@ -412,12 +412,12 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 	);
 
 	# Derive the session key and encrypt
-	my $session_key = OpenHAP::Crypto::hkdf_sha512( $shared_secret,
+	my $session_key = FuguLib::Crypto->hkdf_sha512( $shared_secret,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
 	my $nonce = pack('x[4]') . 'PV-Msg02';
 	my ( $encrypted, $tag ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $session_key, $nonce,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $session_key, $nonce,
 		$sub_tlv );
 
 	# M2: Send the public key and the encrypted data
@@ -444,14 +444,14 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	    unless defined $shared_secret;
 
 	# Derive the session key
-	my $session_key = OpenHAP::Crypto::hkdf_sha512( $shared_secret,
+	my $session_key = FuguLib::Crypto->hkdf_sha512( $shared_secret,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
 	# Decrypt
 	my $nonce    = pack('x[4]') . 'PV-Msg03';
 	my $auth_tag = substr( $encrypted_data, -16, 16, '' );
 	my $decrypted =
-	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $session_key, $nonce,
+	    FuguLib::Crypto->chacha20poly1305_decrypt( $session_key, $nonce,
 		$encrypted_data, $auth_tag );
 
 	return $self->_error_response( kTLVError_Authentication, 4 )
@@ -472,7 +472,7 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	# Verify the signature
 	my $ios_info = $ios_public_key . $ios_pairing_id . $accessory_public;
 	unless (
-		OpenHAP::Crypto::verify_ed25519(
+		FuguLib::Crypto->ed25519_verify(
 			$ios_signature, $ios_info, $pairing->{ltpk} ) )
 	{
 		return $self->_error_response( kTLVError_Authentication, 4 );
@@ -485,16 +485,16 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	# - Control-Write-Encryption-Key: the controller writes,
 	#   the accessory decrypts
 	my $encrypt_key =
-	    OpenHAP::Crypto::hkdf_sha512( $shared_secret, 'Control-Salt',
+	    FuguLib::Crypto->hkdf_sha512( $shared_secret, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	my $decrypt_key =
-	    OpenHAP::Crypto::hkdf_sha512( $shared_secret, 'Control-Salt',
+	    FuguLib::Crypto->hkdf_sha512( $shared_secret, 'Control-Salt',
 		'Control-Write-Encryption-Key', 32 );
 
 	# Set up the encrypted session
 	$session->set_encryption( $encrypt_key, $decrypt_key );
 	$session->set_verified($ios_pairing_id);
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Pair-verify M3 verified successfully, session encrypted');
 
 	# M4: Success

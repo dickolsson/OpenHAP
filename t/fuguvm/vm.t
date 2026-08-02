@@ -5,6 +5,8 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
+use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 # Check that the module loads. The load can fail if Net::SSH2 is
@@ -145,7 +147,7 @@ SKIP: {
 	ok($state->is_installed, 'the restored VM is marked installed');
 	is($state->get_root_password, 'from-the-image',
 	    'the root password comes from the image, not a new install');
-	is($state->{data}{cached_from}, $key,
+	is($state->data->{cached_from}, $key,
 	    'state records which cached image it came from');
 
 	my $disk = FuguVM::Disk->new("$root/state");

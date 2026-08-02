@@ -19,13 +19,24 @@ use v5.36;
 
 package FuguLib::Process;
 
-use POSIX qw(setsid WNOHANG);
+use Fcntl qw(F_SETFD FD_CLOEXEC);
+use IO::Select;
+use POSIX       qw(setsid WNOHANG);
+use Time::HiRes qw(time);
 
-# FuguLib::Process - Robust process management
+# FuguLib::Process - fork, exec, liveness and reaping.
 #
-# The module does forking, exec, PID tracking, signal handling, and
-# zombie reaping. It adds proper error detection and logging
-# integration.
+# The module keeps no state and has only class methods. Two calls
+# start a child: spawn_command leaves it running, and run waits for it
+# and captures its output. Both report an exec failure exactly, over a
+# close-on-exec pipe, and never by a wait-and-guess sleep.
+
+# The exit code of a child that could not start at all. The value
+# matches the shell convention that a caller of exit_code expects.
+use constant EXIT_ERROR => 1;
+
+# How often terminate looks again while it waits for a child to go.
+use constant POLL_INTERVAL => 0.05;
 
 # $class->spawn_command(%args):
 #	Fork and execute a command. Optionally run it as a daemon.
@@ -41,6 +52,15 @@ use POSIX qw(setsid WNOHANG);
 #		on_error  => sub($err)  # Optional: error callback
 #		on_success => sub($pid) # Optional: success callback
 #		check_alive => $seconds # Optional: wait, then make sure the process is alive
+#
+#	The method always waits for the exec to resolve, so a command
+#	that does not exist reports its own error message. The
+#	check_alive wait is a separate question - is the child still
+#	there after N seconds - and is off by default.
+#
+#	A child that exits at once with status 0 is not a failure. The
+#	result carries exited => 1 and exit_code => 0, so a caller that
+#	expects a long-lived child can tell the two apart.
 sub spawn_command ( $class, %args )
 {
 	my $cmd = $args{cmd}
@@ -51,7 +71,7 @@ sub spawn_command ( $class, %args )
 	my $stdin       = $args{stdin}     // '/dev/null';
 	my $on_error    = $args{on_error};
 	my $on_success  = $args{on_success};
-	my $check_alive = $args{check_alive} // 1;
+	my $check_alive = $args{check_alive} // 0;
 
 	unless ( ref $cmd eq 'ARRAY' && @$cmd > 0 ) {
 		my $err = 'Command must be non-empty arrayref';
@@ -59,9 +79,17 @@ sub spawn_command ( $class, %args )
 		return { success => 0, error => $err };
 	}
 
-	# Fork
+	my ( $exec_r, $exec_w ) = _exec_pipe();
+	unless ($exec_r) {
+		my $err = "Cannot create pipe: $!";
+		$on_error->($err) if $on_error;
+		return { success => 0, error => $err };
+	}
+
 	my $pid = fork;
 	unless ( defined $pid ) {
+		close $exec_r;
+		close $exec_w;
 		my $err = "Cannot fork: $!";
 		$on_error->($err) if $on_error;
 		return { success => 0, error => $err };
@@ -71,59 +99,74 @@ sub spawn_command ( $class, %args )
 
 		# Child process
 		$DB::inhibit_exit = 0;
+		close $exec_r;
 
 		if ($daemonize) {
 
 			# Become the session leader
-			setsid() or exit 1;
+			setsid() or _fail( $exec_w, "setsid: $!" );
 		}
 
 		# Redirect the file descriptors
-		if ( !open STDIN, '<', $stdin ) {
-			warn "Cannot redirect stdin: $!";
-			exit 1;
-		}
-		if ( !open STDOUT, '>', $stdout ) {
-			warn "Cannot redirect stdout: $!";
-			exit 1;
-		}
-		if ( !open STDERR, '>', $stderr ) {
-			warn "Cannot redirect stderr: $!";
-			exit 1;
-		}
+		open STDIN, '<', $stdin
+		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+		open STDOUT, '>', $stdout
+		    or _fail( $exec_w, "Cannot redirect stdout: $!" );
+		open STDERR, '>', $stderr
+		    or _fail( $exec_w, "Cannot redirect stderr: $!" );
 
-		# Execute the command
-		exec @$cmd or exit 1;
+		# Execute the command. The pipe is close-on-exec, so a
+		# successful exec closes it and the parent reads EOF.
+		exec { $cmd->[0] } @$cmd
+		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
 	}
 
 	# Parent process
+	close $exec_w;
+	my $exec_error = do { local $/; <$exec_r> };
+	close $exec_r;
+
+	if ( defined $exec_error && length $exec_error ) {
+		waitpid $pid, 0;
+		$on_error->($exec_error) if $on_error;
+		return { success => 0, error => $exec_error, pid => $pid };
+	}
+
 	if ($check_alive) {
 
 		# Give the process time to start
-		sleep $check_alive;
+		select undef, undef, undef, $check_alive;
 
-		# Try to reap the zombie without blocking. is_alive
-		# would do this too.
 		my $reaped = waitpid( $pid, WNOHANG );
-
-		# If waitpid reaped the process, the process died
 		if ( $reaped == $pid ) {
 			my $exit_status = $? >> 8;
+			if ( $exit_status == 0 ) {
+
+				# A short command that did its work and
+				# left. The caller decides whether that
+				# is what it wanted.
+				my $result = {
+					success   => 1,
+					pid       => $pid,
+					exited    => 1,
+					exit_code => 0,
+				};
+				$on_success->($pid) if $on_success;
+				return $result;
+			}
+
 			my $err =
-			    $exit_status == 0
-			    ? "Process $pid completed immediately (may be expected)"
-			    : "Process $pid died immediately with exit code $exit_status";
+"Process $pid died immediately with exit code $exit_status";
 			$on_error->($err) if $on_error;
 			return {
 				success   => 0,
 				error     => $err,
 				pid       => $pid,
-				exit_code => $exit_status
+				exited    => 1,
+				exit_code => $exit_status,
 			};
 		}
 
-		# Check again with kill(0) to make sure the process is
-		# alive
 		unless ( kill( 0, $pid ) ) {
 			my $err =
 "Process $pid is not alive (not reaped, possible race)";
@@ -132,7 +175,7 @@ sub spawn_command ( $class, %args )
 				success   => 0,
 				error     => $err,
 				pid       => $pid,
-				exit_code => -1
+				exit_code => -1,
 			};
 		}
 	}
@@ -141,10 +184,186 @@ sub spawn_command ( $class, %args )
 	return { success => 1, pid => $pid };
 }
 
+# $class->run(%args):
+#	Run a command to completion and capture what it wrote.
+#
+#	%args:
+#		cmd     => \@command  # Required: the command to execute
+#		timeout => $seconds   # Optional: kill the child after this long
+#		stdin   => $string    # Optional: feed this to the child
+#		passthrough => 0|1    # Optional: let the child write to the terminal
+#
+#	The method returns a hashref with success, stdout, stderr,
+#	exit_code, timed_out and, on a startup failure, error. It never
+#	runs a shell: the command is a list, so no argument needs
+#	quoting and no argument can become a shell operator.
+#
+#	With passthrough the child inherits the caller's output, and
+#	stdout and stderr come back empty. Use it for a command that
+#	writes for minutes: an operator who waits needs to see progress,
+#	and a captured stream arrives only after the wait is over.
+sub run ( $class, %args )
+{
+	my $cmd = $args{cmd};
+	unless ( ref $cmd eq 'ARRAY' && @$cmd > 0 ) {
+		return _run_error('Command must be non-empty arrayref');
+	}
+	my $timeout = $args{timeout};
+	my $input   = $args{stdin};
+
+	return $class->_run_passthrough( $cmd, $timeout, $input )
+	    if $args{passthrough};
+
+	pipe my $out_r, my $out_w
+	    or return _run_error("Cannot create pipe: $!");
+	pipe my $err_r, my $err_w
+	    or return _run_error("Cannot create pipe: $!");
+	pipe my $in_r, my $in_w or return _run_error("Cannot create pipe: $!");
+	my ( $exec_r, $exec_w ) = _exec_pipe();
+	return _run_error("Cannot create pipe: $!") unless $exec_r;
+
+	my $pid = fork;
+	return _run_error("Cannot fork: $!") unless defined $pid;
+
+	if ( $pid == 0 ) {
+		$DB::inhibit_exit = 0;
+		close $out_r;
+		close $err_r;
+		close $in_w;
+		close $exec_r;
+
+		open STDIN, '<&', $in_r
+		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+		open STDOUT, '>&', $out_w
+		    or _fail( $exec_w, "Cannot redirect stdout: $!" );
+		open STDERR, '>&', $err_w
+		    or _fail( $exec_w, "Cannot redirect stderr: $!" );
+
+		exec { $cmd->[0] } @$cmd
+		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
+	}
+
+	close $out_w;
+	close $err_w;
+	close $in_r;
+	close $exec_w;
+
+	my $exec_error = do { local $/; <$exec_r> };
+	close $exec_r;
+	if ( defined $exec_error && length $exec_error ) {
+		close $in_w;
+		waitpid $pid, 0;
+		return _run_error($exec_error);
+	}
+
+	# Write the input first. A child that reads nothing gets EPIPE
+	# and the write stops early, which is not an error here.
+	{
+		local $SIG{PIPE} = 'IGNORE';
+		print {$in_w} $input if defined $input && length $input;
+	}
+	close $in_w;
+
+	my ( $stdout, $stderr, $timed_out ) =
+	    _drain( $out_r, $err_r, $timeout, $pid );
+
+	waitpid $pid, 0;
+	my $code = $class->exit_code($?);
+
+	return {
+		success   => ( !$timed_out && $code == 0 ) ? 1 : 0,
+		stdout    => $stdout,
+		stderr    => $stderr,
+		exit_code => $code,
+		timed_out => $timed_out,
+	};
+}
+
+# $class->_run_passthrough($cmd, $timeout, $input):
+#	Run a child that writes straight to the caller's output. Only
+#	the exec confirmation and the exit status come back.
+sub _run_passthrough ( $class, $cmd, $timeout, $input )
+{
+	pipe my $in_r, my $in_w or return _run_error("Cannot create pipe: $!");
+	my ( $exec_r, $exec_w ) = _exec_pipe();
+	return _run_error("Cannot create pipe: $!") unless $exec_r;
+
+	my $pid = fork;
+	return _run_error("Cannot fork: $!") unless defined $pid;
+
+	if ( $pid == 0 ) {
+		$DB::inhibit_exit = 0;
+		close $in_w;
+		close $exec_r;
+
+		open STDIN, '<&', $in_r
+		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+
+		exec { $cmd->[0] } @$cmd
+		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
+	}
+
+	close $in_r;
+	close $exec_w;
+
+	my $exec_error = do { local $/; <$exec_r> };
+	close $exec_r;
+	if ( defined $exec_error && length $exec_error ) {
+		close $in_w;
+		waitpid $pid, 0;
+		return _run_error($exec_error);
+	}
+
+	{
+		local $SIG{PIPE} = 'IGNORE';
+		print {$in_w} $input if defined $input && length $input;
+	}
+	close $in_w;
+
+	my $timed_out = 0;
+	if ( defined $timeout ) {
+		unless ( $class->wait_exit( $pid, $timeout ) ) {
+			$class->terminate( $pid, grace_period => 1 );
+			$timed_out = 1;
+		}
+	}
+
+	waitpid $pid, 0;
+	my $code = $class->exit_code($?);
+
+	return {
+		success   => ( !$timed_out && $code == 0 ) ? 1 : 0,
+		stdout    => '',
+		stderr    => '',
+		exit_code => $code,
+		timed_out => $timed_out,
+	};
+}
+
+# $class->exit_code($status):
+#	Map a raw system() or $? wait status to a 0-255 exit code. The
+#	low byte encodes the terminating signal. The high byte encodes
+#	the exit code. system() returns -1 when it cannot start the
+#	child at all.
+#
+#	A caller that passes the raw status on to exit() turns a remote
+#	exit code of 1 into exit(256), which the kernel truncates to 0.
+#	That silently reports a failed command as a success.
+sub exit_code ( $class, $status )
+{
+	return EXIT_ERROR               if $status == -1;
+	return 128 + ( $status & 0x7f ) if $status & 0x7f;
+	return $status >> 8;
+}
+
 # $class->is_alive($pid):
 #	Check if the process is alive (not dead, not a zombie).
 #	The method returns 1 if the process is alive. It returns 0 if
 #	the process is dead, a zombie, or does not exist.
+#
+#	The check reaps: a zombie child of the caller is collected
+#	here, and the answer is 0. A caller that needs the exit status
+#	uses run, or waits itself.
 sub is_alive ( $class, $pid )
 {
 	return 0 unless defined $pid;
@@ -163,11 +382,8 @@ sub is_alive ( $class, $pid )
 	# waitpid has now reaped it.
 	return 0 if $result == $pid;
 
-	# If waitpid returns -1, there is no such child. The process
-	# is not a child of the current process, but it is still alive.
-	#return 0 if $result == -1;
-
-	# Otherwise, the process is alive
+	# If waitpid returns -1, the process is not a child of the
+	# caller. kill(0) already proved that it exists, so it is alive.
 	return 1;
 }
 
@@ -179,6 +395,9 @@ sub is_alive ( $class, $pid )
 #	%args:
 #		grace_period => $seconds # Time to wait after TERM before KILL (default: 5)
 #		on_kill      => sub()    # Runs after a successful kill
+#
+#	The wait polls with sub-second granularity, so a child that
+#	stops at once does not cost a whole second.
 sub terminate ( $class, $pid, %args )
 {
 	return 1 unless defined $pid;
@@ -196,28 +415,16 @@ sub terminate ( $class, $pid, %args )
 		return $class->is_alive($pid) ? 0 : 1;
 	}
 
-	# Wait for the process to exit
-	my $waited = 0;
-	while ( $waited < $grace_period && $class->is_alive($pid) ) {
-		sleep 1;
-		$waited++;
-
-		# Try to reap
-		waitpid( $pid, WNOHANG );
-	}
+	$class->wait_exit( $pid, $grace_period );
 
 	# If the process is still alive, kill it with force
 	if ( $class->is_alive($pid) ) {
 		kill 'KILL', $pid;
-		sleep 1;
-		waitpid( $pid, WNOHANG );
+		$class->wait_exit( $pid, 1 );
 
 		# Final check
 		return 0 if $class->is_alive($pid);
 	}
-
-	# Reap the zombie
-	waitpid( $pid, WNOHANG );
 
 	$on_kill->() if $on_kill;
 	return 1;
@@ -258,10 +465,10 @@ sub reap_all ($class)
 #	timeout.
 sub wait_exit ( $class, $pid, $timeout = 30 )
 {
-	my $start = time;
-	while ( time - $start < $timeout ) {
+	my $deadline = time + $timeout;
+	while ( time < $deadline ) {
 		return 1 unless $class->is_alive($pid);
-		select undef, undef, undef, 0.1;    # Sleep 100ms
+		select undef, undef, undef, POLL_INTERVAL;
 	}
 
 	# Final check
@@ -296,6 +503,89 @@ sub spawn_perl ( $class, %args )
 	$args{cmd} = [ $^X, @inc_flags, '-e', $code, @$extra_args ];
 
 	return $class->spawn_command(%args);
+}
+
+# _exec_pipe():
+#	Make the pipe that carries an exec failure back to the parent.
+#	The write end is close-on-exec. Thus a successful exec closes
+#	it and the parent reads EOF, while a failure leaves a message
+#	behind. The parent learns the outcome as soon as it happens,
+#	with no sleep and no guess.
+sub _exec_pipe()
+{
+	pipe my $reader, my $writer or return;
+	fcntl( $writer, F_SETFD, FD_CLOEXEC ) or do {
+		close $reader;
+		close $writer;
+		return;
+	};
+
+	return ( $reader, $writer );
+}
+
+# _fail($writer, $message):
+#	Report a child-side startup failure and leave. The exit uses
+#	POSIX::_exit, so the child never runs the parent's END blocks
+#	or flushes the parent's buffers a second time.
+sub _fail ( $writer, $message )
+{
+	syswrite $writer, $message;
+	POSIX::_exit(127);
+}
+
+# _run_error($message):
+#	The result of a run that never reached the child.
+sub _run_error ($message)
+{
+	return {
+		success   => 0,
+		error     => $message,
+		stdout    => '',
+		stderr    => '',
+		exit_code => EXIT_ERROR,
+		timed_out => 0,
+	};
+}
+
+# _drain($out, $err, $timeout, $pid):
+#	Read both pipes until they close. On a timeout, terminate the
+#	child and stop. Reading both at once matters: a child that
+#	fills one pipe blocks until someone drains it, and a reader
+#	that takes them in sequence would deadlock there.
+sub _drain ( $out, $err, $timeout, $pid )
+{
+	my %buffer   = ( $out => '', $err => '' );
+	my $select   = IO::Select->new( $out, $err );
+	my $deadline = defined $timeout ? time + $timeout : undef;
+
+	while ( $select->count ) {
+		my $wait = POLL_INTERVAL;
+		if ( defined $deadline ) {
+			my $left = $deadline - time;
+			if ( $left <= 0 ) {
+				FuguLib::Process->terminate( $pid,
+					grace_period => 1 );
+				return ( $buffer{$out}, $buffer{$err}, 1 );
+			}
+			$wait = $left < POLL_INTERVAL ? $left : POLL_INTERVAL;
+		}
+
+		for my $fh ( $select->can_read($wait) ) {
+			my $n = sysread $fh, my $chunk, 65536;
+			if ( !defined $n ) {
+				next if $!{EINTR};
+				$select->remove($fh);
+				next;
+			}
+			if ( $n == 0 ) {
+				$select->remove($fh);
+				next;
+			}
+			$buffer{$fh} .= $chunk;
+		}
+	}
+
+	return ( $buffer{$out}, $buffer{$err}, 0 );
 }
 
 # _custom_inc_paths:

@@ -19,38 +19,58 @@ use v5.36;
 
 package FuguLib::Signal;
 
-# FuguLib::Signal - Robust signal handling for graceful shutdown
+use Scalar::Util qw(refaddr weaken);
+
+# FuguLib::Signal - signal handlers for a graceful shutdown.
 #
-# The module gives safe signal handler registration with cleanup and
-# interrupt support. It makes sure a process can stop cleanly on an
-# interrupt and leave no orphaned resources.
+# Each manager owns its handlers, its cleanups, and its interrupt flag.
+# Two managers in one process do not see each other's state. The
+# installed handlers close over the object, so a handler always finds
+# the manager that installed it.
 
-# Global flag for interrupt detection
-our $interrupted = 0;
+# Every live manager, keyed by address. The values are weak, so the
+# registry never keeps an object alive. check_interrupted reads the
+# whole registry for code that has no object at hand.
+my %live;
 
-# Stack of cleanup handlers
-my @cleanup_handlers;
-
-sub new ($class)
+# FuguLib::Signal->new(%args):
+#	exit_status => $n	exit code of a graceful exit (default 130,
+#				the conventional code for SIGINT)
+sub new ( $class, %args )
 {
-	bless {
-		handlers => {},
-		original => {},
+	my $self = bless {
+		handlers    => {},
+		original    => {},
+		cleanups    => [],
+		interrupted => 0,
+		exit_status => $args{exit_status} // 130,
 	}, $class;
+
+	$live{ refaddr $self } = $self;
+	weaken $live{ refaddr $self };
+
+	return $self;
 }
 
 # $self->setup_graceful_exit(@signals):
 #	Set up handlers for a graceful exit on the specified signals.
-#	On a signal, the handler calls all registered cleanup handlers
-#	and exits.
+#	On a signal, the handler runs the cleanups of this manager and
+#	exits.
 sub setup_graceful_exit ( $self, @signals )
 {
+	# The handler must not keep the manager alive. A strong capture
+	# would make %SIG own the object, and then the destructor would
+	# never run and never restore the previous handlers.
+	my $manager = $self;
+	weaken $manager;
+
 	for my $sig (@signals) {
 		$self->{original}{$sig} = $SIG{$sig} // 'DEFAULT';
 		$SIG{$sig} = sub ($signal) {
-			$interrupted = 1;
-			$self->_run_cleanup_handlers($signal);
-			exit 130;    # Standard exit code for SIGINT (128 + 2)
+			return unless $manager;
+			$manager->{interrupted} = 1;
+			$manager->_run_cleanup_handlers($signal);
+			exit $manager->{exit_status};
 		};
 		$self->{handlers}{$sig} = 1;
 	}
@@ -59,28 +79,32 @@ sub setup_graceful_exit ( $self, @signals )
 
 # $self->setup_interrupt_flag(@signals):
 #	Set up handlers that set the interrupt flag and do not exit.
-#	Long-running operations can then check the flag and exit
+#	Long-running operations can then check the flag and stop
 #	cleanly.
 sub setup_interrupt_flag ( $self, @signals )
 {
+	my $manager = $self;
+	weaken $manager;
+
 	for my $sig (@signals) {
 		$self->{original}{$sig} = $SIG{$sig} // 'DEFAULT';
-		$SIG{$sig}              = sub ($) { $interrupted = 1; };
+		$SIG{$sig} =
+		    sub ($) { $manager->{interrupted} = 1 if $manager; };
 		$self->{handlers}{$sig} = 1;
 	}
 	return $self;
 }
 
 # $self->add_cleanup($handler):
-#	Add a cleanup handler that runs on a signal.
-#	The handler receives the signal name as its argument.
+#	Add a cleanup handler that runs on a signal. The handler
+#	receives the signal name as its argument.
 sub add_cleanup ( $self, $handler )
 {
-	push @cleanup_handlers, $handler;
+	push @{ $self->{cleanups} }, $handler;
 	return $self;
 }
 
-# $self->restore():
+# $self->restore:
 #	Restore the original signal handlers
 sub restore ($self)
 {
@@ -91,33 +115,71 @@ sub restore ($self)
 	return $self;
 }
 
+# $self->interrupted:
+#	Report if this manager saw a signal.
+sub interrupted ($self)
+{
+	return $self->{interrupted};
+}
+
+# $self->reset_interrupted:
+#	Clear the interrupt flag of this manager.
+sub reset_interrupted ($self)
+{
+	$self->{interrupted} = 0;
+	return $self;
+}
+
 # check_interrupted():
-#	Check if the process received an interrupt.
-#	The function returns true if an interrupt signal arrived.
+#	Report if any live manager saw a signal. This package function
+#	serves code that runs far from the object, for example a poll
+#	loop deep in a library. Code that holds the object uses the
+#	interrupted method.
 sub check_interrupted()
 {
-	return $interrupted;
+	for my $key ( keys %live ) {
+		my $manager = $live{$key};
+		if ( !defined $manager ) {
+			delete $live{$key};
+			next;
+		}
+		return 1 if $manager->{interrupted};
+	}
+	return 0;
 }
 
-# reset_interrupted():
-#	Reset the interrupt flag. Use this for tests or manual
-#	control.
-sub reset_interrupted()
+# reset_all_interrupted():
+#	Clear the interrupt flag of every live manager. Tests use this
+#	between cases.
+sub reset_all_interrupted()
 {
-	$interrupted = 0;
+	for my $key ( keys %live ) {
+		my $manager = $live{$key};
+		if ( !defined $manager ) {
+			delete $live{$key};
+			next;
+		}
+		$manager->{interrupted} = 0;
+	}
+	return 1;
 }
 
+# $self->_run_cleanup_handlers($signal):
+#	Run every cleanup of this manager. The list stays intact. A
+#	second signal during the shutdown must find the same cleanups,
+#	because the first pass can die before it reaches the end.
 sub _run_cleanup_handlers ( $self, $signal )
 {
-	for my $handler (@cleanup_handlers) {
-		eval { $handler->($signal); };
+	for my $handler ( @{ $self->{cleanups} } ) {
+		eval { $handler->($signal); 1 };
 	}
-	@cleanup_handlers = ();
+	return $self;
 }
 
 # DESTROY runs when the object goes out of scope
 sub DESTROY ($self)
 {
+	delete $live{ refaddr $self };
 	$self->restore;
 }
 

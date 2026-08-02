@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 27 2026 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt FuguLib::Daemon 3p
 .Os
 .Sh NAME
@@ -26,17 +26,21 @@ use FuguLib::Daemon;
 
 FuguLib::Daemon->daemonize(
     logfile => '/var/log/mydaemon.log',
-    on_fork => sub ($pid) { $state->write_pid($pid) },
+    pidfile => '/var/run/mydaemon.pid',
 );
 .Ed
 .Sh DESCRIPTION
 .Nm
-turns the program into a daemon.
+turns the program into a daemon, as
+.Xr daemon 3
+does.
 The program forks, and the parent exits.
-The child becomes a session leader and redirects its standard
-descriptors away from the terminal.
+The child becomes a session leader, redirects its standard descriptors
+away from the terminal, leaves the directory it started in, and sets
+its file creation mask.
 .Pp
-The module keeps no state and has one class method.
+The module keeps no state that a caller can see and has one class
+method.
 .Ss daemonize
 .Fn daemonize "%args"
 forks into the background and detaches from the controlling terminal.
@@ -54,6 +58,14 @@ and reopens standard input from
 The child then appends standard output to
 .Fa logfile
 and duplicates standard output onto standard error.
+It changes to the root directory and applies
+.Fa umask .
+Last, it takes the PID file when the caller named one.
+.Pp
+The child redirects the descriptors before it changes the directory.
+Thus a relative
+.Fa logfile
+keeps the meaning that the caller gave it.
 .Pp
 These are the arguments:
 .Bl -tag -width "logfileXX"
@@ -65,24 +77,42 @@ This default is correct for a daemon that logs through
 .Xr FuguLib::Log 3p
 in syslog mode.
 The module opens the file in append mode.
+.It Fa pidfile
+The PID file the child takes with
+.Xr FuguLib::Pidfile 3p .
+The child acquires it after
+.Xr setsid 2 ,
+so the file holds the PID of the session leader.
+The child holds the lock for the life of the process, even if the
+caller discards the returned object.
+The default is no PID file.
+.It Fa umask
+The file creation mask of the daemon.
+The default is 022.
 .It Fa on_fork
 A code reference that the parent calls with the child's process ID
 before the parent exits.
-Write the PID file in this code reference.
-Only the parent knows the child's process ID at that point.
+Use
+.Fa pidfile
+instead for the common case.
 .El
 .Sh RETURN VALUES
 .Fn daemonize
-returns nothing in the child and never returns in the parent.
+never returns in the parent.
+In the child it returns the
+.Xr FuguLib::Pidfile 3p
+object when the caller gave a
+.Fa pidfile ,
+and nothing otherwise.
 .Sh EXAMPLES
-This example daemonizes the program, writes a PID file from the
-parent, and logs through syslog:
+This example daemonizes the program, takes a PID file, and logs through
+syslog:
 .Bd -literal -offset indent
 my $log = FuguLib::Log->new(mode => 'syslog', ident => 'mydaemon');
-my $state = FuguLib::State->new('/var/run/mydaemon.pid');
 
 FuguLib::Daemon->daemonize(
-    on_fork => sub ($pid) { $state->write_pid($pid) },
+    logfile => '/var/log/mydaemon.log',
+    pidfile => '/var/run/mydaemon.pid',
 );
 
 $log->info('started, pid %d', $$);
@@ -91,16 +121,21 @@ $log->info('started, pid %d', $$);
 .Fn daemonize
 dies and does not return if the fork fails, if
 .Xr setsid 2
-fails, or if the module cannot redirect one of the three standard
-descriptors.
+fails, if the module cannot redirect one of the three standard
+descriptors, if it cannot change to the root directory, or if it cannot
+take the PID file.
 A daemon cannot recover from these startup conditions.
+.Pp
+A failure to take the PID file most often means that a second daemon
+already holds it.
 .Sh SEE ALSO
 .Xr setsid 2 ,
+.Xr umask 2 ,
 .Xr daemon 3 ,
 .Xr FuguLib::Log 3p ,
+.Xr FuguLib::Pidfile 3p ,
 .Xr FuguLib::Privdrop 3p ,
-.Xr FuguLib::Process 3p ,
-.Xr FuguLib::State 3p
+.Xr FuguLib::Process 3p
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
@@ -115,3 +150,17 @@ The parent exits with status 0 even if
 fails.
 To make sure that the PID file exists, the caller must do a separate
 check.
+Use
+.Fa pidfile
+instead: a failure there stops the child.
+.Pp
+The daemon never removes the PID file.
+An
+.Xr unlink 2
+in a root-owned directory needs a write permission on the directory
+that a daemon gives up at the privilege drop.
+The
+.Fn is_stale
+method of
+.Xr FuguLib::Pidfile 3p
+covers the leftover file.

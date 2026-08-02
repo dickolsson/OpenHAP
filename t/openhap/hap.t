@@ -6,8 +6,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -22,7 +21,7 @@ BEGIN {
 
 use_ok('OpenHAP::HAP');
 use_ok('OpenHAP::Storage');
-use_ok('OpenHAP::Crypto');
+use_ok('FuguLib::Crypto');
 use_ok('OpenHAP::Pairing');
 
 # Test HAP object creation
@@ -85,7 +84,7 @@ use_ok('OpenHAP::Pairing');
 
     ok(exists $hap->{event_queue}, '[HAP-HTTP §14] event queue exists');
     ok(ref $hap->{event_queue} eq 'HASH', 'Event queue is a hash');
-    ok(!defined $hap->{event_flush_scheduled}, 'No flush scheduled initially');
+    ok(!defined $hap->{event_flush_timer}, 'No flush scheduled initially');
 }
 
 # Test identity regeneration

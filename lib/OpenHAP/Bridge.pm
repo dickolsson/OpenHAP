@@ -2,6 +2,8 @@ use v5.36;
 
 package OpenHAP::Bridge;
 
+use FuguLib::Log;
+
 require OpenHAP::Accessory;
 our @ISA = qw(OpenHAP::Accessory);
 
@@ -50,7 +52,8 @@ sub _add_protocol_info_service ($self)
 
 sub add_bridged_accessory ( $self, $accessory )
 {
-	$OpenHAP::logger->debug( 'Adding bridged accessory: AID=%d, name=%s',
+	FuguLib::Log->default->debug(
+		'Adding bridged accessory: AID=%d, name=%s',
 		$accessory->{aid}, $accessory->{name} );
 	push @{ $self->{bridged_accessories} }, $accessory;
 

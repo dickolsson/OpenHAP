@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 27 2026 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt FuguLib::Process 3p
 .Os
 .Sh NAME
@@ -25,13 +25,15 @@
 use FuguLib::Process;
 
 my $result = FuguLib::Process->spawn_command(
-    cmd         => [ '/usr/local/bin/mydaemon', '-f' ],
-    daemonize   => 1,
-    stdout      => '/var/log/mydaemon.log',
-    check_alive => 2,
+    cmd       => [ '/usr/local/bin/mydaemon', '-f' ],
+    daemonize => 1,
+    stdout    => '/var/log/mydaemon.log',
 );
 
 FuguLib::Process->terminate($result->{pid}) if $result->{success};
+
+my $r = FuguLib::Process->run(cmd => [ 'rcctl', 'check', 'mydaemon' ]);
+print $r->{stdout} if $r->{success};
 .Ed
 .Sh DESCRIPTION
 .Nm
@@ -44,6 +46,18 @@ first and sends
 .Dv SIGKILL
 after a delay.
 It reaps zombies and does not block.
+.Pp
+Two methods start a child.
+.Fn spawn_command
+leaves it running.
+.Fn run
+waits for it and captures what it wrote.
+Both report a failed
+.Xr execve 2
+exactly, over a close-on-exec pipe, and never by a wait-and-guess
+.Xr sleep 3 .
+Neither one runs a shell: the command is a list, so no argument needs
+quoting and no argument can become a shell operator.
 .Pp
 The module keeps no state.
 Every method is a class method.
@@ -70,9 +84,11 @@ The default for each path is
 .It Fa check_alive
 The number of seconds to wait before the check that the child continues
 to run.
-The default is 1.
-If the value is 0, the method does not do the check and returns when
-the fork succeeds.
+The default is 0, which skips the check.
+The
+.Xr execve 2
+outcome does not need this wait: the method always has it before it
+returns.
 .It Fa on_success
 A code reference that the method calls with the child's process ID when
 the spawn is successful.
@@ -81,24 +97,82 @@ A code reference that the method calls with a message when the spawn
 fails.
 .El
 .Pp
-When
+The parent always waits for the
+.Xr execve 2
+to resolve.
+The child holds the write end of a close-on-exec pipe.
+A successful
+.Xr execve 2
+closes that end, and the parent reads end-of-file.
+A failure leaves a message in the pipe, and the parent returns it in
+.Fa error .
+Thus a command that does not exist reports its own reason at once.
+.Pp
 .Fa check_alive
-is not zero,
-the parent sleeps for that number of seconds and then does two tests.
+answers a different question:
+.Em is the child still there after N seconds .
+When it is not zero, the parent waits that long and then does two
+tests.
 A
 .Xr waitpid 2
 call that does not block reaps the child and shows that it exited.
 A
 .Xr kill 2
 call with signal 0 shows that the child is still there.
-These tests catch an exec that fails for a reason that the fork cannot
-report,
-for example, a command that does not exist.
+.Pp
+A child that exits at once with status 0 is not a failure.
+The result carries
+.Fa success
+set to 1,
+.Fa exited
+set to 1 and
+.Fa exit_code
+set to 0.
+Thus a caller that expects a long-lived child can tell the two apart.
+.Ss run
+.Fn run "%args"
+runs a command to completion and captures what it wrote.
+.Pp
+These are the arguments:
+.Bl -tag -width "timeoutXX"
+.It Fa cmd
+An array reference that holds the command and its arguments.
+This argument is necessary and must not be empty.
+.It Fa timeout
+The number of seconds to wait before the method stops the child.
+The default is no limit.
+.It Fa stdin
+A string to feed to the child on its standard input.
+.El
+.Pp
+The method reads standard output and standard error at the same time.
+A reader that took them in sequence would deadlock: a child that fills
+one pipe blocks until someone drains it.
+.Ss exit_code
+.Fn exit_code "$status"
+maps a raw
+.Xr waitpid 2
+status, or the return value of
+.Ic system ,
+to an exit code between 0 and 255.
+The low byte holds the terminating signal.
+The high byte holds the exit code.
+A value of \-1 means the child never started.
+.Pp
+A caller that gives a raw status to
+.Ic exit
+turns a remote exit code of 1 into
+.Ql exit(256) ,
+which the kernel truncates to 0.
+That silently reports a failed command as a success.
 .Ss is_alive
 .Fn is_alive "$pid"
 reports if a process exists and is not a zombie.
 The check reaps a zombie child as a side effect and then reports it as
 not alive.
+A caller that needs the exit status uses
+.Fn run ,
+or waits itself.
 .Ss terminate
 .Fn terminate "$pid" "%args"
 sends
@@ -116,6 +190,9 @@ The default is 5.
 .It Fa on_kill
 A code reference that the method calls when the process is gone.
 .El
+.Pp
+The wait polls with sub-second granularity.
+Thus a child that stops at once does not cost a whole second.
 .Ss reap
 .Fn reap "$pid"
 reaps one zombie child and does not block.
@@ -162,11 +239,27 @@ On failure,
 is 0 and
 .Fa error
 gives the cause.
-When the spawn makes a child and the child dies,
+When the spawn makes a child and the child exits at once,
 the hash also holds
-.Fa pid
+.Fa exited
 and
 .Fa exit_code .
+.Pp
+.Fn run
+returns a hash reference that holds
+.Fa success ,
+.Fa stdout ,
+.Fa stderr ,
+.Fa exit_code
+and
+.Fa timed_out .
+On a failure to start the child, it also holds
+.Fa error .
+.Fa success
+is 1 only when the child exited with code 0 and did not time out.
+.Pp
+.Fn exit_code
+returns a number between 0 and 255.
 .Pp
 .Fn is_alive
 returns 1 or 0.
@@ -204,34 +297,27 @@ When you give an
 .Fa on_error
 callback, the methods also report the failure through it.
 .Sh SEE ALSO
+.Xr execve 2 ,
 .Xr kill 2 ,
 .Xr setsid 2 ,
 .Xr waitpid 2 ,
 .Xr FuguLib::Log 3p ,
-.Xr FuguLib::State 3p
+.Xr FuguLib::Pidfile 3p
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
 .Fn spawn_command
 blocks the caller for
 .Fa check_alive
-seconds.
-The check is a plain
-.Xr sleep 3 .
+seconds when that argument is not zero.
 Thus a program that spawns several children waits the full time for
 each child in sequence.
+Leave the argument at its default of 0 unless the question it answers
+is the one you have.
 .Pp
-The method reports a child that correctly stops in the
-.Fa check_alive
-window as a failure.
-The
-.Fa error
-says that the child stopped immediately, and the
-.Fa exit_code
-is 0.
-Set
-.Fa check_alive
-to 0 for commands that stop quickly.
+.Fn run
+holds the whole output of the child in memory.
+Do not use it for a command that writes without a bound.
 .Pp
 .Fn is_alive
 and

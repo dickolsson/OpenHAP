@@ -19,8 +19,16 @@ use v5.36;
 
 package FuguVM::Config;
 
-use File::Spec;
-use File::Basename;
+use FuguLib::Config;
+use FuguLib::File;
+use FuguLib::Log;
+
+# FuguVM::Config - the VM defaults over FuguLib::Config.
+#
+# The grammar, the tilde expansion and the yes/no spellings come from
+# FuguLib::Config. This file holds only what is true of FuguVM: the
+# defaults for a machine, the merge of the global and the project
+# file, and the switch that turns the installed-image cache off.
 
 use constant {
 	DEFAULT_MEMORY       => 2048,
@@ -41,120 +49,73 @@ sub new ( $class, $project_root )
 	}, $class;
 
 	$self->_load_configs;
+
 	return $self;
 }
 
-# Walk up the directory tree to find .fuguvmrc
+# $class->find_project_root:
+#	Walk up to the directory that holds .fuguvmrc.
 sub find_project_root ($class)
 {
-	my $dir = File::Spec->rel2abs('.');
-
-	while (1) {
-		my $config_file = "$dir/" . PROJECT_CONFIG;
-		return $dir if -f $config_file;
-
-		my $parent = dirname($dir);
-		last if $parent eq $dir;    # The walk reached the root
-		$dir = $parent;
-	}
-
-	return;
+	return FuguLib::Config->find_project_root(PROJECT_CONFIG);
 }
 
 sub _load_configs ($self)
 {
-	# Load the global config from the home directory
-	my $home          = $ENV{HOME} // '/root';
-	my $global_config = "$home/" . GLOBAL_CONFIG;
-	$self->{global} =
-	    -f $global_config ? $self->_parse_config($global_config) : {};
+	my $home = $ENV{HOME} // '/root';
 
-	# Load the project config from the project root
-	my $project_config = "$self->{project_root}/" . PROJECT_CONFIG;
+	$self->{global} = $self->_parse( "$home/" . GLOBAL_CONFIG );
 	$self->{project} =
-	    -f $project_config ? $self->_parse_config($project_config) : {};
+	    $self->_parse( "$self->{project_root}/" . PROJECT_CONFIG );
 
 	return $self;
 }
 
-# Parse an OpenBSD-style config with the optional block syntax:
-#
-#   key value
-#
-#   vm "name" { ... }
-#   vm name { ... }
-#
-sub _parse_config ( $self, $path )
+# $self->_parse($path):
+#	Parse one configuration file. An absent file is normal: a
+#	checkout has no global file, and a global-only setup has no
+#	project file. A file that exists but does not parse is an error
+#	that names the line, and the caller gets empty settings rather
+#	than half of them.
+sub _parse ( $self, $path )
 {
-	my %config;
+	return FuguLib::Config->new( file => $path ) unless -f $path;
 
-	open my $fh, '<', $path or do {
-		warn "Cannot open $path: $!";
-		return \%config;
-	};
-
-	my $block_type;
-	my $block_name;
-	my $block_data;
-
-	while (<$fh>) {
-		chomp;
-		s/#.*//;           # Remove the comments
-		s/^\s+|\s+$//g;    # Trim the whitespace
-		next if $_ eq '';
-
-		# Block start: vm "name" { or vm name {
-		if (       /^(\w+)\s+"([^"]+)"\s*\{$/
-			|| /^(\w+)\s+(\S+)\s*\{$/ )
-		{
-			$block_type = $1;
-			$block_name = $2;
-			$block_data = {};
-			next;
-		}
-
-		# Block end
-		if ( $_ eq '}' ) {
-			if ( defined $block_type ) {
-				$config{$block_type}{$block_name} = $block_data;
-				$block_type                       = undef;
-				$block_name                       = undef;
-				$block_data                       = undef;
-			}
-			next;
-		}
-
-		# A key-value pair, inside or outside a block. The parser
-		# supports both the "key value" and the "key = value"
-		# syntax.
-		if (/^(\w+)\s+(.+)$/) {
-			my ( $key, $value ) = ( $1, $2 );
-			$value =~ s/^=\s*//;       # Remove a leading '=' if any
-			$value =~ s/^\s+|\s+$//g;
-			$value =~ s/^"(.*)"$/$1/;
-			if ( defined $block_data ) {
-				$block_data->{$key} = $value;
-			}
-			else {
-				$config{$key} = $value;
-			}
-		}
+	my $config = FuguLib::Config->new( file => $path );
+	unless ( $config->load ) {
+		FuguLib::Log->default->error( '%s', $config->error );
 	}
 
-	close $fh;
-	return \%config;
+	return $config;
 }
 
+# $self->_setting($key):
+#	Return a top-level setting. The project file wins over the
+#	global one.
+sub _setting ( $self, $key )
+{
+	return $self->{project}->get($key) // $self->{global}->get($key);
+}
+
+# $self->load_vm($name):
+#	Return the merged configuration of one VM, or undef when no
+#	file declares it.
 sub load_vm ( $self, $name )
 {
 	# First check for a VM block in the project config. Then check
 	# the global config.
-	my $vm = $self->{project}{vm}{$name} // $self->{global}{vm}{$name};
+	my $block = $self->{project}->block( 'vm', $name )
+	    // $self->{global}->block( 'vm', $name );
+	my $vm = $block ? { %{ $block->{settings} } } : undef;
 
 	# Fall back to a separate VM file for backwards compatibility
 	if ( !defined $vm ) {
 		my $vm_file = "$self->{data_dir}/vms/$name.conf";
-		$vm = $self->_parse_config($vm_file) if -f $vm_file;
+		if ( -f $vm_file ) {
+			my $file = $self->_parse($vm_file);
+			$vm = { map { $_ => $file->get($_) }
+				    $file->setting_names };
+		}
 	}
 
 	return if !defined $vm;
@@ -181,7 +142,7 @@ sub load_vm ( $self, $name )
 	# the VM block or the enclosing configuration
 	$vm->{image_cache} =
 	    defined $vm->{image_cache}
-	    ? _parse_bool( $vm->{image_cache}, 1 )
+	    ? $self->_bool( $vm->{image_cache}, 1 )
 	    : $self->image_cache;
 
 	return $vm;
@@ -189,13 +150,9 @@ sub load_vm ( $self, $name )
 
 sub cache_dir ($self)
 {
-	my $dir = $self->{project}{cache_dir} // $self->{global}{cache_dir}
-	    // '~/.cache/fuguvm';
+	my $dir = $self->_setting('cache_dir') // '~/.cache/fuguvm';
 
-	# Expand ~
-	$dir =~ s/^~/$ENV{HOME}/;
-
-	return $dir;
+	return FuguLib::File->expand_tilde($dir);
 }
 
 # $self->image_cache:
@@ -204,40 +161,31 @@ sub cache_dir ($self)
 #	is on.
 sub image_cache ($self)
 {
-	my $value = $self->{project}{image_cache}
-	    // $self->{global}{image_cache};
+	my $value = $self->_setting('image_cache');
 	return 1 if !defined $value;
 
-	return _parse_bool( $value, 1 );
+	return $self->_bool( $value, 1 );
 }
 
-# _parse_bool($value, $default):
-#	Accept the spellings that an OpenBSD-style configuration file
-#	uses for a switch. An unrecognized value warns and falls back.
-#	It does not silently mean its opposite.
-sub _parse_bool ( $value, $default )
+# $self->_bool($value, $default):
+#	Read a switch, and report a value that is neither yes nor no.
+#	An unrecognized spelling must not silently mean its opposite,
+#	so the operator hears about it.
+sub _bool ( $self, $value, $default )
 {
-	my $normalized = lc $value;
-	$normalized =~ s/^\s+|\s+$//g;
+	my $parser = $self->{project};
+	my $result = $parser->parse_bool( $value, $default );
 
-	return 1
-	    if $normalized eq 'yes'
-	    || $normalized eq 'true'
-	    || $normalized eq 'on'
-	    || $normalized eq '1';
-	return 0
-	    if $normalized eq 'no'
-	    || $normalized eq 'false'
-	    || $normalized eq 'off'
-	    || $normalized eq '0';
+	FuguLib::Log->default->warning( '%s', $parser->error )
+	    if defined $parser->error;
 
-	warn "Not a yes/no value: $value\n";
-	return $default;
+	return $result;
 }
 
 sub state_dir ($self)
 {
-	my $dir = $self->{project}{state_dir} // "$self->{data_dir}/state";
+	my $dir = $self->{project}->get('state_dir')
+	    // "$self->{data_dir}/state";
 
 	# Make relative paths absolute to the project root
 	if ( $dir !~ m{^/} ) {
@@ -249,13 +197,12 @@ sub state_dir ($self)
 
 sub default_vm ($self)
 {
-	return $self->{project}{default_vm} // $self->{global}{default_vm}
-	    // 'default';
+	return $self->_setting('default_vm') // 'default';
 }
 
 sub ssh_pubkey ($self)
 {
-	return $self->{project}{ssh_pubkey} // $self->{global}{ssh_pubkey};
+	return $self->_setting('ssh_pubkey');
 }
 
 sub project_root ($self)

@@ -19,8 +19,11 @@ use v5.36;
 
 package FuguVM::Disk;
 
-use File::Path qw(make_path);
 use File::Basename;
+use FuguLib::File;
+use FuguLib::Log;
+use FuguLib::Process;
+use JSON::PP ();
 
 sub new ( $class, $state_dir )
 {
@@ -46,9 +49,8 @@ sub create (
     )
 {
 	my $path = $self->path($name);
-	my $dir  = dirname($path);
 
-	make_path($dir) if !-d $dir;
+	FuguLib::File->ensure_dir( dirname($path) ) or return;
 
 	return $path if -f $path;    # Already exists
 
@@ -61,15 +63,15 @@ sub create (
 	push @cmd, $path;
 	push @cmd, $size if defined $size;
 
-	# Redirect the output to /dev/null. This removes the verbose
-	# "Formatting..." messages of qemu-img. The code uses a shell
-	# redirection because system() gives no output control.
-	my $cmd_str =
-	    join( ' ', map { my $s = $_; $s =~ s/'/'\\''/g; "'$s'" } @cmd );
-	my $result = system("$cmd_str >/dev/null 2>&1");
+	# The capture also swallows the verbose "Formatting..." line of
+	# qemu-img, which no caller wants to see
+	my $result = FuguLib::Process->run( cmd => \@cmd );
 
-	if ( $result != 0 ) {
-		warn "Failed to create disk image: $path\n";
+	unless ( $result->{success} ) {
+		FuguLib::Log->default->error(
+			'Failed to create disk image %s: %s',
+			$path,
+			$result->{stderr} || $result->{error} || 'unknown' );
 		return;
 	}
 
@@ -112,11 +114,13 @@ sub info ( $self, $name )
 	my $path = $self->path($name);
 	return if !-f $path;
 
-	my $output = `qemu-img info -U --output=json "$path" 2>/dev/null`;
-	return if $? != 0;
+	# The inspection asks for shared access with -U, so it also
+	# works against the disk of a running VM
+	my $result = FuguLib::Process->run(
+		cmd => [ 'qemu-img', 'info', '-U', '--output=json', $path ] );
+	return if !$result->{success};
 
-	require JSON::XS;
-	return eval { JSON::XS::decode_json($output) };
+	return eval { JSON::PP->new->utf8->decode( $result->{stdout} ) };
 }
 
 # $self->backing_file($name):
@@ -150,19 +154,12 @@ sub check ( $self, $name )
 	my $path = $self->path($name);
 	return if !-f $path;
 
-	my $output    = `qemu-img check "$path" 2>&1`;
-	my $exit_code = $?;
-
-	if ( $exit_code != 0 ) {
-		return {
-			status => 'corrupted',
-			output => $output,
-			path   => $path,
-		};
-	}
+	my $result =
+	    FuguLib::Process->run( cmd => [ 'qemu-img', 'check', $path ] );
+	my $output = $result->{stdout} . $result->{stderr};
 
 	return {
-		status => 'ok',
+		status => $result->{success} ? 'ok' : 'corrupted',
 		output => $output,
 		path   => $path,
 	};
@@ -176,8 +173,10 @@ sub repair ( $self, $name )
 	return 0 if !-f $path;
 
 	# Run qemu-img check with the repair option
-	my $result = system( 'qemu-img', 'check', '-r', 'all', $path );
-	return $result == 0;
+	my $result = FuguLib::Process->run(
+		cmd => [ 'qemu-img', 'check', '-r', 'all', $path ] );
+
+	return $result->{success} ? 1 : 0;
 }
 
 1;

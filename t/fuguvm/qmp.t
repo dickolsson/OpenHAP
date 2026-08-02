@@ -1,125 +1,142 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
+# The QMP command set. The transport - the deadline on a read, the
+# buffered remainder, the reassembly of a split line - belongs to
+# FuguLib::JSONSocket and is proven in t/fugulib/jsonsocket.t.
+
 use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use IO::Socket::UNIX;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
-use Time::HiRes qw(time);
 
 use_ok('FuguVM::QMP');
 
-# A QMP object wired to one end of a socketpair. The helper also
-# returns the peer, so the test can play QEMU. It builds the pair
-# through IO::Socket. Thus both ends autoflush exactly as the
-# sockets the module itself opens do.
-sub paired_qmp
+# paired_qmp(): a QMP object wired to one end of a socketpair. The
+# helper returns the peer, so the test can play QEMU. Both ends come
+# from IO::Socket, so they autoflush exactly as the sockets the module
+# opens for itself.
+sub paired_qmp ()
 {
-	my ($ours, $theirs) =
-	    IO::Socket::UNIX->socketpair(AF_UNIX, SOCK_STREAM, PF_UNSPEC);
+	my ( $ours, $theirs ) =
+	    IO::Socket::UNIX->socketpair( AF_UNIX, SOCK_STREAM, PF_UNSPEC );
 	return if !defined $ours;
 
 	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
-	$qmp->{sock} = $ours;
+	$qmp->{socket}{sock} = $ours;
 
-	return ($qmp, $theirs);
+	return ( $qmp, $theirs );
 }
 
 # Test object creation
 {
 	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
-	ok(defined $qmp, 'QMP object created');
-	is($qmp->{socket_path}, '/tmp/test-qmp.sock', 'Socket path set correctly');
-	is($qmp->{connected}, 0, 'Not connected initially');
+	ok( defined $qmp, 'QMP object created' );
+	is( $qmp->socket_path, '/tmp/test-qmp.sock', 'Socket path set correctly' );
+	ok( !$qmp->is_available, 'the socket file is absent' );
 }
 
 # Test connection failure to non-existent socket
 {
 	my $qmp = FuguVM::QMP->new('/tmp/nonexistent-qmp.sock');
-	my $result = $qmp->open_connection;
-	is($result, 0, 'Connection fails for non-existent socket');
+	is( $qmp->open_connection, 0, 'Connection fails for non-existent socket' );
 }
 
 # Test disconnect on unconnected socket
 {
 	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
-	my $result = $qmp->disconnect;
-	ok(defined $result, 'Disconnect returns object');
-	is($qmp->{connected}, 0, 'Still not connected after disconnect');
+	ok( defined $qmp->disconnect, 'Disconnect returns the object' );
 }
 
 # Test run_command on unconnected socket returns undef
 {
 	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
-	my $result = $qmp->run_command('query-status');
-	is($result, undef, 'run_command returns undef when not connected');
+	is( $qmp->run_command('query-status'),
+		undef, 'run_command returns undef when not connected' );
 }
 
-# A silent peer must not stall the caller. IO::Socket's timeout()
-# does not bound a read. Thus this used to block forever. 'fuguvm
-# down' hung and did not fall back to a force stop.
+# The command set: a well-formed reply decodes into the answer that
+# each method promises.
 {
-	my ($qmp, $peer) = paired_qmp();
+	my ( $qmp, $peer ) = paired_qmp();
+	SKIP: {
+		skip 'cannot create socketpair', 4 unless $qmp;
+
+		print {$peer} qq({"return":{"running":true,"status":"running"}}\n);
+		my $status = $qmp->query_status;
+		ok( $status->{running}, 'query_status reports a running VM' );
+		is( $status->{status}, 'running', 'and its status string' );
+
+		print {$peer} qq({"return":{"running":false,"status":"paused"}}\n);
+		is( $qmp->is_running, 0, 'is_running is false for a paused VM' );
+
+		print {$peer} qq({"return":{"running":true}}\n);
+		is( $qmp->is_running, 1, 'and true for a running one' );
+	}
+}
+
+# An error reply is not an answer. Every command must tell the two
+# apart, because a caller that treats an error as "not running" stops
+# a VM that is up.
+{
+	my ( $qmp, $peer ) = paired_qmp();
+	SKIP: {
+		skip 'cannot create socketpair', 3 unless $qmp;
+
+		print {$peer} qq({"error":{"class":"CommandNotFound"}}\n);
+		is( $qmp->query_status, undef, 'query_status refuses an error' );
+
+		print {$peer} qq({"error":{"class":"CommandNotFound"}}\n);
+		ok( !$qmp->powerdown, 'powerdown refuses an error' );
+
+		print {$peer} qq({"error":{"class":"CommandNotFound"}}\n);
+		ok( !$qmp->quit, 'quit refuses an error' );
+	}
+}
+
+# The lifecycle commands
+{
+	my ( $qmp, $peer ) = paired_qmp();
 	SKIP: {
 		skip 'cannot create socketpair', 2 unless $qmp;
 
-		my $start = time;
-		my $line = $qmp->_read_line(0.5);
-		my $spent = time - $start;
+		print {$peer} qq({"return":{}}\n);
+		ok( $qmp->powerdown, 'powerdown succeeds' );
 
-		is($line, undef, 'read returns undef when nothing answers');
-		ok($spent < 10, sprintf('read is bounded (%.1fs)', $spent));
+		print {$peer} qq({"return":{}}\n);
+		ok( $qmp->quit, 'quit succeeds' );
 	}
 }
 
-# The read returns a complete line without its terminator. Anything
-# the peer sent past the newline stays for the next read.
+# quit closes the connection: QEMU is gone, so the socket is too
 {
-	my ($qmp, $peer) = paired_qmp();
-	SKIP: {
-		skip 'cannot create socketpair', 3 unless $qmp;
-
-		print $peer qq({"QMP":{}}\n{"return":{}}\n);
-
-		is($qmp->_read_line(5), '{"QMP":{}}', 'first line read');
-		is($qmp->_read_line(5), '{"return":{}}',
-		    'second line served from the buffer, not lost');
-
-		close $peer;
-		is($qmp->_read_line(0.5), undef, 'undef at EOF');
-	}
-}
-
-# Whole-response path: a well-formed reply decodes. A silent peer
-# does not hang run_command.
-{
-	my ($qmp, $peer) = paired_qmp();
-	SKIP: {
-		skip 'cannot create socketpair', 3 unless $qmp;
-
-		print $peer qq({"return":{"running":true}}\n);
-		my $result = $qmp->run_command('query-status');
-		ok($result && $result->{return}{running},
-		    'run_command decodes a reply');
-
-		my $start = time;
-		is($qmp->run_command('query-status'), undef,
-		    'run_command returns undef when the peer is silent');
-		ok(time - $start < 30, 'and does so under its read timeout');
-	}
-}
-
-# disconnect must not leave a stale buffer behind for a later connection
-{
-	my ($qmp, $peer) = paired_qmp();
+	my ( $qmp, $peer ) = paired_qmp();
 	SKIP: {
 		skip 'cannot create socketpair', 1 unless $qmp;
 
-		print $peer qq({"a":1}\n{"b":2}\n);
-		$qmp->_read_line(5);
-		$qmp->disconnect;
-		is($qmp->{buffer}, '', 'disconnect clears the read buffer');
+		print {$peer} qq({"return":{}}\n);
+		$qmp->quit;
+		is( $qmp->run_command('query-status'),
+			undef, 'quit left the connection closed' );
+	}
+}
+
+# A silent peer must not stall the caller. IO::Socket's timeout() does
+# not bound a read, so this used to block for ever: 'fuguvm down' hung
+# and never fell back to a force stop.
+{
+	my ( $qmp, $peer ) = paired_qmp();
+	SKIP: {
+		skip 'cannot create socketpair', 2 unless $qmp;
+
+		# The module's own timeout is too long for a unit test
+		$qmp->{socket}{timeout} = 0.5;
+
+		my $start = time;
+		is( $qmp->query_status, undef,
+			'a silent peer gives undef, not a hang' );
+		ok( time - $start < 10, 'and it returned near the deadline' );
 	}
 }
 

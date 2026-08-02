@@ -20,6 +20,11 @@
 # enforcement through the running daemon itself. Thus this file
 # deliberately makes no such probe. The trace proves the daemon's
 # participation. The unit tier proves the kernel's.
+#
+# The inventory itself lives in bin/openhapd, beside the pledge
+# policy. A script is not loadable, so no unit test can call the
+# builder. This file holds that coverage instead, and it holds it
+# better: the trace shows the rows the kernel really got.
 
 use v5.36;
 use Test::More;
@@ -100,6 +105,17 @@ like($kdump, qr/STRU\s+flags="rwc"/,
      'the state directory is unveiled read-write-create');
 like($kdump, qr/CALL\s+unveil\(0,0\)/, 'the view is locked');
 is($unveils[-1], '0,0', 'the lock is the last unveil call');
+
+# The inventory grants no execute permission anywhere. The promise
+# set withholds exec, so a row that granted x would contradict the
+# pledge in the same source file.
+unlike($kdump, qr/STRU\s+flags="[^"]*x[^"]*"/,
+       'no unveil row grants execute permission');
+
+# The library tree is read-only. The daemon loads Net::MQTT::Simple
+# late, on the reconnect path, and must never write there.
+like($kdump, qr/STRU\s+flags="r"/,
+     'a read-only row is in the view');
 
 # pledge comes after the lock. This closes the ordering that the
 # call site promises.

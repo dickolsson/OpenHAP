@@ -3,8 +3,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
 
 BEGIN {
     eval {
@@ -17,7 +16,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::SRP');
-use_ok('OpenHAP::Crypto');
+use_ok('FuguLib::Crypto');
 
 # Test that the module pads A and B to N_len (384 bytes) when it
 # computes u, M1, and M2. This padding is critical for SRP-6a
@@ -127,10 +126,43 @@ use_ok('OpenHAP::Crypto');
     ok(!$result, '[HAP-Pairing §2.6] wrong client proof M1 is rejected');
 }
 
+# The public key that M2 carries is padded too. About one B in 256
+# is small enough that its natural encoding is 383 bytes. A caller
+# that packed the number itself would send a short key for one
+# pairing in 256, and both sides would then hash different bytes for
+# u. Thus SRP owns the encoding, beside N_LEN.
+subtest '[HAP-Pairing §2.4] the M2 public key is padded to N' => sub {
+	my $srp = OpenHAP::SRP->new( password => '123-45-678' );
+	my $salt = $srp->generate_salt();
+	$srp->compute_verifier( $salt, '123-45-678' );
+	$srp->generate_server_public();
+
+	is( length( $srp->server_public_bytes ),
+		384, 'a real B goes out as 384 bytes' );
+
+	# Force a B whose natural encoding is short. This is the one
+	# case in 256 that a random run almost never reaches.
+	$srp->{B} = Math::BigInt->new(256);
+	my $short = $srp->server_public_bytes;
+	is( length($short), 384, 'and so does a small B' );
+	is( unpack( 'H*', $short ),
+		( '00' x 382 ) . '0100',
+		'the padding is leading zeros, and the value is last' );
+
+	# The bytes are the same ones that u is computed over
+	is( unpack( 'H*', $short ),
+		unpack( 'H*', OpenHAP::SRP::_bigint_to_bytes( $srp->{B}, 384 ) ),
+		'the wire encoding matches the hashed encoding' );
+
+	my $fresh = OpenHAP::SRP->new( password => '123-45-678' );
+	is( $fresh->server_public_bytes,
+		undef, 'no key before generate_server_public' );
+};
+
 # Test that the N_len constant matches the padding expectation
 {
     # N is 3072 bits = 384 bytes
-    my $N_len = length($OpenHAP::Crypto::N_3072);
+    my $N_len = length($OpenHAP::SRP::N_3072);
     is($N_len, 384,
         '[HAP-Pairing §2.2] N_3072 group prime is 384 bytes (3072 bits)');
 }

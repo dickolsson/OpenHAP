@@ -9,8 +9,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new( mode => 'quiet', ident => 'test' );
+use FuguLib::TestLog;
 
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Base');

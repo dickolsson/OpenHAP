@@ -18,6 +18,8 @@
 use v5.36;
 
 package OpenHAP::Tasmota::Base;
+
+use FuguLib::Log;
 require OpenHAP::Accessory;
 our @ISA = qw(OpenHAP::Accessory);
 
@@ -60,7 +62,8 @@ sub subscribe_mqtt ($self)
 
 	return unless $self->{mqtt_client}->is_connected();
 
-	$OpenHAP::logger->debug( 'Tasmota %s subscribing to MQTT topics for %s',
+	FuguLib::Log->default->debug(
+		'Tasmota %s subscribing to MQTT topics for %s',
 		ref($self), $self->{name} );
 
 	# C1: Subscribe to LWT for device availability
@@ -107,7 +110,7 @@ sub query_initial_state ($self)
 {
 	return unless $self->{mqtt_client}->is_connected();
 
-	$OpenHAP::logger->debug( 'Querying initial state for %s',
+	FuguLib::Log->default->debug( 'Querying initial state for %s',
 		$self->{name} );
 
 	# Request the full status (Status 11). Spec §6.1 recommends
@@ -138,18 +141,19 @@ sub _handle_lwt ( $self, $payload )
 
 	if ( $payload eq 'Online' ) {
 		$self->{availability} = AVAILABILITY_ONLINE;
-		$OpenHAP::logger->info( 'Device %s is online', $self->{name} );
+		FuguLib::Log->default->info( 'Device %s is online',
+			$self->{name} );
 
 		# Query the initial state when the device comes online (H3)
 		$self->query_initial_state();
 	}
 	elsif ( $payload eq 'Offline' ) {
 		$self->{availability} = AVAILABILITY_OFFLINE;
-		$OpenHAP::logger->warning( 'Device %s is offline',
+		FuguLib::Log->default->warning( 'Device %s is offline',
 			$self->{name} );
 	}
 	else {
-		$OpenHAP::logger->debug( 'Unknown LWT payload for %s: %s',
+		FuguLib::Log->default->debug( 'Unknown LWT payload for %s: %s',
 			$self->{name}, $payload );
 	}
 
@@ -169,7 +173,7 @@ sub _handle_state ( $self, $payload )
 	};
 
 	if ($@) {
-		$OpenHAP::logger->error( 'Error parsing STATE for %s: %s',
+		FuguLib::Log->default->error( 'Error parsing STATE for %s: %s',
 			$self->{name}, $@ );
 	}
 }
@@ -184,7 +188,7 @@ sub _handle_result ( $self, $payload )
 	};
 
 	if ($@) {
-		$OpenHAP::logger->error( 'Error parsing RESULT for %s: %s',
+		FuguLib::Log->default->error( 'Error parsing RESULT for %s: %s',
 			$self->{name}, $@ );
 	}
 }
@@ -205,7 +209,7 @@ sub _handle_sensor ( $self, $payload )
 	};
 
 	if ($@) {
-		$OpenHAP::logger->error( 'Error parsing SENSOR for %s: %s',
+		FuguLib::Log->default->error( 'Error parsing SENSOR for %s: %s',
 			$self->{name}, $@ );
 	}
 }
@@ -222,7 +226,8 @@ sub _handle_status11 ( $self, $payload )
 		if ( exists $data->{StatusSTS} ) {
 			my $sts = $data->{StatusSTS};
 
-			$OpenHAP::logger->debug( 'STATUS11 received for %s',
+			FuguLib::Log->default->debug(
+				'STATUS11 received for %s',
 				$self->{name} );
 
 			# Cache the state data
@@ -235,7 +240,8 @@ sub _handle_status11 ( $self, $payload )
 	};
 
 	if ($@) {
-		$OpenHAP::logger->error( 'Error parsing STATUS11 for %s: %s',
+		FuguLib::Log->default->error(
+			'Error parsing STATUS11 for %s: %s',
 			$self->{name}, $@ );
 	}
 }
@@ -376,8 +382,8 @@ sub set_power ( $self, $state )
 	my $command = $state ? 'ON' : 'OFF';
 	my $topic   = $self->_get_power_topic();
 
-	$OpenHAP::logger->debug( '%s power set to %s', $self->{name},
-		$command );
+	FuguLib::Log->default->debug( '%s power set to %s',
+		$self->{name}, $command );
 	$self->{mqtt_client}->publish( $topic, $command );
 }
 
@@ -387,7 +393,7 @@ sub toggle_power ($self)
 {
 	my $topic = $self->_get_power_topic();
 
-	$OpenHAP::logger->debug( '%s power toggled', $self->{name} );
+	FuguLib::Log->default->debug( '%s power toggled', $self->{name} );
 	$self->{mqtt_client}->publish( $topic, 'TOGGLE' );
 }
 
@@ -398,7 +404,7 @@ sub blink ( $self, $on = 1 )
 	my $topic   = $self->_get_power_topic();
 	my $command = $on ? 'BLINK' : 'BLINKOFF';
 
-	$OpenHAP::logger->debug( '%s blink %s', $self->{name}, $command );
+	FuguLib::Log->default->debug( '%s blink %s', $self->{name}, $command );
 	$self->{mqtt_client}->publish( $topic, $command );
 }
 
@@ -416,7 +422,8 @@ sub query_status ( $self, $type = 11 )
 #	The device then sends STATE and SENSOR messages.
 sub force_telemetry ($self)
 {
-	$OpenHAP::logger->debug( 'Forcing telemetry for %s', $self->{name} );
+	FuguLib::Log->default->debug( 'Forcing telemetry for %s',
+		$self->{name} );
 	$self->{mqtt_client}
 	    ->publish( $self->_build_topic( 'cmnd', 'TelePeriod' ), '' );
 }

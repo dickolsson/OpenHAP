@@ -36,10 +36,13 @@ runtime problems.
 
 ## Debugging notes
 
-- Startup ordering in `bin/openhapd` is delicate: it chowns `/var/db/openhapd`,
-  drops to `_openhap`, then re-initializes logging and registers mDNS. Symptoms
-  like silent syslog or missing mDNS advertisements usually trace back to
-  changes in this order.
+- Startup ordering in `bin/openhapd` is delicate: it daemonizes and takes
+  `/var/run/openhapd.pid` as root, prepares `/var/db/openhapd`, drops to
+  `_openhap`, reopens the log, and registers mDNS. Symptoms like silent syslog
+  or missing mDNS advertisements usually trace back to changes in this order.
+- The PID file stays root-owned and the daemon never removes it. A leftover file
+  after a stop is by design; `hapctl status` reads it and reports "not running"
+  because the PID is stale.
 - Use the `hapctl` skill to inspect a running installation.
 
 ## References

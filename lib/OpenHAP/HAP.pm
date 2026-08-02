@@ -1,21 +1,55 @@
 use v5.36;
 
 package OpenHAP::HAP;
+
+use FuguLib::Log;
 use IO::Socket::INET;
-use IO::Select;
 use JSON::XS;
 use MIME::Base64 qw(encode_base64);
 use Digest::SHA  qw(sha512);
 use Time::HiRes  qw(time);
-use OpenHAP::HTTP;
+use FuguLib::EventLoop;
+use FuguLib::HTTP;
 
 use OpenHAP::Session;
 use OpenHAP::Pairing;
 use OpenHAP::Storage;
-use OpenHAP::Crypto;
+use FuguLib::Crypto;
 use OpenHAP::Bridge;
 use OpenHAP::Characteristic;
 use OpenHAP::PIN qw(normalize_pin);
+
+# How much the server reads from a client at a time.
+use constant READ_SIZE => 65536;
+
+# The largest request the server accepts: the header block plus the
+# body that Content-Length declares. An unpaired client reaches
+# /pair-setup, so the buffer of an unauthenticated connection needs a
+# bound of its own. A HAP request is a small TLV or a short JSON
+# document, so 64 KB is far above anything a controller sends.
+use constant MAX_REQUEST_SIZE => 65536;
+
+# The HAP status code for a request that arrives on an unverified
+# connection [HAP-HTTP]. It is not an RFC 9110 code, so the codec does
+# not know its reason phrase.
+use constant STATUS_INSUFFICIENT_PRIVILEGES => 470;
+
+# _response(%args):
+#	Build a response with the HAP defaults: the connection stays
+#	open, because a controller sends every request of a session
+#	over one connection, and the 470 code carries a reason phrase
+#	that only HAP defines.
+sub _response (%args)
+{
+	my %headers = %{ $args{headers} // {} };
+	$headers{Connection} //= 'keep-alive';
+
+	my $status = $args{status} // 200;
+	$args{status_text} //= 'Connection Authorization Required'
+	    if $status == STATUS_INSUFFICIENT_PRIVILEGES;
+
+	return FuguLib::HTTP::build_response( %args, headers => \%headers );
+}
 
 sub new ( $class, %args )
 {
@@ -37,10 +71,17 @@ sub new ( $class, %args )
 		mqtt_client        => undef,
 		mqtt_tick_interval => 0.1,     # MQTT poll interval in seconds
 
-		event_subscriptions   => {},   # Track event subscriptions
-		event_queue           => {},   # Queued events for coalescing
-		event_flush_scheduled =>
-		    undef,    # Timestamp when flush was scheduled
+		event_subscriptions => {},     # Track event subscriptions
+		event_queue         => {},     # Queued events for coalescing
+		event_flush_timer   => undef,  # The pending flush, if any
+
+		loop   => $args{loop},         # The caller can supply one
+		server => undef,               # The listening socket
+
+		# For the uptime in a control status. Time::HiRes::time
+		# is imported here, and it gives a float; a whole second
+		# is all an uptime needs.
+		started => int time,
 	}, $class;
 
 	$self->_initialize();
@@ -57,7 +98,7 @@ sub _initialize ($self)
 	# Load or generate the accessory keys
 	my ( $ltsk, $ltpk ) = $self->{storage}->load_accessory_keys();
 	unless ( $ltsk && $ltpk ) {
-		( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
+		( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
 		$self->{storage}->save_accessory_keys( $ltsk, $ltpk );
 	}
 
@@ -112,7 +153,7 @@ sub _mqtt_resubscribe_accessories ($self)
 	for my $acc (@accessories) {
 		if ( $acc->can('subscribe_mqtt') ) {
 			eval { $acc->subscribe_mqtt(); };
-			$OpenHAP::logger->error(
+			FuguLib::Log->default->error(
 				'Failed to resubscribe accessory: %s', $@ )
 			    if $@;
 		}
@@ -154,13 +195,13 @@ sub _refresh_mdns ($self)
 	return unless $self->{mdns}->is_published;
 
 	if ( $self->{mdns}->update_txt( txt => $self->get_mdns_txt_string ) ) {
-		$OpenHAP::logger->info(
+		FuguLib::Log->default->info(
 			'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
 			$paired ? 0 : 1
 		);
 	}
 	else {
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 			'mDNS TXT update failed: %s',
 			$self->{mdns}->error // 'unknown'
 		);
@@ -169,8 +210,30 @@ sub _refresh_mdns ($self)
 	return;
 }
 
-sub run ($self)
+# The interval between MQTT reconnection attempts, in seconds. A
+# broker that is down stays down for a while, and a daemon that
+# hammers it helps nobody.
+use constant MQTT_RECONNECT_INTERVAL => 30;
+
+# $self->loop:
+#	The event loop of this server. The server makes one on demand,
+#	so a caller that only wants to drive timers by hand does not
+#	have to build one.
+sub loop ($self)
 {
+	$self->{loop} //= FuguLib::EventLoop->new;
+
+	return $self->{loop};
+}
+
+# $self->listen:
+#	Open the HAP listener and register it with the loop. The method
+#	returns the socket. It dies when the port is not available:
+#	a HAP server that cannot listen has no reason to run.
+sub listen ($self)
+{
+	return $self->{server} if $self->{server};
+
 	my $server = IO::Socket::INET->new(
 		LocalPort => $self->{port},
 		Type      => SOCK_STREAM,
@@ -178,104 +241,166 @@ sub run ($self)
 		Listen    => 10,
 	    )
 	    or do {
-		$OpenHAP::logger->error(
+		FuguLib::Log->default->error(
 			'Cannot create server socket on port %d: %s',
 			$self->{port}, $! );
 		die "Cannot create server: $!";
 	    };
 
-	$OpenHAP::logger->info( 'OpenHAP server listening on port %d',
+	$self->{server} = $server;
+	$self->loop->add_fd( $server, read => sub ($) { $self->_accept } );
+
+	FuguLib::Log->default->info( 'OpenHAP server listening on port %d',
 		$self->{port} );
-	$OpenHAP::logger->debug( 'Pairing PIN: %s', $self->{pin} );
+	FuguLib::Log->default->debug( 'Pairing PIN: %s', $self->{pin} );
 
-	my $select = IO::Select->new($server);
+	return $server;
+}
 
-	# Use a short timeout to allow MQTT polling
-	my $select_timeout          = $self->{mqtt_tick_interval};
-	my $mqtt_reconnect_interval = 30;    # Reconnect attempt interval
-	my $last_mqtt_reconnect     = 0;
+# $self->run:
+#	Serve until the loop stops. The method returns when a signal
+#	interrupted the loop or a callback stopped it. Thus the caller
+#	runs its own shutdown, and nothing has to exit from inside a
+#	signal handler.
+sub run ($self)
+{
+	$self->listen;
+	$self->_register_mqtt;
+	$self->loop->run;
 
-	while (1) {
-		my @ready = $select->can_read($select_timeout);
+	FuguLib::Log->default->info('OpenHAP server stopped');
 
-		# Process MQTT messages if the server has a client
-		if ( $self->{mqtt_client} ) {
-			if ( $self->{mqtt_client}->is_connected ) {
-				$self->{mqtt_client}->tick(0);
-			}
-			else {
-				# Try to reconnect at intervals when the
-				# client is not connected
-				my $now = time;
-				if ( $now - $last_mqtt_reconnect >=
-					$mqtt_reconnect_interval )
-				{
-					$last_mqtt_reconnect = $now;
-					if ( $self->{mqtt_client}->reconnect() )
-					{
-						$OpenHAP::logger->info(
-'Reconnected to MQTT broker'
-						);
+	return $self;
+}
 
-						# Resubscribe the devices
-						$self
-						    ->_mqtt_resubscribe_accessories
-						    ();
-					}
-					else {
-						$OpenHAP::logger->debug(
-'MQTT reconnection attempt failed, will retry'
-						);
-					}
-				}
-			}
-		}
+# $self->stop:
+#	Ask the loop to end after the current pass.
+sub stop ($self)
+{
+	$self->loop->stop;
 
-		for my $sock (@ready) {
-			if ( $sock == $server ) {
+	return $self;
+}
 
-				# New connection
-				my $client = $server->accept();
-				$select->add($client);
-				$self->_init_session($client);
-			}
-			else {
+# $self->shutdown:
+#	Close the listener and every client connection. The caller
+#	calls this after run returns.
+sub shutdown ($self)
+{
+	for my $key ( keys %{ $self->{sessions} } ) {
+		my $session = $self->{sessions}{$key};
+		my $socket  = $session->{socket};
+		next unless ref $socket;
 
-				# Process the client data
-				$self->_handle_client( $sock, $select );
-			}
-		}
-
-		# Flush the coalesced events after the coalesce delay
-		$self->flush_events();
+		$self->loop->remove_fd($socket);
+		$socket->close;
 	}
+	$self->{sessions} = {};
+
+	if ( $self->{server} ) {
+		$self->loop->remove_fd( $self->{server} );
+		$self->{server}->close;
+		$self->{server} = undef;
+	}
+
+	return $self;
+}
+
+# $self->_register_mqtt:
+#	Put the MQTT client on the loop: a tick on every interval, and
+#	a reconnection attempt on its own slower schedule.
+#
+#	The two are separate timers because they answer to different
+#	clocks. Before this, one poll interval drove both, and the
+#	backoff was an epoch comparison inside the pass.
+sub _register_mqtt ($self)
+{
+	return unless $self->{mqtt_client};
+	return if $self->{mqtt_timers};
+
+	$self->{mqtt_timers} = [
+		$self->loop->every(
+			$self->{mqtt_tick_interval},
+			sub {
+				my $mqtt = $self->{mqtt_client} or return;
+				$mqtt->tick(0) if $mqtt->is_connected;
+			}
+		),
+		$self->loop->every(
+			MQTT_RECONNECT_INTERVAL,
+			sub { $self->_mqtt_retry }
+		),
+	];
+
+	return;
+}
+
+# $self->_mqtt_retry:
+#	One reconnection attempt, if the client is down.
+sub _mqtt_retry ($self)
+{
+	my $mqtt = $self->{mqtt_client} or return;
+	return if $mqtt->is_connected;
+
+	unless ( $mqtt->reconnect ) {
+		FuguLib::Log->default->debug(
+			'MQTT reconnection attempt failed, will retry');
+		return;
+	}
+
+	FuguLib::Log->default->info('Reconnected to MQTT broker');
+	$self->_mqtt_resubscribe_accessories;
+
+	return;
+}
+
+# $self->_accept:
+#	Take one connection and put it on the loop.
+sub _accept ($self)
+{
+	my $client = $self->{server}->accept or return;
+
+	$self->loop->add_fd(
+		$client,
+		read => sub ($fh) {
+			$self->_handle_client($fh);
+		} );
+	$self->_init_session($client);
+
+	return;
 }
 
 sub _init_session ( $self, $socket )
 {
-	$OpenHAP::logger->info( 'Client connected from %s', $socket->peerhost );
-	$self->{sessions}{$socket} =
+	FuguLib::Log->default->info( 'Client connected from %s',
+		$socket->peerhost );
+	$self->{sessions}{ fileno $socket } =
 	    OpenHAP::Session->new( socket => $socket, );
 }
 
-sub _handle_client ( $self, $sock, $select )
+# $self->_handle_client($sock):
+#	Read what arrived and serve every whole request in it.
+#
+#	A stream socket gives a reader whatever arrived, which is not a
+#	request. A request can span two reads, and two requests can
+#	share one. Thus the session keeps a buffer, and
+#	FuguLib::HTTP::message_complete says how much of it is a
+#	message.
+sub _handle_client ( $self, $sock )
 {
-	my $session = $self->{sessions}{$sock};
+	my $session = $self->{sessions}{ fileno $sock } or return;
 	my $data    = '';
-	my $bytes   = $sock->sysread( $data, 65535 );
+	my $bytes   = $sock->sysread( $data, READ_SIZE );
 
 	if ( !$bytes ) {
 
 		# The connection is closed. Release the pairing lock
 		# if this session holds it. Thus an aborted pair-setup
 		# cannot block pairing until a restart.
-		OpenHAP::Pairing->clear_pairing_state($session);
-		$self->_purge_event_subscriptions($session);
-		$OpenHAP::logger->info( 'Client disconnected from %s',
-			$sock->peerhost );
-		$select->remove($sock);
-		delete $self->{sessions}{$sock};
-		$sock->close();
+		my $peer = $sock->peerhost // 'unknown';
+		$self->_close_client($sock);
+		FuguLib::Log->default->info( 'Client disconnected from %s',
+			$peer );
 		return;
 	}
 
@@ -287,22 +412,59 @@ sub _handle_client ( $self, $sock, $select )
 	if ($was_encrypted) {
 		$data = $session->decrypt($data);
 		unless ( defined $data ) {
-			$OpenHAP::logger->warning(
+			FuguLib::Log->default->warning(
 				'Decryption failed for client session');
-			OpenHAP::Pairing->clear_pairing_state($session);
-			$self->_purge_event_subscriptions($session);
-			$select->remove($sock);
-			delete $self->{sessions}{$sock};
-			$sock->close();
+			$self->_close_client($sock);
 			return;
 		}
 	}
 
-	# Parse the HTTP request
-	my $request = OpenHAP::HTTP::parse($data);
+	$session->{inbuf} .= $data;
+
+	# Serve every whole request the buffer holds. A client that
+	# pipelines gets an answer to each one, in order.
+	while ( length $session->{inbuf} ) {
+		my $length =
+		    FuguLib::HTTP::message_complete( $session->{inbuf},
+			max_size => MAX_REQUEST_SIZE );
+
+		# Over the limit. An unpaired client reaches
+		# /pair-setup, so the buffer of an unauthenticated
+		# connection needs a bound of its own.
+		unless ( defined $length ) {
+			FuguLib::Log->default->warning(
+				'Request over %d bytes from %s, closing',
+				MAX_REQUEST_SIZE, $sock->peerhost );
+			$self->_close_client($sock);
+			return;
+		}
+		last if $length == 0;    # More bytes are necessary
+
+		my $message = substr $session->{inbuf}, 0, $length, '';
+		$self->_serve_request( $sock, $session, $message,
+			$was_encrypted );
+
+		# The dispatch can have closed the connection
+		return unless exists $self->{sessions}{ fileno $sock };
+	}
+
+	return;
+}
+
+# $self->_serve_request($sock, $session, $message, $was_encrypted):
+#	Dispatch one whole request and write its response.
+sub _serve_request ( $self, $sock, $session, $message, $was_encrypted )
+{
+	my $request = FuguLib::HTTP::parse_request($message);
+	unless ( defined $request ) {
+		FuguLib::Log->default->warning( 'Malformed request from %s',
+			$sock->peerhost );
+		$request =
+		    { method => '', path => '', headers => {}, body => '' };
+	}
 
 	# Log the HTTP request with the client information
-	$OpenHAP::logger->info(
+	FuguLib::Log->default->info(
 		'HTTP %s %s from %s', $request->{method},
 		$request->{path},     $sock->peerhost
 	);
@@ -321,6 +483,25 @@ sub _handle_client ( $self, $sock, $select )
 
 	# Re-advertise mDNS if this request changed the pairing state
 	$self->_refresh_mdns;
+
+	return;
+}
+
+# $self->_close_client($sock):
+#	Drop a client and everything the server kept for it.
+sub _close_client ( $self, $sock )
+{
+	my $key     = fileno $sock;
+	my $session = defined $key ? $self->{sessions}{$key} : undef;
+
+	OpenHAP::Pairing->clear_pairing_state($session) if $session;
+	$self->_purge_event_subscriptions($session)     if $session;
+
+	$self->loop->remove_fd($sock);
+	delete $self->{sessions}{$key} if defined $key;
+	$sock->close();
+
+	return;
 }
 
 sub _dispatch ( $self, $request, $session )
@@ -344,7 +525,7 @@ sub _dispatch ( $self, $request, $session )
 
 	# All other endpoints need a verified session
 	unless ( $session->is_verified() ) {
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 470,    # Connection Authorization Required
 			headers => { 'Content-Type' => 'application/hap+json' },
 		);
@@ -381,7 +562,7 @@ sub _dispatch ( $self, $request, $session )
 	}
 
 	# Not found
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 404,
 		headers => { 'Content-Type' => 'text/plain' },
 		body    => 'Not Found',
@@ -390,11 +571,11 @@ sub _dispatch ( $self, $request, $session )
 
 sub _handle_pair_setup ( $self, $request, $session )
 {
-	$OpenHAP::logger->debug('Handling pair-setup request');
+	FuguLib::Log->default->debug('Handling pair-setup request');
 	my $response_body =
 	    $self->{pairing}->handle_pair_setup( $request->{body}, $session );
 
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
 		body    => $response_body,
@@ -403,11 +584,11 @@ sub _handle_pair_setup ( $self, $request, $session )
 
 sub _handle_pair_verify ( $self, $request, $session )
 {
-	$OpenHAP::logger->debug('Handling pair-verify request');
+	FuguLib::Log->default->debug('Handling pair-verify request');
 	my $response_body =
 	    $self->{pairing}->handle_pair_verify( $request->{body}, $session );
 
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
 		body    => $response_body,
@@ -418,7 +599,7 @@ sub _handle_accessories ( $self, $request, $session )
 {
 	my $json = encode_json( $self->{bridge}->to_json() );
 
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/hap+json' },
 		body    => $json,
@@ -430,7 +611,7 @@ sub _handle_characteristics_get ( $self, $request, $session )
 	# Parse the query string: ?id=1.11,1.13&meta=1&perms=1&type=1&ev=1
 	my $query = $request->{path};
 	$query =~ s/^.*\?//;
-	$OpenHAP::logger->debug( 'Reading characteristics: %s', $query );
+	FuguLib::Log->default->debug( 'Reading characteristics: %s', $query );
 
 	my %params;
 	for my $pair ( split /&/, $query ) {
@@ -513,7 +694,7 @@ sub _handle_characteristics_get ( $self, $request, $session )
 
 	my $json = encode_json( { characteristics => \@characteristics } );
 
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => $has_errors ? 207 : 200,
 		headers => { 'Content-Type' => 'application/hap+json' },
 		body    => $json,
@@ -522,9 +703,9 @@ sub _handle_characteristics_get ( $self, $request, $session )
 
 sub _handle_characteristics_put ( $self, $request, $session )
 {
-	$OpenHAP::logger->debug('Writing characteristics');
+	FuguLib::Log->default->debug('Writing characteristics');
 	my $data = eval { decode_json( $request->{body} ) };
-	return OpenHAP::HTTP::build_response( status => 400 ) unless $data;
+	return _response( status => 400 ) unless $data;
 
 	my @results;
 	my $has_errors = 0;
@@ -625,12 +806,12 @@ sub _handle_characteristics_put ( $self, $request, $session )
 	}
 
 	# Return 204 No Content when all writes succeed
-	return OpenHAP::HTTP::build_response( status => 204 )
+	return _response( status => 204 )
 	    unless $has_errors;
 
 	# Return 207 Multi-Status with details if some writes fail
 	my $json = encode_json( { characteristics => \@results } );
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 207,
 		headers => { 'Content-Type' => 'application/hap+json' },
 		body    => $json,
@@ -641,14 +822,14 @@ sub _handle_identify ( $self, $request, $session )
 {
 	# Identify is only for unpaired accessories
 	if ( $self->is_paired() ) {
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 400,
 			headers => { 'Content-Type' => 'application/hap+json' },
 			body    => encode_json( { status => -70401 } ),
 		);
 	}
 
-	$OpenHAP::logger->info('Identify request received (unpaired)');
+	FuguLib::Log->default->info('Identify request received (unpaired)');
 
 	# Start identification on the bridge
 	my $bridge = $self->{bridge};
@@ -664,7 +845,7 @@ sub _handle_identify ( $self, $request, $session )
 		}
 	}
 
-	return OpenHAP::HTTP::build_response( status => 204 );
+	return _response( status => 204 );
 }
 
 sub _handle_pairings ( $self, $request, $session )
@@ -674,7 +855,7 @@ sub _handle_pairings ( $self, $request, $session )
 	my $method_raw = $tlv{ OpenHAP::Pairing::kTLVType_Method() };
 	my $method     = defined $method_raw ? unpack( 'C', $method_raw ) : -1;
 
-	$OpenHAP::logger->debug( 'Pairings request method=%d', $method );
+	FuguLib::Log->default->debug( 'Pairings request method=%d', $method );
 
 	# Method values: 3=Add, 4=Remove, 5=List
 	if ( $method == 3 ) {
@@ -694,7 +875,7 @@ sub _handle_pairings ( $self, $request, $session )
 		OpenHAP::Pairing::kTLVType_Error(),
 		pack( 'C', OpenHAP::Pairing::kTLVError_Unknown() ),
 	);
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
 		body    => $error,
@@ -708,7 +889,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	my $perms      = unpack( 'C',
 		$tlv->{ OpenHAP::Pairing::kTLVType_Permissions() } // "\x00" );
 
-	$OpenHAP::logger->debug( 'Add pairing request for: %s',
+	FuguLib::Log->default->debug( 'Add pairing request for: %s',
 		$identifier // 'unknown' );
 
 	# Check the admin permissions. Only admins can add pairings.
@@ -723,7 +904,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 			pack( 'C',
 				OpenHAP::Pairing::kTLVError_Authentication() ),
 		);
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 200,
 			headers =>
 			    { 'Content-Type' => 'application/pairing+tlv8' },
@@ -742,7 +923,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 			OpenHAP::Pairing::kTLVType_Error(),
 			pack( 'C', OpenHAP::Pairing::kTLVError_Unknown() ),
 		);
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 200,
 			headers =>
 			    { 'Content-Type' => 'application/pairing+tlv8' },
@@ -752,14 +933,14 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 
 	# Save the pairing
 	$self->{storage}->save_pairing( $identifier, $ltpk, $perms );
-	$OpenHAP::logger->info( 'Added pairing for controller: %s',
+	FuguLib::Log->default->info( 'Added pairing for controller: %s',
 		$identifier );
 
 	my $response = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 	);
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
 		body    => $response,
@@ -770,7 +951,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 {
 	my $identifier = $tlv->{ OpenHAP::Pairing::kTLVType_Identifier() };
 
-	$OpenHAP::logger->debug( 'Remove pairing request for: %s',
+	FuguLib::Log->default->debug( 'Remove pairing request for: %s',
 		$identifier // 'unknown' );
 
 	# Check the admin permissions
@@ -785,7 +966,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 			pack( 'C',
 				OpenHAP::Pairing::kTLVError_Authentication() ),
 		);
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 200,
 			headers =>
 			    { 'Content-Type' => 'application/pairing+tlv8' },
@@ -795,7 +976,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 
 	# Remove the pairing
 	$self->{storage}->remove_pairing($identifier);
-	$OpenHAP::logger->info( 'Removed pairing for controller: %s',
+	FuguLib::Log->default->info( 'Removed pairing for controller: %s',
 		$identifier );
 
 	# Check if any admins remain (HAP-Pairing.md §7.2). If no
@@ -804,7 +985,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	my $remaining = $self->{storage}->load_pairings();
 	my $has_admin = grep { $_->{permissions} } values %$remaining;
 	unless ( $has_admin || keys %$remaining == 0 ) {
-		$OpenHAP::logger->info(
+		FuguLib::Log->default->info(
 'Last admin removed - clearing all pairings and regenerating identity'
 		);
 		$self->{storage}->remove_all_pairings();
@@ -815,7 +996,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 		OpenHAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 	);
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
 		body    => $response,
@@ -824,7 +1005,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 
 sub _handle_list_pairings ( $self, $tlv, $session )
 {
-	$OpenHAP::logger->debug('List pairings request');
+	FuguLib::Log->default->debug('List pairings request');
 
 	# Check the admin permissions
 	my $pairings           = $self->{storage}->load_pairings();
@@ -838,7 +1019,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 			pack( 'C',
 				OpenHAP::Pairing::kTLVError_Authentication() ),
 		);
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 200,
 			headers =>
 			    { 'Content-Type' => 'application/pairing+tlv8' },
@@ -870,7 +1051,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 	}
 
 	my $response = OpenHAP::TLV::encode(@response_items);
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
 		body    => $response,
@@ -879,9 +1060,9 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 
 sub _handle_prepare ( $self, $request, $session )
 {
-	$OpenHAP::logger->debug('Timed write prepare request');
+	FuguLib::Log->default->debug('Timed write prepare request');
 	my $data = eval { decode_json( $request->{body} ) };
-	return OpenHAP::HTTP::build_response( status => 400 ) unless $data;
+	return _response( status => 400 ) unless $data;
 
 	my $ttl = $data->{ttl};    # Time to live in ms
 	my $pid = $data->{pid};    # Process ID
@@ -890,7 +1071,7 @@ sub _handle_prepare ( $self, $request, $session )
 
 	# Validate the request
 	unless ( defined $ttl && defined $pid ) {
-		return OpenHAP::HTTP::build_response(
+		return _response(
 			status  => 400,
 			headers => { 'Content-Type' => 'application/hap+json' },
 			body    => encode_json( { status => -70410 } ),
@@ -906,26 +1087,32 @@ sub _handle_prepare ( $self, $request, $session )
 		timestamp => time(),
 	};
 
-	return OpenHAP::HTTP::build_response(
+	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/hap+json' },
 		body    => encode_json( { status => 0 } ),
 	);
 }
 
-# Event subscription tracking
+# Event subscription tracking. A subscription is filed twice: under
+# the characteristic, for delivery, and on the session, so that a
+# disconnect is a delete of what that connection holds and not a
+# sweep of every characteristic the bridge has.
 sub _register_event_subscription ( $self, $session, $aid, $iid )
 {
 	my $key = "$aid.$iid";
-	$self->{event_subscriptions}{$key}{$session} = $session;
-	$OpenHAP::logger->debug( 'Registered event subscription for %s', $key );
+	$self->{event_subscriptions}{$key}{ $session->id } = $session;
+	$session->{subscriptions}{$key} = 1;
+	FuguLib::Log->default->debug( 'Registered event subscription for %s',
+		$key );
 }
 
 sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 {
 	my $key = "$aid.$iid";
-	delete $self->{event_subscriptions}{$key}{$session};
-	$OpenHAP::logger->debug( 'Unregistered event subscription for %s',
+	delete $self->{event_subscriptions}{$key}{ $session->id };
+	delete $session->{subscriptions}{$key};
+	FuguLib::Log->default->debug( 'Unregistered event subscription for %s',
 		$key );
 }
 
@@ -934,9 +1121,12 @@ sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 #	holds. Subscriptions are per-connection (HAP-HTTP.md §14).
 sub _purge_event_subscriptions ( $self, $session )
 {
-	for my $subs ( values %{ $self->{event_subscriptions} } ) {
-		delete $subs->{$session};
+	my $id = $session->id;
+
+	for my $key ( keys %{ $session->{subscriptions} } ) {
+		delete $self->{event_subscriptions}{$key}{$id};
 	}
+	$session->{subscriptions} = {};
 
 	return;
 }
@@ -984,31 +1174,40 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 		timestamp  => Time::HiRes::time(),
 	};
 
-	# Schedule a flush if no flush is pending
-	$self->{event_flush_scheduled} //= Time::HiRes::time();
+	# Schedule one flush for the whole window. A second event
+	# inside the window joins the flush that the first one asked
+	# for, which is what coalescing means.
+	$self->{event_flush_timer} //= $self->loop->after(
+		EVENT_COALESCE_DELAY,
+		sub {
+			$self->{event_flush_timer} = undef;
+			$self->flush_events;
+		} );
 }
 
-# Flush the queued events. The event loop calls this function.
+# $self->flush_events:
+#	Send every queued event now. The coalesce timer calls this at
+#	the end of the window. A caller that drives the server by hand,
+#	such as a conformance test, calls it directly.
 sub flush_events ($self)
 {
-	return unless $self->{event_flush_scheduled};
+	return unless %{ $self->{event_queue} };
 
-	my $now    = Time::HiRes::time();
-	my $oldest = $self->{event_flush_scheduled};
-
-	# Wait until the end of the coalesce delay
-	return if ( $now - $oldest ) < EVENT_COALESCE_DELAY;
-
-	# Send all the queued events
 	for my $event ( values %{ $self->{event_queue} } ) {
 		$self->send_event(
 			$event->{aid},   $event->{iid},
 			$event->{value}, $event->{originator} );
 	}
 
-	# Clear the queue
-	$self->{event_queue}           = {};
-	$self->{event_flush_scheduled} = undef;
+	$self->{event_queue} = {};
+
+	# A direct call empties the queue, so the pending timer has
+	# nothing left to do
+	$self->loop->cancel( $self->{event_flush_timer} )
+	    if $self->{event_flush_timer};
+	$self->{event_flush_timer} = undef;
+
+	return;
 }
 
 # Send an EVENT/1.0 notification to the subscribed sessions. Do
@@ -1040,7 +1239,7 @@ sub send_event ( $self, $aid, $iid, $value, $originator = undef )
 		if ( $socket && $socket->connected ) {
 			eval { $socket->syswrite($encrypted) };
 			if ($@) {
-				$OpenHAP::logger->warning(
+				FuguLib::Log->default->warning(
 					'Failed to send event to session: %s',
 					$@ );
 			}
@@ -1052,6 +1251,59 @@ sub is_paired ($self)
 {
 	my $pairings = $self->{storage}->load_pairings();
 	return scalar( keys %$pairings ) > 0;
+}
+
+# $self->control_status:
+#	What the server can say about itself, for a control client.
+#
+#	Nothing here is a secret. The setup code, the broker password,
+#	the accessory keys and the controller keys all stay in the
+#	daemon. A reply that carried one would put it in the output of
+#	a command that an operator runs in front of other people.
+sub control_status ($self)
+{
+	my $pairings = $self->{storage}->load_pairings;
+
+	# get_bridged_accessories returns a list, and scalar on a list
+	# return gives the last element, not a count
+	my @devices = $self->{bridge}->get_bridged_accessories;
+
+	return {
+		name          => $self->{name},
+		port          => $self->{port},
+		paired        => $self->is_paired ? 1 : 0,
+		pairings      => scalar keys %$pairings,
+		config_number => $self->get_config_number,
+		devices       => scalar @devices,
+		connections   => scalar keys %{ $self->{sessions} },
+		mdns          => $self->{mdns}
+		    && $self->{mdns}->is_published ? 'published' : 'absent',
+		mqtt => !$self->{mqtt_client} ? 'none'
+		: $self->{mqtt_client}->is_connected ? 'connected'
+		: 'disconnected',
+		started => $self->{started},
+	};
+}
+
+# $self->control_devices:
+#	The accessories on the bridge, for a control client. The
+#	bridge itself is not one of them: it carries no device.
+sub control_devices ($self)
+{
+	my @devices;
+	for my $accessory ( $self->{bridge}->get_bridged_accessories ) {
+		push @devices,
+		    {
+			aid    => $accessory->{aid},
+			name   => $accessory->{name},
+			model  => $accessory->{model},
+			serial => $accessory->{serial},
+			class  => ref $accessory,
+			topic  => $accessory->{mqtt_topic},
+		    };
+	}
+
+	return [ sort { $a->{aid} <=> $b->{aid} } @devices ];
 }
 
 sub get_config_number ($self)
@@ -1092,7 +1344,7 @@ sub update_config_number ($self)
 	elsif ( $stored ne $digest ) {
 		$self->{storage}->increment_config_number;
 		$self->{storage}->save_config_digest($digest);
-		$OpenHAP::logger->info(
+		FuguLib::Log->default->info(
 			'Accessory database changed, c# is now %d',
 			$self->get_config_number );
 	}
@@ -1165,7 +1417,7 @@ sub _get_setup_hash ($self)
 # last admin pairing (HAP-Pairing.md §7.2).
 sub _regenerate_identity ($self)
 {
-	my ( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
+	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
 	$self->{storage}->save_accessory_keys( $ltsk, $ltpk );
 	$self->{accessory_ltsk} = $ltsk;
 	$self->{accessory_ltpk} = $ltpk;
@@ -1181,7 +1433,7 @@ sub _regenerate_identity ($self)
 	# Reset the authentication attempt counter
 	OpenHAP::Pairing->reset_auth_attempts();
 
-	$OpenHAP::logger->info('Accessory identity regenerated');
+	FuguLib::Log->default->info('Accessory identity regenerated');
 	return;
 }
 

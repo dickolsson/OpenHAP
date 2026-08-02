@@ -2,6 +2,8 @@ use v5.36;
 
 package OpenHAP::Characteristic;
 
+use FuguLib::Log;
+
 use JSON::XS;
 
 # HAP Base UUID suffix for Apple-defined characteristics
@@ -130,7 +132,8 @@ sub get_value ($self)
 
 sub set_value ( $self, $value )
 {
-	$OpenHAP::logger->debug( 'Setting characteristic IID=%d to value: %s',
+	FuguLib::Log->default->debug(
+		'Setting characteristic IID=%d to value: %s',
 		$self->{iid}, defined $value ? $value : 'undef' );
 
 	# Use the custom setter if the characteristic has one
@@ -149,7 +152,7 @@ sub set_value ( $self, $value )
 
 sub enable_events ( $self, $enabled )
 {
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Events %s for characteristic IID=%d',
 		$enabled ? 'enabled' : 'disabled',
 		$self->{iid} );

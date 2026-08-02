@@ -19,254 +19,172 @@ use v5.36;
 
 package FuguVM::State;
 
-use File::Path qw(make_path);
-use JSON::XS;
+use FuguLib::File;
+use FuguLib::Log;
+use FuguLib::Pidfile;
+use FuguLib::Store;
 
-use constant { MAX_VM_NAME_LENGTH => 255, };
+# FuguVM::State - what FuguVM remembers about one VM between runs.
+#
+# The JSON blob rides on FuguLib::Store. The two process IDs ride on
+# FuguLib::Pidfile, which locks before it truncates and reaps a zombie
+# before it answers "running".
+#
+# The module is persistence only. It starts nothing and stops nothing:
+# the proxy lifecycle belongs to FuguVM::VM, which is what removed the
+# require cycle between this module and FuguVM::Proxy.
 
 sub new ( $class, $state_dir, $vm_name, %opts )
 {
-	# Validate the VM name length
-	if ( length($vm_name) > MAX_VM_NAME_LENGTH ) {
-		warn "VM name too long (max "
-		    . MAX_VM_NAME_LENGTH
-		    . " characters)\n";
-		return;
-	}
-
-	# Validate the VM name characters. Path separators and null
-	# bytes are not permitted.
-	if ( $vm_name =~ m{[/\x00]} ) {
-		warn "VM name contains invalid characters\n";
+	# The name becomes a directory under the state directory. A
+	# name with a separator in it would put that directory
+	# somewhere else.
+	unless ( FuguLib::File->valid_name($vm_name) ) {
+		FuguLib::Log->default->error( 'Not a usable VM name: %s',
+			$vm_name // '(none)' );
 		return;
 	}
 
 	my $vm_state_dir = "$state_dir/$vm_name";
 
 	my $self = bless {
-		state_dir      => $state_dir,
-		vm_name        => $vm_name,
-		vm_state_dir   => $vm_state_dir,
-		vm_pid_file    => "$vm_state_dir/vm.pid",
-		proxy_pid_file => "$vm_state_dir/proxy.pid",
-		status_file    => "$vm_state_dir/status",
-		disk_path      => "$vm_state_dir/disk.qcow2",
+		state_dir    => $state_dir,
+		vm_name      => $vm_name,
+		vm_state_dir => $vm_state_dir,
+		disk_path    => "$vm_state_dir/disk.qcow2",
+		vm_pid       =>
+		    FuguLib::Pidfile->new( path => "$vm_state_dir/vm.pid" ),
+		proxy_pid =>
+		    FuguLib::Pidfile->new( path => "$vm_state_dir/proxy.pid" ),
+		store => FuguLib::Store->new(
+			path => "$vm_state_dir/status",
+			mode => 0600,
+		),
 	}, $class;
 
-	if ( !$self->_ensure_dir ) {
-		return;
-	}
+	FuguLib::File->ensure_dir($vm_state_dir) or return;
 	$self->load;
 
 	return $self;
 }
 
-sub _ensure_dir ($self)
-{
-	my $dir = $self->{vm_state_dir};
-
-	# Check for symlinks. For security, refuse to follow them.
-	if ( -l $dir ) {
-		warn "State directory is a symlink: $dir\n";
-		return 0;
-	}
-
-	# Check if the path exists but is not a directory
-	if ( -e $dir && !-d $dir ) {
-		warn "State path exists but is not a directory: $dir\n";
-		return 0;
-	}
-
-	if ( !-d $dir ) {
-		eval { make_path($dir) };
-		if ($@) {
-
-			# Extract the error message without exposing internals
-			my $err = $@;
-			$err =~ s/ at \S+ line \d+.*//s;
-			warn "Cannot create state directory: $err\n";
-			return 0;
-		}
-	}
-	return 1;
-}
-
 sub load ($self)
 {
-	if ( -f $self->{status_file} ) {
-		open my $fh, '<', $self->{status_file} or return;
-		local $/;
-		my $json = <$fh>;
-		close $fh;
-
-		eval { $self->{data} = decode_json($json); };
-		if ($@) {
-			warn "State file corrupted: $self->{status_file}: $@";
-			$self->{data} = {};
-		}
-	}
-	else {
-		$self->{data} = {};
-	}
-
+	$self->{store}->load;
 	return $self;
 }
 
 sub save ($self)
 {
-	open my $fh, '>', $self->{status_file} or do {
-		warn "Cannot write $self->{status_file}: $!\n";
-		return;
-	};
-
-	print $fh encode_json( $self->{data} );
-	close $fh;
-
+	$self->{store}->save;
 	return $self;
+}
+
+# $self->store:
+#	Return the state store. FuguVM::VM gives it to the proxy, which
+#	keeps its port there.
+sub store ($self)
+{
+	return $self->{store};
+}
+
+# $self->state_dir:
+#	Return the directory that holds every VM's state, not this
+#	VM's own. FuguVM::Disk keys its paths by VM name under it.
+sub state_dir ($self)
+{
+	return $self->{state_dir};
+}
+
+# $self->vm_pidfile:
+#	Return the PID file of the QEMU process. QEMU writes it itself,
+#	through its -pidfile option.
+sub vm_pidfile ($self)
+{
+	return $self->{vm_pid};
+}
+
+# $self->proxy_pidfile:
+#	Return the PID file of the proxy child. FuguVM::VM gives it to
+#	the proxy supervisor.
+sub proxy_pidfile ($self)
+{
+	return $self->{proxy_pid};
 }
 
 # VM PID management
 sub set_vm_pid ( $self, $pid )
 {
-	open my $fh, '>', $self->{vm_pid_file} or do {
-		warn "Cannot write $self->{vm_pid_file}: $!";
+	$self->{vm_pid}->write_pid($pid) or do {
+		FuguLib::Log->default->warning( '%s', $self->{vm_pid}->error );
 		return;
 	};
-	print $fh "$pid\n";
-	close $fh;
 
 	return $self;
 }
 
 sub get_vm_pid ($self)
 {
-	open my $fh, '<', $self->{vm_pid_file} or return;
-	my $pid = <$fh>;
-	close $fh;
-
-	chomp $pid  if defined $pid;
-	return $pid if $pid && $pid =~ /^\d+$/;
-	return;
+	return $self->{vm_pid}->read_pid;
 }
 
 sub clear_vm_pid ($self)
 {
-	unlink $self->{vm_pid_file};
+	$self->{vm_pid}->remove;
 	return $self;
 }
 
+# $self->is_vm_running:
+#	Report if the QEMU process is alive. A QEMU that became a
+#	zombie is not running: the check reaps it and says so.
 sub is_vm_running ($self)
 {
-	my $pid = $self->get_vm_pid;
-	return 0 if !defined $pid;
-
-	# Check if the process is alive
-	return kill( 0, $pid ) ? 1 : 0;
+	return $self->{vm_pid}->is_running ? 1 : 0;
 }
 
 # Proxy PID management
 sub set_proxy_pid ( $self, $pid )
 {
-	open my $fh, '>', $self->{proxy_pid_file} or do {
-		warn "Cannot write $self->{proxy_pid_file}: $!";
+	$self->{proxy_pid}->write_pid($pid) or do {
+		FuguLib::Log->default->warning( '%s',
+			$self->{proxy_pid}->error );
 		return;
 	};
-	print $fh "$pid\n";
-	close $fh;
 
 	return $self;
 }
 
 sub get_proxy_pid ($self)
 {
-	open my $fh, '<', $self->{proxy_pid_file} or return;
-	my $pid = <$fh>;
-	close $fh;
-
-	chomp $pid  if defined $pid;
-	return $pid if $pid && $pid =~ /^\d+$/;
-	return;
+	return $self->{proxy_pid}->read_pid;
 }
 
 sub clear_proxy_pid ($self)
 {
-	unlink $self->{proxy_pid_file};
+	$self->{proxy_pid}->remove;
 	return $self;
 }
 
 sub is_proxy_running ($self)
 {
-	my $pid = $self->get_proxy_pid;
-	return 0 if !defined $pid;
-
-	# Check if the process is alive
-	return kill( 0, $pid ) ? 1 : 0;
+	return $self->{proxy_pid}->is_running ? 1 : 0;
 }
 
 # Proxy port management
 sub set_proxy_port ( $self, $port )
 {
-	$self->{data}{proxy_port} = $port;
-	$self->save;
+	$self->{store}->set( proxy_port => $port );
 	return $self;
 }
 
 sub get_proxy_port ($self)
 {
-	return $self->{data}{proxy_port};
+	return $self->{store}->get('proxy_port');
 }
 
 sub clear_proxy_port ($self)
 {
-	delete $self->{data}{proxy_port};
-	$self->save;
-	return $self;
-}
-
-# Proxy lifecycle management
-# $self->ensure_proxy($cache_dir):
-#	Start the proxy if it does not run. Return the Proxy object.
-#	Return undef if the proxy cannot start.
-sub ensure_proxy ( $self, $cache_dir )
-{
-	require FuguVM::Proxy;
-
-	my $proxy = FuguVM::Proxy->new( $self, $cache_dir );
-
-	# If the proxy already runs, return the existing object
-	if ( $proxy->is_running ) {
-		return $proxy;
-	}
-
-	# Start the proxy
-	my $port = $proxy->start;
-	return if !defined $port;
-
-	return $proxy;
-}
-
-# $self->get_proxy($cache_dir):
-#	Return the Proxy object if the proxy runs. Return undef if it
-#	does not.
-sub get_proxy ( $self, $cache_dir )
-{
-	require FuguVM::Proxy;
-
-	my $proxy = FuguVM::Proxy->new( $self, $cache_dir );
-	return $proxy->is_running ? $proxy : undef;
-}
-
-# $self->stop_proxy($cache_dir):
-#	Stop the proxy if it runs.
-sub stop_proxy ( $self, $cache_dir )
-{
-	require FuguVM::Proxy;
-
-	my $proxy = FuguVM::Proxy->new( $self, $cache_dir );
-	if ( $proxy->is_running ) {
-		$proxy->stop;
-	}
-
+	$self->{store}->delete('proxy_port');
 	return $self;
 }
 
@@ -284,29 +202,29 @@ sub disk_exists ($self)
 # Installation state
 sub is_installed ($self)
 {
-	return $self->{data}{installed} ? 1 : 0;
+	return $self->{store}->get('installed') ? 1 : 0;
 }
 
 sub mark_installed ($self)
 {
-	$self->{data}{installed}    = 1;
-	$self->{data}{installed_at} = time;
-	$self->save;
+	$self->{store}->data->{installed}    = 1;
+	$self->{store}->data->{installed_at} = time;
+	$self->{store}->save;
+
 	return $self;
 }
 
-# Root password management. The state stores the password securely
-# for the initial setup.
+# Root password management. The state stores the password for the
+# initial setup. The store writes at mode 0600.
 sub set_root_password ( $self, $password )
 {
-	$self->{data}{root_password} = $password;
-	$self->save;
+	$self->{store}->set( root_password => $password );
 	return $self;
 }
 
 sub get_root_password ($self)
 {
-	return $self->{data}{root_password};
+	return $self->{store}->get('root_password');
 }
 
 # SSH key installation state
@@ -315,29 +233,32 @@ sub get_root_password ($self)
 # changed. Then it automatically installs the new key.
 sub is_ssh_key_installed ($self)
 {
-	return $self->{data}{ssh_key_installed} ? 1 : 0;
+	return $self->{store}->get('ssh_key_installed') ? 1 : 0;
 }
 
 sub mark_ssh_key_installed ( $self, $ssh_pubkey = undef )
 {
-	$self->{data}{ssh_key_installed}    = 1;
-	$self->{data}{ssh_key_installed_at} = time;
-	$self->{data}{installed_ssh_pubkey} = $ssh_pubkey
-	    if defined $ssh_pubkey;
-	$self->save;
+	my $data = $self->{store}->data;
+	$data->{ssh_key_installed}    = 1;
+	$data->{ssh_key_installed_at} = time;
+	$data->{installed_ssh_pubkey} = $ssh_pubkey if defined $ssh_pubkey;
+	$self->{store}->save;
+
 	return $self;
 }
 
 sub get_installed_ssh_pubkey ($self)
 {
-	return $self->{data}{installed_ssh_pubkey};
+	return $self->{store}->get('installed_ssh_pubkey');
 }
 
 sub ssh_key_matches ( $self, $ssh_pubkey )
 {
 	return 0 if !$self->is_ssh_key_installed;
+
 	my $installed = $self->get_installed_ssh_pubkey;
 	return 0 if !defined $installed;
+
 	return $installed eq $ssh_pubkey;
 }
 
@@ -346,9 +267,14 @@ sub vm_state_dir ($self)
 	return $self->{vm_state_dir};
 }
 
+sub vm_name ($self)
+{
+	return $self->{vm_name};
+}
+
 sub data ($self)
 {
-	return $self->{data};
+	return $self->{store}->data;
 }
 
 # Shutdown state tracking
@@ -357,43 +283,49 @@ sub data ($self)
 
 sub mark_clean_shutdown ($self)
 {
-	$self->{data}{shutdown_clean} = 1;
-	$self->{data}{shutdown_at}    = time;
-	delete $self->{data}{running};
-	$self->save;
+	my $data = $self->{store}->data;
+	$data->{shutdown_clean} = 1;
+	$data->{shutdown_at}    = time;
+	delete $data->{running};
+	$self->{store}->save;
+
 	return $self;
 }
 
 sub mark_unclean_shutdown ($self)
 {
-	$self->{data}{shutdown_clean} = 0;
-	$self->{data}{shutdown_at}    = time;
-	delete $self->{data}{running};
-	$self->save;
+	my $data = $self->{store}->data;
+	$data->{shutdown_clean} = 0;
+	$data->{shutdown_at}    = time;
+	delete $data->{running};
+	$self->{store}->save;
+
 	return $self;
 }
 
 sub mark_running ($self)
 {
-	$self->{data}{running}    = 1;
-	$self->{data}{started_at} = time;
-	delete $self->{data}{shutdown_clean};
-	$self->save;
+	my $data = $self->{store}->data;
+	$data->{running}    = 1;
+	$data->{started_at} = time;
+	delete $data->{shutdown_clean};
+	$self->{store}->save;
+
 	return $self;
 }
 
 sub was_unclean_shutdown ($self)
 {
+	my $data = $self->{store}->data;
+
 	# The state explicitly marks the shutdown as unclean
-	if ( exists $self->{data}{shutdown_clean}
-		&& !$self->{data}{shutdown_clean} )
-	{
+	if ( exists $data->{shutdown_clean} && !$data->{shutdown_clean} ) {
 		return 1;
 	}
 
 	# The state says running, but the VM process is dead. Thus the
 	# VM crashed or was killed.
-	if ( $self->{data}{running} && !$self->is_vm_running ) {
+	if ( $data->{running} && !$self->is_vm_running ) {
 		return 1;
 	}
 
@@ -402,9 +334,11 @@ sub was_unclean_shutdown ($self)
 
 sub clear_shutdown_state ($self)
 {
-	delete $self->{data}{shutdown_clean};
-	delete $self->{data}{running};
-	$self->save;
+	my $data = $self->{store}->data;
+	delete $data->{shutdown_clean};
+	delete $data->{running};
+	$self->{store}->save;
+
 	return $self;
 }
 

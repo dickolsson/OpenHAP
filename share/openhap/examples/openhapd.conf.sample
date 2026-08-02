@@ -13,6 +13,10 @@ hap_manufacturer = "OpenBSD"
 # Storage
 db_path = /var/db/openhapd
 
+# Control socket, where hapctl(8) asks the running daemon what it is
+# doing.  Set it to "off" to run with no local control channel.
+# control = /var/run/openhapd/control.sock
+
 # Logging
 log_level = info
 log_facility = daemon

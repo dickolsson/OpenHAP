@@ -28,20 +28,52 @@ use_ok('FuguLib::Process');
 	ok( !FuguLib::Process->is_alive($pid), 'Process is dead' );
 }
 
-# Test 3: Process that exits immediately with non-zero (failure)
-SKIP: {
-	# This test is OS-dependent. The sh -c command can exit
-	# immediately, but this is not certain.
-	skip 'Process exit timing varies by OS', 3;
-
+# Test 3: A process that exits at once with a non-zero code is a
+# failure. The check_alive window makes the outcome deterministic.
+{
 	my $result = FuguLib::Process->spawn_command(
 		cmd         => [ 'sh', '-c', 'exit 1' ],
 		check_alive => 1,
 	);
 
 	ok( !$result->{success}, 'Detected immediate failure' );
-	like( $result->{error}, qr/died immediately/, 'Error message mentions death' );
+	like( $result->{error}, qr/died immediately/,
+		'Error message mentions death' );
 	is( $result->{exit_code}, 1, 'Exit code captured' );
+}
+
+# Test 3b: A process that exits at once with code 0 is not a failure.
+# It did its work and left.
+{
+	my $result = FuguLib::Process->spawn_command(
+		cmd         => [ 'sh', '-c', 'exit 0' ],
+		check_alive => 1,
+	);
+
+	ok( $result->{success},  'A clean fast exit is a success' );
+	ok( $result->{exited},   'and the result says the child exited' );
+	is( $result->{exit_code}, 0, 'with code 0' );
+	ok( !defined $result->{error}, 'and carries no error' );
+}
+
+# Test 3c: An exec that fails reports its own reason at once, through
+# the close-on-exec pipe and not through a wait-and-guess sleep.
+{
+	my $start  = time;
+	my $result = FuguLib::Process->spawn_command(
+		cmd => ['/nonexistent/definitely-not-a-command'],
+	);
+	my $elapsed = time - $start;
+
+	ok( !$result->{success}, 'An exec failure is a failure' );
+	like(
+		$result->{error},
+		qr/Cannot exec .*definitely-not-a-command/,
+		'the error names the command'
+	);
+	like( $result->{error}, qr/No such file|not found/i,
+		'and carries the reason from the system' );
+	ok( $elapsed <= 2, 'the report does not wait for a sleep' );
 }
 
 # Test 4: Invalid command
@@ -70,10 +102,7 @@ SKIP: {
 }
 
 # Test 6: Error callback
-SKIP: {
-	# This test is OS-dependent
-	skip 'Process exit timing varies by OS', 2;
-
+{
 	my $error_msg = '';
 	my $result    = FuguLib::Process->spawn_command(
 		cmd         => [ 'sh', '-c', 'exit 1' ],
@@ -183,6 +212,89 @@ SKIP: {
 		close $fh;
 		like( $content, qr/test output/, 'Output redirected correctly' );
 	}
+}
+
+# Test 14: exit_code maps a raw wait status to a 0-255 code
+{
+	is( FuguLib::Process->exit_code(0),        0, 'status 0 -> exit 0' );
+	is( FuguLib::Process->exit_code( 1 << 8 ), 1, 'exit code 1 preserved' );
+	is( FuguLib::Process->exit_code( 2 << 8 ), 2, 'exit code 2 preserved' );
+	is( FuguLib::Process->exit_code( 255 << 8 ),
+		255, 'exit code 255 preserved' );
+	is( FuguLib::Process->exit_code(-1), 1,   'a failed start -> 1' );
+	is( FuguLib::Process->exit_code(15), 143, 'signal 15 -> 128 + signal' );
+	is( FuguLib::Process->exit_code(2),  130, 'signal 2 -> 128 + signal' );
+}
+
+# Test 15: run captures both streams and the exit code
+{
+	my $r = FuguLib::Process->run(
+		cmd => [ 'sh', '-c', 'echo out; echo err >&2; exit 3' ] );
+
+	is( $r->{exit_code}, 3, 'run reports the exit code' );
+	ok( !$r->{success}, 'a non-zero exit is not a success' );
+	like( $r->{stdout}, qr/^out$/m,  'run captured stdout' );
+	like( $r->{stderr}, qr/^err$/m,  'run captured stderr' );
+	ok( !$r->{timed_out}, 'and it did not time out' );
+}
+
+# Test 16: run feeds stdin and never goes through a shell
+{
+	my $r = FuguLib::Process->run(
+		cmd   => [ 'cat' ],
+		stdin => "hello\n",
+	);
+	is( $r->{stdout}, "hello\n", 'run feeds stdin to the child' );
+	ok( $r->{success}, 'and reports success' );
+
+	# An argument that a shell would treat as an operator stays one
+	# argument, because the command is a list
+	my $shell = FuguLib::Process->run( cmd => [ 'echo', 'a; touch b' ] );
+	is( $shell->{stdout}, "a; touch b\n", 'no shell interprets the argument' );
+}
+
+# Test 17: run enforces its timeout
+{
+	my $start = time;
+	my $r     = FuguLib::Process->run(
+		cmd     => [ 'sleep', '30' ],
+		timeout => 1,
+	);
+	my $elapsed = time - $start;
+
+	ok( $r->{timed_out}, 'run reports the timeout' );
+	ok( !$r->{success},  'a timed-out run is not a success' );
+	ok( $elapsed < 10,   'and it returned near the deadline' );
+}
+
+# Test 18: run reports an exec failure without starting anything
+{
+	my $r = FuguLib::Process->run(
+		cmd => ['/nonexistent/definitely-not-a-command'] );
+
+	ok( !$r->{success}, 'run fails when the exec fails' );
+	like( $r->{error}, qr/Cannot exec/, 'and names the exec' );
+
+	my $empty = FuguLib::Process->run( cmd => [] );
+	ok( !$empty->{success}, 'run rejects an empty command' );
+}
+
+# Test 19: run drains a child that writes more than one pipe buffer.
+# A reader that took the streams in sequence would deadlock here.
+{
+	my $r = FuguLib::Process->run(
+		cmd => [
+			'sh', '-c',
+			'i=0; while [ $i -lt 400 ]; do '
+			    . 'echo "0123456789012345678901234567890123456789"; '
+			    . 'echo "x" >&2; i=$((i+1)); done'
+		],
+		timeout => 30,
+	);
+
+	ok( $r->{success}, 'a chatty child completes' );
+	is( length( $r->{stdout} ), 400 * 41, 'stdout arrived whole' );
+	is( length( $r->{stderr} ), 400 * 2,  'stderr arrived whole' );
 }
 
 done_testing();

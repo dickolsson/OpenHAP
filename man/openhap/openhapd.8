@@ -127,20 +127,53 @@ gives the debug messages, and
 adds trace messages.
 .El
 .Sh FILES
-.Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
+.Bl -tag -width "/var/db/openhapd/accessory_ltskXX" -compact
 .It Pa /etc/openhapd.conf
 The default configuration file.
 .It Pa /var/db/openhapd/
 The state directory that holds the pairing database and the
 cryptographic keys.
-.It Pa /var/db/openhapd/pairings
-The database of paired HomeKit controllers.
-.It Pa /var/db/openhapd/ltsk
-The long-term secret key (Ed25519 private key).
-.It Pa /var/db/openhapd/ltpk
-The long-term public key (Ed25519 public key).
+.It Pa /var/db/openhapd/pairings.db
+The database of paired HomeKit controllers, mode 0600.
+.It Pa /var/db/openhapd/accessory_ltsk
+The long-term secret key (Ed25519 private key), mode 0600.
+.It Pa /var/db/openhapd/accessory_ltpk
+The long-term public key (Ed25519 public key), mode 0644.
+.It Pa /var/db/openhapd/state.json
+The configuration number, the configuration digest, and the counter of
+failed pairing attempts, mode 0600.
+An older installation kept each of these in a file of its own.
+The daemon reads those files one time and folds them into this one.
+.It Pa /var/run/openhapd/control.sock
+The control socket, mode 0600 in a directory of mode 0700.
+.Xr hapctl 8
+asks the running daemon for its status over it.
+The daemon creates the directory while it is still root, because
+.Ox
+clears
+.Pa /var/run
+at boot, and it removes the socket at a clean shutdown.
+The
+.Ic control
+directive of
+.Xr openhapd.conf 5
+moves the socket or turns it off.
 .It Pa /var/run/openhapd.pid
 The process ID file.
+The daemon takes it while it is still root, and holds the lock for its
+whole life.
+The file stays root-owned, so the unprivileged daemon cannot rewrite it.
+.Nm
+does not remove the file at exit: an
+.Xr unlink 2
+in root-owned
+.Pa /var/run
+needs a directory permission that the daemon gives up at the privilege
+drop.
+A leftover file names a process that no longer runs, and
+.Xr hapctl 8
+reports that as
+.Dq not running .
 .El
 .Pp
 On
@@ -177,6 +210,16 @@ mode.
 connection to
 .Xr mdnsd 8
 to advertise again.
+.It control socket directory
+(optional, read-write-create) the directory of the control socket, not
+the socket.
+.Xr bind 2
+and
+.Xr unlink 2
+both change a directory entry.
+The row is absent when
+.Ic control off
+turns the socket off.
 .It Pa /etc/resolv.conf , Pa /etc/hosts , Pa /etc/services , Pa /etc/protocols
 (optional, read) the resolver files; the daemon uses them when
 .Cm mqtt_host
@@ -184,6 +227,37 @@ is a name and not an address.
 .It Pa /etc/localtime
 (optional, read) timestamps.
 .El
+.Sh SIGNALS
+.Bl -tag -width "SIGTERMXX"
+.It Dv SIGTERM , SIGINT
+Shut down.
+The signal sets a flag.
+The event loop sees the flag at the end of the current pass, and the
+daemon then withdraws its mDNS advertisement and closes the listener
+and every client connection.
+The daemon exits 0.
+.Pp
+Nothing exits from inside the signal handler, thus a connection is
+never dropped in the middle of a response.
+.It Dv SIGHUP
+Reload.
+The daemon opens its log again and keeps serving.
+Use this after
+.Xr newsyslog 8
+rotates
+.Pa /var/log/openhapd.log .
+.Pp
+.Cm rcctl reload openhapd
+sends this signal.
+In releases before 2026 the signal ended the daemon, which is the
+opposite of a reload.
+.El
+.Pp
+The daemon does not remove
+.Pa /var/run/openhapd.pid
+at exit.
+See
+.Sx FILES .
 .Sh EXAMPLES
 Do a check of the configuration file:
 .Bd -literal -offset indent
@@ -231,6 +305,21 @@ The pairing with a new HomeKit controller was successful.
 .It Dq Secure session established
 The daemon started an encrypted session with a paired controller.
 .El
+.Pp
+A configuration file that does not parse is a fatal error.
+.Nm
+writes the file, the line number, and the reason to
+.Em stderr ,
+and it exits 1 before it opens the log:
+.Bd -literal -offset indent
+/etc/openhapd.conf:14: cannot parse: hap_prt 51827
+.Ed
+.Pp
+The daemon does not fall back to the defaults, because the operator
+did not choose them.
+Use
+.Fl n
+to check a file before you restart the daemon.
 .Sh SEE ALSO
 .Xr syslog 3 ,
 .Xr openhapd.conf 5 ,

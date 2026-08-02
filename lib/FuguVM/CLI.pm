@@ -19,29 +19,35 @@ use v5.36;
 
 package FuguVM::CLI;
 
-use Getopt::Long qw(:config require_order bundling);
 use File::Basename;
 
+use FuguLib::CLI;
+use FuguLib::File;
 use FuguLib::Log;
+use FuguLib::SSH;
+use FuguLib::Util;
 use FuguVM::Config;
-use FuguVM::State;
+use FuguVM::Disk;
+use FuguVM::Expect;
 use FuguVM::Image;
 use FuguVM::ImageCache;
-use FuguVM::Proxy::Cache;
-use FuguVM::Disk;
+use FuguVM::Proxy;
+use FuguVM::State;
 use FuguVM::VM;
-use FuguVM::SSH;
-use FuguVM::Expect;
 
+# The generic exit codes come from FuguLib::CLI. Only the codes that
+# mean something to a VM are defined here, and FuguVM::VM uses them
+# from here rather than defining the same numbers again.
 use constant {
-	EXIT_SUCCESS         => 0,
-	EXIT_ERROR           => 1,
-	EXIT_INVALID_ARGS    => 2,
-	EXIT_CONFIG_ERROR    => 3,
+	EXIT_SUCCESS      => FuguLib::CLI::EXIT_SUCCESS,
+	EXIT_ERROR        => FuguLib::CLI::EXIT_ERROR,
+	EXIT_INVALID_ARGS => FuguLib::CLI::EXIT_INVALID_ARGS,
+	EXIT_CONFIG_ERROR => FuguLib::CLI::EXIT_CONFIG_ERROR,
+	EXIT_TIMEOUT      => FuguLib::CLI::EXIT_TIMEOUT,
+
 	EXIT_VM_NOT_FOUND    => 4,
 	EXIT_VM_RUNNING      => 5,
 	EXIT_VM_NOT_RUNNING  => 6,
-	EXIT_TIMEOUT         => 7,
 	EXIT_SSH_FAILED      => 8,
 	EXIT_EXPECT_FAILED   => 9,
 	EXIT_DOWNLOAD_FAILED => 10,
@@ -52,23 +58,86 @@ use constant {
 	EXIT_SNAPSHOT_NOT_FOUND => 11,
 };
 
-my %commands = (
-	'up'       => \&cmd_up,
-	'down'     => \&cmd_down,
-	'destroy'  => \&cmd_destroy,
-	'status'   => \&cmd_status,
-	'start'    => \&cmd_start,
-	'stop'     => \&cmd_stop,
-	'ssh'      => \&cmd_ssh,
-	'console'  => \&cmd_console,
-	'expect'   => \&cmd_expect,
-	'wait'     => \&cmd_wait,
-	'image'    => \&cmd_image,
-	'cache'    => \&cmd_cache,
-	'snapshot' => \&cmd_snapshot,
-	'disk'     => \&cmd_disk,
-	'init'     => \&cmd_init,
-	'help'     => \&cmd_help,
+# The subcommands. Each entry names the method that runs it, whether
+# it needs a loaded project, and its own options. FuguLib::CLI parses
+# and dispatches; nothing here repeats a Getopt::Long block.
+my %COMMANDS = (
+	up => {
+		summary => 'Ensure VM is running (download, create, start)',
+		usage   => '[--no-cache]',
+		options => { 'no-cache' => 'ignore the installed-image cache' },
+		method  => 'cmd_up',
+	},
+	down => {
+		summary => 'Stop VM gracefully',
+		method  => 'cmd_down',
+	},
+	destroy => {
+		summary => 'Stop VM and delete disk image',
+		method  => 'cmd_destroy',
+	},
+	status => {
+		summary => 'Show VM status',
+		method  => 'cmd_status',
+	},
+	start => {
+		summary => 'Start VM in background',
+		method  => 'cmd_start',
+	},
+	stop => {
+		summary => 'Stop VM',
+		usage   => '[--force]',
+		options => { 'force|f' => 'kill the VM instead of asking it' },
+		method  => 'cmd_stop',
+	},
+	ssh => {
+		summary => 'Open SSH session or run command',
+		usage   => '[command]',
+		method  => 'cmd_ssh',
+	},
+	console => {
+		summary => 'Show console connection info',
+		method  => 'cmd_console',
+	},
+	expect => {
+		summary => 'Run expect script against console',
+		usage   => '<script> [args...]',
+		method  => 'cmd_expect',
+	},
+	wait => {
+		summary => 'Wait for VM to be ready (SSH available)',
+		usage   => '[--timeout=N]',
+		options => { 'timeout=s' => 'seconds to wait' },
+		method  => 'cmd_wait',
+	},
+	image => {
+		summary => 'Manage images (download, list)',
+		usage   => '<download|list>',
+		method  => 'cmd_image',
+	},
+	cache => {
+		summary => 'Manage installed images (list, clear [--stale])',
+		usage   => '<list|clear> [--stale]',
+		options => { 'stale' => 'keep the entry the current VM uses' },
+		method  => 'cmd_cache',
+	},
+	snapshot => {
+		summary => 'Manage snapshots (save, restore, rm, list)',
+		usage   => '<save|restore|rm|list> [name] [--names]',
+		options => { 'names' => 'print names only' },
+		method  => 'cmd_snapshot',
+	},
+	disk => {
+		summary => 'Manage disk (check, repair, info)',
+		usage   => '<check|repair|info>',
+		method  => 'cmd_disk',
+	},
+	init => {
+		summary => 'Initialize .fuguvm/ directory',
+		usage   => '[dir]',
+		method  => 'cmd_init',
+		offline => 1,
+	},
 );
 
 sub new ( $class, %opts )
@@ -94,62 +163,100 @@ sub new ( $class, %opts )
 
 sub run ( $class, @argv )
 {
-	my %opts;
-	my $parser = Getopt::Long::Parser->new;
-	$parser->configure( 'require_order', 'bundling' );
+	# The object exists before the parse, because each command body
+	# is a method on it. _prepare fills in what the global options
+	# decided, once FuguLib::CLI has read them.
+	my $self = $class->new;
 
-	$parser->getoptionsfromarray(
-		\@argv,
-		'vm=s'      => \$opts{vm},
-		'project=s' => \$opts{project},
-		'quiet|q'   => \$opts{quiet},
-		'verbose|v' => \$opts{verbose},
-		'emulate'   => \$opts{emulate},
-		'help|h'    => \$opts{help},
-	) or return EXIT_INVALID_ARGS;
+	my %commands;
+	for my $name ( keys %COMMANDS ) {
+		my $entry = $COMMANDS{$name};
+		$commands{$name} = {
+			summary => $entry->{summary},
+			usage   => $entry->{usage},
+			options => $entry->{options},
+			run     => sub ( $cli, @args ) {
+				my $failure = $self->_prepare( $cli, $entry );
+				return $failure if defined $failure;
 
-	if ( $opts{help} && !@argv ) {
-		return cmd_help($class);
+				my $method = $entry->{method};
+				return $self->$method( $cli, @args );
+			},
+		};
 	}
 
-	my $command = shift @argv // 'help';
+	my $cli = FuguLib::CLI->new(
+		name     => 'fuguvm',
+		usage    => '[--vm <name>] <command> [options]',
+		log      => $self->{log},
+		commands => \%commands,
+		options  => {
+			'vm=s' => 'the VM to operate on (default: "default")',
+			'project=s' =>
+			    'the project root (default: auto-discover)',
+			'quiet|q'   => 'suppress informational output',
+			'verbose|v' => 'increase verbosity',
+			'emulate'   => 'force TCG emulation',
+		},
+		epilogue => <<'EOF',
+Examples:
+  fuguvm init
+  fuguvm up
+  fuguvm ssh "uname -a"
+  fuguvm wait --timeout=300
+  fuguvm --vm minimal up
+EOF
+	);
 
-	if ( !exists $commands{$command} ) {
-		warn "fuguvm: unknown command: $command\n";
-		return EXIT_INVALID_ARGS;
+	return $cli->run(@argv);
+}
+
+# $self->_prepare($cli, $entry):
+#	Apply the global options and load the project. The method
+#	returns undef when the command may run, and an exit code when
+#	it may not.
+sub _prepare ( $self, $cli, $entry )
+{
+	$self->{vm_name} = $cli->option('vm') // 'default';
+	$self->{project} = $cli->option('project');
+	$self->{emulate} = $cli->option('emulate') // 0;
+
+	if ( $cli->option('quiet') ) {
+		$self->{quiet} = 1;
+		$self->{log}   = FuguLib::Log->new(
+			mode  => FuguLib::Log::MODE_QUIET,
+			ident => 'fuguvm',
+		);
+	}
+	elsif ( $cli->option('verbose') ) {
+		$self->{log}->set_level('debug');
 	}
 
-	my $self = $class->new(%opts);
+	return if $entry->{offline};
 
-	# Load the configuration if the command is not init
-	if ( $command ne 'init' && $command ne 'help' ) {
-		my $project_root = $opts{project}
-		    // FuguVM::Config->find_project_root;
-		if ( !defined $project_root ) {
-			$self->{log}->error(
-"Not in a FuguVM project. Run 'fuguvm init' first."
-			);
-			return EXIT_CONFIG_ERROR;
-		}
-
-		# Make sure that the project path exists
-		if ( !-d $project_root ) {
-			$self->{log}->error(
-				"Project path does not exist: $project_root");
-			return EXIT_CONFIG_ERROR;
-		}
-		$self->{config} = FuguVM::Config->new($project_root);
-		$self->{state} = FuguVM::State->new( $self->{config}->state_dir,
-			$self->{vm_name} );
-		if ( !defined $self->{state} ) {
-			$self->{log}->error(
-"Cannot initialize state for VM '$self->{vm_name}'"
-			);
-			return EXIT_ERROR;
-		}
+	my $project_root = $self->{project}
+	    // FuguVM::Config->find_project_root;
+	if ( !defined $project_root ) {
+		$self->{log}->error(
+			"Not in a FuguVM project. Run 'fuguvm init' first.");
+		return EXIT_CONFIG_ERROR;
+	}
+	if ( !-d $project_root ) {
+		$self->{log}
+		    ->error("Project path does not exist: $project_root");
+		return EXIT_CONFIG_ERROR;
 	}
 
-	return $commands{$command}->( $self, @argv );
+	$self->{config} = FuguVM::Config->new($project_root);
+	$self->{state} =
+	    FuguVM::State->new( $self->{config}->state_dir, $self->{vm_name} );
+	if ( !defined $self->{state} ) {
+		$self->{log}->error(
+			"Cannot initialize state for VM '$self->{vm_name}'");
+		return EXIT_ERROR;
+	}
+
+	return;
 }
 
 sub _load_vm ( $self, %opts )
@@ -170,35 +277,29 @@ sub _load_vm ( $self, %opts )
 }
 
 # The command is idempotent. It makes sure that the VM runs.
-sub cmd_up ( $self, @args )
+sub cmd_up ( $self, $cli, @args )
 {
-	my $no_cache = 0;
-	my $parser   = Getopt::Long::Parser->new;
-	$parser->configure('bundling');
-	$parser->getoptionsfromarray( \@args, 'no-cache' => \$no_cache )
-	    or return EXIT_INVALID_ARGS;
-
-	my $vm = $self->_load_vm( no_cache => $no_cache )
+	my $vm = $self->_load_vm( no_cache => $cli->option('no-cache') // 0 )
 	    or return EXIT_VM_NOT_FOUND;
 	return $vm->up;
 }
 
 # Stop the VM gracefully
-sub cmd_down ( $self, @args )
+sub cmd_down ( $self, $cli, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	return $vm->down;
 }
 
 # Stop the VM. Delete the disk image.
-sub cmd_destroy ( $self, @args )
+sub cmd_destroy ( $self, $cli, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	return $vm->destroy;
 }
 
 # Show the VM status
-sub cmd_status ( $self, @args )
+sub cmd_status ( $self, $cli, @args )
 {
 	my $vm     = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	my $status = $vm->status;
@@ -213,27 +314,22 @@ sub cmd_status ( $self, @args )
 }
 
 # Start the VM in the background
-sub cmd_start ( $self, @args )
+sub cmd_start ( $self, $cli, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	return $vm->start;
 }
 
 # Stop the VM
-sub cmd_stop ( $self, @args )
+sub cmd_stop ( $self, $cli, @args )
 {
-	my $force  = 0;
-	my $parser = Getopt::Long::Parser->new;
-	$parser->configure('bundling');
-	$parser->getoptionsfromarray( \@args, 'force|f' => \$force, )
-	    or return EXIT_INVALID_ARGS;
-
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
-	return $vm->stop($force);
+
+	return $vm->stop( $cli->option('force') // 0 );
 }
 
 # Open an SSH session into the VM, or run a command
-sub cmd_ssh ( $self, @args )
+sub cmd_ssh ( $self, $cli, @args )
 {
 	my $vm = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 
@@ -241,7 +337,7 @@ sub cmd_ssh ( $self, @args )
 	# over IPv4: QEMU forwards the guest SSH port on 127.0.0.1 only.
 	# On dual-stack hosts, for example CI runners, 'localhost'
 	# resolves to ::1 first.
-	my $ssh = FuguVM::SSH->new(
+	my $ssh = FuguLib::SSH->new(
 		host => '127.0.0.1',
 		port => $vm->ssh_port,
 		user => 'root',
@@ -259,7 +355,7 @@ sub cmd_ssh ( $self, @args )
 }
 
 # Show the console connection info
-sub cmd_console ( $self, @args )
+sub cmd_console ( $self, $cli, @args )
 {
 	my $vm   = $self->_load_vm or return EXIT_VM_NOT_FOUND;
 	my $port = $vm->console_port;
@@ -271,7 +367,7 @@ sub cmd_console ( $self, @args )
 }
 
 # Run an expect script
-sub cmd_expect ( $self, @args )
+sub cmd_expect ( $self, $cli, @args )
 {
 	my $script = shift @args;
 	if ( !defined $script ) {
@@ -290,13 +386,9 @@ sub cmd_expect ( $self, @args )
 }
 
 # Wait for SSH to become available
-sub cmd_wait ( $self, @args )
+sub cmd_wait ( $self, $cli, @args )
 {
-	my $timeout = 120;
-	my $parser  = Getopt::Long::Parser->new;
-	$parser->configure('bundling');
-	$parser->getoptionsfromarray( \@args, 'timeout=s' => \$timeout, )
-	    or return EXIT_INVALID_ARGS;
+	my $timeout = $cli->option('timeout') // 120;
 
 	# Make sure that the timeout is a positive integer
 	if ( $timeout !~ /^\d+$/ ) {
@@ -321,7 +413,7 @@ sub cmd_wait ( $self, @args )
 }
 
 # Image management
-sub cmd_image ( $self, @args )
+sub cmd_image ( $self, $cli, @args )
 {
 	my $action = shift @args;
 	if ( !defined $action || $action !~ /^(download|list)$/ ) {
@@ -363,7 +455,7 @@ sub cmd_image ( $self, @args )
 }
 
 # Installed-image cache management
-sub cmd_cache ( $self, @args )
+sub cmd_cache ( $self, $cli, @args )
 {
 	my $action = shift @args;
 	if ( !defined $action || $action !~ /^(list|clear)$/ ) {
@@ -375,7 +467,7 @@ sub cmd_cache ( $self, @args )
 	my $cache = FuguVM::ImageCache->new( $self->{config}->cache_dir );
 
 	return $self->_cache_list($cache) if $action eq 'list';
-	return $self->_cache_clear( $cache, @args );
+	return $self->_cache_clear( $cli, $cache, @args );
 }
 
 # $self->_cache_list($cache):
@@ -404,7 +496,7 @@ sub _cache_list ( $self, $cache )
 			sprintf(
 				'  - %s  %s  %s  snapshots: %d%s',
 				$entry->{key},
-				_format_size( $entry->{size} ),
+				FuguLib::Util::format_size( $entry->{size} ),
 				$created,
 				scalar @{ $entry->{snapshots} },
 				$marker
@@ -442,30 +534,26 @@ sub _proxy_list ($self)
 		$bytes{ $version // '-' } += $file->{size};
 	}
 
-	$self->{log}->info(
-		sprintf 'Proxy downloads (%s):',
-		_format_size( $cache->size ) );
+	$self->{log}->info( sprintf 'Proxy downloads (%s):',
+		FuguLib::Util::format_size( $cache->size ) );
 
 	for my $version ( sort keys %bytes ) {
 		$self->{log}->info( sprintf '  - OpenBSD %s  %s',
-			$version, _format_size( $bytes{$version} ) );
+			$version,
+			FuguLib::Util::format_size( $bytes{$version} ) );
 	}
 
 	return EXIT_SUCCESS;
 }
 
-# $self->_cache_clear($cache, @args):
+# $self->_cache_clear($cli, $cache, @args):
 #	Remove cached entries. Bare 'clear' removes them all. --stale
 #	keeps the entry that the VM named by --vm derives. The key
 #	inputs 'version' and 'disk_size' are per-VM. Thus --stale run
 #	for one VM does prune bases that another VM would have hit.
-sub _cache_clear ( $self, $cache, @args )
+sub _cache_clear ( $self, $cli, $cache, @args )
 {
-	my $stale  = 0;
-	my $parser = Getopt::Long::Parser->new;
-	$parser->configure('bundling');
-	$parser->getoptionsfromarray( \@args, 'stale' => \$stale )
-	    or return EXIT_INVALID_ARGS;
+	my $stale = $cli->option('stale') // 0;
 
 	# An interrupted store leaves partial trees behind. Both forms
 	# of 'clear' sweep them.
@@ -543,8 +631,9 @@ sub _proxy_clear ( $self, $stale )
 			$self->{log}->error("Cannot clear proxy downloads");
 			return EXIT_ERROR;
 		}
-		$self->{log}->info( sprintf 'Removed %s of proxy downloads',
-			_format_size($size) );
+		$self->{log}->info(
+			sprintf 'Removed %s of proxy downloads',
+			FuguLib::Util::format_size($size) );
 
 		return EXIT_SUCCESS;
 	}
@@ -557,7 +646,7 @@ sub _proxy_clear ( $self, $stale )
 	for my $entry (@$removed) {
 		$self->{log}->info(
 			sprintf 'Removed %s of downloads for OpenBSD %s',
-			_format_size( $entry->{size} ),
+			FuguLib::Util::format_size( $entry->{size} ),
 			$entry->{version} );
 	}
 	$self->{log}->info('No proxy downloads removed') if !@$removed;
@@ -612,26 +701,8 @@ sub _disks_backed_by ( $self, $entry_dir )
 	return \@users;
 }
 
-sub _format_size ( $bytes = undef )
-{
-	return '?' if !defined $bytes;
-
-	my @units = ( 'B', 'K', 'M', 'G', 'T' );
-	my $size  = $bytes;
-	my $unit  = 0;
-
-	while ( $size >= 1024 && $unit < $#units ) {
-		$size /= 1024;
-		$unit++;
-	}
-
-	return $unit == 0
-	    ? sprintf( '%d%s',   $size, $units[$unit] )
-	    : sprintf( '%.1f%s', $size, $units[$unit] );
-}
-
 # Named snapshot layers over a cached base image
-sub cmd_snapshot ( $self, @args )
+sub cmd_snapshot ( $self, $cli, @args )
 {
 	my $action = shift @args;
 	if ( !defined $action || $action !~ /^(save|restore|list|rm)$/ ) {
@@ -643,7 +714,8 @@ sub cmd_snapshot ( $self, @args )
 
 	my $cache = FuguVM::ImageCache->new( $self->{config}->cache_dir );
 
-	return $self->_snapshot_list( $cache, @args ) if $action eq 'list';
+	return $self->_snapshot_list( $cli, $cache, @args )
+	    if $action eq 'list';
 
 	my $name = shift @args;
 	if ( !$cache->valid_snapshot_name($name) ) {
@@ -769,20 +841,16 @@ sub _snapshot_restore ( $self, $cache, $name )
 	    if defined $meta->{root_password};
 	$state->mark_ssh_key_installed( $meta->{installed_ssh_pubkey} )
 	    if defined $meta->{installed_ssh_pubkey};
-	$state->{data}{cached_from} = "$key/$name";
+	$state->data->{cached_from} = "$key/$name";
 	$state->save;
 
 	$self->{log}->info("Restored snapshot '$name' of $key");
 	return EXIT_SUCCESS;
 }
 
-sub _snapshot_list ( $self, $cache, @args )
+sub _snapshot_list ( $self, $cli, $cache, @args )
 {
-	my $names  = 0;
-	my $parser = Getopt::Long::Parser->new;
-	$parser->configure('bundling');
-	$parser->getoptionsfromarray( \@args, 'names' => \$names )
-	    or return EXIT_INVALID_ARGS;
+	my $names = $cli->option('names') // 0;
 
 	my $key = $self->_current_cache_key($cache);
 	if ( !defined $key ) {
@@ -813,7 +881,7 @@ sub _snapshot_list ( $self, $cache, @args )
 		$self->{log}->info(
 			sprintf( '  - %s  %s  %s',
 				$snapshot->{name},
-				_format_size( $snapshot->{size} ),
+				FuguLib::Util::format_size( $snapshot->{size} ),
 				$created ) );
 	}
 
@@ -859,7 +927,7 @@ sub _disk_cache_key ( $self, $cache )
 }
 
 # Disk management
-sub cmd_disk ( $self, @args )
+sub cmd_disk ( $self, $cli, @args )
 {
 	my $action = shift @args;
 	if ( !defined $action || $action !~ /^(check|repair|info)$/ ) {
@@ -930,7 +998,7 @@ sub cmd_disk ( $self, @args )
 }
 
 # Initialize the project
-sub cmd_init ( $self, @args )
+sub cmd_init ( $self, $cli, @args )
 {
 	my $dir         = shift @args // '.';
 	my $data_dir    = FuguVM::Config::DATA_DIR();
@@ -952,21 +1020,14 @@ sub cmd_init ( $self, @args )
 		return EXIT_ERROR;
 	}
 
-	require File::Path;
-	eval {
-		File::Path::make_path( "$fuguvm_dir/vms", "$fuguvm_dir/state" );
-	};
-	if ($@) {
-		my $err = $@;
-		$err =~ s/ at \S+ line \d+.*//s;
-		$self->{log}->error("Cannot create directory: $err");
-		return EXIT_ERROR;
+	for my $dir ( "$fuguvm_dir/vms", "$fuguvm_dir/state" ) {
+		FuguLib::File->ensure_dir($dir) or return EXIT_ERROR;
 	}
 
 	# Create the project configuration. state_dir must agree with
 	# the directory created above. Thus it derives from the same
 	# constant.
-	_write_file( $config_file, <<"EOF" );
+	FuguLib::File->write( $config_file, <<"EOF" );
 # FuguVM project configuration
 
 cache_dir = ~/.cache/fuguvm
@@ -975,7 +1036,7 @@ default_vm = default
 EOF
 
 	# Create the default VM config
-	_write_file( "$fuguvm_dir/vms/default.conf", <<"EOF" );
+	FuguLib::File->write( "$fuguvm_dir/vms/default.conf", <<"EOF" );
 # Default OpenBSD VM
 
 name = openbsd-default
@@ -988,61 +1049,13 @@ console_port = 4444
 EOF
 
 	# Create the .gitignore file
-	_write_file( "$fuguvm_dir/.gitignore", <<'EOF' );
+	FuguLib::File->write( "$fuguvm_dir/.gitignore", <<'EOF' );
 state/
 *.log
 EOF
 
 	$self->{log}->info("Initialized FuguVM in $dir");
 	return EXIT_SUCCESS;
-}
-
-sub cmd_help ( $, @ )
-{
-	print <<'EOF';
-Usage: fuguvm [--vm <name>] <command> [options]
-
-Commands:
-  up [--no-cache]     Ensure VM is running (download, create, start)
-  down                Stop VM gracefully
-  destroy             Stop VM and delete disk image
-  status              Show VM status
-  start               Start VM in background
-  stop [--force]      Stop VM
-  ssh [command]       Open SSH session or run command
-  console             Show console connection info
-  expect <script>     Run expect script against console
-  wait [--timeout=N]  Wait for VM to be ready (SSH available)
-  image <cmd>         Manage images (download, list)
-  cache <cmd>         Manage installed images (list, clear [--stale])
-  snapshot <cmd>      Manage snapshots (save, restore, rm <name>;
-                      list [--names])
-  disk <cmd>          Manage disk (check, repair, info)
-  init [dir]          Initialize .fuguvm/ directory
-  help                Show this help
-
-Global Options:
-  --vm <name>     VM to operate on (default: "default")
-  --project <dir> Project root (default: auto-discover)
-  --quiet, -q     Suppress informational output
-  --emulate       Force TCG emulation instead of hardware acceleration
-  --help, -h      Show help
-
-Examples:
-  fuguvm init
-  fuguvm up
-  fuguvm ssh "uname -a"
-  fuguvm wait --timeout=300
-  fuguvm --vm minimal up
-EOF
-	return EXIT_SUCCESS;
-}
-
-sub _write_file ( $path, $content )
-{
-	open my $fh, '>', $path or die "Cannot write $path: $!";
-	print $fh $content;
-	close $fh;
 }
 
 1;

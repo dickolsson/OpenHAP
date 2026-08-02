@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 27 2026 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt FuguLib::Log 3p
 .Os
 .Sh NAME
@@ -32,7 +32,9 @@ my $log = FuguLib::Log->new(
 );
 
 $log->info('listening on port %d', $port);
-$log->err('cannot open %s: %s', $path, $!);
+$log->error('cannot open %s: %s', $path, $!);
+
+FuguLib::Log->set_default($log);
 .Ed
 .Sh DESCRIPTION
 .Nm
@@ -52,6 +54,12 @@ The levels, from lowest to highest, are
 .Cm error
 and
 .Cm crit .
+Each level is a method of the same name.
+.Pp
+The module also holds one process default logger.
+Library code that gets no logger asks for it with
+.Fn default ,
+so no library has to die for the lack of one.
 .Ss new
 .Fn new "%args"
 creates a logger.
@@ -109,7 +117,7 @@ through
 The default is
 .Dv LOG_DAEMON .
 .El
-.Ss debug, info, notice, warning, warn, error, err, crit
+.Ss debug, info, notice, warning, error, crit
 .Bd -literal -offset indent
 $log->info($fmt, @args);
 .Ed
@@ -127,23 +135,81 @@ is empty, the method uses
 .Fa $fmt
 as a literal string.
 .Pp
-.Fn warn
-is a synonym for
-.Fn warning ,
+There is one method for each level.
+The spellings
+.Cm warn
 and
-.Fn err
-is a synonym for
-.Fn error .
-Thus the call site can use the syslog spelling or the English
-spelling.
+.Cm err
+parse as level
+.Em names ,
+because a configuration file can hold either one.
+They are not methods.
 .Ss set_level
 .Fn set_level "$level"
 changes the lowest level to emit on a logger after its creation.
 If the value is not a known level name, the logger uses
 .Cm info .
+.Ss level
+.Fn level
+returns the lowest level to emit, by name.
+The name is one of the six canonical levels, whatever spelling the
+caller used.
+.Ss mode
+.Fn mode
+returns the destination, one of the
+.Dv MODE_SYSLOG ,
+.Dv MODE_STDERR
+and
+.Dv MODE_QUIET
+constants.
+The constants hold the strings
+.Ql syslog ,
+.Ql stderr
+and
+.Ql quiet .
+.Ss reopen
+.Fn reopen
+closes and opens the log again with the same settings.
+A daemon calls this after it drops privileges: the
+.Xr syslog 3
+connection belongs to the user that opened it.
+In the other modes the method does nothing.
+.Pp
+This replaces the older pattern of discarding the logger and building
+an identical one.
+That pattern needed every call site to learn the new object.
+.Ss default
+.Fn default
+returns the process default logger.
+The first call creates a
+.Cm stderr
+logger, so the method never returns
+.Dv undef .
+.Pp
+This is the fallback for library code.
+A module takes a
+.Fa log
+argument and uses
+.Fn default
+when the caller gives none.
+Thus no library dies for the lack of a logger, and no library needs a
+global of its own.
+.Ss set_default
+.Fn set_default "$log"
+replaces the process default logger and returns the new default.
+A program calls this once at startup.
 .Sh RETURN VALUES
-.Fn new
-returns a logger object.
+.Fn new ,
+.Fn default
+and
+.Fn set_default
+return a logger object.
+.Fn reopen
+returns the object.
+.Fn level
+and
+.Fn mode
+return a name.
 The logging methods and
 .Fn set_level
 have no useful return value.
@@ -156,6 +222,14 @@ my $log = FuguLib::Log->new(
     ident => 'mydaemon',
     level => $verbose ? 'debug' : 'info',
 );
+FuguLib::Log->set_default($log);
+.Ed
+.Pp
+This example opens the syslog connection again as the unprivileged
+user:
+.Bd -literal -offset indent
+FuguLib::Privdrop->drop_privileges(user => '_myapp');
+$log->reopen;
 .Ed
 .Sh ERRORS
 .Fn new
@@ -195,3 +269,6 @@ and
 act on process-wide state.
 Thus, when a second logger goes out of scope, it closes the connection
 that the first logger still uses.
+Use
+.Fn reopen
+on the one logger instead of building a second one.

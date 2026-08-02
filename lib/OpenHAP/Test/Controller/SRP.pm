@@ -25,7 +25,7 @@ package OpenHAP::Test::Controller::SRP;
 # pure-Perl Calc backend.
 use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
-use OpenHAP::Crypto;
+use FuguLib::Crypto;
 use OpenHAP::PIN qw(normalize_pin);
 
 # This module is the SRP-6a client role for tests
@@ -60,7 +60,7 @@ sub new ( $class, %args )
 		username => $args{username} // 'Pair-Setup',
 		password => $password,
 
-		N => _b2i($OpenHAP::Crypto::N_3072),
+		N => _b2i($OpenHAP::SRP::N_3072),
 		g => Math::BigInt->new(5),
 
 		a  => undef,
@@ -77,7 +77,7 @@ sub new ( $class, %args )
 #	value A = g^a mod N (384 bytes).
 sub compute_public ($self)
 {
-	my $a_bytes = OpenHAP::Crypto::generate_random_bytes(32);
+	my $a_bytes = FuguLib::Crypto->random_bytes(32);
 	$self->{a} = _b2i($a_bytes);
 	$self->{A} = $self->{g}->copy->bmodpow( $self->{a}, $self->{N} );
 

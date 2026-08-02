@@ -19,6 +19,7 @@ use v5.36;
 
 package FuguLib::Log;
 
+use IO::Handle;
 use Sys::Syslog qw(:standard :macros);
 
 # FuguLib::Log - Unified logging for syslog and stderr
@@ -26,12 +27,25 @@ use Sys::Syslog qw(:standard :macros);
 # The module gives one logging interface for both syslog (for
 # daemons) and stderr (for CLI tools). It filters messages by level
 # and formats them printf-style.
+#
+# The levels are debug, info, notice, warning, error and crit. Each
+# one is a method of the same name.
+#
+# The module also holds one process default. Library code that gets no
+# logger asks for it, so no library has to die for the lack of one.
 
+# The mode decides where a message goes. MODE_SYSLOG is for a daemon,
+# MODE_STDERR for a program with a terminal, and MODE_QUIET drops
+# every message.
 use constant {
 	MODE_SYSLOG => 'syslog',
 	MODE_STDERR => 'stderr',
 	MODE_QUIET  => 'quiet',
 };
+
+# The process default. FuguLib::Log->default creates a stderr logger
+# on the first call, so the accessor always answers with a logger.
+my $default;
 
 sub new ( $class, %args )
 {
@@ -51,19 +65,47 @@ sub new ( $class, %args )
 	}
 
 	my $self = bless {
-		mode     => $mode,
-		level    => _parse_level($level),
-		ident    => $ident,
-		facility => $facility,
-		opened   => 0,
+		mode       => $mode,
+		level      => _parse_level($level),
+		level_name => _canonical_level($level),
+		ident      => $ident,
+		facility   => $facility,
+		opened     => 0,
 	}, $class;
 
 	if ( $mode eq MODE_SYSLOG ) {
 		openlog( $ident, 'ndelay,pid', $self->{facility} );
 		$self->{opened} = 1;
 	}
+	elsif ( $mode eq MODE_STDERR ) {
+
+		# A daemonized process has a buffered stderr, because
+		# the descriptor is a dup of the redirected stdout. An
+		# unflushed diagnostic that arrives after the crash it
+		# describes is worse than no diagnostic.
+		STDERR->autoflush(1);
+	}
 
 	return $self;
+}
+
+# FuguLib::Log->default:
+#	Return the process default logger. The first call creates a
+#	stderr logger, so the method never returns undef.
+sub default ($class)
+{
+	$default //= $class->new( mode => MODE_STDERR );
+	return $default;
+}
+
+# FuguLib::Log->set_default($log):
+#	Replace the process default logger. A program sets this once at
+#	startup, and again after a privilege drop. The method returns
+#	the new default.
+sub set_default ( $class, $log )
+{
+	$default = $log;
+	return $default;
 }
 
 sub DESTROY ($self)
@@ -78,9 +120,7 @@ sub debug   ( $self, $fmt, @args ) { $self->_log( 'debug',   $fmt, @args ); }
 sub info    ( $self, $fmt, @args ) { $self->_log( 'info',    $fmt, @args ); }
 sub notice  ( $self, $fmt, @args ) { $self->_log( 'notice',  $fmt, @args ); }
 sub warning ( $self, $fmt, @args ) { $self->_log( 'warning', $fmt, @args ); }
-sub warn    ( $self, $fmt, @args ) { $self->_log( 'warning', $fmt, @args ); }
 sub error   ( $self, $fmt, @args ) { $self->_log( 'error',   $fmt, @args ); }
-sub err     ( $self, $fmt, @args ) { $self->_log( 'error',   $fmt, @args ); }
 sub crit    ( $self, $fmt, @args ) { $self->_log( 'crit',    $fmt, @args ); }
 
 # $self->_log($level, $fmt, @args):
@@ -109,10 +149,44 @@ sub _log ( $self, $level, $fmt, @args )
 #	Change the minimum log level
 sub set_level ( $self, $level )
 {
-	$self->{level} = _parse_level($level);
+	$self->{level}      = _parse_level($level);
+	$self->{level_name} = _canonical_level($level);
 }
 
-# Level parsing and mapping
+# $self->level:
+#	Return the minimum log level by name. The name is one of the
+#	six canonical levels, whatever spelling the caller used.
+sub level ($self)
+{
+	return $self->{level_name};
+}
+
+# $self->mode:
+#	Return the mode, one of the MODE_* constants.
+sub mode ($self)
+{
+	return $self->{mode};
+}
+
+# $self->reopen:
+#	Close and open the log again with the same settings. A daemon
+#	calls this after it drops privileges: the syslog connection
+#	belongs to the user that opened it. In the other modes the
+#	method does nothing and returns the object.
+sub reopen ($self)
+{
+	if ( $self->{mode} eq MODE_SYSLOG ) {
+		closelog() if $self->{opened};
+		openlog( $self->{ident}, 'ndelay,pid', $self->{facility} );
+		$self->{opened} = 1;
+	}
+
+	return $self;
+}
+
+# Level parsing and mapping. The warn and err spellings parse, because
+# a configuration file can hold either one. They are not methods: the
+# module has one name for each level.
 my %level_map = (
 	debug   => 0,
 	info    => 1,
@@ -122,6 +196,11 @@ my %level_map = (
 	error   => 4,
 	err     => 4,
 	crit    => 5,
+);
+
+my %level_name = (
+	warn => 'warning',
+	err  => 'error',
 );
 
 my %priority_map = (
@@ -150,6 +229,13 @@ sub _parse_level ($level)
 {
 	$level = lc($level);
 	return $level_map{$level} // 1;    # The default is info
+}
+
+sub _canonical_level ($level)
+{
+	$level = lc($level);
+	return 'info' unless exists $level_map{$level};
+	return $level_name{$level} // $level;
 }
 
 sub _level_to_priority ($level)

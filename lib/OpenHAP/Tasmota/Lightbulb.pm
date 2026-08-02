@@ -18,6 +18,8 @@
 use v5.36;
 
 package OpenHAP::Tasmota::Lightbulb;
+
+use FuguLib::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
 use OpenHAP::Service;
@@ -158,7 +160,7 @@ sub subscribe_mqtt ($self)
 
 	return unless $self->{mqtt_client}->is_connected();
 
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Lightbulb %s subscribing to additional MQTT topics',
 		$self->{name} );
 
@@ -168,7 +170,8 @@ sub subscribe_mqtt ($self)
 		$self->_build_topic( 'stat', $self->_get_power_key() ),
 		sub ( $recv_topic, $payload ) {
 			$self->{power_state} = ( $payload eq 'ON' ) ? 1 : 0;
-			$OpenHAP::logger->debug( 'Lightbulb %s power state: %s',
+			FuguLib::Log->default->debug(
+				'Lightbulb %s power state: %s',
 				$self->{name}, $payload );
 			$self->notify_change(11);
 		} );
@@ -180,7 +183,7 @@ sub subscribe_mqtt ($self)
 			sub ( $recv_topic, $payload ) {
 				if ( $payload =~ /^\d+$/ ) {
 					$self->{brightness} = int($payload);
-					$OpenHAP::logger->debug(
+					FuguLib::Log->default->debug(
 						'Lightbulb %s dimmer: %d',
 						$self->{name}, $payload );
 					$self->notify_change(12);
@@ -207,7 +210,7 @@ sub subscribe_mqtt ($self)
 					$ct         = 153 if $ct < 153;
 					$ct         = 500 if $ct > 500;
 					$self->{ct} = $ct;
-					$OpenHAP::logger->debug(
+					FuguLib::Log->default->debug(
 						'Lightbulb %s CT: %d',
 						$self->{name}, $ct );
 					$self->notify_change(15);
@@ -240,7 +243,7 @@ sub _on_power_update ( $self, $state )
 {
 	if ( $self->{power_state} != $state ) {
 		$self->{power_state} = $state;
-		$OpenHAP::logger->debug( 'Lightbulb %s power updated: %s',
+		FuguLib::Log->default->debug( 'Lightbulb %s power updated: %s',
 			$self->{name}, $state ? 'ON' : 'OFF' );
 		$self->notify_change(11);
 	}
@@ -257,7 +260,7 @@ sub _extract_light_state ( $self, $data )
 		my $brightness = $data->{Dimmer};
 		if ( $self->{brightness} != $brightness ) {
 			$self->{brightness} = $brightness;
-			$OpenHAP::logger->debug(
+			FuguLib::Log->default->debug(
 				'Lightbulb %s brightness: %d%%',
 				$self->{name}, $brightness );
 			$self->notify_change(12);
@@ -284,7 +287,8 @@ sub _extract_light_state ( $self, $data )
 
 		if ( $self->{ct} != $ct ) {
 			$self->{ct} = $ct;
-			$OpenHAP::logger->debug( 'Lightbulb %s CT: %d mireds',
+			FuguLib::Log->default->debug(
+				'Lightbulb %s CT: %d mireds',
 				$self->{name}, $ct );
 			$self->notify_change(15);
 		}
@@ -295,7 +299,7 @@ sub _extract_light_state ( $self, $data )
 #	Set the brightness level (0-100).
 sub _set_brightness ( $self, $value )
 {
-	$OpenHAP::logger->debug( 'Lightbulb %s brightness set to %d%%',
+	FuguLib::Log->default->debug( 'Lightbulb %s brightness set to %d%%',
 		$self->{name}, $value );
 
 	$self->{mqtt_client}
@@ -309,7 +313,7 @@ sub _set_hue ( $self, $value )
 	# Tasmota accepts 0-360 for the hue. The value 360 wraps to 0.
 	$value = int($value) % 360;
 
-	$OpenHAP::logger->debug( 'Lightbulb %s hue set to %d',
+	FuguLib::Log->default->debug( 'Lightbulb %s hue set to %d',
 		$self->{name}, $value );
 
 	$self->{mqtt_client}
@@ -320,7 +324,7 @@ sub _set_hue ( $self, $value )
 #	Set the saturation (0-100).
 sub _set_saturation ( $self, $value )
 {
-	$OpenHAP::logger->debug( 'Lightbulb %s saturation set to %d%%',
+	FuguLib::Log->default->debug( 'Lightbulb %s saturation set to %d%%',
 		$self->{name}, $value );
 
 	$self->{mqtt_client}
@@ -335,7 +339,7 @@ sub _set_ct ( $self, $value )
 	$value = 153 if $value < 153;
 	$value = 500 if $value > 500;
 
-	$OpenHAP::logger->debug( 'Lightbulb %s CT set to %d mireds',
+	FuguLib::Log->default->debug( 'Lightbulb %s CT set to %d mireds',
 		$self->{name}, $value );
 
 	$self->{mqtt_client}
@@ -348,7 +352,7 @@ sub set_color ( $self, $hue, $saturation, $brightness )
 {
 	$hue = int($hue) % 360;
 
-	$OpenHAP::logger->debug( 'Lightbulb %s color set to HSB(%d,%d,%d)',
+	FuguLib::Log->default->debug( 'Lightbulb %s color set to HSB(%d,%d,%d)',
 		$self->{name}, $hue, $saturation, $brightness );
 
 	$self->{mqtt_client}
@@ -361,7 +365,7 @@ sub set_color ( $self, $hue, $saturation, $brightness )
 #	$direction: '+' to increase, '-' to decrease
 sub dimmer_step ( $self, $direction = '+' )
 {
-	$OpenHAP::logger->debug( 'Lightbulb %s dimmer step %s',
+	FuguLib::Log->default->debug( 'Lightbulb %s dimmer step %s',
 		$self->{name}, $direction );
 
 	$self->{mqtt_client}
@@ -372,7 +376,7 @@ sub dimmer_step ( $self, $direction = '+' )
 #	Set the dimmer to the minimum (L3).
 sub dimmer_min ($self)
 {
-	$OpenHAP::logger->debug( 'Lightbulb %s dimmer to minimum',
+	FuguLib::Log->default->debug( 'Lightbulb %s dimmer to minimum',
 		$self->{name} );
 
 	$self->{mqtt_client}
@@ -383,7 +387,7 @@ sub dimmer_min ($self)
 #	Set the dimmer to the maximum (L3).
 sub dimmer_max ($self)
 {
-	$OpenHAP::logger->debug( 'Lightbulb %s dimmer to maximum',
+	FuguLib::Log->default->debug( 'Lightbulb %s dimmer to maximum',
 		$self->{name} );
 
 	$self->{mqtt_client}

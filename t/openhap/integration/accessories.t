@@ -14,16 +14,21 @@ $env->setup;
 
 my $config_file = $env->{config_file};
 
-# Test 1: hapctl devices shows configured devices
+# Test 1: hapctl devices shows the devices
 my $devices_output = `hapctl -c $config_file devices 2>&1`;
 my $devices_works = $? == 0;
 ok($devices_works, 'hapctl devices command works');
 
-# Test 2: Device count matches configuration
-my ($config_count) = $devices_output =~ /Configured devices:\s*(\d+)/;
+# Test 2: every configured device reached the daemon.
+#
+# The daemon is running, thus hapctl asks it over the control socket
+# and reports "Loaded devices". With no daemon it reads the file and
+# reports "Configured devices". Accept either word: the count is the
+# assertion, and it must match the file whichever source answered.
+my ($count) = $devices_output =~ /(?:Loaded|Configured) devices:\s*(\d+)/;
 my @device_topics = $env->get_device_topics;
-is($config_count // 0, scalar @device_topics,
-   'device count matches configuration');
+is($count // 0, scalar @device_topics,
+   'the daemon loaded every configured device');
 
 # The daemon starts unpaired, because the integration files own their
 # pairing lifecycle. Thus the data-plane endpoints must return HTTP

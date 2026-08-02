@@ -19,8 +19,19 @@ use v5.36;
 
 package FuguVM::Expect;
 
-use File::Basename;
-use FindBin qw($RealBin);
+use FuguLib::File;
+use FuguLib::Log;
+use FuguLib::Process;
+
+# FuguVM::Expect - drive the OpenBSD installer over the serial console.
+#
+# The installer asks questions that no protocol answers, so an
+# expect(1) script types them. The scripts ship under
+# share/fuguvm/expect, and FuguLib::File resolves them against the
+# install root.
+
+# Where the shipped scripts live, relative to the root of the tree.
+use constant SCRIPT_DIR => 'share/fuguvm/expect';
 
 sub new ( $class, %args )
 {
@@ -33,124 +44,79 @@ sub new ( $class, %args )
 	return $self;
 }
 
-sub run_script ( $self, $script, @args )
-{
-	if ( !-f $script ) {
-
-		# Check in share/fuguvm/expect/
-		my $share_script = "$RealBin/../share/fuguvm/expect/$script";
-		if ( -f $share_script ) {
-			$script = $share_script;
-		}
-		else {
-			warn "Expect script not found: $script\n";
-			return 0;
-		}
-	}
-
-	if ( !-x $script ) {
-		warn "Expect script not executable: $script\n";
-		return 0;
-	}
-
-	my @cmd    = ( $script, $self->{host}, $self->{port}, @args );
-	my $result = system(@cmd);
-
-	return $result == 0;
-}
-
 # $class_or_self->script_path($script_name):
-#	Get the path of a shipped expect script. The method returns
-#	undef when it cannot find the script. The method also works on
-#	the class. FuguVM::ImageCache hashes the installer script into
-#	its cache key. Thus it must resolve the script the same way
-#	run_install does.
+#	Return the path of a shipped expect script, or undef.
+#
+#	The method also works on the class. FuguVM::ImageCache hashes
+#	the installer script into its cache key, so it must resolve the
+#	script the same way run_install does.
 sub script_path ( $self, $script_name )
 {
-	return $self->_find_script($script_name);
+	return FuguLib::File->share_path( SCRIPT_DIR . "/$script_name" );
 }
 
-sub _find_script ( $self, $script_name )
+# $self->run_script($script, @args):
+#	Run one expect script against the console of this VM. The
+#	method takes a path, or the name of a shipped script.
+sub run_script ( $self, $script, @args )
 {
-	my @search_paths = (
-		"$RealBin/../share/fuguvm/expect/$script_name",
-		"share/fuguvm/expect/$script_name",
-	);
-
-	for my $path (@search_paths) {
-		return $path if -f $path;
+	my $path = -f $script ? $script : $self->script_path($script);
+	unless ( defined $path && -f $path ) {
+		FuguLib::Log->default->error( 'Expect script not found: %s',
+			$script );
+		return 0;
 	}
-
-	return;
-}
-
-sub run_install ( $self, $config )
-{
-	my $script = $self->_find_script('install.exp')
-	    // "$RealBin/../share/fuguvm/expect/install.exp";
-
-	if ( !-f $script ) {
-		warn "Install script not found: $script\n";
+	unless ( -x $path ) {
+		FuguLib::Log->default->error(
+			'Expect script not executable: %s', $path );
 		return 0;
 	}
 
-	# Pass the timeout in the environment variable
-	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
+	return $self->_expect( $path, @args );
+}
 
-	my @cmd = (
-		'expect', $script, $self->{host}, $self->{port},
+# $self->run_install($config):
+#	Drive a complete OpenBSD installation.
+sub run_install ( $self, $config )
+{
+	my $script = $self->script_path('install.exp');
+	unless ( defined $script ) {
+		FuguLib::Log->default->error('Install script not found');
+		return 0;
+	}
+
+	return $self->_expect(
+		$script,
 		$config->{root_password} // 'openbsd',
 		$config->{proxy_url}     // 'none',
 	);
-
-	my $result = system(@cmd);
-	return $result == 0;
 }
 
-sub install_ssh_key ( $self, $password, $ssh_pubkey )
+# $self->_expect($script, @args):
+#	Run expect(1) on the script, with the host and the port first.
+#	The timeout travels in the environment, because the scripts
+#	read it there.
+#
+#	The run is a passthrough. An installation writes for tens of
+#	minutes, and an operator who waits needs to see the progress
+#	while it happens, not after.
+sub _expect ( $self, $script, @args )
 {
-	if ( !defined $ssh_pubkey || $ssh_pubkey eq '' ) {
-		warn "No SSH public key provided\n";
-		return 0;
-	}
-
-	my $script = $self->_find_script('install-ssh-key.exp');
-	if ( !defined $script ) {
-		warn "install-ssh-key.exp script not found\n";
-		return 0;
-	}
-
-	# Pass the timeout in the environment variable for the expect
-	# script
 	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
 
-	my @cmd = (
-		'expect',  $script, $self->{host}, $self->{port},
-		$password, $ssh_pubkey
+	my $result = FuguLib::Process->run(
+		cmd =>
+		    [ 'expect', $script, $self->{host}, $self->{port}, @args ],
+		passthrough => 1,
 	);
 
-	my $result = system(@cmd);
-	return $result == 0;
-}
-
-sub halt_system ( $self, $password )
-{
-	my $script = $self->_find_script('command.exp');
-	if ( !defined $script ) {
-		warn "command.exp script not found\n";
-		return 0;
+	unless ( $result->{success} ) {
+		FuguLib::Log->default->error( 'expect %s failed: %s',
+			$script,
+			$result->{error} // "exit $result->{exit_code}" );
 	}
 
-	# Pass the timeout in the environment variable
-	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
-
-	my @cmd = (
-		'expect',  $script, $self->{host}, $self->{port},
-		'halt -p', 'root',  $password
-	);
-
-	my $result = system(@cmd);
-	return $result == 0;
+	return $result->{success} ? 1 : 0;
 }
 
 1;

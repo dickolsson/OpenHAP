@@ -1,0 +1,6 @@
+# OpenHAP Pairings Database
+# Format: controller_id:ltpk_hex:permissions
+# Permissions: 1=admin, 0=regular
+
+legacy-admin:deadbeefaaaaaaaaaaaaaaaaaaaaaaaaaaaa:1
+legacy-user:cafebabebbbbbbbbbbbbbbbbbbbbbbbbbbbb:0

@@ -198,4 +198,74 @@ subtest 'required and optional dispositions' => sub {
 	);
 };
 
+# The two inventory builders assemble data and call no syscall. Thus
+# they run on every platform, and never touch the filesystem view.
+subtest 'perl_lib_dirs names the interpreter build' => sub {
+	require Config;
+
+	my @dirs = FuguLib::Sandbox->perl_lib_dirs;
+	ok( @dirs, 'the list is not empty' );
+
+	my %seen = map { $_ => 1 } @dirs;
+	for my $key (qw(privlibexp archlibexp)) {
+		my $dir = $Config::Config{$key};
+		next unless defined $dir && length $dir;
+		ok( $seen{$dir}, "$key is in the list" );
+	}
+
+	# The list is the interpreter build, never the live @INC. A
+	# directory that a program adds at run time must not appear.
+	my $added = '/nonexistent/added/at/run/time';
+	local @INC = ( @INC, $added );
+	my %again = map { $_ => 1 } FuguLib::Sandbox->perl_lib_dirs;
+	ok( !$again{$added}, 'a run-time @INC entry stays out' );
+
+	is_deeply(
+		[ FuguLib::Sandbox->perl_lib_dirs ],
+		\@dirs,
+		'the list is deterministic'
+	);
+};
+
+subtest 'system_paths is the shared read-only inventory' => sub {
+	my @paths = FuguLib::Sandbox->system_paths;
+	my %row   = map { $_->[0] => $_ } @paths;
+
+	for my $path (
+		'/dev/urandom',   '/etc/resolv.conf',
+		'/etc/hosts',     '/etc/services',
+		'/etc/protocols', '/etc/localtime'
+	    )
+	{
+		ok( exists $row{$path}, "$path is in the inventory" );
+		is( $row{$path}[1], 'r', "$path is read-only" );
+	}
+
+	ok( !$row{'/dev/urandom'}[2]{optional}, '/dev/urandom is required' );
+	for my $path (
+		'/etc/resolv.conf', '/etc/hosts',
+		'/etc/services',    '/etc/protocols',
+		'/etc/localtime'
+	    )
+	{
+		ok( $row{$path}[2]{optional}, "$path is optional" );
+	}
+
+	ok( ( !grep { $_->[1] =~ /[wcx]/ } @paths ),
+		'no entry grants write, create or execute' );
+
+	# The entries have the shape that unveil takes. The test does
+	# not call unveil: on OpenBSD that would restrict the view of
+	# the whole test file.
+	my $shape = 1;
+	for my $entry (@paths) {
+		$shape = 0
+		    unless ref $entry eq 'ARRAY'
+		    && defined $entry->[0]
+		    && defined $entry->[1]
+		    && ( @$entry < 3 || ref $entry->[2] eq 'HASH' );
+	}
+	ok( $shape, 'every entry has the shape that unveil takes' );
+};
+
 done_testing();

@@ -17,150 +17,84 @@
 
 use v5.36;
 
-# FuguVM::QMP - QEMU Machine Protocol client
-#
-# The module gives programmatic control over QEMU through the QMP
-# JSON protocol. It connects to the QMP socket of QEMU for reliable
-# VM lifecycle management.
-
 package FuguVM::QMP;
 
-use IO::Select;
-use IO::Socket::UNIX;
-use JSON::XS;
-use Time::HiRes qw(time);
+use FuguLib::JSONSocket;
 
-use constant {
-	CONNECT_TIMEOUT => 5,
-	READ_TIMEOUT    => 10,
-	READ_CHUNK      => 4096,
-};
+# FuguVM::QMP - the QEMU Machine Protocol command set.
+#
+# The transport is FuguLib::JSONSocket. This file holds only what is
+# true of QMP: the greeting, the capabilities handshake, and the four
+# commands that FuguVM uses to manage a VM's lifecycle.
+
+use constant READ_TIMEOUT => 10;
 
 sub new ( $class, $socket_path )
 {
-	bless {
-		socket_path => $socket_path,
-		sock        => undef,
-		connected   => 0,
-		buffer      => '',
+	return bless {
+		socket => FuguLib::JSONSocket->new(
+			path     => $socket_path,
+			timeout  => READ_TIMEOUT,
+			greeting => 1,
+		),
 	}, $class;
 }
 
+# $self->socket_path:
+#	Return the QMP socket path.
+sub socket_path ($self)
+{
+	return $self->{socket}->path;
+}
+
+# $self->is_available:
+#	Report if the socket file is there. QEMU creates it at startup,
+#	so its absence means the VM has not started.
+sub is_available ($self)
+{
+	return $self->{socket}->exists;
+}
+
+# $self->open_connection:
+#	Connect, read the greeting, and leave capabilities negotiation
+#	behind. QMP refuses every other command until qmp_capabilities
+#	succeeds. The method returns 1 on success and 0 on failure.
 sub open_connection ($self)
 {
-	return 1 if $self->{connected};
+	return 1 if $self->{socket}->is_connected;
 
-	my $sock = IO::Socket::UNIX->new(
-		Type    => SOCK_STREAM,
-		Peer    => $self->{socket_path},
-		Timeout => CONNECT_TIMEOUT,
-	);
+	$self->{socket}->connect or return 0;
 
-	return 0 if !defined $sock;
-
-	$self->{sock} = $sock;
-
-	# Read the greeting
-	my $greeting = $self->_read_response;
+	my $greeting = $self->{socket}->greeting;
 	if ( !defined $greeting || !exists $greeting->{QMP} ) {
 		$self->disconnect;
 		return 0;
 	}
 
-	# Send qmp_capabilities to enter the command mode
-	my $result = $self->run_command('qmp_capabilities');
-	if ( !defined $result ) {
+	unless ( defined $self->run_command('qmp_capabilities') ) {
 		$self->disconnect;
 		return 0;
 	}
 
-	$self->{connected} = 1;
 	return 1;
 }
 
 sub disconnect ($self)
 {
-	if ( $self->{sock} ) {
-		close $self->{sock};
-		$self->{sock} = undef;
-	}
-	$self->{connected} = 0;
-	$self->{buffer}    = '';
+	$self->{socket}->disconnect;
 	return $self;
 }
 
 # $self->run_command($command, $arguments):
-#	Run a QMP command. The method returns the result.
+#	Run one QMP command. The method returns the whole reply, so a
+#	caller can tell an error reply from a missing one.
 sub run_command ( $self, $command, $arguments = undef )
 {
-	return if !$self->{sock};
+	my %message = ( execute => $command );
+	$message{arguments} = $arguments if defined $arguments;
 
-	my $cmd = { execute => $command };
-	$cmd->{arguments} = $arguments if defined $arguments;
-
-	my $json = encode_json($cmd) . "\n";
-	my $sock = $self->{sock};
-
-	print $sock $json or return;
-
-	return $self->_read_response;
+	return $self->{socket}->request( \%message );
 }
-
-sub _read_response ($self)
-{
-	my $line = $self->_read_line(READ_TIMEOUT);
-	return if !defined $line || $line eq '';
-
-	my $response;
-	eval { $response = decode_json($line); };
-	if ($@) {
-		warn "QMP: Invalid JSON: $@";
-		return;
-	}
-
-	return $response;
-}
-
-# $self->_read_line($timeout):
-#	Read one line without its terminator. The method returns undef
-#	on timeout, EOF, or read error. IO::Select bounds the read
-#	against a wall-clock deadline. The timeout() of IO::Socket
-#	governs only its own connect and accept. Thus a bare readline
-#	here blocks forever when QEMU stops answering on an otherwise
-#	open socket.
-#
-#	Bytes after the newline stay in the buffer for the next call.
-#	Thus the method does not lose a reply that arrives in the same
-#	segment as the next one.
-sub _read_line ( $self, $timeout )
-{
-	my $sock = $self->{sock};
-	return if !$sock;
-
-	my $deadline = time + $timeout;
-	my $select   = IO::Select->new($sock);
-
-	while (1) {
-		my $nl = index $self->{buffer}, "\n";
-		if ( $nl >= 0 ) {
-			my $line = substr $self->{buffer}, 0, $nl;
-			substr $self->{buffer}, 0, $nl + 1, '';
-			return $line;
-		}
-
-		my $remaining = $deadline - time;
-		return if $remaining <= 0;
-		return if !$select->can_read($remaining);
-
-		my $chunk = '';
-		my $read  = sysread $sock, $chunk, READ_CHUNK;
-		return if !defined $read || $read == 0;
-
-		$self->{buffer} .= $chunk;
-	}
-}
-
-# High-level commands
 
 # $self->query_status:
 #	Query the VM running status. The method returns a hashref with
@@ -169,6 +103,7 @@ sub query_status ($self)
 {
 	my $result = $self->run_command('query-status');
 	return if !defined $result || exists $result->{error};
+
 	return $result->{return};
 }
 
@@ -178,6 +113,7 @@ sub is_running ($self)
 {
 	my $status = $self->query_status;
 	return 0 if !defined $status;
+
 	return $status->{running} ? 1 : 0;
 }
 
@@ -186,6 +122,7 @@ sub is_running ($self)
 sub powerdown ($self)
 {
 	my $result = $self->run_command('system_powerdown');
+
 	return defined $result && !exists $result->{error};
 }
 
@@ -195,6 +132,7 @@ sub quit ($self)
 {
 	my $result = $self->run_command('quit');
 	$self->disconnect;
+
 	return defined $result && !exists $result->{error};
 }
 

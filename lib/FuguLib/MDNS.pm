@@ -82,6 +82,15 @@ use constant SERVICE_TEMPLATE => 'x16 Z64 Z4 Z256 x256 S S S Z256 x2 x4';
 #				takes ~4-4.5s [MDNS-Control §6.2].
 sub new ( $class, %args )
 {
+	# The struct layout is a measured fact about the platform, not
+	# an input. A template that no longer encodes SERVICE_LEN bytes
+	# means the header changed under the module. Then every publish
+	# would send a malformed record, so the failure belongs here,
+	# at construction, and it is fatal [MDNS-Control §4].
+	my $probe = pack( SERVICE_TEMPLATE, '', '', '', 0, 0, 0, '' );
+	die 'struct mdns_service template is not ' . SERVICE_LEN . ' bytes'
+	    if length($probe) != SERVICE_LEN;
+
 	return bless {
 		socket_path => $args{socket_path} // '/var/run/mdnsd.sock',
 		timeout     => $args{timeout}     // 10,
@@ -111,6 +120,20 @@ sub connect ($self)
 	$self->{imsg} = FuguLib::Imsg->new( fh => $sock );
 
 	return 1;
+}
+
+# $self->publish(%args):
+#	Connect if necessary, then publish. This is the whole startup
+#	path of a daemon that advertises one service: one call, one
+#	error to report. The arguments are those of publish_service.
+#	The method returns 1, or undef with the reason in ->error.
+sub publish ( $self, %args )
+{
+	if ( !$self->{imsg} ) {
+		$self->connect or return;
+	}
+
+	return $self->publish_service(%args);
 }
 
 # $self->publish_service(%args):
@@ -182,12 +205,20 @@ sub update_txt ( $self, %args )
 sub withdraw ($self)
 {
 	if ( $self->{imsg} ) {
-		close $self->{imsg}{fh};
+		$self->{imsg}->close;
 		$self->{imsg} = undef;
 	}
 	$self->{published} = 0;
 
 	return 1;
+}
+
+# The held socket is the lifetime of the advertisement
+# [MDNS-Control §6]. Thus the object going away must withdraw the
+# service, whether the caller remembered to or not.
+sub DESTROY ($self)
+{
+	$self->withdraw;
 }
 
 # $self->is_published:
@@ -260,6 +291,12 @@ sub _publish ( $self, $timeout )
 
 	$self->{error} = undef;
 
+	my $record = $self->_encode_service;
+	if ( !defined $record ) {
+		$self->withdraw;
+		return;
+	}
+
 	# ADD must precede COMMIT on this connection, unconditionally.
 	# A COMMIT for an unknown group crashes mdnsd [MDNS-Control §9]
 	my $sent = $self->{imsg}->send(
@@ -268,7 +305,7 @@ sub _publish ( $self, $timeout )
 	    )
 	    && $self->{imsg}->send(
 		type => IMSG_CTL_GROUP_ADD_SERVICE,
-		data => $self->_encode_service
+		data => $record
 	    )
 	    && $self->{imsg}->send(
 		type => IMSG_CTL_GROUP_COMMIT,
@@ -325,7 +362,9 @@ sub _publish ( $self, $timeout )
 # $self->_encode_service:
 #	Encode the stored parameters as one struct mdns_service
 #	[MDNS-Control §4]. _check_service already validates the
-#	lengths. Thus the Z templates never truncate.
+#	lengths. Thus the Z templates never truncate. The method
+#	returns undef and sets ->error on a short record, like the rest
+#	of the module. new proves the template itself at construction.
 sub _encode_service ($self)
 {
 	my $s   = $self->{service};
@@ -333,8 +372,13 @@ sub _encode_service ($self)
 		$s->{app}, $s->{proto}, $s->{name}, 0, 0, $s->{port},
 		$s->{txt} );
 
-	die 'encoded struct mdns_service is not ' . SERVICE_LEN . ' bytes'
-	    if length($buf) != SERVICE_LEN;
+	if ( length($buf) != SERVICE_LEN ) {
+		$self->{error} =
+		      'encoded struct mdns_service is not '
+		    . SERVICE_LEN
+		    . ' bytes';
+		return;
+	}
 
 	return $buf;
 }

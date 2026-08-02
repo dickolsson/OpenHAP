@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 29 2026 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt FuguLib::MDNS 3p
 .Os
 .Sh NAME
@@ -26,10 +26,7 @@ use FuguLib::MDNS;
 
 my $mdns = FuguLib::MDNS->new;
 
-$mdns->connect
-    or warn 'mdnsd not running: ' . $mdns->error;
-
-$mdns->publish_service(
+$mdns->publish(
     name  => 'My Bridge',
     app   => 'hap',
     proto => 'tcp',
@@ -58,7 +55,7 @@ To withdraw the advertisement, the daemon only closes the socket.
 .Pp
 The document
 .Pa spec/MDNS-Control.md
-in the OpenHAP source tree specifies the wire protocol.
+in the OpenHAP repository specifies the wire protocol.
 This specification has the message types, the payload layouts, the
 group state machine, and its timing.
 The module never logs.
@@ -76,6 +73,33 @@ sets the maximum time that the publish methods wait for the replies
 from mdnsd.
 The default is 10 seconds.
 A healthy mdnsd confirms publication after approximately four seconds.
+.Pp
+The method proves the
+.Vt struct mdns_service
+template at construction and dies when the encoded size is wrong.
+That size is a measured fact about the platform, not an input.
+A template that no longer matches means every publish would send a
+malformed record.
+.Ss publish
+.Fo publish
+.Fa "name => $instance"
+.Fa "app => $app"
+.Fa "proto => $proto"
+.Fa "port => $port"
+.Fa "txt => $string"
+.Fa "timeout => $seconds"
+.Fc
+connects if necessary, then publishes.
+This is the whole startup path of a daemon that advertises one service:
+one call, and one error to report.
+The arguments are those of
+.Fn publish_service .
+.Pp
+Use
+.Fn connect
+and
+.Fn publish_service
+separately only when the two steps need different handling.
 .Ss connect
 .Fn connect
 connects to the control socket.
@@ -141,6 +165,12 @@ returns success.
 closes the control socket.
 This closure withdraws the advertisement.
 The method always returns 1.
+.Pp
+The destructor calls
+.Fn withdraw .
+The held socket is the lifetime of the advertisement, so the object
+going away must withdraw the service, whether the caller remembered to
+or not.
 .Ss is_published
 .Fn is_published
 returns true while the module advertises the service on a held

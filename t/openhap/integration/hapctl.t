@@ -3,7 +3,7 @@
 # Integration test: hapctl control utility functionality
 
 use v5.36;
-use Test::More tests => 15;
+use Test::More tests => 21;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
@@ -46,13 +46,45 @@ ok($status_works, 'status command works');
 my $has_daemon_info = $status_output =~ /(openhapd|running|Pairing|status|not initialized)/i;
 ok($has_daemon_info, 'status output is meaningful');
 
-# Test 8: hapctl devices lists configured devices
+# Test 7b: status tells a running daemon from a stopped one. The
+# report comes from the daemon over its control socket, so it names
+# the bridge and what the daemon holds, not a PID from a file.
+like($status_output, qr/openhapd is running/,
+   'status reports the running daemon');
+like($status_output, qr/Pairing status:/,
+   'and it reports the pairing state');
+like($status_output, qr/Configuration num:\s*\d+/,
+   'and the configuration number, which only the daemon knows');
+
+# Test 7c: the reply carries no secret. openhapd.conf holds the setup
+# code and the MQTT password, and neither may reach a terminal.
+my $pin = $env->get_config_value('hap_pin') // '';
+my $pass = $env->get_config_value('mqtt_pass') // '';
+my $leaked = 0;
+for my $secret (grep { length } $pin, $pass) {
+	$leaked = 1 if index($status_output, $secret) >= 0;
+}
+ok(!$leaked, 'status carries no setup code and no broker password');
+
+# Test 7d: with the daemon stopped, status says the opposite, and it
+# names the file it fell back to
+system('rcctl stop openhapd >/dev/null 2>&1');
+my $stopped_output = `$hapctl -c $config_file status 2>&1`;
+system('rcctl start openhapd >/dev/null 2>&1');
+$env->wait_for_hap_port;
+like($stopped_output, qr/openhapd is not running/,
+   'status reports the stopped daemon');
+like($stopped_output, qr{read from /var/run/openhapd\.pid},
+   'and it says which source answered');
+
+# Test 8: hapctl devices lists the devices
 my $devices_output = `$hapctl -c $config_file devices 2>&1`;
-my $devices_works = $? == 0 && $devices_output =~ /(Configured devices|No devices)/i;
+my $devices_works = $? == 0
+    && $devices_output =~ /(Loaded devices|Configured devices|No devices)/i;
 ok($devices_works, 'devices command works');
 
 # Test 9: hapctl devices shows device details
-my $has_details = $devices_output =~ /(Type:|Topic:|ID:)/;
+my $has_details = $devices_output =~ /(Type:|Topic:|ID:|AID:)/;
 ok($has_details || $devices_output =~ /No devices/,
    'devices shows details or no-devices message');
 

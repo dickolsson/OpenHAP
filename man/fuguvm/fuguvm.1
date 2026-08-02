@@ -444,6 +444,20 @@ block.
 on
 .Cm up
 overrides all of them.
+.Pp
+A line that the configuration grammar does not accept is an error that
+names the file and the line, and
+.Nm
+exits with 3.
+The parser never skips a line it did not understand: a typo that a
+parser ignores is a setting that silently does not apply, and the
+operator finds out weeks later from the behavior of the VM.
+.Pp
+A value for
+.Ar image_cache
+that is neither yes nor no gives a warning and falls back to the
+default.
+An unrecognized spelling must not silently mean the opposite.
 .Sh EXIT STATUS
 .Nm
 exits with one of these values:

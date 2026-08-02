@@ -1,12 +1,25 @@
 use v5.36;
 
 package OpenHAP::Session;
-use OpenHAP::Crypto;
+
+use FuguLib::Log;
+use FuguLib::Crypto;
+
+# Every session gets a number of its own, for the whole life of the
+# process. The server files a session under it, so dropping a
+# connection is a delete of what that connection holds.
+#
+# The number is not the descriptor. The kernel gives a closed
+# descriptor to the next connection, so a subscription that a purge
+# missed would arrive at whoever inherits the number. A counter never
+# repeats.
+my $next_id = 1;
 
 sub new ( $class, %args )
 {
 
 	my $self = bless {
+		id            => $next_id++,
 		socket        => $args{socket},
 		encrypted     => 0,
 		verified      => 0,
@@ -22,9 +35,21 @@ sub new ( $class, %args )
 
 		# Temporary pairing state
 		pairing_state => {},
+
+		# The event keys this connection subscribed to. The
+		# server deletes them one by one when the connection
+		# closes, instead of sweeping every key it holds.
+		subscriptions => {},
 	}, $class;
 
 	return $self;
+}
+
+# $self->id:
+#	The key that the server files this session under.
+sub id ($self)
+{
+	return $self->{id};
 }
 
 sub set_encryption ( $self, $encrypt_key, $decrypt_key )
@@ -35,7 +60,7 @@ sub set_encryption ( $self, $encrypt_key, $decrypt_key )
 	$self->{encrypted}     = 1;
 	$self->{encrypt_count} = 0;
 	$self->{decrypt_count} = 0;
-	$OpenHAP::logger->debug('Session encryption enabled');
+	FuguLib::Log->default->debug('Session encryption enabled');
 }
 
 sub encrypt ( $self, $data )
@@ -58,7 +83,7 @@ sub encrypt ( $self, $data )
 		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
 
 		my ( $ciphertext, $tag ) =
-		    OpenHAP::Crypto::chacha20_poly1305_encrypt(
+		    FuguLib::Crypto->chacha20poly1305_encrypt(
 			$self->{encrypt_key},
 			$nonce, $chunk, $aad );
 
@@ -102,7 +127,7 @@ sub decrypt ( $self, $data )
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 
 		my $plaintext =
-		    OpenHAP::Crypto::chacha20_poly1305_decrypt(
+		    FuguLib::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 
 		return unless defined $plaintext;
@@ -126,7 +151,7 @@ sub set_verified ( $self, $controller_id )
 {
 	$self->{verified}      = 1;
 	$self->{controller_id} = $controller_id;
-	$OpenHAP::logger->debug( 'Session verified for controller: %s',
+	FuguLib::Log->default->debug( 'Session verified for controller: %s',
 		$controller_id );
 
 	return;
