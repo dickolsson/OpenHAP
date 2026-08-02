@@ -3,7 +3,7 @@
 # Integration test: Daemon lifecycle management
 
 use v5.36;
-use Test::More tests => 12;
+use Test::More tests => 13;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
