@@ -99,6 +99,36 @@ subtest 'recv timeout returns undef without data' => sub {
 	cmp_ok( time - $start, '<', 5, 'returned well before forever' );
 };
 
+# An event loop already knows the socket is readable. It must not sit
+# in recv, and it must not lose what arrived.
+subtest 'a zero timeout takes what arrived and returns' => sub {
+	my ( $tx, $rx ) = pair();
+
+	my $start = time;
+	ok( !defined $rx->recv( timeout => 0 ), 'an empty socket yields undef' );
+	cmp_ok( time - $start, '<', 1, 'and it did not wait' );
+	ok( !$rx->is_dead, 'the connection is still usable' );
+
+	$tx->send( type => 9, data => 'now' );
+	my $msg = $rx->recv( timeout => 0 );
+	ok( defined $msg, 'a whole message is taken' );
+	is( $msg->{data}, 'now', 'and it is the one that was sent' );
+
+	# A message that arrives in two writes must survive the read
+	# that saw only the first half
+	my $whole =
+	    FuguLib::Imsg::_encode_header( 7,
+		FuguLib::Imsg::HEADER_SIZE() + 6, 0, $$ )
+	    . 'abcdef';
+	syswrite $tx->{fh}, substr( $whole, 0, 10 );
+	ok( !defined $rx->recv( timeout => 0 ), 'half a header is not a message' );
+	ok( !$rx->is_dead, 'and it does not poison the connection' );
+
+	syswrite $tx->{fh}, substr( $whole, 10 );
+	is( $rx->recv( timeout => 0 )->{data},
+		'abcdef', 'the rest completes it' );
+};
+
 subtest 'invalid length poisons the connection' => sub {
 	socketpair( my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
 	    or die "socketpair: $!";

@@ -102,6 +102,36 @@ The directory that holds the pairing database and the cryptographic
 keys.
 Default:
 .Pa /var/db/openhapd .
+.It Ic control Ar path | Cm off
+The UNIX socket where
+.Xr hapctl 8
+asks the running daemon what it is doing.
+Default:
+.Pa /var/run/openhapd/control.sock .
+.Pp
+The daemon creates the directory of the socket while it is still
+root, with owner
+.Dq _openhap
+and mode 0700, because
+.Ox
+clears
+.Pa /var/run
+at boot.
+The socket itself is mode 0600.
+A user who is neither root nor
+.Dq _openhap
+thus cannot reach it.
+.Pp
+The value
+.Cm off
+runs the daemon with no control channel.
+.Xr hapctl 8
+then reports from
+.Pa /var/run/openhapd.pid
+only, and it says so.
+.Pp
+No reply on this socket carries a secret: not the setup code, not the
+MQTT password, and no key.
 .It Ic log_level Ar level
 The log verbosity level.
 The valid values are:

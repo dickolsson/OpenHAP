@@ -135,10 +135,16 @@ sub send ( $self, %args )
 #	returns undef on timeout, clean EOF, or an unrecoverable
 #	framing error. For a framing error, it sets $! to EBADMSG and
 #	marks the connection dead per spec/MDNS-Imsg.md §4.
+#
+#	A timeout of 0 takes what already arrived and returns. This is
+#	the form for an event loop, which knows the socket is readable
+#	and must not sit in this call. A partial message stays in the
+#	buffer for the next call.
 sub recv ( $self, %args )
 {
 	my $timeout  = $args{timeout};
 	my $deadline = defined $timeout ? time + $timeout : undef;
+	my $polled   = 0;
 
 	while (1) {
 		if ( my $msg = $self->_extract_message ) {
@@ -148,10 +154,19 @@ sub recv ( $self, %args )
 
 		if ( defined $deadline ) {
 			my $remaining = $deadline - time;
-			return if $remaining <= 0;
+
+			# A zero timeout still gets one poll. The
+			# caller asked for what already arrived, not
+			# for nothing at all, and by the time the
+			# deadline is computed it has already passed.
+			$remaining = 0 if $remaining < 0 && !$polled;
+			return         if $remaining < 0;
+
+			# can_read(0) polls and does not wait
 			my @ready =
 			    IO::Select->new( $self->{fh} )
 			    ->can_read($remaining);
+			$polled++;
 			return unless @ready;
 		}
 

@@ -5,6 +5,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 
 use FuguLib::Config;
+use FuguLib::Control;
 use FuguLib::Crypto;
 use FuguLib::Daemon;
 use FuguLib::Log;
@@ -83,6 +84,17 @@ my $hap_port = $config->get( 'hap_port', 51827 );
 my $hap_pin  = $config->get( 'hap_pin',  '1995-1018' );
 my $db_path  = $config->get( 'db_path',  '/var/db/openhapd' );
 
+# Where hapctl asks the running daemon what it is doing. The value
+# "off" turns the socket off, for an operator who wants no local
+# control channel at all.
+my $control_path = $config->get( 'control', '/var/run/openhapd/control.sock' );
+$control_path = undef if lc $control_path eq 'off';
+
+# A my declaration with a statement modifier has static-variable
+# semantics, thus the branch is written out
+my $control_dir;
+$control_dir = $control_path =~ s{/[^/]+$}{}r if defined $control_path;
+
 # Create the HAP server
 my $hap = OpenHAP::HAP->new(
 	port         => $hap_port,
@@ -142,6 +154,18 @@ if ( $> == 0 ) {
 		on_warn => sub ($msg) { $log->warning( '%s', $msg ) },
 	);
 
+	# The directory of the control socket needs the same
+	# treatment, and it needs it here: OpenBSD clears /var/run at
+	# boot, and the dropped daemon cannot create a directory
+	# there. Mode 0700 is the outer boundary. The socket mode
+	# alone would let any user reach the bind point.
+	FuguLib::Privdrop->prepare_statedir(
+		path    => $control_dir,
+		user    => '_openhap',
+		mode    => 0700,
+		on_warn => sub ($msg) { $log->warning( '%s', $msg ) },
+	) if $control_dir;
+
 	# Keep root's supplementary groups. On OpenBSD that is how the
 	# daemon reaches the mdnsd control socket after the drop.
 	FuguLib::Privdrop->drop_privileges(
@@ -176,6 +200,32 @@ if (
 else {
 	$log->warning( 'mDNS registration failed: %s',
 		$mdns->error // 'unknown' );
+}
+
+# Serve the control socket, also as _openhap. The commands answer
+# from process state, thus hapctl reports what the daemon is doing
+# and not what it wrote to a file at some earlier time.
+#
+# No command echoes a configuration value. openhapd.conf carries the
+# setup code and the broker password, and a reply that carried either
+# would put it in the output of a command an operator runs in front
+# of other people.
+my $control;
+if ($control_path) {
+	$control = FuguLib::Control->new( path => $control_path, log => $log );
+	$control->register( status  => sub ($) { $hap->control_status } );
+	$control->register( devices => sub ($) { $hap->control_devices } );
+
+	if ( $control->listen( loop => $hap->loop ) ) {
+		$log->info( 'Control socket at %s', $control_path );
+	}
+	else {
+		$log->warning(
+			'Control socket unavailable: %s',
+			$control->error // 'unknown'
+		);
+		$control = undef;
+	}
 }
 
 # Restrict the process for good. FuguLib::Sandbox is a no-op off
@@ -286,6 +336,7 @@ $log->info('Shutting down');
 
 # A close of the mdnsd control socket withdraws the advertisement
 $mdns->withdraw;
+$control->shutdown( loop => $hap->loop ) if $control;
 $hap->shutdown;
 
 exit 0;
@@ -322,6 +373,13 @@ sub unveil_paths()
 	    [ $config_file, 'r', { optional => 1 } ],
 	    [ '/var/log/openhapd.log', 'w',  { optional => 1 } ],
 	    [ '/var/run/mdnsd.sock',   'rw', { optional => 1 } ];
+
+	# The directory of the control socket, not the socket. bind(2)
+	# and unlink(2) both change a directory entry, thus the
+	# directory needs rwc. The row is optional because the
+	# operator can turn the socket off.
+	push @paths, [ $control_dir, 'rwc', { optional => 1 } ]
+	    if $control_dir;
 
 	# The resolver files, the service tables, the time zone and the
 	# random device are the same for every daemon

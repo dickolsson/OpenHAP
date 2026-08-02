@@ -144,6 +144,20 @@ The configuration number, the configuration digest, and the counter of
 failed pairing attempts, mode 0600.
 An older installation kept each of these in a file of its own.
 The daemon reads those files one time and folds them into this one.
+.It Pa /var/run/openhapd/control.sock
+The control socket, mode 0600 in a directory of mode 0700.
+.Xr hapctl 8
+asks the running daemon for its status over it.
+The daemon creates the directory while it is still root, because
+.Ox
+clears
+.Pa /var/run
+at boot, and it removes the socket at a clean shutdown.
+The
+.Ic control
+directive of
+.Xr openhapd.conf 5
+moves the socket or turns it off.
 .It Pa /var/run/openhapd.pid
 The process ID file.
 The daemon takes it while it is still root, and holds the lock for its
@@ -196,6 +210,16 @@ mode.
 connection to
 .Xr mdnsd 8
 to advertise again.
+.It control socket directory
+(optional, read-write-create) the directory of the control socket, not
+the socket.
+.Xr bind 2
+and
+.Xr unlink 2
+both change a directory entry.
+The row is absent when
+.Ic control off
+turns the socket off.
 .It Pa /etc/resolv.conf , Pa /etc/hosts , Pa /etc/services , Pa /etc/protocols
 (optional, read) the resolver files; the daemon uses them when
 .Cm mqtt_host

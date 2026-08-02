@@ -107,6 +107,14 @@ the global options and each command's own options, and holds the exit
 codes that every tool shares.  Command data goes to stdout and diagnostics
 to the logger, so a pipeline that reads the tool keeps working.</dd>
 
+<dt>FuguLib::Control</dt>
+<dd>The module is a control socket for a running daemon, in two parts: a
+server that answers commands from process state, and a client for the tool
+that asks.  A tool that guesses from files on disk reads what the daemon
+wrote at some earlier time, and it is wrong whenever the two disagree.  The
+socket is mode 0600 from birth, and everything that arrives on it is
+untrusted: a bad request is an error reply, never a dead daemon.</dd>
+
 <dt>FuguLib::EventLoop</dt>
 <dd>The module is the select loop that a daemon with one process runs.
 A caller registers descriptors and timers instead of writing a

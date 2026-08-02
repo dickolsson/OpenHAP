@@ -54,6 +54,17 @@ Nothing exits from inside a signal handler.
 C<stop> asks the loop to end. C<shutdown> closes the listener and
 every client connection.
 
+=head2 Control commands
+
+C<control_status> and C<control_devices> return what the server can
+say about itself, as plain data. L<FuguLib::Control> carries them to
+C<hapctl>, and the daemon registers them as commands.
+
+Neither reply carries a secret. The setup code, the MQTT password,
+the accessory keys and the controller keys all stay in the daemon. A
+reply that carried one would put it in the output of a command that
+an operator runs in front of other people.
+
 =head2 Request framing
 
 A stream socket gives a reader whatever arrived, which is not a

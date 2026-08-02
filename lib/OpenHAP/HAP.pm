@@ -77,6 +77,11 @@ sub new ( $class, %args )
 
 		loop   => $args{loop},         # The caller can supply one
 		server => undef,               # The listening socket
+
+		# For the uptime in a control status. Time::HiRes::time
+		# is imported here, and it gives a float; a whole second
+		# is all an uptime needs.
+		started => int time,
 	}, $class;
 
 	$self->_initialize();
@@ -1246,6 +1251,59 @@ sub is_paired ($self)
 {
 	my $pairings = $self->{storage}->load_pairings();
 	return scalar( keys %$pairings ) > 0;
+}
+
+# $self->control_status:
+#	What the server can say about itself, for a control client.
+#
+#	Nothing here is a secret. The setup code, the broker password,
+#	the accessory keys and the controller keys all stay in the
+#	daemon. A reply that carried one would put it in the output of
+#	a command that an operator runs in front of other people.
+sub control_status ($self)
+{
+	my $pairings = $self->{storage}->load_pairings;
+
+	# get_bridged_accessories returns a list, and scalar on a list
+	# return gives the last element, not a count
+	my @devices = $self->{bridge}->get_bridged_accessories;
+
+	return {
+		name          => $self->{name},
+		port          => $self->{port},
+		paired        => $self->is_paired ? 1 : 0,
+		pairings      => scalar keys %$pairings,
+		config_number => $self->get_config_number,
+		devices       => scalar @devices,
+		connections   => scalar keys %{ $self->{sessions} },
+		mdns          => $self->{mdns}
+		    && $self->{mdns}->is_published ? 'published' : 'absent',
+		mqtt => !$self->{mqtt_client} ? 'none'
+		: $self->{mqtt_client}->is_connected ? 'connected'
+		: 'disconnected',
+		started => $self->{started},
+	};
+}
+
+# $self->control_devices:
+#	The accessories on the bridge, for a control client. The
+#	bridge itself is not one of them: it carries no device.
+sub control_devices ($self)
+{
+	my @devices;
+	for my $accessory ( $self->{bridge}->get_bridged_accessories ) {
+		push @devices,
+		    {
+			aid    => $accessory->{aid},
+			name   => $accessory->{name},
+			model  => $accessory->{model},
+			serial => $accessory->{serial},
+			class  => ref $accessory,
+			topic  => $accessory->{mqtt_topic},
+		    };
+	}
+
+	return [ sort { $a->{aid} <=> $b->{aid} } @devices ];
 }
 
 sub get_config_number ($self)

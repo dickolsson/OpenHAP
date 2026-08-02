@@ -46,7 +46,8 @@ DEPS			= scripts/deps
 # cannot appear in a make target.  install-man puts it back.
 MAN1			= man/fuguvm/fuguvm.1
 MAN3P			= man/fugulib/CLI.3p man/fugulib/Config.3p \
-			  man/fugulib/Crypto.3p man/fugulib/Daemon.3p \
+			  man/fugulib/Control.3p man/fugulib/Crypto.3p \
+			  man/fugulib/Daemon.3p \
 			  man/fugulib/EventLoop.3p man/fugulib/File.3p \
 			  man/fugulib/HTTP.3p man/fugulib/Imsg.3p \
 			  man/fugulib/JSONSocket.3p man/fugulib/Log.3p \
