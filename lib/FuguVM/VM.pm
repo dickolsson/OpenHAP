@@ -31,13 +31,15 @@ use Time::HiRes qw(usleep);
 use FuguVM::Image;
 use FuguVM::ImageCache;
 use FuguVM::Disk;
-use FuguVM::SSH;
 use FuguVM::Expect;
-use FuguVM::Util;
+use FuguVM::Proxy;
 use FuguVM::QMP;
 use FuguVM::QGA;
 
+use FuguLib::Crypto;
 use FuguLib::Process;
+use FuguLib::SSH;
+use FuguLib::Util;
 
 use constant {
 	EXIT_SUCCESS        => 0,
@@ -102,7 +104,7 @@ sub up ($self)
 	# Check for an unclean shutdown. Then check the disk integrity.
 	if ( $state->was_unclean_shutdown ) {
 		$log->warning("Detected unclean shutdown, checking disk...");
-		my $disk  = FuguVM::Disk->new( $state->{state_dir} );
+		my $disk  = FuguVM::Disk->new( $state->state_dir );
 		my $check = $disk->check( $config->{name} );
 
 		if ( defined $check && $check->{status} ne 'ok' ) {
@@ -130,8 +132,7 @@ sub up ($self)
 	# Start the caching proxy for the VM installation. The VM
 	# downloads its packages through the proxy. The first run also
 	# uses the proxy to download the miniroot image.
-	my $cache_dir = $self->_cache_dir;
-	my $proxy     = $state->ensure_proxy($cache_dir);
+	my $proxy = $self->_ensure_proxy;
 	my $proxy_vm_url;    # For downloads inside the OpenBSD guest
 
 	if ( defined $proxy ) {
@@ -152,7 +153,7 @@ sub up ($self)
 
 	if ( !$state->is_installed ) {
 		$log->info("Checking OpenBSD image...");
-		my $image = FuguVM::Image->new( $cache_dir, $proxy );
+		my $image = FuguVM::Image->new( $self->_cache_dir, $proxy );
 		$image_path = $image->ensure( $config->{version} );
 
 		if ( !defined $image_path ) {
@@ -173,7 +174,7 @@ sub up ($self)
 
 	if ( !$state->disk_exists ) {
 		$log->info("Creating disk image ($config->{disk_size})...");
-		my $disk = FuguVM::Disk->new( $state->{state_dir} );
+		my $disk = FuguVM::Disk->new( $state->state_dir );
 		my $result =
 		    $disk->create( $config->{name}, $config->{disk_size} );
 		if ( !defined $result ) {
@@ -205,7 +206,7 @@ sub up ($self)
 		my $install_proxy_url = $proxy_vm_url // 'none';
 
 		# Generate a strong random password for this installation
-		my $root_password = FuguVM::Util->generate_password(32);
+		my $root_password = FuguLib::Crypto->random_password(32);
 		$state->set_root_password($root_password);
 		$log->info("Generated secure root password");
 
@@ -341,7 +342,7 @@ sub _verify_backing_chain ($self)
 	my $state  = $self->{state};
 	my $log    = $self->{log};
 
-	my $disk    = FuguVM::Disk->new( $state->{state_dir} );
+	my $disk    = FuguVM::Disk->new( $state->state_dir );
 	my $backing = $disk->backing_file( $config->{name} );
 	return 1 if !defined $backing;
 	return 1 if -f $backing;
@@ -376,7 +377,7 @@ sub _cache_restore ( $self, $cache, $key )
 		return 0;
 	}
 
-	my $disk = FuguVM::Disk->new( $state->{state_dir} );
+	my $disk = FuguVM::Disk->new( $state->state_dir );
 	my $path =
 	    $disk->create( $config->{name}, undef, $hit->{base}, 'qcow2' );
 	if ( !defined $path ) {
@@ -392,7 +393,7 @@ sub _cache_restore ( $self, $cache, $key )
 	$state->mark_installed;
 	my $password = $hit->{meta}{root_password};
 	$state->set_root_password($password) if defined $password;
-	$state->{data}{cached_from} = $key;
+	$state->data->{cached_from} = $key;
 	$state->save;
 
 	$log->info("Using cached image $key");
@@ -458,7 +459,7 @@ sub _reparent_disk ( $self, $base )
 
 	# Disk::create returns early on an existing path. Thus the
 	# rename above is what makes this call create the overlay.
-	my $disk = FuguVM::Disk->new( $state->{state_dir} );
+	my $disk = FuguVM::Disk->new( $state->state_dir );
 	my $path = $disk->create( $config->{name}, undef, $base, 'qcow2' );
 	if ( !defined $path ) {
 		rename $saved, $disk_path
@@ -477,9 +478,7 @@ sub down ($self)
 	my $config = $self->{config};
 
 	# Stop the proxy if it runs
-	my $cache_dir = $self->_cache_dir;
-	if ( $state->is_proxy_running ) {
-		$state->stop_proxy($cache_dir);
+	if ( $self->_stop_proxy ) {
 		$log->info("Proxy stopped");
 	}
 
@@ -517,9 +516,7 @@ sub destroy ($self)
 	my $config = $self->{config};
 
 	# Stop the proxy if it runs
-	my $cache_dir = $self->_cache_dir;
-	if ( $state->is_proxy_running ) {
-		$state->stop_proxy($cache_dir);
+	if ( $self->_stop_proxy ) {
 		$log->info("Proxy stopped");
 	}
 
@@ -543,7 +540,7 @@ sub destroy ($self)
 	unlink $qmp_path if -S $qmp_path;
 
 	# Clear the state
-	$state->{data} = {};
+	%{ $state->data } = ();
 	$state->save;
 
 	$log->info("VM '$config->{name}' destroyed");
@@ -673,13 +670,13 @@ sub wait_ssh ( $self, $timeout = 120, $sig = undef )
 	my $config = $self->{config};
 
 	# The connection uses the SSH agent for authentication
-	my $ssh = FuguVM::SSH->new(
+	my $ssh = FuguLib::SSH->new(
 		host => '127.0.0.1',
 		port => $config->{ssh_port},
 		user => 'root',
 	);
 
-	return $ssh->wait_available( $timeout, $sig );
+	return $ssh->wait_available($timeout);
 }
 
 # $self->_wait_ssh_password($password, $timeout):
@@ -690,7 +687,7 @@ sub _wait_ssh_password ( $self, $password, $timeout = 120 )
 {
 	my $config = $self->{config};
 
-	my $ssh = FuguVM::SSH->new(
+	my $ssh = FuguLib::SSH->new(
 		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
@@ -781,7 +778,7 @@ sub _install_ssh_key ( $self, $password )
 	}
 
 	# Connect with the password
-	my $ssh = FuguVM::SSH->new(
+	my $ssh = FuguLib::SSH->new(
 		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
@@ -830,9 +827,9 @@ sub _graceful_shutdown ($self)
 	# below runs the orderly shutdown of the guest, which syncs. A
 	# force stop is the ultimate fallback.
 	$self->_bounded(
-		FuguVM::SSH::DEFAULT_TIMEOUT + 5,
+		FuguLib::SSH::DEFAULT_TIMEOUT() + 5,
 		sub {
-			my $ssh = FuguVM::SSH->new(
+			my $ssh = FuguLib::SSH->new(
 				host => '127.0.0.1',
 				port => $config->{ssh_port},
 				user => 'root',
@@ -864,25 +861,68 @@ sub _graceful_shutdown ($self)
 }
 
 # $self->_bounded($seconds, $code):
-#	Run $code under a hard wall-clock deadline. Thus a blocked
-#	guest interaction cannot stall the caller. Return the return
-#	value of $code, or undef if the deadline elapsed. The guard
-#	mirrors the alarm guard for the MQTT connect in OpenHAP::MQTT.
+#	Run $code under a hard wall-clock deadline, so a blocked guest
+#	interaction cannot stall the caller. The guard itself is
+#	FuguLib::Util; this wrapper adds the log line.
 sub _bounded ( $self, $seconds, $code )
 {
-	my $result;
-	my $ok = eval {
-		local $SIG{ALRM} = sub { die "timeout\n" };
-		alarm $seconds;
-		$result = $code->();
-		alarm 0;
-		1;
-	};
-	alarm 0;
-	return $result if $ok;
+	my $result = FuguLib::Util::bounded( $seconds, $code );
+	return $result if defined $result;
 
 	$self->{log}->warning("Guest did not respond within ${seconds}s");
 	return;
+}
+
+# $self->_ensure_proxy:
+#	Start the caching proxy if it does not run, and return it. The
+#	method returns undef when the proxy cannot start.
+#
+#	The lifecycle lives here and not in FuguVM::State, because a
+#	state file must not start a process. That split is what removed
+#	the require cycle between the two modules.
+sub _ensure_proxy ($self)
+{
+	my $proxy = $self->_proxy;
+	return $proxy if $proxy->is_running;
+
+	unless ( defined $proxy->start ) {
+		$self->{log}->warning(
+			'Proxy did not start: %s',
+			$proxy->error // 'unknown'
+		);
+		return;
+	}
+
+	return $proxy;
+}
+
+# $self->_stop_proxy:
+#	Stop the proxy if it runs. The method returns 1 when it stopped
+#	one, and 0 when there was none.
+sub _stop_proxy ($self)
+{
+	my $proxy = $self->_proxy;
+	return 0 unless $proxy->is_running;
+
+	$proxy->stop;
+
+	return 1;
+}
+
+# $self->_proxy:
+#	Build the proxy supervisor over this VM's state.
+sub _proxy ($self)
+{
+	my $state = $self->{state};
+
+	return FuguVM::Proxy->new(
+		cache   => FuguVM::Proxy::Cache->new( $self->_cache_dir ),
+		pidfile => $state->proxy_pidfile,
+		store   => $state->store,
+		child   => 'FuguVM::Proxy',
+		logfile => $state->vm_state_dir . '/proxy.log',
+		log     => $self->{log},
+	);
 }
 
 # $self->_force_stop:
@@ -942,8 +982,9 @@ sub _is_running ($self)
 	my $pid = $self->{state}->get_vm_pid;
 	return 0 if !defined $pid;
 
-	# Check if the process is alive
-	return 0 if !kill( 0, $pid );
+	# A QEMU that became a zombie is not running. FuguLib::Process
+	# reaps it and says so; a bare kill(0) would call it alive.
+	return 0 if !FuguLib::Process->is_alive($pid);
 
 	# Check through QMP when possible. QMP is more reliable.
 	my $qmp = $self->_qmp_connect;
@@ -957,15 +998,15 @@ sub _is_running ($self)
 	return 1;
 }
 
+# $self->_wait_exit($timeout):
+#	Wait for the QEMU process to leave. The poll is sub-second, so
+#	a VM that stops at once does not cost a whole second.
 sub _wait_exit ( $self, $timeout )
 {
-	my $start = time;
-	while ( time - $start < $timeout ) {
-		my $pid = $self->{state}->get_vm_pid;
-		return 1 if !defined $pid || !kill( 0, $pid );
-		sleep 1;
-	}
-	return 0;
+	my $pid = $self->{state}->get_vm_pid;
+	return 1 if !defined $pid;
+
+	return FuguLib::Process->wait_exit( $pid, $timeout );
 }
 
 # QEMU startup
@@ -1027,13 +1068,13 @@ sub _start_qemu ( $self, $boot_image = undef )
 	push @cmd, '-qmp', "unix:$qmp_path,server,nowait";
 
 	# PID file for reliable tracking
-	push @cmd, '-pidfile', $state->{vm_pid_file};
+	push @cmd, '-pidfile', $state->vm_pidfile->path;
 
 	# No graphics display (headless)
 	push @cmd, '-display', 'none';
 
 	# Use FuguLib::Process to spawn QEMU
-	my $log_file = "$state->{vm_state_dir}/qemu.log";
+	my $log_file = $state->vm_state_dir . '/qemu.log';
 	my $result   = FuguLib::Process->spawn_command(
 		cmd         => \@cmd,
 		daemonize   => 1,
@@ -1048,9 +1089,11 @@ sub _start_qemu ( $self, $boot_image = undef )
 	my $start = time;
 	my $pid;
 	while ( time - $start < 5 ) {
-		if ( -f $state->{vm_pid_file} ) {
+		if ( defined $state->get_vm_pid ) {
 			my $qemu_pid = $state->get_vm_pid;
-			if ( defined $qemu_pid && kill( 0, $qemu_pid ) ) {
+			if ( defined $qemu_pid
+				&& FuguLib::Process->is_alive($qemu_pid) )
+			{
 				$pid = $qemu_pid;
 				last;
 			}
@@ -1061,7 +1104,7 @@ sub _start_qemu ( $self, $boot_image = undef )
 	# Fallback: use the forked PID from FuguLib::Process
 	unless ( defined $pid ) {
 		my $forked = $result->{pid};
-		if ( kill( 0, $forked ) ) {
+		if ( FuguLib::Process->is_alive($forked) ) {
 			$state->set_vm_pid($forked);
 			$state->mark_running;
 			$pid = $forked;
@@ -1098,27 +1141,30 @@ sub _wait_console_ready ( $self, $port, $timeout )
 {
 	require IO::Socket::INET;
 
-	my $start = time;
-	while ( time - $start < $timeout ) {
-		my $sock = IO::Socket::INET->new(
-			PeerAddr => '127.0.0.1',
-			PeerPort => $port,
-			Proto    => 'tcp',
-			Timeout  => 2,
-		);
-		if ( defined $sock ) {
-			$sock->close;
-			return 1;
-		}
+	my $ready = FuguLib::Util::wait_until(
+		$timeout, 0.2,
+		sub {
+			my $sock = IO::Socket::INET->new(
+				PeerAddr => '127.0.0.1',
+				PeerPort => $port,
+				Proto    => 'tcp',
+				Timeout  => 2,
+			);
+			if ( defined $sock ) {
+				$sock->close;
+				return 'ready';
+			}
 
-		# Stop the wait early if QEMU already exited
-		my $qemu_pid = $self->{state}->get_vm_pid;
-		return 0 if defined $qemu_pid && !kill( 0, $qemu_pid );
+			# Stop the wait early if QEMU already exited
+			my $qemu_pid = $self->{state}->get_vm_pid;
+			return 'gone'
+			    if defined $qemu_pid
+			    && !FuguLib::Process->is_alive($qemu_pid);
 
-		usleep(200_000);    # 0.2 seconds
-	}
+			return;
+		} );
 
-	return 0;
+	return defined $ready && $ready eq 'ready' ? 1 : 0;
 }
 
 # $self->_dump_qemu_log($log_file):

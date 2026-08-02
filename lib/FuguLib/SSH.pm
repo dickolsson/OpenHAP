@@ -17,12 +17,23 @@
 
 use v5.36;
 
-package FuguVM::SSH;
+package FuguLib::SSH;
 
-use Net::SSH2;
 use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_TRUNC);
 use FuguLib::Process;
-use FuguLib::Signal;
+use FuguLib::Util;
+
+# FuguLib::SSH - run a command on another machine over SSH.
+#
+# The module wraps Net::SSH2 for the two things a provisioning tool
+# does: run a command and capture its output, and write a file. An
+# interactive session falls back to ssh(1), because Net::SSH2 does not
+# give correct TTY control.
+#
+# Net::SSH2 loads at connect time, not at compile time. Thus the
+# module keeps the FuguLib core-Perl load contract, and an
+# installation without the library still loads it and fails with a
+# clear message at the first connect.
 
 use constant {
 	EXIT_SUCCESS    => 0,
@@ -50,6 +61,9 @@ sub new ( $class, %args )
 #	Net::SSH2 object on success.
 sub _connect ($self)
 {
+	eval { require Net::SSH2; 1 }
+	    or die "FuguLib::SSH needs Net::SSH2: $@";
+
 	my $ssh2 = Net::SSH2->new;
 	$ssh2->timeout( $self->{timeout} * 1000 );    # milliseconds
 
@@ -77,27 +91,16 @@ sub _connect ($self)
 	return;
 }
 
-sub wait_available ( $self, $timeout = 120, $sig = undef )
+# $self->wait_available($timeout):
+#	Poll until the host takes an authenticated connection. The wait
+#	stops early on an interrupt, through FuguLib::Util. The method
+#	returns 1 when the host answered, and 0 otherwise.
+sub wait_available ( $self, $timeout = 120 )
 {
-	my $start = time;
-
-	while ( time - $start < $timeout ) {
-
-		# Check for an interrupt if the caller gave a signal
-		# handler
-		if ( defined $sig && FuguLib::Signal::check_interrupted() ) {
-			return 0;
-		}
-
-		my $ssh2 = $self->_connect;
-		if ( defined $ssh2 ) {
-			$ssh2->disconnect;
-			return 1;
-		}
-		sleep 2;
-	}
-
-	return 0;
+	return FuguLib::Util::wait_until( $timeout, 2,
+		sub { $self->is_available } )
+	    ? 1
+	    : 0;
 }
 
 sub run_command ( $self, $command )
@@ -206,9 +209,15 @@ sub write_file ( $self, $remote_path, $content, $mode = 0644 )
 		return EXIT_ERROR;
 	}
 
-	$remote_fh->write($content);
+	# A short write leaves a truncated remote file. A provisioning
+	# script that arrives half-written is worse than one that never
+	# arrived, so the return value is checked.
+	my $written = $remote_fh->write($content);
 	undef $remote_fh;    # Close the file handle
 	$ssh2->disconnect;
+
+	return EXIT_ERROR
+	    if !defined $written || $written != length $content;
 
 	return EXIT_SUCCESS;
 }

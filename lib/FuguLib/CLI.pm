@@ -50,6 +50,7 @@ use constant {
 #	commands => \%table	the subcommands (required)
 #	options  => \%spec	global options, in Getopt::Long form
 #	usage    => $string	one line after "usage: <name>"
+#	epilogue => $string	text after the command list, for examples
 #	log      => $logger	default: FuguLib::Log->default
 #
 #	Each entry of %commands maps a name to a hashref:
@@ -78,6 +79,7 @@ sub new ( $class, %args )
 		commands => $commands,
 		options  => $args{options} // {},
 		usage    => $args{usage},
+		epilogue => $args{epilogue},
 		log      => $args{log} // FuguLib::Log->default,
 		parsed   => {},
 		command  => undef,
@@ -213,6 +215,8 @@ sub print_help ( $self, $command = undef )
 		    $self->{commands}{$name}{summary} // '';
 	}
 	print "\n";
+
+	print $self->{epilogue} if defined $self->{epilogue};
 
 	return EXIT_SUCCESS;
 }

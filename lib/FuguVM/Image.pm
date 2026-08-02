@@ -19,6 +19,10 @@ use v5.36;
 
 package FuguVM::Image;
 
+use FuguLib::File;
+use FuguLib::Log;
+use FuguLib::Process;
+
 # FuguVM::Image - Download and cache OpenBSD miniroot images
 #
 # This module gives access to OpenBSD miniroot images. It downloads an
@@ -34,11 +38,8 @@ use constant {
 
 sub new ( $class, $cache_dir, $proxy = undef )
 {
-	# Expand ~ in the path
-	$cache_dir =~ s/^~/$ENV{HOME}/;
-
 	my $self = bless {
-		cache_dir => $cache_dir,
+		cache_dir => FuguLib::File->expand_tilde($cache_dir),
 		proxy     => $proxy,
 	}, $class;
 
@@ -77,15 +78,7 @@ sub ensure ( $self, $version )
 #	"no download" and would not fail.
 sub _ftp_script ()
 {
-	require File::Basename;
-	require File::Spec;
-
-	my $module_dir =
-	    File::Basename::dirname( File::Spec->rel2abs(__FILE__) );
-	my $project_root =
-	    File::Basename::dirname( File::Basename::dirname($module_dir) );
-
-	return File::Spec->catfile( $project_root, 'scripts', 'ftp' );
+	return FuguLib::File->share_path('scripts/ftp');
 }
 
 # $self->download($version):
@@ -113,10 +106,16 @@ sub download ( $self, $version )
 		return;
 	}
 
-	# Download to the temp file
-	my $result = system( $ftp, $tmp_path, $url );
-	if ( $result != 0 ) {
-		warn "Download failed: exit code $result\n";
+	# Download to the temp file. The helper writes its progress as
+	# it goes, and a download of a hundred megabytes is a wait that
+	# an operator wants to see.
+	my $result = FuguLib::Process->run(
+		cmd         => [ $ftp, $tmp_path, $url ],
+		passthrough => 1,
+	);
+	unless ( $result->{success} ) {
+		FuguLib::Log->default->error( 'Download failed: %s',
+			$result->{error} // "exit $result->{exit_code}" );
 		return;
 	}
 
@@ -156,9 +155,12 @@ sub url ( $self, $version )
 sub list ($self)
 {
 	my @images;
-	my $base_path = $self->_proxy_cache_path;
 
-	return \@images if !-d $base_path;
+	# The listing walks the mirror tree that the cache built. The
+	# root comes from a cache path, so this module still owns one
+	# copy of the layout and not two.
+	my $base_path = $self->_release_root;
+	return \@images if !defined $base_path || !-d $base_path;
 
 	# Scan for version directories
 	opendir my $dh, $base_path or return \@images;
@@ -201,18 +203,41 @@ sub _image_filename ( $self, $version )
 }
 
 # $self->_image_path($version):
-#	Return the expected cache path for the miniroot image.
+#	Return the file that the miniroot of a version lands in.
+#
+#	The answer comes from the cache, not from a copy of its layout
+#	here. A cache that changed where it puts a URL would otherwise
+#	leave this module looking in the old place, and every run would
+#	download the image again.
 sub _image_path ( $self, $version )
 {
-	my $filename = $self->_image_filename($version);
-	return $self->_proxy_cache_path . "/$version/" . ARCH . "/$filename";
+	return $self->_cache->cache_path( $self->url($version) );
 }
 
-# $self->_proxy_cache_path:
-#	Return the base path for the proxy-cached OpenBSD files.
-sub _proxy_cache_path ($self)
+# $self->_release_root:
+#	Return the directory that holds every cached OpenBSD release,
+#	derived from where the cache puts a release URL.
+sub _release_root ($self)
 {
-	return "$self->{cache_dir}/proxy/" . CDN_HOST . "/pub/OpenBSD";
+	my $sample = $self->_cache->cache_path(
+		'https://' . CDN_HOST . '/pub/OpenBSD/marker' );
+	return if !defined $sample;
+
+	$sample =~ s{/marker$}{};
+
+	return $sample;
+}
+
+# $self->_cache:
+#	Return the cache to ask. A proxy brings its own; without one,
+#	the module builds a cache over the same directory so that a
+#	lookup still resolves.
+sub _cache ($self)
+{
+	return $self->{proxy}->cache if defined $self->{proxy};
+
+	require FuguVM::Proxy;
+	return FuguVM::Proxy::Cache->new( $self->{cache_dir} );
 }
 
 1;

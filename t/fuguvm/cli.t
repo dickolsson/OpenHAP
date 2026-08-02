@@ -5,6 +5,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Cwd qw(getcwd);
@@ -18,7 +19,7 @@ BEGIN {
 }
 
 use_ok('FuguVM::CLI');
-use_ok('FuguVM::Proxy::Cache');
+use_ok('FuguVM::Proxy');
 
 # Test help command returns success
 

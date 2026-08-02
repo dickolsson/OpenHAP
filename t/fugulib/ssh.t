@@ -4,7 +4,7 @@
 use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
-use lib "$RealBin/../lib";
+use lib "$RealBin/../../lib";
 
 # Skip if Net::SSH2 is not available
 BEGIN {
@@ -14,17 +14,17 @@ BEGIN {
     }
 }
 
-use_ok('FuguVM::SSH');
+use_ok('FuguLib::SSH');
 
 # Test constants
-is(FuguVM::SSH::EXIT_SUCCESS(), 0, 'EXIT_SUCCESS is 0');
-is(FuguVM::SSH::EXIT_ERROR(), 1, 'EXIT_ERROR is 1');
-is(FuguVM::SSH::DEFAULT_TIMEOUT(), 10, 'DEFAULT_TIMEOUT is 10');
-is(FuguVM::SSH::BUFFER_SIZE(), 32768, 'BUFFER_SIZE is 32768');
+is(FuguLib::SSH::EXIT_SUCCESS(), 0, 'EXIT_SUCCESS is 0');
+is(FuguLib::SSH::EXIT_ERROR(), 1, 'EXIT_ERROR is 1');
+is(FuguLib::SSH::DEFAULT_TIMEOUT(), 10, 'DEFAULT_TIMEOUT is 10');
+is(FuguLib::SSH::BUFFER_SIZE(), 32768, 'BUFFER_SIZE is 32768');
 
 # Test object creation
 {
-    my $ssh = FuguVM::SSH->new(host => 'localhost', port => 22);
+    my $ssh = FuguLib::SSH->new(host => 'localhost', port => 22);
     ok(defined $ssh, 'SSH object created');
     is($ssh->{host}, 'localhost', 'host stored');
     is($ssh->{port}, 22, 'port stored');
@@ -32,20 +32,20 @@ is(FuguVM::SSH::BUFFER_SIZE(), 32768, 'BUFFER_SIZE is 32768');
 
 # Test object creation with default port
 {
-    my $ssh = FuguVM::SSH->new(host => 'example.com');
+    my $ssh = FuguLib::SSH->new(host => 'example.com');
     is($ssh->{port}, 22, 'default port is 22');
 }
 
 # Test wait_available to non-existent host returns false
 {
-    my $ssh = FuguVM::SSH->new(host => 'localhost', port => 59999);
+    my $ssh = FuguLib::SSH->new(host => 'localhost', port => 59999);
     my $result = $ssh->wait_available(1);
     ok(!$result, 'wait_available to closed port returns false');
 }
 
 # Test is_available
 {
-    my $ssh = FuguVM::SSH->new(host => 'localhost', port => 59999);
+    my $ssh = FuguLib::SSH->new(host => 'localhost', port => 59999);
     ok(!$ssh->is_available, 'is_available false for closed port');
 }
 
@@ -56,7 +56,7 @@ is(FuguVM::SSH::BUFFER_SIZE(), 32768, 'BUFFER_SIZE is 32768');
 # down to exit(256) -> 0. The mapping itself is proven in
 # t/fugulib/process.t; here only the one copy has to be gone.
 {
-    ok(!FuguVM::SSH->can('_exit_code'),
+    ok(!FuguLib::SSH->can('_exit_code'),
         'the private copy of the mapping is gone');
     ok(FuguLib::Process->can('exit_code'),
         'FuguLib::Process owns the mapping');

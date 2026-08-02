@@ -193,6 +193,10 @@ sub bool ( $self, $key, $default = 0 )
 #	holds. A block setting comes through here.
 sub parse_bool ( $self, $value, $default = 0 )
 {
+	# The accessor reports the most recent failure, so a value that
+	# parses must not leave an older one behind
+	$self->{error} = undef;
+
 	return $default unless defined $value;
 
 	my $normal = lc $value;

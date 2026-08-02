@@ -183,11 +183,16 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     open $fh, '>', "$tmpdir/.fuguvmrc";
     print $fh "image_cache maybe\n";
     close $fh;
-    my @warnings;
-    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
-    is(FuguVM::Config->new($tmpdir)->image_cache, 1,
-	'an unparseable image_cache falls back to the default');
-    ok(scalar @warnings, 'and warns about it');
+    my $diagnostic = '';
+    my $result;
+    {
+	local *STDERR;
+	open STDERR, '>', \$diagnostic or die "capture stderr: $!";
+	$result = FuguVM::Config->new($tmpdir)->image_cache;
+    }
+    is($result, 1, 'an unparseable image_cache falls back to the default');
+    like($diagnostic, qr/not a yes\/no value: maybe/,
+	'and it says so instead of meaning the opposite');
 }
 
 # The parser normalizes image_cache inside a vm block like the global

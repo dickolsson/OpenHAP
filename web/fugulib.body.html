@@ -111,6 +111,18 @@ to the logger, so a pipeline that reads the tool keeps working.</dd>
 <dd>The module is a client for one JSON object for each line over a UNIX
 socket, with a wall-clock deadline on every read.  QEMU speaks this on its
 machine-protocol and guest-agent sockets.</dd>
+
+<dt>FuguLib::SSH</dt>
+<dd>The module runs a command on another machine and captures its output,
+and writes a file over SFTP.  An interactive session falls back to
+<code>ssh(1)</code>, which is the only thing that gives correct control of
+a terminal.</dd>
+
+<dt>FuguLib::Proxy</dt>
+<dd>The module is a caching HTTP proxy in three parts: the supervisor and
+serve loop, the URL-to-file store, and the metadata that makes a cache hit
+one write.  Which URL is worth keeping is a callback, because that answer
+belongs to the mirror and not to HTTP.</dd>
 </dl>
 
 <h2>Reference</h2>

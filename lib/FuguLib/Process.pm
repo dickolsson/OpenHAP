@@ -191,11 +191,17 @@ sub spawn_command ( $class, %args )
 #		cmd     => \@command  # Required: the command to execute
 #		timeout => $seconds   # Optional: kill the child after this long
 #		stdin   => $string    # Optional: feed this to the child
+#		passthrough => 0|1    # Optional: let the child write to the terminal
 #
 #	The method returns a hashref with success, stdout, stderr,
 #	exit_code, timed_out and, on a startup failure, error. It never
 #	runs a shell: the command is a list, so no argument needs
 #	quoting and no argument can become a shell operator.
+#
+#	With passthrough the child inherits the caller's output, and
+#	stdout and stderr come back empty. Use it for a command that
+#	writes for minutes: an operator who waits needs to see progress,
+#	and a captured stream arrives only after the wait is over.
 sub run ( $class, %args )
 {
 	my $cmd = $args{cmd};
@@ -204,6 +210,9 @@ sub run ( $class, %args )
 	}
 	my $timeout = $args{timeout};
 	my $input   = $args{stdin};
+
+	return $class->_run_passthrough( $cmd, $timeout, $input )
+	    if $args{passthrough};
 
 	pipe my $out_r, my $out_w
 	    or return _run_error("Cannot create pipe: $!");
@@ -265,6 +274,67 @@ sub run ( $class, %args )
 		success   => ( !$timed_out && $code == 0 ) ? 1 : 0,
 		stdout    => $stdout,
 		stderr    => $stderr,
+		exit_code => $code,
+		timed_out => $timed_out,
+	};
+}
+
+# $class->_run_passthrough($cmd, $timeout, $input):
+#	Run a child that writes straight to the caller's output. Only
+#	the exec confirmation and the exit status come back.
+sub _run_passthrough ( $class, $cmd, $timeout, $input )
+{
+	pipe my $in_r, my $in_w or return _run_error("Cannot create pipe: $!");
+	my ( $exec_r, $exec_w ) = _exec_pipe();
+	return _run_error("Cannot create pipe: $!") unless $exec_r;
+
+	my $pid = fork;
+	return _run_error("Cannot fork: $!") unless defined $pid;
+
+	if ( $pid == 0 ) {
+		$DB::inhibit_exit = 0;
+		close $in_w;
+		close $exec_r;
+
+		open STDIN, '<&', $in_r
+		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+
+		exec { $cmd->[0] } @$cmd
+		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
+	}
+
+	close $in_r;
+	close $exec_w;
+
+	my $exec_error = do { local $/; <$exec_r> };
+	close $exec_r;
+	if ( defined $exec_error && length $exec_error ) {
+		close $in_w;
+		waitpid $pid, 0;
+		return _run_error($exec_error);
+	}
+
+	{
+		local $SIG{PIPE} = 'IGNORE';
+		print {$in_w} $input if defined $input && length $input;
+	}
+	close $in_w;
+
+	my $timed_out = 0;
+	if ( defined $timeout ) {
+		unless ( $class->wait_exit( $pid, $timeout ) ) {
+			$class->terminate( $pid, grace_period => 1 );
+			$timed_out = 1;
+		}
+	}
+
+	waitpid $pid, 0;
+	my $code = $class->exit_code($?);
+
+	return {
+		success   => ( !$timed_out && $code == 0 ) ? 1 : 0,
+		stdout    => '',
+		stderr    => '',
 		exit_code => $code,
 		timed_out => $timed_out,
 	};

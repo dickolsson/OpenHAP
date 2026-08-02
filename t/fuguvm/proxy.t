@@ -1,212 +1,188 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
+# The OpenBSD mirror policy of FuguVM::Proxy. The generic proxy, its
+# cache and its metadata table are proven in t/fugulib/proxy.t.
 
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
+use FindBin    qw($RealBin);
 use lib "$RealBin/../../lib";
+use File::Path qw(make_path);
 use File::Temp qw(tempdir);
+use FuguLib::Log;
+use FuguLib::Pidfile;
+use FuguLib::Store;
 
-# Check dependencies
-BEGIN {
-	eval { require HTTP::Daemon };
-	plan skip_all => 'HTTP::Daemon not available' if $@;
-
-	eval { require LWP::UserAgent };
-	plan skip_all => 'LWP::UserAgent not available' if $@;
-}
-
-use_ok('FuguVM::State');
 use_ok('FuguVM::Proxy');
-use_ok('FuguVM::Proxy::Cache');
+use_ok('FuguVM::State');
 
-# Test cache path derivation
+FuguLib::Log->set_default( FuguLib::Log->new( mode => 'quiet' ) );
+
+# Which URL is worth keeping is the whole of the mirror policy. Every
+# pattern is version-scoped, and that is what makes prune safe.
 {
-	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
+	my $cache = FuguVM::Proxy::Cache->new( tempdir( CLEANUP => 1 ) );
 
-	my $path = $cache->cache_path(
-	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz');
-	is($path,
-	    "$tmpdir/proxy/cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz",
-	    'Cache path derived correctly');
+	my @cacheable = (
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/packages/amd64/vim-9.0.tgz',
+	    'http://cdn.openbsd.org/pub/OpenBSD/syspatch/7.8/amd64/syspatch78-001.tgz',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256.sig',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/miniroot78.img',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/bsd.rd',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/BUILDINFO',
+	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/index.txt',
+	);
+	ok( $cache->is_cacheable($_), "cacheable: $_" ) for @cacheable;
 
-	# Test that the cache rejects directory traversal completely
-	# and returns undef
-	my $bad_path = $cache->cache_path(
-	    'http://cdn.openbsd.org/../../../etc/passwd');
-	is($bad_path, undef, 'Directory traversal rejected');
-
-	# Test that the cache rejects various traversal patterns
-	is($cache->cache_path('http://example.com/foo/../bar'), undef,
-	    'Mid-path traversal rejected');
-	is($cache->cache_path('http://example.com/..'), undef,
-	    'Parent dir traversal rejected');
-	is($cache->cache_path('http://example.com/foo/..'), undef,
-	    'Trailing parent dir traversal rejected');
-}
-
-# Test is_cacheable patterns
-{
-	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
-
-	# These URLs are cacheable
-	ok($cache->is_cacheable(
-	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz'),
-	    'File set is cacheable');
-	ok($cache->is_cacheable(
-	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/packages/amd64/vim-9.0.tgz'),
-	    'Package is cacheable');
-	ok($cache->is_cacheable(
-	    'http://cdn.openbsd.org/pub/OpenBSD/syspatch/7.8/amd64/syspatch78-001.tgz'),
-	    'Syspatch is cacheable');
-	ok($cache->is_cacheable(
-	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256'),
-	    'SHA256 is cacheable');
-	ok($cache->is_cacheable(
-	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256.sig'),
-	    'SHA256.sig is cacheable');
-
-	# These URLs are not cacheable
-	ok(!$cache->is_cacheable('http://example.com/random.html'),
-	    'Random HTML is not cacheable');
-	ok(!$cache->is_cacheable(
+	ok( !$cache->is_cacheable('http://example.com/random.html'),
+	    'a page outside a release tree is not cacheable' );
+	ok( !$cache->is_cacheable('http://cdn.openbsd.org/pub/OpenBSD/README'),
+	    'nor a file with no version in its path' );
+	ok( !$cache->is_cacheable(
 	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz', 404),
-	    '404 response is not cacheable');
+	    'and a 404 never is' );
 }
 
-# Test cache store and lookup
+# A kernel has no extension, so the generic content-type table cannot
+# name it. The policy adds that entry.
 {
-	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
+	my $cache = FuguVM::Proxy::Cache->new( tempdir( CLEANUP => 1 ) );
 
-	my $url = 'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/SHA256';
-	my $content = "SHA256 (base78.tgz) = abc123\n";
+	is( $cache->content_type('/pub/OpenBSD/7.8/arm64/bsd'),
+	    'application/octet-stream', 'a kernel is bytes' );
+	is( $cache->content_type('/pub/OpenBSD/7.8/arm64/base78.tgz'),
+	    'application/x-gzip', 'and the generic table still applies' );
+}
 
-	# The URL is not in the cache initially
-	is($cache->lookup($url), undef, 'URL not in cache initially');
+# The guest reaches the host through the QEMU gateway, and no other
+# address gets out of the SLIRP network.
+{
+	my $dir   = tempdir( CLEANUP => 1 );
+	my $store = FuguLib::Store->new( path => "$dir/state.json" )->load;
 
-	# Store the content
-	my $stored_path = $cache->store($url, $content);
-	ok(defined $stored_path, 'Content stored');
-	ok(-f $stored_path, 'Cache file exists');
+	my $proxy = FuguVM::Proxy->new(
+	    cache   => FuguVM::Proxy::Cache->new($dir),
+	    pidfile => FuguLib::Pidfile->new( path => "$dir/proxy.pid" ),
+	    store   => $store,
+	);
 
-	# The lookup now succeeds
-	my $cached_path = $cache->lookup($url);
-	is($cached_path, $stored_path, 'Lookup returns stored path');
+	is( $proxy->guest_url, undef, 'no URL before the proxy runs' );
 
-	# Make sure that the content matches
-	open my $fh, '<', $cached_path;
-	my $read_content = do { local $/; <$fh> };
+	$store->set( proxy_port => 8080 );
+	is( $proxy->guest_url, 'http://10.0.2.2:8080',
+	    'the guest URL names the gateway' );
+	is( $proxy->host_url, 'http://127.0.0.1:8080',
+	    'and the host URL names the loopback' );
+}
+
+
+# _seed($tmpdir, $relative_path, $bytes):
+#	Write a cached file of $bytes bytes. Also create its tree.
+sub _seed
+{
+	my ($tmpdir, $rel, $bytes) = @_;
+	my $path = "$tmpdir/proxy/$rel";
+
+	$path =~ m{\A(.*)/} and make_path($1);
+	open my $fh, '>', $path or die "open $path: $!";
+	print $fh 'x' x $bytes;
 	close $fh;
-	is($read_content, $content, 'Cached content matches');
+
+	return $path;
 }
 
-# Test cache size calculation
+my $MIRROR = 'cdn.openbsd.org/pub/OpenBSD';
+
+# A version bump left the whole previous version's file sets behind
+# permanently. They were unreadable afterwards, because every
+# is_cacheable() pattern is version-scoped. Every copy of the
+# directory that a CI cache made still carried them.
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
 	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
 
-	is($cache->size, 0, 'Empty cache has size 0');
+	_seed($tmpdir, "$MIRROR/7.8/arm64/base78.tgz", 100);
+	_seed($tmpdir, "$MIRROR/7.8/arm64/SHA256", 10);
+	_seed($tmpdir, "$MIRROR/7.7/arm64/base77.tgz", 200);
+	_seed($tmpdir, "$MIRROR/syspatch/7.7/arm64/001_x.tgz", 50);
 
-	# Add some content
-	$cache->store('http://example.com/file1.txt', 'x' x 100);
-	$cache->store('http://example.com/file2.txt', 'y' x 200);
+	# The path holds no version, so prune must leave it. A cache
+	# under $HOME is the wrong place to delete on a guess.
+	_seed($tmpdir, 'example.com/loose.txt', 5);
 
-	is($cache->size, 300, 'Cache size calculated correctly');
+	is($cache->size, 365, 'four versioned files and one loose one');
+
+	my $removed = $cache->prune('7.8');
+	is(scalar @$removed, 2, 'both 7.7 trees pruned');
+
+	# Two trees, both 7.7: the release sets and the syspatch sets
+	is_deeply([sort map { $_->{version} } @$removed], ['7.7', '7.7'],
+	    'each names the version it held');
+	is_deeply([sort { $a <=> $b } map { $_->{size} } @$removed],
+	    [50, 200], 'and the bytes it freed');
+
+	my @left = sort map { $_->{url} } @{$cache->list};
+	is_deeply(\@left,
+	    [
+		"http://$MIRROR/7.8/arm64/SHA256",
+		"http://$MIRROR/7.8/arm64/base78.tgz",
+		'http://example.com/loose.txt',
+	    ],
+	    'the kept version and the unversioned file survive');
+	is($cache->size, 115, 'and the freed bytes are gone');
+
+	# The directory itself must be gone, not only its files. The
+	# tree is what a CI cache uploads and downloads on every key
+	# rotation.
+	ok(!-e "$tmpdir/proxy/$MIRROR/7.7",
+	    'the pruned release directory is gone');
+	ok(!-e "$tmpdir/proxy/$MIRROR/syspatch/7.7",
+	    'the pruned syspatch directory is gone');
+	ok(-d "$tmpdir/proxy/$MIRROR/7.8",
+	    'the kept version directory remains');
+
+	is_deeply($cache->prune('7.8'), [], 'pruning twice removes nothing');
 }
 
-# Test cache list
+# Several versions kept at once, and a host that has nothing under
+# pub/OpenBSD at all
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
 	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
 
-	$cache->store('http://cdn.openbsd.org/pub/OpenBSD/7.8/SHA256', 'content1');
-	$cache->store('http://cdn.openbsd.org/pub/OpenBSD/7.8/base78.tgz', 'content2');
+	_seed($tmpdir, "$MIRROR/7.6/arm64/base76.tgz", 10);
+	_seed($tmpdir, "$MIRROR/7.7/arm64/base77.tgz", 20);
+	_seed($tmpdir, "$MIRROR/7.8/arm64/base78.tgz", 40);
+	_seed($tmpdir, 'ftp.example.org/elsewhere/file.tgz', 80);
 
-	my $files = $cache->list;
-	is(scalar @$files, 2, 'List returns correct count');
-
-	my @urls = sort map { $_->{url} } @$files;
-	is($urls[0], 'http://cdn.openbsd.org/pub/OpenBSD/7.8/SHA256',
-	    'First URL correct');
-	is($urls[1], 'http://cdn.openbsd.org/pub/OpenBSD/7.8/base78.tgz',
-	    'Second URL correct');
+	my $removed = $cache->prune('7.7', '7.8');
+	is_deeply([map { $_->{version} } @$removed], ['7.6'],
+	    'only the version named by neither is pruned');
+	is($cache->size, 140, 'the other host is untouched');
 }
 
-# Test cache clear
+# A prune that keeps only an absent version removes everything present
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
 	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
 
-	$cache->store('http://example.com/file.txt', 'content');
-	ok($cache->size > 0, 'Cache has content');
+	_seed($tmpdir, "$MIRROR/7.7/arm64/base77.tgz", 30);
 
-	$cache->clear;
-	is($cache->size, 0, 'Cache cleared');
-	is(scalar @{$cache->list}, 0, 'No files after clear');
+	is(scalar @{$cache->prune('7.9')}, 1,
+	    'an absent version keeps nothing');
+	is($cache->size, 0, 'the cache is empty');
 }
 
-# Test Proxy creation
+# The cache never received a write. Thus proxy/ holds no host
+# directories at all.
 {
-	my $state_dir = tempdir(CLEANUP => 1);
-	my $cache_dir = tempdir(CLEANUP => 1);
-	my $state = FuguVM::State->new($state_dir, 'test');
+	my $tmpdir = tempdir(CLEANUP => 1);
+	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
 
-	my $proxy = FuguVM::Proxy->new($state, $cache_dir);
-	ok(defined $proxy, 'Proxy object created');
-	ok(!$proxy->is_running, 'Proxy not running initially');
-	is($proxy->port, undef, 'No port initially');
-	is($proxy->guest_url, undef, 'No guest_url initially');
-}
-
-# Test Proxy port finding
-{
-	my $state_dir = tempdir(CLEANUP => 1);
-	my $cache_dir = tempdir(CLEANUP => 1);
-	my $state = FuguVM::State->new($state_dir, 'test');
-
-	my $proxy = FuguVM::Proxy->new($state, $cache_dir);
-	my $port = $proxy->_find_available_port;
-
-	ok(defined $port, 'Found available port');
-	ok($port >= 8080 && $port <= 8180, 'Port in expected range');
-}
-
-# Test Proxy URL generation
-{
-	my $state_dir = tempdir(CLEANUP => 1);
-	my $cache_dir = tempdir(CLEANUP => 1);
-	my $state = FuguVM::State->new($state_dir, 'test');
-
-	# Set the port manually to test the URL generation
-	$state->set_proxy_port(8080);
-
-	my $proxy = FuguVM::Proxy->new($state, $cache_dir);
-	my $url = $proxy->guest_url;
-
-	is($url, 'http://10.0.2.2:8080', 'Proxy guest_url correct');
-}
-
-# Test Proxy start/stop (integration test, can be slow)
-SKIP: {
-	skip 'Set FUGUVM_TEST_PROXY=1 to run proxy integration tests', 4
-	    unless $ENV{FUGUVM_TEST_PROXY};
-
-	my $state_dir = tempdir(CLEANUP => 1);
-	my $cache_dir = tempdir(CLEANUP => 1);
-	my $state = FuguVM::State->new($state_dir, 'test');
-
-	my $proxy = FuguVM::Proxy->new($state, $cache_dir);
-
-	my $port = $proxy->start;
-	ok(defined $port, 'Proxy started');
-	ok($proxy->is_running, 'Proxy is running');
-	ok(defined $proxy->port, 'Port is set');
-
-	$proxy->stop;
-	ok(!$proxy->is_running, 'Proxy stopped');
+	is_deeply($cache->prune('7.8'), [],
+	    'prune on an empty cache is a no-op');
 }
 
 done_testing();

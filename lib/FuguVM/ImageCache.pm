@@ -28,9 +28,9 @@ package FuguVM::ImageCache;
 
 use Digest::SHA ();
 use File::Basename;
-use File::Path qw(make_path remove_tree);
-use File::Spec ();
-use JSON::XS   ();
+use File::Path qw(remove_tree);
+use FuguLib::File;
+use FuguLib::Log;
 use FuguVM::Expect;
 use FuguVM::Image;
 
@@ -46,22 +46,11 @@ use constant {
 	MAX_SNAPSHOT_NAME => 128,
 };
 
-# Temporary entry trees that are still under construction.
-# _cleanup_temp removes them on each failure path and from the END
-# guard. The convert step runs for minutes over multi-gigabyte images.
-# An interrupt in the middle of that step would otherwise orphan the
-# trees.
-my %TEMP_DIRS;
-
-END {
-	_cleanup_temp();
-}
-
 sub new ( $class, $cache_dir )
 {
-	$cache_dir =~ s/^~/$ENV{HOME}/;
-
-	my $self = bless { cache_dir => $cache_dir, }, $class;
+	my $self =
+	    bless { cache_dir => FuguLib::File->expand_tilde($cache_dir), },
+	    $class;
 
 	return $self;
 }
@@ -114,7 +103,7 @@ sub key ( $self, $vm_config )
 		return;
 	}
 
-	my $installer = _read_file($script);
+	my $installer = FuguLib::File->read($script);
 	return if !defined $installer;
 
 	my $generation_file = $self->_generation_file;
@@ -123,7 +112,7 @@ sub key ( $self, $vm_config )
 		return;
 	}
 
-	my $generation = _read_file($generation_file);
+	my $generation = FuguLib::File->read($generation_file);
 	return if !defined $generation;
 
 	# Hash the file contents separately. Thus the joined record
@@ -155,7 +144,7 @@ sub lookup ( $self, $key )
 	my $base = "$dir/" . BASE_NAME;
 	return if !-f $base;
 
-	my $meta = _read_json( "$dir/" . META_NAME );
+	my $meta = FuguLib::File->read_json( "$dir/" . META_NAME );
 	return if !defined $meta;
 
 	return {
@@ -187,54 +176,40 @@ sub store ( $self, $key, $disk_path, $meta = {} )
 		return;
 	}
 
-	my $installed = $self->installed_dir;
-	if ( !-d $installed ) {
-		make_path($installed);
-		if ( !-d $installed ) {
-			warn "Cannot create image cache: $installed\n";
-			return;
-		}
-	}
+	FuguLib::File->ensure_dir( $self->installed_dir ) or return;
 
 	my $target = $self->entry_dir($key);
 	if ( -e "$target/" . BASE_NAME ) {
-		warn "Image cache entry already exists: $key\n";
+		FuguLib::Log->default->warning(
+			'Image cache entry already exists: %s', $key );
 		return;
 	}
 
-	my $tmp = $self->_make_temp_dir or return;
+	my $built = FuguLib::File->atomic_dir(
+		$target,
+		sub ($tmp) {
+			my $base = "$tmp/" . BASE_NAME;
+			return 0 if !_convert( $disk_path, $base );
 
-	local $SIG{INT}  = sub { _cleanup_temp(); exit 130; };
-	local $SIG{TERM} = sub { _cleanup_temp(); exit 143; };
+			chmod 0400, $base or do {
+				FuguLib::Log->default->warning(
+					'Cannot set permissions on %s: %s',
+					$base, $! );
+				return 0;
+			};
 
-	my $base = "$tmp/" . BASE_NAME;
-	if ( !_convert( $disk_path, $base ) ) {
-		$self->_discard_temp($tmp);
-		return;
-	}
+			my %record = (
+				%$meta,
+				key        => $key,
+				created_at => time,
+			);
 
-	chmod 0400, $base or do {
-		warn "Cannot set permissions on $base: $!\n";
-		$self->_discard_temp($tmp);
-		return;
-	};
-
-	my %record = (
-		%$meta,
-		key        => $key,
-		created_at => time,
-	);
-	if ( !_write_json( "$tmp/" . META_NAME, \%record ) ) {
-		$self->_discard_temp($tmp);
-		return;
-	}
-
-	if ( !rename $tmp, $target ) {
-		warn "Cannot publish image cache entry $key: $!\n";
-		$self->_discard_temp($tmp);
-		return;
-	}
-	delete $TEMP_DIRS{$tmp};
+			# The record carries the guest root password, so
+			# the file gets its mode before its content
+			return FuguLib::File->write_json( "$tmp/" . META_NAME,
+				\%record, mode => 0600 ) ? 1 : 0;
+		} );
+	return if !defined $built;
 
 	return "$target/" . BASE_NAME;
 }
@@ -307,7 +282,7 @@ sub snapshot_path ( $self, $key, $name )
 #	dot-files of the cache.
 sub valid_snapshot_name ( $, $name )
 {
-	return 0 if !defined $name || $name eq '';
+	return 0 if !FuguLib::File->valid_name($name);
 	return 0 if length($name) > MAX_SNAPSHOT_NAME;
 	return 0 if $name !~ /^[A-Za-z0-9][\w.-]*$/;
 
@@ -349,13 +324,7 @@ sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
 	}
 
 	my $dir = $self->snapshot_dir($key);
-	if ( !-d $dir ) {
-		make_path($dir);
-		if ( !-d $dir ) {
-			warn "Cannot create snapshot directory: $dir\n";
-			return;
-		}
-	}
+	FuguLib::File->ensure_dir($dir) or return;
 
 	my $target   = $self->snapshot_path( $key, $name );
 	my $tmp_disk = "$target." . TEMP_PREFIX . $$;
@@ -383,7 +352,7 @@ sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
 		root_password => $entry->{meta}{root_password},
 		created_at    => time,
 	);
-	if ( !_write_json( $tmp_meta, \%record ) ) {
+	if ( !FuguLib::File->write_json( $tmp_meta, \%record, mode => 0600 ) ) {
 		unlink $tmp_disk, $tmp_meta;
 		return;
 	}
@@ -419,7 +388,9 @@ sub snapshot_lookup ( $self, $key, $name )
 	my $path = $self->snapshot_path( $key, $name );
 	return if !-f $path;
 
-	my $meta = _read_json( $self->snapshot_dir($key) . "/$name.json" );
+	my $meta =
+	    FuguLib::File->read_json(
+		$self->snapshot_dir($key) . "/$name.json" );
 	return if !defined $meta;
 
 	my $base = $self->base_path($key);
@@ -521,60 +492,7 @@ sub remove ( $self, $key )
 #	count of removed trees.
 sub sweep_temp ($self)
 {
-	my $installed = $self->installed_dir;
-	return 0 if !-d $installed;
-
-	opendir my $dh, $installed or return 0;
-	my $prefix = TEMP_PREFIX;
-	my @stale  = grep { index( $_, $prefix ) == 0 } readdir $dh;
-	closedir $dh;
-
-	my $removed = 0;
-	for my $name (@stale) {
-		my $dir = "$installed/$name";
-		next if !-d $dir;
-		remove_tree( $dir, { safe => 0 } );
-		$removed++ if !-e $dir;
-	}
-
-	return $removed;
-}
-
-# $self->_make_temp_dir:
-#	Create a private sibling directory for an entry under
-#	construction. Register the directory for cleanup.
-sub _make_temp_dir ($self)
-{
-	my $installed = $self->installed_dir;
-
-	for my $attempt ( 1 .. 10 ) {
-		my $dir = sprintf( '%s/%s%d.%06x',
-			$installed, TEMP_PREFIX, $$, int( rand(0xffffff) ) );
-		next if -e $dir;
-		if ( mkdir $dir, 0700 ) {
-			$TEMP_DIRS{$dir} = 1;
-			return $dir;
-		}
-	}
-
-	warn "Cannot create temporary image cache directory\n";
-	return;
-}
-
-sub _discard_temp ( $, $dir )
-{
-	remove_tree( $dir, { safe => 0 } );
-	delete $TEMP_DIRS{$dir};
-	return;
-}
-
-sub _cleanup_temp ()
-{
-	for my $dir ( keys %TEMP_DIRS ) {
-		remove_tree( $dir, { safe => 0 } );
-		delete $TEMP_DIRS{$dir};
-	}
-	return;
+	return FuguLib::File->sweep_temp( $self->installed_dir );
 }
 
 # _convert($source, $target, $backing, $backing_format):
@@ -611,72 +529,13 @@ sub _install_script ($)
 #	install.exp hash cannot see.
 sub _generation_file ($)
 {
-	my $module_dir = dirname( File::Spec->rel2abs(__FILE__) );
-	my $root       = dirname( dirname($module_dir) );
-
-	my @candidates = (
-		"$root/share/fuguvm/" . GENERATION_FILE,
-		'share/fuguvm/' . GENERATION_FILE,
-	);
-
-	for my $path (@candidates) {
-		return $path if -f $path;
-	}
-
-	return;
+	return FuguLib::File->share_path( 'share/fuguvm/' . GENERATION_FILE );
 }
 
 sub _sanitize ($value)
 {
 	$value =~ s/[^\w.]/_/g;
 	return $value;
-}
-
-sub _read_file ($path)
-{
-	open my $fh, '<', $path or do {
-		warn "Cannot read $path: $!\n";
-		return;
-	};
-	binmode $fh;
-	local $/;
-	my $content = <$fh>;
-	close $fh;
-
-	return $content // '';
-}
-
-sub _read_json ($path)
-{
-	return if !-f $path;
-
-	my $content = _read_file($path);
-	return if !defined $content || $content eq '';
-
-	my $data = eval { JSON::XS::decode_json($content) };
-	return if !defined $data || ref $data ne 'HASH';
-
-	return $data;
-}
-
-# _write_json($path, $data):
-#	Write the metadata so that only its owner can read it. The
-#	metadata carries the guest root password.
-sub _write_json ( $path, $data )
-{
-	open my $fh, '>', $path or do {
-		warn "Cannot write $path: $!\n";
-		return 0;
-	};
-	print $fh JSON::XS->new->canonical->encode($data);
-	close $fh;
-
-	chmod 0600, $path or do {
-		warn "Cannot set permissions on $path: $!\n";
-		return 0;
-	};
-
-	return 1;
 }
 
 sub _tree_size ($dir)

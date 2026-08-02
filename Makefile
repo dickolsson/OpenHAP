@@ -51,6 +51,7 @@ MAN3P			= man/fugulib/CLI.3p man/fugulib/Config.3p \
 			  man/fugulib/JSONSocket.3p man/fugulib/Log.3p \
 			  man/fugulib/MDNS.3p man/fugulib/Pidfile.3p \
 			  man/fugulib/Privdrop.3p man/fugulib/Process.3p \
+			  man/fugulib/Proxy.3p man/fugulib/SSH.3p \
 			  man/fugulib/Sandbox.3p man/fugulib/Signal.3p \
 			  man/fugulib/Store.3p man/fugulib/Util.3p
 MAN5			= man/openhap/openhapd.conf.5

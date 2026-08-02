@@ -1,0 +1,114 @@
+=head1 NAME
+
+FuguVM::State - what FuguVM remembers about one VM between runs
+
+=head1 SYNOPSIS
+
+    use FuguVM::State;
+
+    my $state = FuguVM::State->new($state_dir, 'default')
+        or die "cannot open the state of 'default'\n";
+
+    $state->set_vm_pid($pid);
+    $state->mark_running;
+
+    if ($state->was_unclean_shutdown) {
+        check_the_disk();
+    }
+
+=head1 DESCRIPTION
+
+Each VM has a directory under the state directory:
+
+    <state_dir>/<vm>/status        the JSON state, mode 0600
+    <state_dir>/<vm>/vm.pid        the QEMU process
+    <state_dir>/<vm>/proxy.pid     the proxy child
+    <state_dir>/<vm>/disk.qcow2    the working disk
+
+The JSON blob rides on L<FuguLib::Store>. The two process IDs ride on
+L<FuguLib::Pidfile>, which takes its lock before it truncates and
+reaps a zombie before it answers "running". A QEMU that became a
+zombie therefore reads as stopped, which is what a caller that is
+about to start a second one needs to know.
+
+The module is persistence only. It starts nothing and stops nothing:
+the proxy lifecycle belongs to L<FuguVM::VM>. That split is what
+removed the C<require> cycle between the two modules.
+
+=head1 METHODS
+
+=head2 new
+
+    FuguVM::State->new($state_dir, $vm_name)
+
+Open the state of one VM, and create its directory when it is absent.
+
+The VM name becomes a directory name, so it must be one safe path
+component: no separator, no NUL byte, and not one of the two directory
+entries. A name that is not returns C<undef> and a message in the log.
+The method also returns C<undef> when the directory is a symlink, is
+not a directory, or cannot be created.
+
+=head2 load, save
+
+Read and write the JSON state. C<new> loads. A corrupt file gives
+empty state and does not stop the program that would rewrite it.
+
+=head2 store, state_dir, vm_state_dir, vm_name, data
+
+C<store> returns the L<FuguLib::Store>. L<FuguVM::VM> gives it to the
+proxy, which keeps its port there.
+
+C<state_dir> returns the directory that holds every VM's state, and
+C<vm_state_dir> the one that holds this VM's. C<data> returns the
+state hash reference for a caller that changes several keys at once.
+
+=head2 vm_pidfile, proxy_pidfile
+
+Return the L<FuguLib::Pidfile> objects. QEMU writes the first itself,
+through its C<-pidfile> option; the proxy supervisor owns the second.
+
+=head2 set_vm_pid, get_vm_pid, clear_vm_pid, is_vm_running
+
+The QEMU process.
+
+=head2 set_proxy_pid, get_proxy_pid, clear_proxy_pid, is_proxy_running
+
+The proxy child.
+
+=head2 set_proxy_port, get_proxy_port, clear_proxy_port
+
+The port the proxy listens on.
+
+=head2 disk_path, disk_exists
+
+The working disk of the VM.
+
+=head2 is_installed, mark_installed
+
+Whether OpenBSD is installed on the disk. An installed system boots
+its own disk and never attaches the miniroot again.
+
+=head2 set_root_password, get_root_password
+
+The password that the installer set. The store writes at mode 0600.
+
+=head2 is_ssh_key_installed, mark_ssh_key_installed, get_installed_ssh_pubkey, ssh_key_matches
+
+Which SSH public key the guest holds. The state records the key
+itself, not only that there is one. Thus a key that changed in the
+configuration is installed again on the next C<fuguvm up>.
+
+=head2 mark_running, mark_clean_shutdown, mark_unclean_shutdown, was_unclean_shutdown, clear_shutdown_state
+
+Whether the last stop was clean. C<was_unclean_shutdown> also reports
+true when the state says running and the process is gone: the VM
+crashed or was killed, and the disk may need a check.
+
+=head1 SEE ALSO
+
+L<FuguLib::Pidfile>, L<FuguLib::Store>, L<FuguVM::VM>
+
+=head1 AUTHOR
+
+Dick Olsson <hi@senzilla.io>

@@ -5,6 +5,8 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
+use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 
