@@ -23,7 +23,7 @@ The repo contains three Perl namespaces with distinct concerns:
   imsg framing, mdnsd publishing)
 - `FuguVM::` (`lib/FuguVM/`) — installs and manages OpenBSD VMs under QEMU,
   driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this repo is
-  its first user, not its purpose. Development-only, never shipped
+  its first user, not its purpose
 
 ## Commands
 
@@ -60,7 +60,6 @@ make integration    # provision OpenBSD VM and run integration tests
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/fugulib/` — `<Module>.3p`, one per `lib/FuguLib/`
   module, installed as `FuguLib::<Module>.3p`; `man/fuguvm/` — `fuguvm.1`
-  (development-only, not installed)
 - `spec/` — curated protocol references, normative for the conformance tier (see
   `spec/CLAUDE.md`)
 - `plans/` — design documents and phased implementation plans (see the Plans
@@ -152,18 +151,15 @@ site-specific framing is hand-written, in `web/*.body.html` — see
 
 Corollaries:
 
-- Rows 2 and 3 are exclusive, and the line is whether the module ships: FuguLib
-  is installed, so it is documented as an installed library is — 3p manuals,
-  found by `man FuguLib::Daemon`. OpenHAP and FuguVM modules are read from the
-  source tree and keep sidecars. The shared `Fugu` prefix does not decide this:
-  FuguVM is reusable but development-only, so it stays on sidecars. No module
-  has both.
+- Rows 2 and 3 are exclusive. FuguLib uses 3p manuals, found by
+  `man FuguLib::Daemon`. OpenHAP and FuguVM keep sidecars. The shared `Fugu`
+  prefix does not group FuguLib and FuguVM here. No module has both.
 - No `README.md` anywhere except the repository root
 - Skills and `CLAUDE.md` files may point to man pages, `.pod` files, `spec/`, or
   each other, but never restate their content
-- A new `lib/FuguLib/` module ships with a `man/fugulib/<Module>.3p` page, a
-  `MAN3P` entry in the `Makefile`, and a test; every other new `lib/` module
-  ships with a `.pod` sidecar and a test
+- A new `lib/FuguLib/` module needs a `man/fugulib/<Module>.3p` page, a `MAN3P`
+  entry in the `Makefile`, and a test; every other new `lib/` module needs a
+  `.pod` sidecar and a test
 - Update the relevant documentation with any change in behavior, options, or
   configuration
 
