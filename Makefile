@@ -114,8 +114,8 @@ install: install-man
 	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
 	install -m 644 lib/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
 	install -m 644 lib/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
-	# The test helper modules ship only in the packaged tree.  The
-	# glob loops accept zero, one, or many matches without stderr noise
+	# The glob loops accept zero, one, or many matches without stderr
+	# noise, because the test helper modules are not always present
 	for f in lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod; do \
 		[ -e "$$f" ] || continue; \
 		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/; \
