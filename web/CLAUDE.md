@@ -10,8 +10,8 @@ it to build elsewhere). There is no generator, no templating language and no
 JavaScript: two `sh` scripts, a stylesheet, and renderers that read formats
 already in the tree. `plans/004-website/design.md` records why.
 
-Nothing here is installed, packaged, or part of `make check`. `mandoc` and
-`lowdown` are develop-only dependencies.
+Nothing here is part of `make check`. `mandoc` and `lowdown` are develop-only
+dependencies.
 
 `.github/workflows/web.yml` builds and checks the site on every pull request and
 deploys it to GitHub Pages on pushes to `main`. The site is served from
