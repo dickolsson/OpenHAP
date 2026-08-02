@@ -56,6 +56,12 @@ use constant {
 
 use constant PAIRINGS_FILE => DB_PATH . '/pairings.db';
 
+# The daemon keeps its counters here: the configuration number, the
+# configuration digest, and the failed-attempt count. A wipe of the
+# pairing state removes this file too, or the attempt counter of the
+# last test survives into the next one.
+use constant STATE_FILE => DB_PATH . '/state.json';
+
 sub new ( $class, %options )
 {
 	my $self = bless {
@@ -153,7 +159,9 @@ sub ensure_unpaired ($self)
 	if ( $self->_has_pairings ) {
 		$self->ensure_daemon_stopped or return;
 
-		for my $file ( PAIRINGS_FILE, DB_PATH . '/auth_attempts' ) {
+		for my $file ( PAIRINGS_FILE, STATE_FILE,
+			DB_PATH . '/auth_attempts' )
+		{
 			next unless -e $file;
 			unlink $file or do {
 				warn "Cannot remove $file: $!\n";

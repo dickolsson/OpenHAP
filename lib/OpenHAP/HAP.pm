@@ -4,11 +4,11 @@ package OpenHAP::HAP;
 
 use FuguLib::Log;
 use IO::Socket::INET;
-use IO::Select;
 use JSON::XS;
 use MIME::Base64 qw(encode_base64);
 use Digest::SHA  qw(sha512);
 use Time::HiRes  qw(time);
+use FuguLib::EventLoop;
 use FuguLib::HTTP;
 
 use OpenHAP::Session;
@@ -71,10 +71,12 @@ sub new ( $class, %args )
 		mqtt_client        => undef,
 		mqtt_tick_interval => 0.1,     # MQTT poll interval in seconds
 
-		event_subscriptions   => {},   # Track event subscriptions
-		event_queue           => {},   # Queued events for coalescing
-		event_flush_scheduled =>
-		    undef,    # Timestamp when flush was scheduled
+		event_subscriptions => {},     # Track event subscriptions
+		event_queue         => {},     # Queued events for coalescing
+		event_flush_timer   => undef,  # The pending flush, if any
+
+		loop   => $args{loop},         # The caller can supply one
+		server => undef,               # The listening socket
 	}, $class;
 
 	$self->_initialize();
@@ -203,8 +205,30 @@ sub _refresh_mdns ($self)
 	return;
 }
 
-sub run ($self)
+# The interval between MQTT reconnection attempts, in seconds. A
+# broker that is down stays down for a while, and a daemon that
+# hammers it helps nobody.
+use constant MQTT_RECONNECT_INTERVAL => 30;
+
+# $self->loop:
+#	The event loop of this server. The server makes one on demand,
+#	so a caller that only wants to drive timers by hand does not
+#	have to build one.
+sub loop ($self)
 {
+	$self->{loop} //= FuguLib::EventLoop->new;
+
+	return $self->{loop};
+}
+
+# $self->listen:
+#	Open the HAP listener and register it with the loop. The method
+#	returns the socket. It dies when the port is not available:
+#	a HAP server that cannot listen has no reason to run.
+sub listen ($self)
+{
+	return $self->{server} if $self->{server};
+
 	my $server = IO::Socket::INET->new(
 		LocalPort => $self->{port},
 		Type      => SOCK_STREAM,
@@ -218,82 +242,138 @@ sub run ($self)
 		die "Cannot create server: $!";
 	    };
 
+	$self->{server} = $server;
+	$self->loop->add_fd( $server, read => sub ($) { $self->_accept } );
+
 	FuguLib::Log->default->info( 'OpenHAP server listening on port %d',
 		$self->{port} );
 	FuguLib::Log->default->debug( 'Pairing PIN: %s', $self->{pin} );
 
-	my $select = IO::Select->new($server);
+	return $server;
+}
 
-	# Use a short timeout to allow MQTT polling
-	my $select_timeout          = $self->{mqtt_tick_interval};
-	my $mqtt_reconnect_interval = 30;    # Reconnect attempt interval
-	my $last_mqtt_reconnect     = 0;
+# $self->run:
+#	Serve until the loop stops. The method returns when a signal
+#	interrupted the loop or a callback stopped it. Thus the caller
+#	runs its own shutdown, and nothing has to exit from inside a
+#	signal handler.
+sub run ($self)
+{
+	$self->listen;
+	$self->_register_mqtt;
+	$self->loop->run;
 
-	while (1) {
-		my @ready = $select->can_read($select_timeout);
+	FuguLib::Log->default->info('OpenHAP server stopped');
 
-		# Process MQTT messages if the server has a client
-		if ( $self->{mqtt_client} ) {
-			if ( $self->{mqtt_client}->is_connected ) {
-				$self->{mqtt_client}->tick(0);
-			}
-			else {
-				# Try to reconnect at intervals when the
-				# client is not connected
-				my $now = time;
-				if ( $now - $last_mqtt_reconnect >=
-					$mqtt_reconnect_interval )
-				{
-					$last_mqtt_reconnect = $now;
-					if ( $self->{mqtt_client}->reconnect() )
-					{
-						FuguLib::Log->default->info(
-'Reconnected to MQTT broker'
-						);
+	return $self;
+}
 
-						# Resubscribe the devices
-						$self
-						    ->_mqtt_resubscribe_accessories
-						    ();
-					}
-					else {
-						FuguLib::Log->default->debug(
-'MQTT reconnection attempt failed, will retry'
-						);
-					}
-				}
-			}
-		}
+# $self->stop:
+#	Ask the loop to end after the current pass.
+sub stop ($self)
+{
+	$self->loop->stop;
 
-		for my $sock (@ready) {
-			if ( $sock == $server ) {
+	return $self;
+}
 
-				# New connection
-				my $client = $server->accept();
-				$select->add($client);
-				$self->_init_session($client);
-			}
-			else {
+# $self->shutdown:
+#	Close the listener and every client connection. The caller
+#	calls this after run returns.
+sub shutdown ($self)
+{
+	for my $key ( keys %{ $self->{sessions} } ) {
+		my $session = $self->{sessions}{$key};
+		my $socket  = $session->{socket};
+		next unless ref $socket;
 
-				# Process the client data
-				$self->_handle_client( $sock, $select );
-			}
-		}
-
-		# Flush the coalesced events after the coalesce delay
-		$self->flush_events();
+		$self->loop->remove_fd($socket);
+		$socket->close;
 	}
+	$self->{sessions} = {};
+
+	if ( $self->{server} ) {
+		$self->loop->remove_fd( $self->{server} );
+		$self->{server}->close;
+		$self->{server} = undef;
+	}
+
+	return $self;
+}
+
+# $self->_register_mqtt:
+#	Put the MQTT client on the loop: a tick on every interval, and
+#	a reconnection attempt on its own slower schedule.
+#
+#	The two are separate timers because they answer to different
+#	clocks. Before this, one poll interval drove both, and the
+#	backoff was an epoch comparison inside the pass.
+sub _register_mqtt ($self)
+{
+	return unless $self->{mqtt_client};
+	return if $self->{mqtt_timers};
+
+	$self->{mqtt_timers} = [
+		$self->loop->every(
+			$self->{mqtt_tick_interval},
+			sub {
+				my $mqtt = $self->{mqtt_client} or return;
+				$mqtt->tick(0) if $mqtt->is_connected;
+			}
+		),
+		$self->loop->every(
+			MQTT_RECONNECT_INTERVAL,
+			sub { $self->_mqtt_retry }
+		),
+	];
+
+	return;
+}
+
+# $self->_mqtt_retry:
+#	One reconnection attempt, if the client is down.
+sub _mqtt_retry ($self)
+{
+	my $mqtt = $self->{mqtt_client} or return;
+	return if $mqtt->is_connected;
+
+	unless ( $mqtt->reconnect ) {
+		FuguLib::Log->default->debug(
+			'MQTT reconnection attempt failed, will retry');
+		return;
+	}
+
+	FuguLib::Log->default->info('Reconnected to MQTT broker');
+	$self->_mqtt_resubscribe_accessories;
+
+	return;
+}
+
+# $self->_accept:
+#	Take one connection and put it on the loop.
+sub _accept ($self)
+{
+	my $client = $self->{server}->accept or return;
+
+	$self->loop->add_fd(
+		$client,
+		read => sub ($fh) {
+			$self->_handle_client($fh);
+		} );
+	$self->_init_session($client);
+
+	return;
 }
 
 sub _init_session ( $self, $socket )
 {
 	FuguLib::Log->default->info( 'Client connected from %s',
 		$socket->peerhost );
-	$self->{sessions}{$socket} =
+	$self->{sessions}{ fileno $socket } =
 	    OpenHAP::Session->new( socket => $socket, );
 }
 
-# $self->_handle_client($sock, $select):
+# $self->_handle_client($sock):
 #	Read what arrived and serve every whole request in it.
 #
 #	A stream socket gives a reader whatever arrived, which is not a
@@ -301,9 +381,9 @@ sub _init_session ( $self, $socket )
 #	share one. Thus the session keeps a buffer, and
 #	FuguLib::HTTP::message_complete says how much of it is a
 #	message.
-sub _handle_client ( $self, $sock, $select )
+sub _handle_client ( $self, $sock )
 {
-	my $session = $self->{sessions}{$sock};
+	my $session = $self->{sessions}{ fileno $sock } or return;
 	my $data    = '';
 	my $bytes   = $sock->sysread( $data, READ_SIZE );
 
@@ -312,9 +392,10 @@ sub _handle_client ( $self, $sock, $select )
 		# The connection is closed. Release the pairing lock
 		# if this session holds it. Thus an aborted pair-setup
 		# cannot block pairing until a restart.
-		$self->_close_client( $sock, $select );
+		my $peer = $sock->peerhost // 'unknown';
+		$self->_close_client($sock);
 		FuguLib::Log->default->info( 'Client disconnected from %s',
-			$sock->peerhost );
+			$peer );
 		return;
 	}
 
@@ -328,7 +409,7 @@ sub _handle_client ( $self, $sock, $select )
 		unless ( defined $data ) {
 			FuguLib::Log->default->warning(
 				'Decryption failed for client session');
-			$self->_close_client( $sock, $select );
+			$self->_close_client($sock);
 			return;
 		}
 	}
@@ -337,7 +418,7 @@ sub _handle_client ( $self, $sock, $select )
 
 	# Serve every whole request the buffer holds. A client that
 	# pipelines gets an answer to each one, in order.
-	while (1) {
+	while ( length $session->{inbuf} ) {
 		my $length =
 		    FuguLib::HTTP::message_complete( $session->{inbuf},
 			max_size => MAX_REQUEST_SIZE );
@@ -349,7 +430,7 @@ sub _handle_client ( $self, $sock, $select )
 			FuguLib::Log->default->warning(
 				'Request over %d bytes from %s, closing',
 				MAX_REQUEST_SIZE, $sock->peerhost );
-			$self->_close_client( $sock, $select );
+			$self->_close_client($sock);
 			return;
 		}
 		last if $length == 0;    # More bytes are necessary
@@ -359,7 +440,7 @@ sub _handle_client ( $self, $sock, $select )
 			$was_encrypted );
 
 		# The dispatch can have closed the connection
-		return unless exists $self->{sessions}{$sock};
+		return unless exists $self->{sessions}{ fileno $sock };
 	}
 
 	return;
@@ -401,17 +482,18 @@ sub _serve_request ( $self, $sock, $session, $message, $was_encrypted )
 	return;
 }
 
-# $self->_close_client($sock, $select):
+# $self->_close_client($sock):
 #	Drop a client and everything the server kept for it.
-sub _close_client ( $self, $sock, $select )
+sub _close_client ( $self, $sock )
 {
-	my $session = $self->{sessions}{$sock};
+	my $key     = fileno $sock;
+	my $session = defined $key ? $self->{sessions}{$key} : undef;
 
 	OpenHAP::Pairing->clear_pairing_state($session) if $session;
 	$self->_purge_event_subscriptions($session)     if $session;
 
-	$select->remove($sock);
-	delete $self->{sessions}{$sock};
+	$self->loop->remove_fd($sock);
+	delete $self->{sessions}{$key} if defined $key;
 	$sock->close();
 
 	return;
@@ -1007,11 +1089,15 @@ sub _handle_prepare ( $self, $request, $session )
 	);
 }
 
-# Event subscription tracking
+# Event subscription tracking. A subscription is filed twice: under
+# the characteristic, for delivery, and on the session, so that a
+# disconnect is a delete of what that connection holds and not a
+# sweep of every characteristic the bridge has.
 sub _register_event_subscription ( $self, $session, $aid, $iid )
 {
 	my $key = "$aid.$iid";
-	$self->{event_subscriptions}{$key}{$session} = $session;
+	$self->{event_subscriptions}{$key}{ $session->id } = $session;
+	$session->{subscriptions}{$key} = 1;
 	FuguLib::Log->default->debug( 'Registered event subscription for %s',
 		$key );
 }
@@ -1019,7 +1105,8 @@ sub _register_event_subscription ( $self, $session, $aid, $iid )
 sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 {
 	my $key = "$aid.$iid";
-	delete $self->{event_subscriptions}{$key}{$session};
+	delete $self->{event_subscriptions}{$key}{ $session->id };
+	delete $session->{subscriptions}{$key};
 	FuguLib::Log->default->debug( 'Unregistered event subscription for %s',
 		$key );
 }
@@ -1029,9 +1116,12 @@ sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 #	holds. Subscriptions are per-connection (HAP-HTTP.md §14).
 sub _purge_event_subscriptions ( $self, $session )
 {
-	for my $subs ( values %{ $self->{event_subscriptions} } ) {
-		delete $subs->{$session};
+	my $id = $session->id;
+
+	for my $key ( keys %{ $session->{subscriptions} } ) {
+		delete $self->{event_subscriptions}{$key}{$id};
 	}
+	$session->{subscriptions} = {};
 
 	return;
 }
@@ -1079,31 +1169,40 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 		timestamp  => Time::HiRes::time(),
 	};
 
-	# Schedule a flush if no flush is pending
-	$self->{event_flush_scheduled} //= Time::HiRes::time();
+	# Schedule one flush for the whole window. A second event
+	# inside the window joins the flush that the first one asked
+	# for, which is what coalescing means.
+	$self->{event_flush_timer} //= $self->loop->after(
+		EVENT_COALESCE_DELAY,
+		sub {
+			$self->{event_flush_timer} = undef;
+			$self->flush_events;
+		} );
 }
 
-# Flush the queued events. The event loop calls this function.
+# $self->flush_events:
+#	Send every queued event now. The coalesce timer calls this at
+#	the end of the window. A caller that drives the server by hand,
+#	such as a conformance test, calls it directly.
 sub flush_events ($self)
 {
-	return unless $self->{event_flush_scheduled};
+	return unless %{ $self->{event_queue} };
 
-	my $now    = Time::HiRes::time();
-	my $oldest = $self->{event_flush_scheduled};
-
-	# Wait until the end of the coalesce delay
-	return if ( $now - $oldest ) < EVENT_COALESCE_DELAY;
-
-	# Send all the queued events
 	for my $event ( values %{ $self->{event_queue} } ) {
 		$self->send_event(
 			$event->{aid},   $event->{iid},
 			$event->{value}, $event->{originator} );
 	}
 
-	# Clear the queue
-	$self->{event_queue}           = {};
-	$self->{event_flush_scheduled} = undef;
+	$self->{event_queue} = {};
+
+	# A direct call empties the queue, so the pending timer has
+	# nothing left to do
+	$self->loop->cancel( $self->{event_flush_timer} )
+	    if $self->{event_flush_timer};
+	$self->{event_flush_timer} = undef;
+
+	return;
 }
 
 # Send an EVENT/1.0 notification to the subscribed sessions. Do

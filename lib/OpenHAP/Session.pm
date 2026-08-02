@@ -5,10 +5,21 @@ package OpenHAP::Session;
 use FuguLib::Log;
 use FuguLib::Crypto;
 
+# Every session gets a number of its own, for the whole life of the
+# process. The server files a session under it, so dropping a
+# connection is a delete of what that connection holds.
+#
+# The number is not the descriptor. The kernel gives a closed
+# descriptor to the next connection, so a subscription that a purge
+# missed would arrive at whoever inherits the number. A counter never
+# repeats.
+my $next_id = 1;
+
 sub new ( $class, %args )
 {
 
 	my $self = bless {
+		id            => $next_id++,
 		socket        => $args{socket},
 		encrypted     => 0,
 		verified      => 0,
@@ -24,9 +35,21 @@ sub new ( $class, %args )
 
 		# Temporary pairing state
 		pairing_state => {},
+
+		# The event keys this connection subscribed to. The
+		# server deletes them one by one when the connection
+		# closes, instead of sweeping every key it holds.
+		subscriptions => {},
 	}, $class;
 
 	return $self;
+}
+
+# $self->id:
+#	The key that the server files this session under.
+sub id ($self)
+{
+	return $self->{id};
 }
 
 sub set_encryption ( $self, $encrypt_key, $decrypt_key )

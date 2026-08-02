@@ -84,7 +84,7 @@ use_ok('OpenHAP::Pairing');
 
     ok(exists $hap->{event_queue}, '[HAP-HTTP §14] event queue exists');
     ok(ref $hap->{event_queue} eq 'HASH', 'Event queue is a hash');
-    ok(!defined $hap->{event_flush_scheduled}, 'No flush scheduled initially');
+    ok(!defined $hap->{event_flush_timer}, 'No flush scheduled initially');
 }
 
 # Test identity regeneration

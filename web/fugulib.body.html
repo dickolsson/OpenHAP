@@ -107,6 +107,14 @@ the global options and each command's own options, and holds the exit
 codes that every tool shares.  Command data goes to stdout and diagnostics
 to the logger, so a pipeline that reads the tool keeps working.</dd>
 
+<dt>FuguLib::EventLoop</dt>
+<dd>The module is the select loop that a daemon with one process runs.
+A caller registers descriptors and timers instead of writing a
+<code>while</code> with a poll interval and an epoch comparison for each
+periodic job.  The select timeout comes from the nearest deadline, and an
+interrupt flag ends the loop so the shutdown happens in the daemon and not
+inside a signal handler.</dd>
+
 <dt>FuguLib::HTTP</dt>
 <dd>The module is one HTTP/1.1 codec for both ends of a connection: a
 server parses requests and builds responses, a client does the reverse, and

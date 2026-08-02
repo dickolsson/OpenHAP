@@ -203,6 +203,37 @@ is a name and not an address.
 .It Pa /etc/localtime
 (optional, read) timestamps.
 .El
+.Sh SIGNALS
+.Bl -tag -width "SIGTERMXX"
+.It Dv SIGTERM , SIGINT
+Shut down.
+The signal sets a flag.
+The event loop sees the flag at the end of the current pass, and the
+daemon then withdraws its mDNS advertisement and closes the listener
+and every client connection.
+The daemon exits 0.
+.Pp
+Nothing exits from inside the signal handler, thus a connection is
+never dropped in the middle of a response.
+.It Dv SIGHUP
+Reload.
+The daemon opens its log again and keeps serving.
+Use this after
+.Xr newsyslog 8
+rotates
+.Pa /var/log/openhapd.log .
+.Pp
+.Cm rcctl reload openhapd
+sends this signal.
+In releases before 2026 the signal ended the daemon, which is the
+opposite of a reload.
+.El
+.Pp
+The daemon does not remove
+.Pa /var/run/openhapd.pid
+at exit.
+See
+.Sx FILES .
 .Sh EXAMPLES
 Do a check of the configuration file:
 .Bd -literal -offset indent

@@ -253,22 +253,42 @@ if ( !$hap->is_paired() ) {
 	$log->notice( 'Not paired - use Home app with PIN: %s', $hap_pin );
 }
 
-# Set up the signal handlers for a graceful shutdown
+# INT and TERM end the loop. They set a flag and nothing more: the
+# loop sees the flag after the current pass, run returns, and the
+# shutdown happens below, in the daemon, where an operator can read
+# it. Before this, the handler called exit itself, so the daemon died
+# inside a signal handler with its connections open.
 my $sig = FuguLib::Signal->new;
-$sig->add_cleanup(
-	sub ($signal) {
-		$log->info( 'Received signal %s, shutting down gracefully',
-			$signal );
+$sig->setup_interrupt_flag( 'INT', 'TERM' );
+$hap->loop->signal($sig);
 
-		# A close of the mdnsd control socket withdraws the
-		# advertisement
-		$mdns->withdraw;
+# HUP means reload, and rc.d sends it for that. It used to exit the
+# daemon, which is the opposite of what the operator asked for. The
+# daemon now reopens the log and keeps serving. A separate manager
+# holds the flag, because the loop ends on the flag of the manager
+# above.
+my $hup = FuguLib::Signal->new;
+$hup->setup_interrupt_flag('HUP');
+$hap->loop->every(
+	1,
+	sub {
+		return unless $hup->interrupted;
+		$hup->reset_interrupted;
+		$log->reopen;
+		$log->info('Reopened the log on SIGHUP');
 	} );
-$sig->setup_graceful_exit( 'INT', 'TERM', 'HUP' );
 
-# Run the server
+# Run the server. The call returns when a signal ended the loop.
 $log->info('Starting OpenHAP server');
-$hap->run();
+$hap->run;
+
+$log->info('Shutting down');
+
+# A close of the mdnsd control socket withdraws the advertisement
+$mdns->withdraw;
+$hap->shutdown;
+
+exit 0;
 
 # unveil_paths():
 #	The filesystem view of the daemon, as an ordered list of

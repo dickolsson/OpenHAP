@@ -13,15 +13,46 @@ OpenHAP::HAP - main HAP server
     );
 
     $server->add_accessory($accessory);
-    $server->run();
+    $server->loop->signal($sig);
+
+    $server->run();     # returns when a signal ends the loop
+    $server->shutdown;
 
 =head1 DESCRIPTION
 
 This module is the main HAP server. The server has the HTTP
 endpoints, the pairing operations, and the accessory management.
 
-L<FuguLib::HTTP> does the HTTP syntax. This module keeps only what is
-HAP.
+L<FuguLib::HTTP> does the HTTP syntax and L<FuguLib::EventLoop> does
+the waiting. This module keeps only what is HAP.
+
+=head2 The loop
+
+C<run> is registrations, not a loop of its own:
+
+=over 4
+
+=item * The listener gets a read callback that accepts a connection
+and registers it. Each client callback owns the buffer and the
+framing of that connection.
+
+=item * The MQTT tick is a timer at the tick interval. The
+reconnection attempt is a second timer, at 30 seconds. The two answer
+to different clocks, so they are two timers.
+
+=item * A queued event schedules one C<after> timer for the whole
+coalescing window. A second event inside the window joins the flush
+that the first one asked for.
+
+=back
+
+C<run> returns when the loop stops. INT and TERM set the interrupt
+flag of the signal manager, the loop sees it after the current pass,
+and the caller then runs C<shutdown> where an operator can read it.
+Nothing exits from inside a signal handler.
+
+C<stop> asks the loop to end. C<shutdown> closes the listener and
+every client connection.
 
 =head2 Request framing
 
@@ -47,6 +78,7 @@ closes.
 
 =head1 SEE ALSO
 
-L<FuguLib::HTTP>, F<spec/HAP.md>, F<spec/HAP-HTTP.md>
+L<FuguLib::EventLoop>, L<FuguLib::HTTP>, F<spec/HAP.md>,
+F<spec/HAP-HTTP.md>
 
 =cut

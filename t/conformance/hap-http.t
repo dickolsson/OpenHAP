@@ -508,7 +508,7 @@ subtest '[HAP-HTTP §16][HAP-HTTP §16.3] event subscription via ev:true' =>
 	my ( $status, undef, undef ) =
 	    dispatch( $hap, 'PUT', '/characteristics', $put, $session );
 	is( $status, 204, 'subscription write returns 204' );
-	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{$session},
+	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{ $session->id },
 		'session registered for events' );
 
 	# ev on a characteristic without the ev permission -> -70406
@@ -550,19 +550,19 @@ sub decrypt_event ( $sock, $counter = 0 )
 	);
 }
 
-# flush_until($hap, $sock): run the coalescing flush until the socket
-# has data or the deadline passes. This makes the test resilient to
-# timing variations.
-sub flush_until ( $hap, $sock )
+# run_coalesce_window($hap): let the coalescing timer fire.
+#
+#	A queued event schedules one timer on the server's event loop.
+#	The loop returns as soon as it has nothing left to wait for,
+#	which is right after that timer runs. Thus the test exercises
+#	the real delivery path and does not have to guess a sleep.
+#	A server that scheduled nothing gives a loop with nothing to
+#	wait for. That loop returns at once, so a missing flush fails
+#	the assertions below instead of hanging this file.
+sub run_coalesce_window ($hap)
 {
-	require Time::HiRes;
-	my $deadline = Time::HiRes::time() + 5;
-	while ( !length( $sock->{written} )
-		&& Time::HiRes::time() < $deadline )
-	{
-		Time::HiRes::sleep(0.05);
-		$hap->flush_events;
-	}
+	$hap->loop->run;
+
 	return;
 }
 
@@ -598,7 +598,7 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	my ( $status, undef, undef ) =
 	    dispatch( $hap, 'PUT', '/characteristics', $put, $writer_sess );
 	is( $status, 204, 'value write accepted' );
-	flush_until( $hap, $sub_sock );
+	run_coalesce_window($hap);
 
 	ok( length( $sub_sock->{written} ) > 0,
 		'write via PUT handler delivers an event to the subscriber' );
@@ -629,19 +629,16 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	$put = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, value => \0 } ] } );
 	dispatch( $hap, 'PUT', '/characteristics', $put, $writer_sess );
-	$hap->flush_events;
-	require Time::HiRes;
-	Time::HiRes::sleep( 2 * OpenHAP::HAP::EVENT_COALESCE_DELAY() );
-	$hap->flush_events;
+	run_coalesce_window($hap);
 	is( $sub_sock->{written}, '',
 		'unsubscribed session receives nothing' );
 
 	# A session that disconnects loses all its subscriptions
 	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
-	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{$sub_sess},
+	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{ $sub_sess->id },
 		'session re-subscribed' );
 	$hap->_purge_event_subscriptions($sub_sess);
-	ok( !exists $hap->{event_subscriptions}{"$aid.$iid"}{$sub_sess},
+	ok( !exists $hap->{event_subscriptions}{"$aid.$iid"}{ $sub_sess->id },
 		'subscriptions purged on disconnect' );
 
 	# The event coalescing delay is 250ms
@@ -676,7 +673,7 @@ subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
 	# A Tasmota state report reaches the subscriber as an event.
 	# The event carries the device aid, not the bridge aid.
 	$mqtt->simulate_message( 'stat/heater/POWER', 'ON' );
-	flush_until( $hap, $sub_sock );
+	run_coalesce_window($hap);
 
 	ok( length( $sub_sock->{written} ) > 0,
 		'MQTT state change delivers an event' );
