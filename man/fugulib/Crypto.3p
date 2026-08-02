@@ -1,0 +1,194 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt FuguLib::Crypto 3p
+.Os
+.Sh NAME
+.Nm FuguLib::Crypto
+.Nd randomness and cryptographic primitives
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::Crypto;
+
+my $nonce = FuguLib::Crypto->random_bytes(12);
+my $password = FuguLib::Crypto->random_password(32);
+
+my ($secret, $public) = FuguLib::Crypto->ed25519_keypair;
+my $signature = FuguLib::Crypto->ed25519_sign($msg, $secret, $public);
+
+FuguLib::Crypto->preload;    # before a pledge without prot_exec
+.Ed
+.Sh DESCRIPTION
+.Nm
+gives the randomness and the primitives that a HomeKit-class protocol
+needs: Ed25519 signatures, X25519 key agreement, HKDF over SHA-512,
+and ChaCha20-Poly1305.
+.Pp
+Every method is a class method.
+The module keeps no state and never logs.
+A programming error dies.
+There is no partial result and no quiet fallback, because a caller
+cannot recover from a key that is not a key.
+.Pp
+.Fn random_bytes
+and
+.Fn random_password
+use core Perl only.
+Each other group loads its
+.Vt Crypt::*
+library on first use, so a program that never signs anything never
+needs that library installed.
+.Ss random_bytes
+.Fn random_bytes "$length"
+returns
+.Fa $length
+bytes from
+.Pa /dev/urandom .
+.Pp
+The method dies when the device does not open, and dies on a short
+read.
+Neither one has a recovery: a caller that continues with fewer bytes
+than it asked for builds a key with a known prefix.
+.Ss random_password
+.Fn random_password "$length"
+returns a random password of exactly
+.Fa $length
+characters.
+The default length is 32.
+.Pp
+The alphabet is URL-safe base64, so the password survives a shell, a
+URL and a configuration file with no quoting.
+.Ss preload
+.Fn preload
+loads every
+.Vt Crypt::*
+library now.
+.Pp
+A daemon that pledges without
+.Cm prot_exec
+must call this before it pledges.
+A lazy
+.Ic require
+after the pledge opens a shared object, and that kills the process.
+The method dies when a library is missing, because a daemon that finds
+that out after the pledge cannot report it.
+.Ss ed25519_keypair
+.Fn ed25519_keypair
+returns
+.Pq Fa $secret_key , Fa $public_key
+for a fresh identity.
+.Ss ed25519_sign
+.Fn ed25519_sign "$message" "$secret_key" "$public_key"
+returns the 64-byte signature over the message.
+.Ss ed25519_verify
+.Fn ed25519_verify "$signature" "$message" "$public_key"
+reports if the signature is valid for the message and the key.
+.Ss x25519_keypair
+.Fn x25519_keypair
+returns
+.Pq Fa $secret_key , Fa $public_key
+for a fresh exchange.
+.Ss x25519_shared_secret
+.Fn x25519_shared_secret "$our_secret" "$their_public"
+returns the 32-byte shared secret.
+Both sides of an exchange derive the same value.
+.Ss hkdf_sha512
+.Fn hkdf_sha512 "$ikm" "$salt" "$info" "$length"
+derives
+.Fa $length
+bytes from the input keying material, with HKDF over SHA-512.
+The derivation is deterministic.
+.Ss chacha20poly1305_encrypt
+.Fn chacha20poly1305_encrypt "$key" "$nonce" "$plaintext" "$aad"
+returns
+.Pq Fa $ciphertext , Fa $tag .
+.Fa $aad
+is the additional data, which the tag authenticates and the cipher
+does not hide.
+Its default is the empty string.
+.Ss chacha20poly1305_decrypt
+.Fn chacha20poly1305_decrypt "$key" "$nonce" "$ciphertext" "$tag" "$aad"
+returns the plaintext, or
+.Dv undef
+when the tag does not verify.
+A failed verification is the normal answer for a forged or damaged
+message, so it is not fatal.
+.Sh RETURN VALUES
+.Fn random_bytes
+and
+.Fn random_password
+return a string of the asked-for length.
+.Pp
+.Fn preload
+returns the number of libraries it loaded.
+A second call returns 0.
+.Pp
+.Fn ed25519_keypair
+and
+.Fn x25519_keypair
+return a two-element list.
+.Fn ed25519_verify
+returns true or false.
+.Fn chacha20poly1305_encrypt
+returns a two-element list.
+.Fn chacha20poly1305_decrypt
+returns the plaintext, or
+.Dv undef .
+The other methods return a string.
+.Sh EXAMPLES
+This example is the startup order of a daemon that pledges:
+.Bd -literal -offset indent
+# Load every shared object while the library tree is reachable
+FuguLib::Crypto->preload;
+
+FuguLib::Sandbox->unveil(paths => \e@paths);
+FuguLib::Sandbox->unveil_lock;
+
+# The promise set has no prot_exec, so nothing may load after here
+FuguLib::Sandbox->pledge(promises => 'stdio rpath wpath inet');
+.Ed
+.Sh ERRORS
+.Fn random_bytes
+dies when
+.Pa /dev/urandom
+does not open, on a short read, and on a length that is not positive.
+.Pp
+Every method that needs an optional library dies when that library is
+missing.
+The message names the module and the group of functions that needed
+it, because
+.Dq Can't locate Crypt/Ed25519.pm in @INC
+tells an operator nothing about which feature stopped working.
+.Sh SEE ALSO
+.Xr arc4random 3 ,
+.Xr FuguLib::Sandbox 3p ,
+.Xr random 4
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+The module does not choose a nonce and does not count one up.
+A nonce that repeats under one key destroys the security of
+ChaCha20-Poly1305.
+The protocol that uses the cipher owns that rule, because only the
+protocol knows what a message is.
+.Pp
+.Fn random_password
+trims a base64 string to the asked-for length.
+A password of
+.Fa n
+characters therefore carries about six bits of entropy for each
+character, and not eight.
