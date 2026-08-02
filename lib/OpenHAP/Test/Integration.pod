@@ -127,6 +127,10 @@ unpaired, unless the file pairs itself.
 The method makes an HTTP request to the HAP server. The connection
 stays open and registered until C<teardown> (or C<close_sockets>).
 
+L<FuguLib::HTTP> builds the request and frames the response. The
+method reads until the response is whole, and it refuses a response
+over 1 MB.
+
 =head2 close_sockets
 
     $env->close_sockets;
@@ -146,7 +150,9 @@ The method parses an HTTP response.
 
     my $value = $env->get_config_value($key);
 
-The method gets a configuration value.
+The method gets a configuration value. L<FuguLib::Config> reads the
+installed F</etc/openhapd.conf>, thus the tests see the file as the
+daemon sees it.
 
 =head2 get_device_topics
 
@@ -214,6 +220,10 @@ after the baseline.
     my $mqtt = $env->get_mqtt;
 
 The method gets the MQTT client connection.
+
+=head1 SEE ALSO
+
+L<FuguLib::Config>, L<FuguLib::HTTP>, L<OpenHAP::Test::Controller>
 
 =head1 AUTHOR
 

@@ -11,6 +11,7 @@ OpenHAP::SRP - SRP-6a implementation for HAP pairing
     my $salt = $srp->generate_salt();
     my $v = $srp->compute_verifier($salt, $password);
     my $B = $srp->generate_server_public();
+    my $B_bytes = $srp->server_public_bytes();   # 384 bytes, for M2
 
     # After receiving client's A
     my $K = $srp->compute_session_key($A);
@@ -20,11 +21,18 @@ OpenHAP::SRP - SRP-6a implementation for HAP pairing
 =head1 DESCRIPTION
 
 This module implements the server (accessory) role of the SRP-6a
-exchange that HAP pair-setup uses. The group parameters come from
-L<OpenHAP::Crypto>. The modular arithmetic comes from L<Math::BigInt>.
+exchange that HAP pair-setup uses. The module owns the RFC 5054
+3072-bit group parameters, because SRP is their only user. The modular
+arithmetic comes from L<Math::BigInt>.
 L<Math::BigInt> uses the GMP backend when that backend is installed.
 This is important: the pure-Perl backend takes seconds for each
 exponentiation at 3072 bits.
+
+The module also owns the wire encoding of the values it produces.
+C<server_public_bytes> returns B padded to the length of N, which is
+what M2 must carry and what both sides hash for u. About one B in 256
+is small enough that its natural encoding is one byte short, so a
+caller that packed the number itself would break one pairing in 256.
 
 For tests, L<OpenHAP::Test::Controller::SRP> supplies the client side.
 

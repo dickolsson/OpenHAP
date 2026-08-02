@@ -1,7 +1,9 @@
 use v5.36;
 
 package OpenHAP::Session;
-use OpenHAP::Crypto;
+
+use FuguLib::Log;
+use FuguLib::Crypto;
 
 sub new ( $class, %args )
 {
@@ -35,7 +37,7 @@ sub set_encryption ( $self, $encrypt_key, $decrypt_key )
 	$self->{encrypted}     = 1;
 	$self->{encrypt_count} = 0;
 	$self->{decrypt_count} = 0;
-	$OpenHAP::logger->debug('Session encryption enabled');
+	FuguLib::Log->default->debug('Session encryption enabled');
 }
 
 sub encrypt ( $self, $data )
@@ -58,7 +60,7 @@ sub encrypt ( $self, $data )
 		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
 
 		my ( $ciphertext, $tag ) =
-		    OpenHAP::Crypto::chacha20_poly1305_encrypt(
+		    FuguLib::Crypto->chacha20poly1305_encrypt(
 			$self->{encrypt_key},
 			$nonce, $chunk, $aad );
 
@@ -102,7 +104,7 @@ sub decrypt ( $self, $data )
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 
 		my $plaintext =
-		    OpenHAP::Crypto::chacha20_poly1305_decrypt(
+		    FuguLib::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 
 		return unless defined $plaintext;
@@ -126,7 +128,7 @@ sub set_verified ( $self, $controller_id )
 {
 	$self->{verified}      = 1;
 	$self->{controller_id} = $controller_id;
-	$OpenHAP::logger->debug( 'Session verified for controller: %s',
+	FuguLib::Log->default->debug( 'Session verified for controller: %s',
 		$controller_id );
 
 	return;

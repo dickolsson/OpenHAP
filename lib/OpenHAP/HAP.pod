@@ -20,6 +20,22 @@ OpenHAP::HAP - main HAP server
 This module is the main HAP server. The server has the HTTP
 endpoints, the pairing operations, and the accessory management.
 
+L<FuguLib::HTTP> does the HTTP syntax. This module keeps only what is
+HAP.
+
+=head2 Request framing
+
+A stream socket gives a reader whatever arrived, which is not a
+message. The server keeps one buffer for each connection. After each
+read it asks C<FuguLib::HTTP::message_complete> how much of the buffer
+is a whole message, and it serves each whole message in turn. Thus a
+request that spans two reads is not mangled, and two requests in one
+read are both served.
+
+The server refuses a message over C<MAX_REQUEST_SIZE> (65536 bytes)
+and closes the connection. No further byte can make such a message
+valid, and an unpaired client must not make the daemon hold megabytes.
+
 The server sends characteristic changes to subscribed connections as
 EVENT/1.0 notifications. A change can come from a write over HTTP or
 from a device report. The server coalesces the events over a 250 ms
@@ -31,6 +47,6 @@ closes.
 
 =head1 SEE ALSO
 
-F<spec/HAP.md>, F<spec/HAP-HTTP.md>
+L<FuguLib::HTTP>, F<spec/HAP.md>, F<spec/HAP-HTTP.md>
 
 =cut

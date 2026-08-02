@@ -11,8 +11,8 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new( mode => 'quiet', ident => 'test' );
+use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 use JSON::PP   ();
 
@@ -29,7 +29,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::HAP');
-use_ok('OpenHAP::HTTP');
+use_ok('FuguLib::HTTP');
 use_ok('OpenHAP::Session');
 use_ok('OpenHAP::TLV');
 use_ok('OpenHAP::Pairing');
@@ -541,8 +541,8 @@ sub decrypt_event ( $sock, $counter = 0 )
 	my $frame  = $sock->{written};
 	my $aad    = substr( $frame, 0, 2 );
 	my $length = unpack( 'v', $aad );
-	require OpenHAP::Crypto;
-	return OpenHAP::Crypto::chacha20_poly1305_decrypt(
+	require FuguLib::Crypto;
+	return FuguLib::Crypto->chacha20poly1305_decrypt(
 		$EVENT_KEY,
 		pack( 'x[4]Q<', $counter ),
 		substr( $frame, 2, $length ),

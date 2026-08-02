@@ -4,8 +4,8 @@ use Getopt::Long qw(:config no_ignore_case);
 use FindBin      qw($RealBin);
 use lib "$RealBin/../lib";
 
-use OpenHAP::Config;
-use OpenHAP::Daemon;
+use FuguLib::Config;
+use FuguLib::Pidfile;
 use OpenHAP::DeviceLoader;
 use OpenHAP::Storage;
 
@@ -37,15 +37,9 @@ else {
 #	Validate the configuration file syntax.
 sub cmd_check()
 {
-	my $config = OpenHAP::Config->new( file => $config_file );
+	my $config = load_config() or exit 1;
 
-	eval { $config->load() if -f $config_file; };
-	if ($@) {
-		print STDERR "Configuration error: $@\n";
-		exit 1;
-	}
-
-	my @devices = $config->get_devices();
+	my @devices = OpenHAP::DeviceLoader->devices($config);
 	printf "Configuration file %s is valid\n", $config_file;
 	printf "  Configured devices: %d\n",       scalar @devices;
 
@@ -56,8 +50,9 @@ sub cmd_check()
 #	Show the daemon status and the pairing information.
 sub cmd_status()
 {
-	my $pidfile = '/var/run/openhapd.pid';
-	my $pid     = OpenHAP::Daemon->check_running($pidfile);
+	my $pid =
+	    FuguLib::Pidfile->new( path => '/var/run/openhapd.pid' )
+	    ->is_running;
 
 	if ( defined $pid ) {
 		printf "openhapd is running (PID %d)\n", $pid;
@@ -68,25 +63,29 @@ sub cmd_status()
 
 	# Check the pairing status from storage
 	my $db_path = get_db_path();
-	if ( -d $db_path ) {
-		my $storage = OpenHAP::Storage->new( path => $db_path );
-		eval { $storage->load(); };
+	unless ( -d $db_path ) {
+		print "Pairing status: not initialized\n";
+		exit 0;
+	}
 
-		if ( $@ || !$storage ) {
-			print "Pairing status: unknown (cannot read storage)\n";
-		}
-		elsif ( $storage->is_paired() ) {
-			my $pairings = $storage->count_pairings();
-			printf "Pairing status: paired (%d controller%s)\n",
-			    $pairings, $pairings == 1 ? '' : 's';
-		}
-		else {
-			print "Pairing status: not paired\n";
-			print "Use Home app to pair with setup code\n";
-		}
+	# The read can fail on a directory that the caller may not read.
+	# That is not a crash, it is an answer the tool cannot give.
+	my $pairings = eval {
+		OpenHAP::Storage->new( db_path => $db_path )->load_pairings;
+	};
+	if ( $@ || !$pairings ) {
+		print "Pairing status: unknown (cannot read storage)\n";
+		exit 0;
+	}
+
+	my $count = scalar keys %$pairings;
+	if ($count) {
+		printf "Pairing status: paired (%d controller%s)\n",
+		    $count, $count == 1 ? '' : 's';
 	}
 	else {
-		print "Pairing status: not initialized\n";
+		print "Pairing status: not paired\n";
+		print "Use Home app to pair with setup code\n";
 	}
 
 	exit 0;
@@ -96,15 +95,9 @@ sub cmd_status()
 #	List the configured devices from the configuration file.
 sub cmd_devices()
 {
-	my $config = OpenHAP::Config->new( file => $config_file );
+	my $config = load_config() or exit 1;
 
-	eval { $config->load() if -f $config_file; };
-	if ($@) {
-		print STDERR "Configuration error: $@\n";
-		exit 1;
-	}
-
-	my @devices = $config->get_devices();
+	my @devices = OpenHAP::DeviceLoader->devices($config);
 
 	if ( @devices == 0 ) {
 		print "No devices configured\n";
@@ -130,17 +123,30 @@ sub cmd_devices()
 	exit 0;
 }
 
+# load_config():
+#	Parse the configuration file. An absent file is normal on a
+#	fresh install and gives empty settings. A file that exists but
+#	does not parse is an error that names the line, and the
+#	function returns nothing.
+sub load_config()
+{
+	my $config = FuguLib::Config->new( file => $config_file );
+	return $config unless -f $config_file;
+
+	unless ( $config->load ) {
+		print STDERR 'Configuration error: ' . $config->error . "\n";
+		return;
+	}
+
+	return $config;
+}
+
 # get_db_path():
 #	Get the database path from the config, or use the default.
 sub get_db_path()
 {
-	my $config = eval {
-		my $c = OpenHAP::Config->new( file => $config_file );
-		$c->load() if -f $config_file;
-		return $c;
-	};
+	my $config = load_config() or return '/var/db/openhapd';
 
-	return '/var/db/openhapd' unless $config;
 	return $config->get( 'db_path', '/var/db/openhapd' );
 }
 

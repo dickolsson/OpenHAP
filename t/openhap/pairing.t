@@ -3,8 +3,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -19,7 +18,7 @@ BEGIN {
 
 use_ok('OpenHAP::Pairing');
 use_ok('OpenHAP::Storage');
-use_ok('OpenHAP::Crypto');
+use_ok('FuguLib::Crypto');
 use_ok('OpenHAP::Session');
 
 # Test pairing object creation
@@ -32,7 +31,7 @@ SKIP: {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
     
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -72,7 +71,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -99,7 +98,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -129,7 +128,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -173,7 +172,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     # Reset the global state for a clean test
     OpenHAP::Pairing->clear_pairing_state();
@@ -216,7 +215,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
@@ -273,7 +272,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
@@ -325,7 +324,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = OpenHAP::Crypto::generate_keypair_ed25519();
+    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
     
     # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();

@@ -3,8 +3,8 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
+use File::Copy qw(copy);
 use File::Temp qw(tempdir);
 
 use_ok('OpenHAP::Storage');
@@ -123,5 +123,62 @@ my $temp_dir = tempdir(CLEANUP => 1);
     is(scalar keys %$pairings, 0,
         '[HAP-Pairing §7.2] all pairings removed');
 }
+
+# t/fixtures/storage-legacy holds a paired installation in the on-disk
+# format that came before the counters moved into one state file. The
+# counters were one file each: config_number, config_digest and
+# auth_attempts. This subtest proves that such an installation keeps
+# working, and above all that it keeps its configuration number. A
+# controller that sees c# go backwards drops the accessory and the
+# owner has to pair again.
+subtest 'a storage directory from before the state file' => sub {
+	my $fixture = "$RealBin/../fixtures/storage-legacy";
+	my $dir     = tempdir( CLEANUP => 1 );
+
+	opendir my $dh, $fixture or die "opendir $fixture: $!";
+	my @files = grep { !/^\./ } readdir $dh;
+	closedir $dh;
+	copy( "$fixture/$_", "$dir/$_" ) or die "copy $_: $!" for @files;
+
+	ok( !-f "$dir/state.json", 'the fixture holds no state file' );
+
+	my $storage = OpenHAP::Storage->new( db_path => $dir );
+
+	is( $storage->get_config_number, 7,
+		'[HAP-Pairing §7.2] the configuration number survives' );
+	is( $storage->get_config_digest,
+		'b1946ac92492d2347c6235b4d2611184',
+		'the configuration digest survives' );
+	is( $storage->get_auth_attempts, 3,
+		'[HAP-Pairing §8] the failed-attempt counter survives' );
+
+	my $pairings = $storage->load_pairings;
+	is( scalar keys %$pairings, 2, 'both pairings load' );
+	is( $pairings->{'legacy-admin'}{permissions}, 1, 'the admin is admin' );
+	is( $pairings->{'legacy-user'}{permissions},  0, 'the user is not' );
+	is( unpack( 'H*', $pairings->{'legacy-admin'}{ltpk} ),
+		'deadbeef' . ( 'aa' x 14 ),
+		'the key of a pairing decodes from hex' );
+
+	my ( $ltsk, $ltpk ) = $storage->load_accessory_keys;
+	is( unpack( 'H*', $ltsk ), '11' x 64, 'the secret key loads' );
+	is( unpack( 'H*', $ltpk ), '22' x 32, 'the public key loads' );
+
+	# The counters are in the state file now, at 0600. The old files
+	# stay: this release reads them, and an operator who goes back
+	# to the release before it finds its state where it left it.
+	ok( -f "$dir/state.json", 'the counters moved into a state file' );
+	is( ( stat "$dir/state.json" )[2] & 07777,
+		0600, 'which no other user can read' );
+
+	# c# only ever goes up
+	is( $storage->increment_config_number, 8, 'the next change gives 8' );
+
+	# A second start must not fold the old file over the new value
+	my $again = OpenHAP::Storage->new( db_path => $dir );
+	is( $again->get_config_number, 8,
+		'a later start keeps the newer number' );
+	is( $again->get_auth_attempts, 3, 'and the other counters' );
+};
 
 done_testing();

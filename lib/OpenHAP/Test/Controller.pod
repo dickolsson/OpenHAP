@@ -32,6 +32,10 @@ and the X25519 pair-verify, and it uses the ChaCha20-Poly1305 session
 framing. It can operate over TCP against a live accessory, or
 in-process through an injected transport.
 
+L<FuguLib::HTTP> builds the requests and parses the responses. The
+controller thus reads the same wire format that the server writes, and
+no second HTTP parser can drift from the first.
+
 The controller uses the error convention of the repository. A method
 returns undef (bare return) on a protocol error or a transport error.
 It records the TLV error code, or a message string, in C<last_error>.
@@ -138,7 +142,8 @@ to the integration VM together with the integration tests.
 
 =head1 SEE ALSO
 
-L<OpenHAP::Test::Controller::SRP>, L<OpenHAP::Test::Integration>,
-F<spec/HAP-Pairing.md>, F<spec/HAP-Encryption.md>
+L<FuguLib::HTTP>, L<OpenHAP::Test::Controller::SRP>,
+L<OpenHAP::Test::Integration>, F<spec/HAP-Pairing.md>,
+F<spec/HAP-Encryption.md>
 
 =cut

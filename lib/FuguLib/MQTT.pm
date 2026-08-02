@@ -1,9 +1,37 @@
+# ex:ts=8 sw=4:
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 use v5.36;
 
-package OpenHAP::MQTT;
+package FuguLib::MQTT;
 
-# MQTT client wrapper for OpenHAP
-# The module works with IO::Select for event-driven message handling
+use FuguLib::Log;
+use FuguLib::Util;
+
+# FuguLib::MQTT - a subscribing MQTT client for a single-threaded
+# daemon.
+#
+# The module wraps Net::MQTT::Simple. It never blocks the caller: tick
+# drains what arrived and returns, so an event loop can hold the MQTT
+# connection beside its own descriptors.
+#
+# Net::MQTT::Simple loads at connect time. Thus the module keeps the
+# core-Perl load contract of FuguLib, and a daemon whose broker is
+# optional still runs without the library.
 
 sub new ( $class, %args )
 {
@@ -24,7 +52,7 @@ sub new ( $class, %args )
 
 sub mqtt_connect ( $self, $timeout = 10 )
 {
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Connecting to MQTT broker at %s:%d (timeout: %ds)',
 		$self->{host}, $self->{port}, $timeout );
 
@@ -37,41 +65,49 @@ sub mqtt_connect ( $self, $timeout = 10 )
 		push @warnings, shift;
 	};
 
+	# The connect can block in the resolver or the handshake, and a
+	# poll loop cannot interrupt either. Thus the guard is an alarm.
 	my $success = eval {
+		FuguLib::Util::bounded(
+			$timeout,
+			sub {
 
-		# Make sure that site_perl is in @INC
-		unshift @INC, '/usr/local/libdata/perl5/site_perl'
-		    unless grep { $_ eq '/usr/local/libdata/perl5/site_perl' }
-		    @INC;
+				# On OpenBSD the packages install under
+				# site_perl, which a perl started with a
+				# pruned @INC does not hold
+				unshift @INC,
+				    '/usr/local/libdata/perl5/site_perl'
+				    unless grep {
+					$_ eq
+					    '/usr/local/libdata/perl5/site_perl'
+				    } @INC;
 
-		local $SIG{ALRM} = sub { die "Connection timeout\n" };
-		alarm($timeout);
+				require Net::MQTT::Simple;
 
-		require Net::MQTT::Simple;
+				my $server = $self->{host};
+				if ( $self->{port} != 1883 ) {
+					$server .= ':' . $self->{port};
+				}
 
-		my $server = $self->{host};
-		if ( $self->{port} != 1883 ) {
-			$server .= ':' . $self->{port};
-		}
+				my $mqtt = Net::MQTT::Simple->new($server);
 
-		my $mqtt = Net::MQTT::Simple->new($server);
+				# Set the login credentials if the
+				# configuration has a username
+				if ( defined $self->{username} ) {
+					$mqtt->login(
+						$self->{username},
+						$self->{password} // ''
+					);
+				}
 
-		# Set the login credentials if the configuration
-		# has a username
-		if ( defined $self->{username} ) {
-			$mqtt->login( $self->{username},
-				$self->{password} // '' );
-		}
-
-		alarm(0);    # Clear the alarm
-
-		$self->{client}    = $mqtt;
-		$self->{connected} = 1;
-		$OpenHAP::logger->debug(
-			'Successfully connected to MQTT broker');
-		return 1;
+				$self->{client}    = $mqtt;
+				$self->{connected} = 1;
+				FuguLib::Log->default->debug(
+					'Successfully connected to MQTT broker'
+				);
+				return 1;
+			} );
 	};
-	alarm(0);    # Also clear the alarm on the error path
 
 	# Send the captured warnings to the logger
 	for my $warning (@warnings) {
@@ -80,13 +116,14 @@ sub mqtt_connect ( $self, $timeout = 10 )
 		# Remove the program name if it is present, for
 		# example "/usr/local/bin/openhapd: "
 		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
-		$OpenHAP::logger->debug( 'MQTT connection warning: %s',
+		FuguLib::Log->default->debug( 'MQTT connection warning: %s',
 			$warning );
 	}
 
 	if ( $@ || !$success ) {
-		my $err = $@ || 'Unknown error';
-		$OpenHAP::logger->error( 'MQTT connection failed: %s', $err );
+		my $err = $@ || "no answer within ${timeout}s";
+		FuguLib::Log->default->error( 'MQTT connection failed: %s',
+			$err );
 		$self->{connected} = 0;
 	}
 
@@ -98,7 +135,7 @@ sub mqtt_connect ( $self, $timeout = 10 )
 #	$callback receives ($topic, $payload).
 sub subscribe ( $self, $topic, $callback )
 {
-	$OpenHAP::logger->debug( 'Subscribing to MQTT topic: %s', $topic );
+	FuguLib::Log->default->debug( 'Subscribing to MQTT topic: %s', $topic );
 	$self->{subscriptions}{$topic} = $callback;
 
 	return unless $self->{connected} && $self->{client};
@@ -117,7 +154,7 @@ sub subscribe ( $self, $topic, $callback )
 	};
 
 	if ($@) {
-		$OpenHAP::logger->error( 'MQTT subscribe error for %s: %s',
+		FuguLib::Log->default->error( 'MQTT subscribe error for %s: %s',
 			$topic, $@ );
 	}
 }
@@ -137,7 +174,7 @@ sub publish ( $self, $topic, $payload, $retain = 0 )
 {
 	return unless $self->{connected} && $self->{client};
 
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Publishing to MQTT topic %s: %s',
 		$topic,
 		length($payload) > 50
@@ -154,7 +191,7 @@ sub publish ( $self, $topic, $payload, $retain = 0 )
 	};
 
 	if ($@) {
-		$OpenHAP::logger->error( 'MQTT publish error: %s', $@ );
+		FuguLib::Log->default->error( 'MQTT publish error: %s', $@ );
 	}
 }
 
@@ -185,7 +222,7 @@ sub tick ( $self, $timeout = 0 )
 		# Remove the program name if it is present, for
 		# example "/usr/local/bin/openhapd: "
 		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
-		$OpenHAP::logger->debug( 'MQTT: %s', $warning );
+		FuguLib::Log->default->debug( 'MQTT: %s', $warning );
 	}
 
 	if ($@) {
@@ -193,11 +230,11 @@ sub tick ( $self, $timeout = 0 )
 		# The connection is possibly lost
 		if ( $@ =~ /connection|socket|closed/i ) {
 			$self->{connected} = 0;
-			$OpenHAP::logger->warning( 'MQTT connection lost: %s',
-				$@ );
+			FuguLib::Log->default->warning(
+				'MQTT connection lost: %s', $@ );
 			return 0;
 		}
-		$OpenHAP::logger->error( 'MQTT tick error: %s', $@ );
+		FuguLib::Log->default->error( 'MQTT tick error: %s', $@ );
 	}
 
 	# Process the pending messages through the callbacks
@@ -226,7 +263,7 @@ sub _dispatch_message ( $self, $topic, $payload )
 			my $callback = $self->{subscriptions}{$pattern};
 			eval { $callback->( $topic, $payload ); };
 			if ($@) {
-				$OpenHAP::logger->error(
+				FuguLib::Log->default->error(
 					'MQTT callback error for %s: %s',
 					$topic, $@ );
 			}
@@ -290,7 +327,7 @@ sub resubscribe ($self)
 				} );
 		};
 		if ($@) {
-			$OpenHAP::logger->error(
+			FuguLib::Log->default->error(
 				'MQTT resubscribe error for %s: %s',
 				$topic, $@ );
 		}
@@ -302,12 +339,12 @@ sub resubscribe ($self)
 #	The method returns 1 on success and 0 on failure.
 sub reconnect ($self)
 {
-	$OpenHAP::logger->debug('Attempting MQTT reconnection');
+	FuguLib::Log->default->debug('Attempting MQTT reconnection');
 	$self->disconnect();
 
 	if ( $self->mqtt_connect() ) {
 		$self->resubscribe();
-		$OpenHAP::logger->debug('MQTT reconnected successfully');
+		FuguLib::Log->default->debug('MQTT reconnected successfully');
 		return 1;
 	}
 

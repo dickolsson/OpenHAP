@@ -1,0 +1,198 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt FuguLib::MQTT 3p
+.Os
+.Sh NAME
+.Nm FuguLib::MQTT
+.Nd a subscribing MQTT client for a single-threaded daemon
+.Sh SYNOPSIS
+.Bd -literal
+use FuguLib::MQTT;
+
+my $mqtt = FuguLib::MQTT->new(
+    host => '127.0.0.1',
+    port => 1883,
+);
+$mqtt->mqtt_connect(10) or die "no broker\en";
+
+$mqtt->subscribe('stat/+/RESULT', sub ($topic, $payload) {
+    ...
+});
+$mqtt->publish('cmnd/lamp/POWER', 'ON');
+
+# From the event loop, once each pass
+$mqtt->tick;
+.Ed
+.Sh DESCRIPTION
+.Nm
+is a wrapper around
+.Xr Net::MQTT::Simple 3p
+for a daemon that has one process and one event loop.
+It never blocks the caller.
+.Fn tick
+drains what arrived and returns, thus the loop keeps the MQTT
+connection beside its own descriptors.
+.Pp
+.Xr Net::MQTT::Simple 3p
+loads at connect time, not at compile time.
+Thus the module keeps the core-Perl load contract of FuguLib, and a
+daemon whose broker is optional still starts without the library.
+.Pp
+Every message goes through a callback.
+The module holds the incoming messages in a queue and dispatches them
+in
+.Fn tick ,
+in the process that called it.
+A callback thus runs where the caller can reason about it, and never
+inside a signal handler.
+.Ss new
+.Fn new "%args"
+creates a client.
+The method opens no socket.
+Call
+.Fn mqtt_connect .
+.Pp
+These are the arguments:
+.Bl -tag -width "usernameXX"
+.It Fa host
+The broker.
+The default is 127.0.0.1.
+.It Fa port
+The broker port.
+The default is 1883.
+.It Fa username
+The login name.
+The client sends no credentials when this argument is absent.
+.It Fa password
+The login password.
+.El
+.Ss mqtt_connect
+.Fn mqtt_connect "$timeout"
+connects to the broker.
+The default timeout is 10 seconds.
+.Pp
+A connect can block in the resolver or in the handshake, and no poll
+loop can interrupt either.
+Thus the guard is the alarm of
+.Xr FuguLib::Util 3p .
+A broker that does not answer costs the caller the timeout, not the
+run.
+.Pp
+The method returns true when the client is connected.
+.Ss subscribe
+.Fn subscribe "$topic" "$callback"
+registers a topic and its callback.
+The callback gets
+.Fa ( $topic , $payload ) ,
+where the topic is the one that arrived, not the pattern.
+.Pp
+The pattern accepts the MQTT wildcards:
+.Sq +
+matches one level and
+.Sq #
+matches the remaining levels.
+The module registers the subscription even when the client is not
+connected, so a caller can subscribe before the broker is up.
+.Fn resubscribe
+sends the set again after a reconnection.
+.Ss unsubscribe
+.Fn unsubscribe "$topic"
+removes a topic and its callback.
+.Ss publish
+.Fn publish "$topic" "$payload" "$retain"
+sends one message.
+A true
+.Fa $retain
+makes the broker keep the message for the next subscriber.
+The method does nothing when the client is not connected.
+.Ss tick
+.Fn tick "$timeout"
+reads what arrived and runs the callbacks.
+The default timeout is 0, which does not block.
+The method returns the number of dispatched messages.
+.Pp
+The method reports a lost connection: it clears the connected state
+and returns 0.
+The caller then calls
+.Fn reconnect
+on a schedule of its own.
+.Ss reconnect
+.Fn reconnect
+disconnects, connects again, and subscribes again.
+The method returns 1 on success and 0 on failure.
+.Ss resubscribe
+.Fn resubscribe
+sends every registered subscription to the broker again.
+.Fn reconnect
+calls it.
+A caller needs it only when it connects by itself.
+.Ss disconnect
+.Fn disconnect
+closes the connection and discards the queued messages.
+The registered subscriptions stay, thus a later
+.Fn reconnect
+restores them.
+.Ss is_connected
+.Fn is_connected
+reports if the client holds a connection.
+.Ss subscriptions
+.Fn subscriptions
+returns the registered topic patterns.
+.Sh RETURN VALUES
+.Fn mqtt_connect
+and
+.Fn is_connected
+return true when the client is connected.
+.Fn reconnect
+returns 1 or 0.
+.Fn tick
+returns a count.
+.Fn subscriptions
+returns a list.
+.Pp
+No method dies.
+A broker error, a bad callback, and a lost connection all go to the
+log of
+.Xr FuguLib::Log 3p .
+A daemon must not exit because a broker went away.
+.Sh EXAMPLES
+This example reconnects when the broker goes away:
+.Bd -literal -offset indent
+$loop->every(1, sub {
+	$mqtt->tick;
+	$mqtt->reconnect unless $mqtt->is_connected;
+});
+.Ed
+.Sh SEE ALSO
+.Xr FuguLib::Log 3p ,
+.Xr FuguLib::Util 3p ,
+.Xr Net::MQTT::Simple 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+A callback runs inside
+.Fn tick .
+A callback that blocks blocks the loop.
+Keep the work in a callback short, or queue it.
+.Pp
+The module holds no quality of service beyond what
+.Xr Net::MQTT::Simple 3p
+gives, which is QoS 0.
+A message can be lost.
+A caller that must know a device answered reads the state topic of
+that device.

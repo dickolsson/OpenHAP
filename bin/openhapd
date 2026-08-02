@@ -4,17 +4,17 @@ use Getopt::Long;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 
-use OpenHAP::HAP;
-use OpenHAP::Config;
+use FuguLib::Config;
+use FuguLib::Crypto;
 use FuguLib::Daemon;
 use FuguLib::Log;
 use FuguLib::MDNS;
+use FuguLib::MQTT;
 use FuguLib::Privdrop;
 use FuguLib::Sandbox;
-use OpenHAP::MQTT;
-use OpenHAP::Daemon;
-use OpenHAP::DeviceLoader;
 use FuguLib::Signal;
+use OpenHAP::DeviceLoader;
+use OpenHAP::HAP;
 
 # Default configuration
 my $config_file  = '/etc/openhapd.conf';
@@ -30,9 +30,14 @@ GetOptions(
 	'h|help'       => \&usage,
 ) or usage();
 
-# Load the configuration
-my $config = OpenHAP::Config->new( file => $config_file );
-$config->load() if -f $config_file;
+# Load the configuration. A missing file is normal on a fresh
+# install; a file that exists but does not parse is not, and the
+# daemon must not run on defaults that the operator did not choose.
+my $config = FuguLib::Config->new( file => $config_file );
+if ( -f $config_file && !$config->load ) {
+	print STDERR $config->error . "\n";
+	exit 1;
+}
 
 if ($check_config) {
 	print "Configuration file $config_file is valid\n";
@@ -60,16 +65,17 @@ my $log_level    = $config->get( 'log_level',    'info' );
 my $log_facility = $config->get( 'log_facility', 'daemon' );
 my $log_mode     = $foreground ? 'stderr' : 'syslog';
 
-# Create the logger. Set it as the package variable for all OpenHAP
-# modules.
-$OpenHAP::logger = FuguLib::Log->new(
+# Create the logger and make it the process default. Library code
+# that gets no logger of its own reports through it.
+my $log = FuguLib::Log->new(
 	mode     => $log_mode,
 	ident    => 'openhapd',
 	level    => $verbose ? 'debug' : $log_level,
 	facility => $log_facility,
 );
+FuguLib::Log->set_default($log);
 
-$OpenHAP::logger->info('OpenHAP daemon initializing');
+$log->info('OpenHAP daemon initializing');
 
 # Get the HAP settings
 my $hap_name = $config->get( 'hap_name', 'OpenHAP Bridge' );
@@ -91,7 +97,7 @@ my $mqtt_port = $config->get( 'mqtt_port', 1883 );
 my $mqtt_user = $config->get('mqtt_user');
 my $mqtt_pass = $config->get('mqtt_pass');
 
-my $mqtt = OpenHAP::MQTT->new(
+my $mqtt = FuguLib::MQTT->new(
 	host     => $mqtt_host,
 	port     => $mqtt_port,
 	username => $mqtt_user,
@@ -100,13 +106,12 @@ my $mqtt = OpenHAP::MQTT->new(
 
 # Try to connect to MQTT with a timeout
 if ( $mqtt->mqtt_connect(5) ) {
-	$OpenHAP::logger->info( 'Connected to MQTT broker at %s:%d',
+	$log->info( 'Connected to MQTT broker at %s:%d',
 		$mqtt_host, $mqtt_port );
 	$hap->set_mqtt_client($mqtt);
 }
 else {
-	$OpenHAP::logger->warning(
-		'MQTT broker not available, will retry in background');
+	$log->warning('MQTT broker not available, will retry in background');
 	$hap->set_mqtt_client($mqtt);    # Set it anyway for reconnection
 }
 
@@ -134,8 +139,7 @@ if ( $> == 0 ) {
 		path    => $db_path,
 		user    => '_openhap',
 		mode    => 0700,
-		on_warn =>
-		    sub ($msg) { $OpenHAP::logger->warning( '%s', $msg ); },
+		on_warn => sub ($msg) { $log->warning( '%s', $msg ) },
 	);
 
 	# Keep root's supplementary groups. On OpenBSD that is how the
@@ -148,9 +152,9 @@ if ( $> == 0 ) {
 	# Open the log again after the privilege drop. The process
 	# opened the syslog connection as root. It must open the
 	# connection again as _openhap.
-	$OpenHAP::logger->reopen;
+	$log->reopen;
 
-	$OpenHAP::logger->info('Dropped privileges to _openhap');
+	$log->info('Dropped privileges to _openhap');
 }
 
 # Publish the mDNS advertisement after the privilege drop. The daemon
@@ -166,11 +170,11 @@ if (
 		txt   => $hap->get_mdns_txt_string,
 	) )
 {
-	$OpenHAP::logger->info( 'Registered mDNS service: %s._hap._tcp port %d',
+	$log->info( 'Registered mDNS service: %s._hap._tcp port %d',
 		$hap_name, $hap_port );
 }
 else {
-	$OpenHAP::logger->warning( 'mDNS registration failed: %s',
+	$log->warning( 'mDNS registration failed: %s',
 		$mdns->error // 'unknown' );
 }
 
@@ -185,32 +189,39 @@ else {
 #	3. lock the view
 #	4. pledge the syscall surface
 #
-# Step 1: Net::MQTT::Simple is pure Perl. Thus this step is not about
-# prot_exec. The step resolves the transitive dependencies of the
-# module while @INC is still fully reachable. Those dependencies are
-# sockets, and whatever getprotobyname touches. The module stays
-# optional. It is the only cpan runtime dependency, and openhapd
-# keeps serving HomeKit without it. Thus an unguarded require would
-# turn a missing optional dependency into a startup failure. If a
-# future change introduces another lazily-loaded module, it belongs
-# here.
+# Step 1: load every module that would otherwise load later.
+#
+# FuguLib::Crypto opens a shared object for each Crypt::* library. The
+# promise set below has no prot_exec, so a load after the pledge kills
+# the process. The warm-up must therefore happen here, and it must not
+# be optional: a daemon that cannot sign cannot pair.
+FuguLib::Crypto->preload;
+#
+# Net::MQTT::Simple is pure Perl, so this is not about prot_exec. The
+# step resolves the transitive dependencies of the module while @INC
+# is still fully reachable. Those dependencies are sockets, and
+# whatever getprotobyname touches. The module stays optional: it is
+# the only cpan runtime dependency, and openhapd keeps serving
+# HomeKit without it. Thus an unguarded require would turn a missing
+# optional dependency into a startup failure.
 eval { require Net::MQTT::Simple; 1 };
 
-# Steps 2 and 3: OpenHAP::Daemon->unveil_paths assembles the
-# inventory with its required/optional dispositions. Storage's
-# make_path already created $db_path through HAP->new. Thus a $db_path
-# that is still missing is a hard failure. That failure is correct.
+# Steps 2 and 3: the inventory lives here, beside the pledge policy it
+# belongs with. Each entry is required or optional, and the difference
+# matters: a required entry that is absent means a broken install and
+# the daemon must fail and name the path, while an optional entry can
+# be legitimately absent on a working system. A fresh install has no
+# configuration file; the -f mode never creates the log file; mdnsd
+# does not always run; the resolver files matter only when mqtt_host
+# is a name. A wrong disposition turns a configuration that starts
+# today into a startup failure.
+#
+# Storage's make_path already created $db_path through HAP->new. Thus
+# a $db_path that is still missing is a hard failure, and correctly so.
 FuguLib::Sandbox->unveil(
-	paths => [
-		OpenHAP::Daemon->unveil_paths(
-			db_path     => $db_path,
-			config_file => $config_file,
-			script_lib  => "$RealBin/../lib",
-		)
-	],
+	paths   => [ unveil_paths() ],
 	on_skip => sub ($path) {
-		$OpenHAP::logger->debug( 'unveil: optional %s absent, skipped',
-			$path );
+		$log->debug( 'unveil: optional %s absent, skipped', $path );
 	},
 );
 FuguLib::Sandbox->unveil_lock;
@@ -232,37 +243,72 @@ FuguLib::Sandbox->unveil_lock;
 #		after this point (spec/MDNS-Control.md §8)
 #
 # proc, exec and prot_exec are deliberately absent. The daemon spawns
-# nothing. A compile-time use loads every shared object before this
-# line.
+# nothing, and step 1 loaded every shared object before this line.
 my $promises = 'stdio rpath wpath cpath fattr flock inet dns unix';
 FuguLib::Sandbox->pledge( promises => $promises );
-$OpenHAP::logger->info( 'Pledged: %s', $promises )
+$log->info( 'Pledged: %s', $promises )
     if FuguLib::Sandbox->is_supported;
 
 if ( !$hap->is_paired() ) {
-	$OpenHAP::logger->notice( 'Not paired - use Home app with PIN: %s',
-		$hap_pin );
+	$log->notice( 'Not paired - use Home app with PIN: %s', $hap_pin );
 }
 
 # Set up the signal handlers for a graceful shutdown
 my $sig = FuguLib::Signal->new;
 $sig->add_cleanup(
 	sub ($signal) {
-		$OpenHAP::logger->info(
-			'Received signal %s, shutting down gracefully',
+		$log->info( 'Received signal %s, shutting down gracefully',
 			$signal );
 
 		# A close of the mdnsd control socket withdraws the
 		# advertisement
 		$mdns->withdraw;
-
-		$OpenHAP::logger = undef;    # Close the logger
 	} );
 $sig->setup_graceful_exit( 'INT', 'TERM', 'HUP' );
 
 # Run the server
-$OpenHAP::logger->info('Starting OpenHAP server');
+$log->info('Starting OpenHAP server');
 $hap->run();
+
+# unveil_paths():
+#	The filesystem view of the daemon, as an ordered list of
+#	unveil entries. The order is load-bearing: unveil(2) replaces
+#	the permissions of a path rather than merging them, so a
+#	parent must come before its children.
+sub unveil_paths()
+{
+	my @paths = ( [ $db_path, 'rwc' ] );
+
+	# Unveil the perl library tree read-only for the lazy require
+	# on the MQTT reconnect path. The set comes from
+	# FuguLib::Sandbox, which reads %Config and not the live @INC.
+	# Two reasons: this script prepends $RealBin/../lib, which on
+	# an installed layout is /usr/local/lib and holds every
+	# third-party library on the system; and FuguLib::MQTT unshifts
+	# a directory onto @INC at connect time, so a derived set would
+	# depend on whether the startup connect has run.
+	my @perl_dirs = FuguLib::Sandbox->perl_lib_dirs;
+
+	# Add the checkout's own lib directory, but only when it really
+	# is a checkout. The installed layout must not pick up
+	# /usr/local/lib here.
+	my $script_lib = "$RealBin/../lib";
+	push @perl_dirs, $script_lib if -d "$script_lib/OpenHAP";
+
+	my %seen;
+	push @paths, map { [ $_, 'r' ] } grep { !$seen{$_}++ } @perl_dirs;
+
+	push @paths,
+	    [ $config_file, 'r', { optional => 1 } ],
+	    [ '/var/log/openhapd.log', 'w',  { optional => 1 } ],
+	    [ '/var/run/mdnsd.sock',   'rw', { optional => 1 } ];
+
+	# The resolver files, the service tables, the time zone and the
+	# random device are the same for every daemon
+	push @paths, FuguLib::Sandbox->system_paths;
+
+	return @paths;
+}
 
 sub usage()
 {

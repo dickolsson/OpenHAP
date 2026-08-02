@@ -9,8 +9,8 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new( mode => 'quiet', ident => 'test' );
+use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -27,7 +27,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::HAP');
-use_ok('OpenHAP::HTTP');
+use_ok('FuguLib::HTTP');
 use_ok('OpenHAP::Session');
 use_ok('OpenHAP::Pairing');
 use_ok('OpenHAP::Test::Controller');
@@ -60,7 +60,7 @@ sub make_pair ( %controller_args )
 		    ? $session->decrypt($request_bytes)
 		    : $request_bytes;
 		return unless defined $plain;
-		my $request  = OpenHAP::HTTP::parse($plain);
+		my $request  = FuguLib::HTTP::parse_request($plain);
 		my $response = $hap->_dispatch( $request, $session );
 		return $was_encrypted
 		    ? $session->encrypt($response)
@@ -122,7 +122,7 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 	# The accessory refuses a second controller on a fresh connection
 	my $session2   = OpenHAP::Session->new( socket => 'in-process-2' );
 	my $transport2 = sub ($request_bytes) {
-		my $request = OpenHAP::HTTP::parse($request_bytes);
+		my $request = FuguLib::HTTP::parse_request($request_bytes);
 		return $hap->_dispatch( $request, $session2 );
 	};
 	my $second = OpenHAP::Test::Controller->new(

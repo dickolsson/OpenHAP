@@ -4,15 +4,15 @@
 #
 # The tests script the controller side of pair-setup and pair-verify
 # inline from the spec formulas. They use Math::BigInt for SRP and
-# OpenHAP::Crypto primitives for the rest. The controller side is
+# FuguLib::Crypto primitives for the rest. The controller side is
 # independent of the accessory-side modules under test.
 
 use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new( mode => 'quiet', ident => 'test' );
+use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -30,7 +30,7 @@ BEGIN {
 
 use Digest::SHA qw(sha512);
 
-use_ok('OpenHAP::Crypto');
+use_ok('FuguLib::Crypto');
 use_ok('OpenHAP::SRP');
 use_ok('OpenHAP::Pairing');
 use_ok('OpenHAP::Session');
@@ -50,7 +50,7 @@ sub make_pairing ( $storage = undef )
 {
 	$storage //= OpenHAP::Storage->new(
 		db_path => tempdir( CLEANUP => 1 ) );
-	my ( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
+	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
 	my $pairing = OpenHAP::Pairing->new(
 		pin            => $PIN,
 		storage        => $storage,
@@ -82,10 +82,10 @@ sub client_srp ( $salt, $B_bytes, $pin )
 	my $I = 'Pair-Setup';
 	( my $P = $pin ) =~ s/-//g;
 
-	my $N = b2i($OpenHAP::Crypto::N_3072);
+	my $N = b2i($OpenHAP::SRP::N_3072);
 	my $g = Math::BigInt->new(5);
 
-	my $a = b2i( OpenHAP::Crypto::generate_random_bytes(32) );
+	my $a = b2i( FuguLib::Crypto->random_bytes(32) );
 	my $A = $g->copy->bmodpow( $a, $N );
 
 	my $u = b2i( sha512( i2b( $A, 384 ) . i2b( b2i($B_bytes), 384 ) ) );
@@ -140,7 +140,7 @@ sub run_m1_to_m4 ( $pairing, $pin )
 subtest '[HAP-Pairing §1] HKDF-SHA-512 known-answer vector' => sub {
 
 	# RFC 5869 test case 1 parameters with SHA-512
-	my $okm = OpenHAP::Crypto::hkdf_sha512(
+	my $okm = FuguLib::Crypto->hkdf_sha512(
 		"\x0b" x 22,
 		pack( 'H*', '000102030405060708090a0b0c' ),
 		pack( 'H*', 'f0f1f2f3f4f5f6f7f8f9' ), 42
@@ -163,15 +163,15 @@ subtest '[HAP-Pairing §1] Ed25519 RFC 8032 known-answer vector' => sub {
 		    . '5fb8821590a33bacc61e39701cf9b46b'
 		    . 'd25bf5f0595bbe24655141438e7a100b' );
 
-	ok( OpenHAP::Crypto::verify_ed25519( $signature, '', $public ),
+	ok( FuguLib::Crypto->ed25519_verify( $signature, '', $public ),
 		'RFC 8032 TEST 1 signature verifies' );
-	ok( !OpenHAP::Crypto::verify_ed25519( $signature, 'x', $public ),
+	ok( !FuguLib::Crypto->ed25519_verify( $signature, 'x', $public ),
 		'RFC 8032 signature fails for different message' );
 
 	# Sign/verify round-trip with a generated keypair
-	my ( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
-	my $sig = OpenHAP::Crypto::sign_ed25519( 'message', $ltsk, $ltpk );
-	ok( OpenHAP::Crypto::verify_ed25519( $sig, 'message', $ltpk ),
+	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
+	my $sig = FuguLib::Crypto->ed25519_sign( 'message', $ltsk, $ltpk );
+	ok( FuguLib::Crypto->ed25519_verify( $sig, 'message', $ltpk ),
 		'generated keypair round-trips' );
 };
 
@@ -198,14 +198,14 @@ subtest '[HAP-Pairing §1] X25519 RFC 7748 known-answer vector' => sub {
 		'RFC 7748 public key for b' );
 	is(
 		unpack( 'H*',
-			OpenHAP::Crypto::derive_shared_secret( $a, $b_pub ) ),
+			FuguLib::Crypto->x25519_shared_secret( $a, $b_pub ) ),
 		'4a5d9d5ba4ce2de1728e3bf480350f25'
 		    . 'e07e21c947d19e3376f09b3c1e161742',
 		'RFC 7748 shared secret'
 	);
 	is(
 		unpack( 'H*',
-			OpenHAP::Crypto::derive_shared_secret( $b, $a_pub ) ),
+			FuguLib::Crypto->x25519_shared_secret( $b, $a_pub ) ),
 		'4a5d9d5ba4ce2de1728e3bf480350f25'
 		    . 'e07e21c947d19e3376f09b3c1e161742',
 		'shared secret agrees from both sides'
@@ -233,10 +233,10 @@ subtest '[HAP-Pairing §2.2] SRP-6a group parameters' => sub {
 	    . 'BBE117577A615D6C770988C0BAD946E208E24FA074E5AB31'
 	    . '43DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF';
 
-	is( uc( unpack( 'H*', $OpenHAP::Crypto::N_3072 ) ),
+	is( uc( unpack( 'H*', $OpenHAP::SRP::N_3072 ) ),
 		$rfc5054_3072, 'N is the RFC 5054 3072-bit prime' );
-	is( length($OpenHAP::Crypto::N_3072), 384, 'N is 384 bytes' );
-	is( $OpenHAP::Crypto::g, 5, 'g is 5' );
+	is( length($OpenHAP::SRP::N_3072), 384, 'N is 384 bytes' );
+	is( $OpenHAP::SRP::g, 5, 'g is 5' );
 
 	my $srp = OpenHAP::SRP->new( password => $PIN );
 	is( $srp->{username}, 'Pair-Setup', 'I is "Pair-Setup"' );
@@ -249,7 +249,7 @@ subtest '[HAP-Pairing §2.2] SRP-6a group parameters' => sub {
 	my $x    = b2i( sha512( $salt . sha512('Pair-Setup:12345678') ) );
 	my $expected_v =
 	    Math::BigInt->new(5)
-	    ->bmodpow( $x, b2i($OpenHAP::Crypto::N_3072) );
+	    ->bmodpow( $x, b2i($OpenHAP::SRP::N_3072) );
 	ok( $v == $expected_v, 'verifier v = g^x mod N' );
 };
 
@@ -409,21 +409,21 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 	ok( !defined error_code($m4), 'SRP phase succeeded' );
 
 	# [HAP-Pairing §4/Pair Setup Encryption] session encryption key
-	my $encrypt_key = OpenHAP::Crypto::hkdf_sha512( $K,
+	my $encrypt_key = FuguLib::Crypto->hkdf_sha512( $K,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
 	# Controller long-term identity and signature
 	# [HAP-Pairing §4/Controller Signature]
 	my ( $ios_ltsk, $ios_ltpk ) =
-	    OpenHAP::Crypto::generate_keypair_ed25519();
+	    FuguLib::Crypto->ed25519_keypair;
 	my $ios_id = 'ios-controller-1';
-	my $ios_x  = OpenHAP::Crypto::hkdf_sha512(
+	my $ios_x  = FuguLib::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Controller-Sign-Salt',
 		'Pair-Setup-Controller-Sign-Info', 32
 	);
 	my $ios_signature =
-	    OpenHAP::Crypto::sign_ed25519( $ios_x . $ios_id . $ios_ltpk,
+	    FuguLib::Crypto->ed25519_sign( $ios_x . $ios_id . $ios_ltpk,
 		$ios_ltsk, $ios_ltpk );
 
 	my $inner = OpenHAP::TLV::encode(
@@ -436,7 +436,7 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 	is( unpack( 'H*', pack('x[4]') . 'PS-Msg05' ),
 		'0000000050532d4d73673035', 'M5 nonce is PS-Msg05' );
 	my ( $encrypted, $tag ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $encrypt_key,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg05', $inner );
 
 	my $m5 = OpenHAP::TLV::encode(
@@ -468,7 +468,7 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 	    tlv_field( $m6, OpenHAP::Pairing::kTLVType_EncryptedData() );
 	my $m6_tag = substr( $m6_data, -16, 16, '' );
 	my $m6_plain =
-	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $encrypt_key,
+	    FuguLib::Crypto->chacha20poly1305_decrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg06', $m6_data, $m6_tag );
 	ok( defined $m6_plain, 'M6 sub-TLV decrypts with PS-Msg06 nonce' );
 
@@ -486,13 +486,13 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 	like( $acc_id, qr/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/,
 		'accessory pairing ID is MAC-like' );
 
-	my $acc_x = OpenHAP::Crypto::hkdf_sha512(
+	my $acc_x = FuguLib::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
 	);
 	ok(
-		OpenHAP::Crypto::verify_ed25519(
+		FuguLib::Crypto->ed25519_verify(
 			$acc_sig, $acc_x . $acc_id . $acc_ltpk, $acc_ltpk
 		),
 		'accessory signature verifies'
@@ -506,7 +506,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	# Pair first so the accessory knows the controller LTPK
 	my ( $pairing, $storage, $accessory_ltpk ) = make_pairing();
 	my ( $ios_ltsk, $ios_ltpk ) =
-	    OpenHAP::Crypto::generate_keypair_ed25519();
+	    FuguLib::Crypto->ed25519_keypair;
 	my $ios_id = 'ios-controller-1';
 	$storage->save_pairing( $ios_id, $ios_ltpk, 1 );
 
@@ -514,7 +514,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 
 	# [HAP-Pairing §3.2] M1: controller ephemeral public key
 	my ( $ios_secret, $ios_public ) =
-	    OpenHAP::Crypto::generate_keypair_x25519();
+	    FuguLib::Crypto->x25519_keypair;
 	my $m1 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_PublicKey(), $ios_public,
@@ -531,17 +531,17 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 		'M2 carries 32-byte Curve25519 public key' );
 
 	my $shared =
-	    OpenHAP::Crypto::derive_shared_secret( $ios_secret,
+	    FuguLib::Crypto->x25519_shared_secret( $ios_secret,
 		$acc_public );
 
 	# [HAP-Pairing §4/Pair Verify Encryption] + [HAP-Pairing §5/PV M2]
-	my $pv_key = OpenHAP::Crypto::hkdf_sha512( $shared,
+	my $pv_key = FuguLib::Crypto->hkdf_sha512( $shared,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 	my $m2_data =
 	    tlv_field( $m2, OpenHAP::Pairing::kTLVType_EncryptedData() );
 	my $m2_tag = substr( $m2_data, -16, 16, '' );
 	my $m2_plain =
-	    OpenHAP::Crypto::chacha20_poly1305_decrypt( $pv_key,
+	    FuguLib::Crypto->chacha20poly1305_decrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg02', $m2_data, $m2_tag );
 	ok( defined $m2_plain, 'M2 sub-TLV decrypts with PV-Msg02 nonce' );
 
@@ -549,7 +549,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	my $acc_id = $m2_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
 	my $acc_sig = $m2_inner{ OpenHAP::Pairing::kTLVType_Signature() };
 	ok(
-		OpenHAP::Crypto::verify_ed25519(
+		FuguLib::Crypto->ed25519_verify(
 			$acc_sig, $acc_public . $acc_id . $ios_public,
 			$accessory_ltpk
 		),
@@ -557,7 +557,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	);
 
 	# [HAP-Pairing §3.4] M3: controller proof
-	my $ios_sig = OpenHAP::Crypto::sign_ed25519(
+	my $ios_sig = FuguLib::Crypto->ed25519_sign(
 		$ios_public . $ios_id . $acc_public,
 		$ios_ltsk, $ios_ltpk );
 	my $m3_inner = OpenHAP::TLV::encode(
@@ -565,7 +565,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 		OpenHAP::Pairing::kTLVType_Signature(),  $ios_sig,
 	);
 	my ( $m3_encrypted, $m3_tag ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $pv_key,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg03', $m3_inner );
 	my $m3 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
@@ -586,11 +586,11 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	# The accessory encrypts with the Read key and decrypts with the
 	# Write key
 	my $read_key =
-	    OpenHAP::Crypto::hkdf_sha512( $shared, 'Control-Salt',
+	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	my $frame = $session->encrypt('event data');
 	my $aad   = substr( $frame, 0, 2 );
-	my $plain = OpenHAP::Crypto::chacha20_poly1305_decrypt(
+	my $plain = FuguLib::Crypto->chacha20poly1305_decrypt(
 		$read_key,
 		pack( 'x[4]Q<', 0 ),
 		substr( $frame, 2, -16 ),
@@ -607,11 +607,11 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	my $acc_public2 =
 	    tlv_field( $m2_2, OpenHAP::Pairing::kTLVType_PublicKey() );
 	my $shared2 =
-	    OpenHAP::Crypto::derive_shared_secret( $ios_secret,
+	    FuguLib::Crypto->x25519_shared_secret( $ios_secret,
 		$acc_public2 );
-	my $pv_key2 = OpenHAP::Crypto::hkdf_sha512( $shared2,
+	my $pv_key2 = FuguLib::Crypto->hkdf_sha512( $shared2,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
-	my $ios_sig2 = OpenHAP::Crypto::sign_ed25519(
+	my $ios_sig2 = FuguLib::Crypto->ed25519_sign(
 		$ios_public . $ios_id . $acc_public2,
 		$ios_ltsk, $ios_ltpk );
 	my $m3_inner2 = OpenHAP::TLV::encode(
@@ -619,7 +619,7 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 		OpenHAP::Pairing::kTLVType_Signature(),  $ios_sig2,
 	);
 	my ( $enc2, $tag2 ) =
-	    OpenHAP::Crypto::chacha20_poly1305_encrypt( $pv_key2,
+	    FuguLib::Crypto->chacha20poly1305_encrypt( $pv_key2,
 		pack('x[4]') . 'PV-Msg03', $m3_inner2 );
 	my $m3_2 = OpenHAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
@@ -680,7 +680,7 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 sub run_failed_attempt ($storage)
 {
 	OpenHAP::Pairing->clear_pairing_state();
-	my ( $ltsk, $ltpk ) = OpenHAP::Crypto::generate_keypair_ed25519();
+	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
 	my $pairing = OpenHAP::Pairing->new(
 		pin            => $PIN,
 		storage        => $storage,

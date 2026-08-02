@@ -8,8 +8,8 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new( mode => 'quiet', ident => 'test' );
+use lib "$RealBin/../lib";
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -26,7 +26,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::HAP');
-use_ok('OpenHAP::HTTP');
+use_ok('FuguLib::HTTP');
 use_ok('OpenHAP::Session');
 use_ok('OpenHAP::Pairing');
 use_ok('OpenHAP::Test::Controller');
@@ -62,7 +62,7 @@ sub make_verified_pair ()
 		    ? $session->decrypt($request_bytes)
 		    : $request_bytes;
 		return unless defined $plain;
-		my $request  = OpenHAP::HTTP::parse($plain);
+		my $request  = FuguLib::HTTP::parse_request($plain);
 		my $response = $hap->_dispatch( $request, $session );
 		$response = $session->encrypt($response) if $was_encrypted;
 		push @wire,

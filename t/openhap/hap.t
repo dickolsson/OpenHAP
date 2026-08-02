@@ -6,8 +6,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -22,7 +21,7 @@ BEGIN {
 
 use_ok('OpenHAP::HAP');
 use_ok('OpenHAP::Storage');
-use_ok('OpenHAP::Crypto');
+use_ok('FuguLib::Crypto');
 use_ok('OpenHAP::Pairing');
 
 # Test HAP object creation

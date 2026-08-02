@@ -3,8 +3,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
 
 BEGIN {
     eval {
@@ -16,7 +15,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::Session');
-use_ok('OpenHAP::Crypto');
+use_ok('FuguLib::Crypto');
 
 # Test session creation
 {
@@ -31,8 +30,8 @@ use_ok('OpenHAP::Crypto');
 {
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
-    my $encrypt_key = OpenHAP::Crypto::generate_random_bytes(32);
-    my $decrypt_key = OpenHAP::Crypto::generate_random_bytes(32);
+    my $encrypt_key = FuguLib::Crypto->random_bytes(32);
+    my $decrypt_key = FuguLib::Crypto->random_bytes(32);
     
     $session->set_encryption($encrypt_key, $decrypt_key);
     
@@ -58,7 +57,7 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
-    my $key = OpenHAP::Crypto::generate_random_bytes(32);
+    my $key = FuguLib::Crypto->random_bytes(32);
     $session->set_encryption($key, $key);
     
     my $plaintext = "Test message";
@@ -84,7 +83,7 @@ SKIP: {
     skip 'ChaCha20Poly1305 not available', 2 if $@;
     
     my $session = OpenHAP::Session->new(socket => 'dummy');
-    my $key = OpenHAP::Crypto::generate_random_bytes(32);
+    my $key = FuguLib::Crypto->random_bytes(32);
     $session->set_encryption($key, $key);
     
     # Data larger than chunk size (1024 bytes)

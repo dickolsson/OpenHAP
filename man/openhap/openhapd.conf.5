@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: December 26 2025 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt OPENHAPD.CONF 5
 .Os
 .Sh NAME
@@ -27,10 +27,46 @@ is the configuration file for the
 daemon.
 The file uses a simple key-value format with device blocks that
 define HomeKit accessories.
+.Sh SYNTAX
+A setting is a key and a value on one line.
+Both
+.Dq Ic key Ar value
+and
+.Dq Ic key No = Ar value
+parse.
+The two forms mean the same thing, thus a file can use either.
 .Pp
-A line that starts with
+Leading and trailing whitespace does not matter.
+A value in double quotes loses the quotes, thus a value can hold a
+space:
+.Bd -literal -offset indent
+hap_name = "Living Room Bridge"
+hap_port 51827
+.Ed
+.Pp
+A
 .Sq #
-is a comment, and the daemon ignores it.
+starts a comment that runs to the end of the line.
+The grammar has no escape for it, thus no value can hold a
+.Sq # .
+An empty line does nothing.
+.Pp
+A block is a type, one or more arguments, and an opening brace.
+The settings of the block follow, and a
+.Sq }
+on its own line ends it.
+A block cannot hold a block.
+.Pp
+The daemon refuses to start on a line that it cannot parse.
+It reports the file, the line number, and the reason:
+.Bd -literal -offset indent
+openhapd: /etc/openhapd.conf:14: cannot parse: hap_prt 51827
+.Ed
+.Pp
+The daemon never skips a line it did not understand.
+A typo that a parser ignores is a setting that does not apply, and the
+operator has no way to see it.
+Fix the line and start the daemon again.
 .Sh GLOBAL OPTIONS
 These global options are available:
 .Bl -tag -width Ds

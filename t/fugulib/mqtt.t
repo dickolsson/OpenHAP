@@ -2,28 +2,28 @@
 use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
+use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-$OpenHAP::logger = FuguLib::Log->new(mode => 'quiet', ident => 'test');
+use FuguLib::TestLog;
 
-use_ok('OpenHAP::MQTT');
+use_ok('FuguLib::MQTT');
 
 # Test MQTT client creation
 {
-    my $mqtt = OpenHAP::MQTT->new(
+    my $mqtt = FuguLib::MQTT->new(
         host => '192.168.1.100',
         port => 1883,
     );
     
     ok(defined $mqtt, 'MQTT client created');
-    isa_ok($mqtt, 'OpenHAP::MQTT');
+    isa_ok($mqtt, 'FuguLib::MQTT');
     is($mqtt->{host}, '192.168.1.100', 'Host set correctly');
     is($mqtt->{port}, 1883, 'Port set correctly');
 }
 
 # Test default values
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     is($mqtt->{host}, '127.0.0.1', 'Default host is localhost');
     is($mqtt->{port}, 1883, 'Default port is 1883');
@@ -32,7 +32,7 @@ use_ok('OpenHAP::MQTT');
 
 # Test with credentials
 {
-    my $mqtt = OpenHAP::MQTT->new(
+    my $mqtt = FuguLib::MQTT->new(
         host => 'broker.example.com',
         port => 8883,
         username => 'testuser',
@@ -45,7 +45,7 @@ use_ok('OpenHAP::MQTT');
 
 # Test subscription storage
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     my $callback_called = 0;
     my $callback = sub { $callback_called = 1 };
@@ -58,7 +58,7 @@ use_ok('OpenHAP::MQTT');
 
 # Test multiple subscriptions
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     $mqtt->subscribe('topic1', sub { });
     $mqtt->subscribe('topic2', sub { });
@@ -69,7 +69,7 @@ use_ok('OpenHAP::MQTT');
 
 # Test is_connected
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     ok(!$mqtt->is_connected(), 'Not connected initially');
     
@@ -79,7 +79,7 @@ use_ok('OpenHAP::MQTT');
 
 # Test disconnect
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     $mqtt->{connected} = 1;
     $mqtt->{client} = 'dummy';
@@ -94,7 +94,7 @@ use_ok('OpenHAP::MQTT');
 SKIP: {
     skip 'Net::MQTT::Simple may be installed', 1 if eval { require Net::MQTT::Simple; 1 };
     
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     my $result = $mqtt->mqtt_connect();
     
     ok(!$result, 'Connect fails without Net::MQTT::Simple');
@@ -102,7 +102,7 @@ SKIP: {
 
 # Test publish when not connected
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     # The publish must not die. It returns early.
     eval {
@@ -113,7 +113,7 @@ SKIP: {
 
 # Test topic matching: exact match
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     ok($mqtt->_topic_matches('stat/device/POWER', 'stat/device/POWER'),
         'Exact topic match');
@@ -123,7 +123,7 @@ SKIP: {
 
 # Test topic matching: single level wildcard (+)
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     ok($mqtt->_topic_matches('stat/+/POWER', 'stat/device1/POWER'),
         'Single wildcard matches');
@@ -137,7 +137,7 @@ SKIP: {
 
 # Test topic matching: multi level wildcard (#)
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     ok($mqtt->_topic_matches('tele/#', 'tele/device/SENSOR'),
         'Multi wildcard matches');
@@ -151,7 +151,7 @@ SKIP: {
 
 # Test topic matching: combined wildcards
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     ok($mqtt->_topic_matches('+/+/SENSOR', 'tele/device/SENSOR'),
         'Multiple single wildcards');
@@ -163,7 +163,7 @@ SKIP: {
 
 # Test unsubscribe
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     $mqtt->subscribe('topic1', sub { });
     $mqtt->subscribe('topic2', sub { });
@@ -179,7 +179,7 @@ SKIP: {
 
 # Test subscriptions accessor
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     $mqtt->subscribe('topic1', sub { });
     $mqtt->subscribe('topic2', sub { });
@@ -190,7 +190,7 @@ SKIP: {
 
 # Test message dispatch
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     my $received_topic;
     my $received_payload;
@@ -208,7 +208,7 @@ SKIP: {
 
 # Test message dispatch with wildcard
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     my @received;
     $mqtt->subscribe('stat/+/POWER', sub($topic, $payload) {
@@ -227,7 +227,7 @@ SKIP: {
 
 # Test tick when not connected
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
 
     my $result = $mqtt->tick();
     is($result, 0, 'tick returns 0 when not connected');
@@ -250,7 +250,7 @@ SKIP: {
 
     package main;
 
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     my $stub = StubMQTTClient->new;
     $mqtt->{client}    = $stub;
     $mqtt->{connected} = 1;
@@ -279,7 +279,7 @@ SKIP: {
 
 # Test disconnect clears pending messages
 {
-    my $mqtt = OpenHAP::MQTT->new();
+    my $mqtt = FuguLib::MQTT->new();
     
     push @{$mqtt->{pending_messages}}, ['topic', 'payload'];
     $mqtt->disconnect();
@@ -291,7 +291,7 @@ SKIP: {
 SKIP: {
     skip 'Net::MQTT::Simple not available', 2 unless eval { require Net::MQTT::Simple; 1 };
     
-    my $mqtt = OpenHAP::MQTT->new(
+    my $mqtt = FuguLib::MQTT->new(
         host => '192.0.2.1',  # TEST-NET-1, always unreachable
         port => 9999,
     );

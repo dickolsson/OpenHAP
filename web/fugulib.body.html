@@ -107,6 +107,20 @@ the global options and each command's own options, and holds the exit
 codes that every tool shares.  Command data goes to stdout and diagnostics
 to the logger, so a pipeline that reads the tool keeps working.</dd>
 
+<dt>FuguLib::HTTP</dt>
+<dd>The module is one HTTP/1.1 codec for both ends of a connection: a
+server parses requests and builds responses, a client does the reverse, and
+neither can drift from the other.  It also answers the framing question
+that a stream socket forces &mdash; how much of this buffer is one message
+&mdash; so a split request is not mangled and a pipelined one is not
+dropped.</dd>
+
+<dt>FuguLib::MQTT</dt>
+<dd>The module is a subscribing MQTT client for a daemon with one process
+and one event loop.  It never blocks the caller: a tick drains what arrived
+and returns.  The library underneath loads at connect time, so a daemon
+whose broker is optional still starts without it.</dd>
+
 <dt>FuguLib::JSONSocket</dt>
 <dd>The module is a client for one JSON object for each line over a UNIX
 socket, with a wall-clock deadline on every read.  QEMU speaks this on its

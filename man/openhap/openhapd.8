@@ -127,18 +127,23 @@ gives the debug messages, and
 adds trace messages.
 .El
 .Sh FILES
-.Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
+.Bl -tag -width "/var/db/openhapd/accessory_ltskXX" -compact
 .It Pa /etc/openhapd.conf
 The default configuration file.
 .It Pa /var/db/openhapd/
 The state directory that holds the pairing database and the
 cryptographic keys.
-.It Pa /var/db/openhapd/pairings
-The database of paired HomeKit controllers.
-.It Pa /var/db/openhapd/ltsk
-The long-term secret key (Ed25519 private key).
-.It Pa /var/db/openhapd/ltpk
-The long-term public key (Ed25519 public key).
+.It Pa /var/db/openhapd/pairings.db
+The database of paired HomeKit controllers, mode 0600.
+.It Pa /var/db/openhapd/accessory_ltsk
+The long-term secret key (Ed25519 private key), mode 0600.
+.It Pa /var/db/openhapd/accessory_ltpk
+The long-term public key (Ed25519 public key), mode 0644.
+.It Pa /var/db/openhapd/state.json
+The configuration number, the configuration digest, and the counter of
+failed pairing attempts, mode 0600.
+An older installation kept each of these in a file of its own.
+The daemon reads those files one time and folds them into this one.
 .It Pa /var/run/openhapd.pid
 The process ID file.
 The daemon takes it while it is still root, and holds the lock for its
@@ -245,6 +250,21 @@ The pairing with a new HomeKit controller was successful.
 .It Dq Secure session established
 The daemon started an encrypted session with a paired controller.
 .El
+.Pp
+A configuration file that does not parse is a fatal error.
+.Nm
+writes the file, the line number, and the reason to
+.Em stderr ,
+and it exits 1 before it opens the log:
+.Bd -literal -offset indent
+/etc/openhapd.conf:14: cannot parse: hap_prt 51827
+.Ed
+.Pp
+The daemon does not fall back to the defaults, because the operator
+did not choose them.
+Use
+.Fl n
+to check a file before you restart the daemon.
 .Sh SEE ALSO
 .Xr syslog 3 ,
 .Xr openhapd.conf 5 ,

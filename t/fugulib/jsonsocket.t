@@ -193,17 +193,31 @@ subtest 'a read has a wall-clock deadline' => sub {
 };
 
 subtest 'an end of file is reported, not a hang' => sub {
-	my ( $path, $pid ) = start_peer( sub ($sock) { close $sock; return } );
+
+	# The peer holds the listener while it drops the connection, so
+	# the client always gets as far as a connected socket
+	my ( $path, $pid ) = start_peer(
+		sub ($sock) {
+			close $sock;
+			sleep 2;
+			return;
+		} );
 
 	my $client = FuguLib::JSONSocket->new( path => $path, timeout => 5 );
-	$client->connect;
+	ok( $client->connect, 'the client connected' );
 
 	is( $client->request( { execute => 'x' } ),
 		undef, 'a closed peer gives undef' );
+
+	# The write can fail with EPIPE, or it can land in the socket
+	# buffer and the read then sees the end of the stream. Both are
+	# the peer going away, and either wording is correct.
 	like( $client->error, qr/closed the connection|write/,
-		'and the reason names the close' );
+		'and the reason names the close' )
+	    or diag( 'error was: ' . ( $client->error // 'undef' ) );
 	ok( !$client->is_connected, 'the client dropped the socket' );
 
+	kill 'TERM', $pid;
 	waitpid $pid, 0;
 };
 

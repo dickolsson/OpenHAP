@@ -19,10 +19,90 @@ use v5.36;
 
 package OpenHAP::DeviceLoader;
 
-use OpenHAP::Tasmota::Thermostat;
-use OpenHAP::Tasmota::Heater;
-use OpenHAP::Tasmota::Sensor;
-use OpenHAP::Tasmota::Lightbulb;
+use FuguLib::Log;
+
+# OpenHAP::DeviceLoader - turn the device blocks of the configuration
+# into accessories on the bridge.
+#
+# One table describes every device type. Each entry says what the type
+# is called in a log line, which class builds it, and what that class
+# needs beyond the fields every device has. Adding a type is one
+# entry, and no second place to keep true.
+#
+# The class of the entry does the work of building. The loader only
+# decides which one, validates the fields the configuration must
+# carry, and subscribes the result to MQTT.
+#
+# A device class loads when the configuration asks for it, not at
+# compile time. The classes drag JSON::XS and the whole accessory
+# model behind them, and a tool that only reads the device blocks
+# needs none of it. The daemon builds its devices before it pledges,
+# thus the late load costs it nothing.
+my %DEVICE = (
+	'tasmota/thermostat' => {
+		name  => 'thermostat',
+		class => 'OpenHAP::Tasmota::Thermostat',
+		args  => sub ($device) {
+			return (
+				sensor_type  => $device->{sensor_type},
+				sensor_index => $device->{sensor_index},
+			);
+		},
+	},
+	'tasmota/heater' => {
+		name  => 'switch',
+		class => 'OpenHAP::Tasmota::Heater',
+	},
+	'tasmota/switch' => {
+		name  => 'switch',
+		class => 'OpenHAP::Tasmota::Heater',
+	},
+	'tasmota/sensor' => {
+		name  => 'sensor',
+		class => 'OpenHAP::Tasmota::Sensor',
+		args  => sub ($device) {
+			return (
+				sensor_type  => $device->{sensor_type},
+				sensor_index => $device->{sensor_index},
+				has_humidity => $device->{has_humidity} // 0,
+			);
+		},
+	},
+	'tasmota/lightbulb' => {
+		name  => 'lightbulb',
+		class => 'OpenHAP::Tasmota::Lightbulb',
+		args  => sub ($) {
+			return ( capabilities =>
+				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() );
+		},
+	},
+	'tasmota/dimmer' => {
+		name  => 'dimmer',
+		class => 'OpenHAP::Tasmota::Lightbulb',
+		args  => sub ($) {
+			return ( capabilities =>
+				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() );
+		},
+	},
+	'tasmota/rgblight' => {
+		name  => 'rgb light',
+		class => 'OpenHAP::Tasmota::Lightbulb',
+		args  => sub ($) {
+			return ( capabilities =>
+				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() |
+				    OpenHAP::Tasmota::Lightbulb::CAP_COLOR() );
+		},
+	},
+	'tasmota/ctlight' => {
+		name  => 'ct light',
+		class => 'OpenHAP::Tasmota::Lightbulb',
+		args  => sub ($) {
+			return ( capabilities =>
+				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() |
+				    OpenHAP::Tasmota::Lightbulb::CAP_CT() );
+		},
+	},
+);
 
 # $class->new():
 #	Create a new device loader instance.
@@ -39,8 +119,8 @@ sub new ($class)
 #	HAP bridge. The method returns the number of loaded devices.
 sub load_devices ( $self, $config, $hap, $mqtt )
 {
-	my @devices = $config->get_devices();
-	$OpenHAP::logger->debug( 'Loading %d device(s) from configuration',
+	my @devices = $self->devices($config);
+	FuguLib::Log->default->debug( 'Loading %d device(s) from configuration',
 		scalar @devices );
 
 	my $loaded_count   = 0;
@@ -55,13 +135,13 @@ sub load_devices ( $self, $config, $hap, $mqtt )
 		push @{ $self->{devices} }, $accessory;
 		$loaded_count++;
 
-		$OpenHAP::logger->info(
+		FuguLib::Log->default->info(
 			'Added %s: %s (AID=%d)',
 			$self->_device_type_name($device),
 			$device->{name}, $accessory->{aid} );
 	}
 
-	$OpenHAP::logger->info( 'Loaded %d device(s), %d skipped',
+	FuguLib::Log->default->info( 'Loaded %d device(s), %d skipped',
 		$loaded_count, scalar(@devices) - $loaded_count );
 
 	return $loaded_count;
@@ -82,13 +162,13 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 	my $dev_type    = $device->{type}    // 'unknown';
 	my $dev_subtype = $device->{subtype} // 'unknown';
 
-	$OpenHAP::logger->debug(
+	FuguLib::Log->default->debug(
 		'Processing device: type=%s, subtype=%s, name=%s',
 		$dev_type, $dev_subtype, $device->{name} // '<unnamed>' );
 
 	# Validate the device type
 	unless ( $self->_is_supported_device( $dev_type, $dev_subtype ) ) {
-		$OpenHAP::logger->debug(
+		FuguLib::Log->default->debug(
 			'Skipping unsupported device type: %s/%s',
 			$dev_type, $dev_subtype );
 		return;
@@ -105,7 +185,7 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 			$dev_subtype );
 	};
 	if ($@) {
-		$OpenHAP::logger->error(
+		FuguLib::Log->default->error(
 			'Failed to create %s "%s": %s',
 			$self->_device_type_name($device),
 			$device->{name}, $@
@@ -118,7 +198,7 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 		$self->_subscribe_mqtt( $accessory, $device );
 	}
 	else {
-		$OpenHAP::logger->debug(
+		FuguLib::Log->default->debug(
 			'MQTT not connected, deferring subscription for "%s"',
 			$device->{name} );
 	}
@@ -130,15 +210,27 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 #	Check if the loader supports the device type.
 sub _is_supported_device ( $self, $type, $subtype )
 {
-	return 1 if $type eq 'tasmota' && $subtype eq 'thermostat';
-	return 1 if $type eq 'tasmota' && $subtype eq 'heater';
-	return 1 if $type eq 'tasmota' && $subtype eq 'switch';
-	return 1 if $type eq 'tasmota' && $subtype eq 'sensor';
-	return 1 if $type eq 'tasmota' && $subtype eq 'lightbulb';
-	return 1 if $type eq 'tasmota' && $subtype eq 'dimmer';
-	return 1 if $type eq 'tasmota' && $subtype eq 'rgblight';
-	return 1 if $type eq 'tasmota' && $subtype eq 'ctlight';
-	return;
+	return exists $DEVICE{"$type/$subtype"} ? 1 : undef;
+}
+
+# $class->devices($config):
+#	Return the device blocks of a FuguLib::Config as records with
+#	type, subtype, id and the settings of the block.
+sub devices ( $, $config )
+{
+	my @devices;
+	for my $block ( $config->blocks('device') ) {
+		my ( $type, $subtype, $id ) = @{ $block->{args} };
+		push @devices,
+		    {
+			%{ $block->{settings} },
+			type    => $type,
+			subtype => $subtype,
+			id      => $id,
+		    };
+	}
+
+	return @devices;
 }
 
 # $self->_validate_device($device):
@@ -147,19 +239,20 @@ sub _is_supported_device ( $self, $type, $subtype )
 sub _validate_device ( $self, $device )
 {
 	unless ( defined $device->{name} && $device->{name} ne '' ) {
-		$OpenHAP::logger->error('Device missing required field: name');
+		FuguLib::Log->default->error(
+			'Device missing required field: name');
 		return;
 	}
 
 	unless ( defined $device->{topic} && $device->{topic} ne '' ) {
-		$OpenHAP::logger->error(
+		FuguLib::Log->default->error(
 			'Device "%s" missing required field: topic',
 			$device->{name} );
 		return;
 	}
 
 	unless ( defined $device->{id} && $device->{id} ne '' ) {
-		$OpenHAP::logger->warning(
+		FuguLib::Log->default->warning(
 			'Device "%s" missing id field, using topic as serial',
 			$device->{name} );
 		$device->{id} = $device->{topic};
@@ -172,7 +265,15 @@ sub _validate_device ( $self, $device )
 #	Create the device object for the given type.
 sub _instantiate_device ( $self, $device, $mqtt, $type, $subtype )
 {
-	my %common_args = (
+	my $entry = $DEVICE{"$type/$subtype"}
+	    or die "Unsupported device type: $type/$subtype";
+
+	# The class loads here, not at compile time. require needs the
+	# path form of the name.
+	my $module = $entry->{class} =~ s{::}{/}gr;
+	require "$module.pm";
+
+	my %args = (
 		aid         => $self->{next_aid}++,
 		name        => $device->{name},
 		mqtt_topic  => $device->{topic},
@@ -180,51 +281,9 @@ sub _instantiate_device ( $self, $device, $mqtt, $type, $subtype )
 		serial      => $device->{id},
 		relay_index => $device->{relay_index} // 0,
 	);
+	%args = ( %args, $entry->{args}->($device) ) if $entry->{args};
 
-	if ( $type eq 'tasmota' ) {
-		if ( $subtype eq 'thermostat' ) {
-			return OpenHAP::Tasmota::Thermostat->new(
-				%common_args,
-				sensor_type  => $device->{sensor_type},
-				sensor_index => $device->{sensor_index},
-			);
-		}
-
-		if ( $subtype eq 'heater' || $subtype eq 'switch' ) {
-			return OpenHAP::Tasmota::Heater->new(%common_args);
-		}
-
-		if ( $subtype eq 'sensor' ) {
-			return OpenHAP::Tasmota::Sensor->new(
-				%common_args,
-				sensor_type  => $device->{sensor_type},
-				sensor_index => $device->{sensor_index},
-				has_humidity => $device->{has_humidity} // 0,
-			);
-		}
-
-		if ( $subtype eq 'lightbulb' || $subtype eq 'dimmer' ) {
-			return OpenHAP::Tasmota::Lightbulb->new( %common_args,
-				capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER, );
-		}
-
-		if ( $subtype eq 'rgblight' ) {
-			return OpenHAP::Tasmota::Lightbulb->new( %common_args,
-				capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER |
-				    OpenHAP::Tasmota::Lightbulb::CAP_COLOR, );
-		}
-
-		if ( $subtype eq 'ctlight' ) {
-			return OpenHAP::Tasmota::Lightbulb->new( %common_args,
-				capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER |
-				    OpenHAP::Tasmota::Lightbulb::CAP_CT, );
-		}
-	}
-
-	die "Unsupported device type: $type/$subtype";
+	return $entry->{class}->new(%args);
 }
 
 # $self->_subscribe_mqtt($accessory, $device):
@@ -233,12 +292,12 @@ sub _subscribe_mqtt ( $self, $accessory, $device )
 {
 	eval { $accessory->subscribe_mqtt(); };
 	if ($@) {
-		$OpenHAP::logger->error(
+		FuguLib::Log->default->error(
 			'Failed to subscribe MQTT for "%s": %s',
 			$device->{name}, $@ );
 	}
 	else {
-		$OpenHAP::logger->info( 'Subscribed to MQTT topic: %s',
+		FuguLib::Log->default->info( 'Subscribed to MQTT topic: %s',
 			$device->{topic} );
 	}
 }
@@ -250,15 +309,9 @@ sub _device_type_name ( $self, $device )
 	my $type    = $device->{type}    // 'unknown';
 	my $subtype = $device->{subtype} // 'unknown';
 
-	return 'thermostat' if $type eq 'tasmota' && $subtype eq 'thermostat';
-	return 'switch'     if $type eq 'tasmota' && $subtype eq 'heater';
-	return 'switch'     if $type eq 'tasmota' && $subtype eq 'switch';
-	return 'sensor'     if $type eq 'tasmota' && $subtype eq 'sensor';
-	return 'lightbulb'  if $type eq 'tasmota' && $subtype eq 'lightbulb';
-	return 'dimmer'     if $type eq 'tasmota' && $subtype eq 'dimmer';
-	return 'rgb light'  if $type eq 'tasmota' && $subtype eq 'rgblight';
-	return 'ct light'   if $type eq 'tasmota' && $subtype eq 'ctlight';
-	return "$type/$subtype";
+	my $entry = $DEVICE{"$type/$subtype"};
+
+	return $entry ? $entry->{name} : "$type/$subtype";
 }
 
 1;

@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: December 26 2025 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt HAPCTL 8
 .Os
 .Sh NAME
@@ -79,12 +79,12 @@ The internal device identifier
 Show the usage message.
 .El
 .Sh FILES
-.Bl -tag -width "/var/db/openhapd/pairingsXX" -compact
+.Bl -tag -width "/var/db/openhapd/pairings.dbXX" -compact
 .It Pa /etc/openhapd.conf
 The default configuration file.
 .It Pa /var/run/openhapd.pid
 The process ID of the daemon when it runs.
-.It Pa /var/db/openhapd/pairings
+.It Pa /var/db/openhapd/pairings.db
 The pairing database for status checks.
 .El
 .Sh EXIT STATUS
@@ -93,15 +93,15 @@ The commands exit with status 0 on success.
 .Pp
 The
 .Cm check
-command exits with a status that is not 0 if it finds configuration
-errors.
+and
+.Cm devices
+commands exit 1 when the configuration file does not parse.
+Both read the same file through the same grammar.
 .Pp
 The
 .Cm status
-and
-.Cm devices
-commands always exit with status 0.
-The daemon state has no effect on their exit status.
+command always exits 0.
+The daemon state has no effect on its exit status.
 .Sh EXAMPLES
 Do a check of the configuration file:
 .Bd -literal -offset indent
@@ -140,8 +140,21 @@ $ hapctl -c /etc/openhapd.test.conf check
 .Sh DIAGNOSTICS
 .Nm
 writes configuration errors to
-.Em stderr ,
-with a message that describes each error.
+.Em stderr .
+A line that the grammar does not accept names the file, the line
+number, and the reason:
+.Bd -literal -offset indent
+Configuration error: /etc/openhapd.conf:14: cannot parse: hap_prt 51827
+.Ed
+.Pp
+.Cm check
+and
+.Cm devices
+then exit 1.
+An absent configuration file is not an error: a fresh install has
+none, and
+.Xr openhapd 8
+runs on its defaults.
 .Pp
 If
 .Xr openhapd 8

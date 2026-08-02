@@ -9,11 +9,33 @@ package OpenHAP::SRP;
 # not installed. Thus the module stays correct everywhere.
 use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
-use OpenHAP::Crypto;
+use FuguLib::Crypto;
 use OpenHAP::PIN qw(normalize_pin);
 
 # SRP-6a implementation for HAP
 # The module uses the 3072-bit group from RFC 5054.
+
+# The group is HAP policy, not a primitive. HAP-Pairing names this
+# group and no other, so the constants live with the protocol that
+# chose them and not with the cryptography that computes over them.
+our $N_3072 = pack( 'H*',
+	      'FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1'
+	    . '29024E088A67CC74020BBEA63B139B22514A08798E3404DD'
+	    . 'EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245'
+	    . 'E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED'
+	    . 'EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D'
+	    . 'C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F'
+	    . '83655D23DCA3AD961C62F356208552BB9ED529077096966D'
+	    . '670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B'
+	    . 'E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9'
+	    . 'DE2BCBF6955817183995497CEA956AE515D2261898FA0510'
+	    . '15728E5A8AAAC42DAD33170D04507A33A85521ABDF1CBA64'
+	    . 'ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7'
+	    . 'ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6B'
+	    . 'F12FFA06D98A0864D87602733EC86A64521F2B18177B200C'
+	    . 'BBE117577A615D6C770988C0BAD946E208E24FA074E5AB31'
+	    . '43DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF' );
+our $g = 5;
 
 # N_len: Length of N in bytes (3072 bits / 8 = 384 bytes)
 use constant N_LEN => 384;
@@ -46,11 +68,11 @@ sub new ( $class, %args )
 		username => $args{username}                  // 'Pair-Setup',
 		password => normalize_pin( $args{password} ) // $args{password},
 
-		# Group parameters (from OpenHAP::Crypto)
+		# The RFC 5054 3072-bit group
 		N => Math::BigInt->from_hex(
-			unpack( 'H*', $OpenHAP::Crypto::N_3072 )
+			unpack( 'H*', $OpenHAP::SRP::N_3072 )
 		),
-		g => Math::BigInt->new($OpenHAP::Crypto::g),
+		g => Math::BigInt->new($OpenHAP::SRP::g),
 
 		# Session state
 		salt => undef,
@@ -69,7 +91,7 @@ sub new ( $class, %args )
 
 sub generate_salt ($self)
 {
-	$self->{salt} = OpenHAP::Crypto::generate_random_bytes(16);
+	$self->{salt} = FuguLib::Crypto->random_bytes(16);
 	return $self->{salt};
 }
 
@@ -95,7 +117,7 @@ sub generate_server_public ($self)
 {
 
 	# Generate a random b (256 bits)
-	my $b_bytes = OpenHAP::Crypto::generate_random_bytes(32);
+	my $b_bytes = FuguLib::Crypto->random_bytes(32);
 	$self->{b} = Math::BigInt->from_hex( unpack( 'H*', $b_bytes ) );
 
 	# k = H(N | PAD(g))
@@ -115,6 +137,23 @@ sub generate_server_public ($self)
 
 	$self->{B} = $B;
 	return $B;
+}
+
+# $self->server_public_bytes():
+#	Return B as it goes on the wire: N_LEN bytes, zero-padded on
+#	the left.
+#
+#	About one B in 256 is small enough that its natural encoding
+#	is 383 bytes. A caller that packs the number itself sends a
+#	short public key, and the controller computes u over different
+#	bytes than the accessory does. The pairing then fails at M4,
+#	for one attempt in 256, with no diagnosis. Thus the padding
+#	belongs here, beside N_LEN, and not at the call site.
+sub server_public_bytes ($self)
+{
+	return unless defined $self->{B};
+
+	return _bigint_to_bytes( $self->{B}, N_LEN );
 }
 
 sub compute_session_key ( $self, $A_bytes )

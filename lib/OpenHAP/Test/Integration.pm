@@ -23,7 +23,10 @@ use Exporter 'import';
 use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
+use FuguLib::Config;
+use FuguLib::HTTP;
 use FuguLib::Log;
+use FuguLib::Process;
 
 our @EXPORT_OK = qw(
     setup teardown
@@ -44,6 +47,11 @@ use constant {
 	SYSLOG_FILE       => '/var/log/daemon',
 	PIDFILE           => '/var/run/openhapd.pid',
 	DB_PATH           => '/var/db/openhapd',
+
+	# The bound on one response the helper accumulates. The
+	# accessory database of a bridge is the largest message HAP
+	# sends.
+	MAX_RESPONSE => 1048576,
 };
 
 use constant PAIRINGS_FILE => DB_PATH . '/pairings.db';
@@ -72,10 +80,10 @@ sub setup ($self)
 
 	# The controller drives the accessory's own crypto/pairing
 	# library code in this process. That code logs through the
-	# $OpenHAP::logger that the daemon normally installs. Give it
+	# FuguLib::Log->default that the daemon normally installs. Give it
 	# a quiet logger. Then those calls do not die on an undefined
 	# logger. The unit tests set one up per file in the same way.
-	$OpenHAP::logger //= FuguLib::Log->new(
+	FuguLib::Log->default //= FuguLib::Log->new(
 		mode  => 'quiet',
 		ident => 'openhap-integration'
 	);
@@ -232,35 +240,25 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 
 	push @{ $self->{sockets} }, $socket;
 
-	# Build the request
-	print $socket "$method $path HTTP/1.1\r\n";
-	print $socket "Host: 127.0.0.1:$self->{hap_port}\r\n";
-
-	for my $header ( keys %$headers ) {
-		print $socket "$header: $headers->{$header}\r\n";
-	}
-
-	if ( defined $body ) {
-		print $socket "Content-Length: " . length($body) . "\r\n";
-	}
-
-	print $socket "\r\n";
-	print $socket $body if defined $body;
+	print {$socket} FuguLib::HTTP::build_request(
+		method  => $method,
+		path    => $path,
+		body    => $body,
+		headers => { Host => "127.0.0.1:$self->{hap_port}", %$headers },
+	);
 	$socket->flush;
 
-	# Read the response headers
+	# Read until the buffer holds one whole message. A stream
+	# socket gives whatever arrived, which is not a message.
 	my $response = '';
-	while ( my $line = <$socket> ) {
-		$response .= $line;
-		last if $line =~ /^\r?\n$/;
-	}
+	while (1) {
+		last
+		    if FuguLib::HTTP::message_complete( $response,
+			max_size => MAX_RESPONSE );
 
-	# Read the body if the response has a Content-Length header
-	if ( $response =~ /Content-Length:\s*(\d+)/i ) {
-		my $content_length = $1;
-		my $response_body;
-		read $socket, $response_body, $content_length;
-		$response .= $response_body;
+		my $bytes = $socket->sysread( my $chunk, 65536 );
+		last unless $bytes;
+		$response .= $chunk;
 	}
 
 	return $response;
@@ -270,20 +268,9 @@ sub parse_http_response ($response)
 {
 	return unless defined $response;
 
-	my ( $headers_text, $body ) = split /\r?\n\r?\n/, $response, 2;
-	my @lines = split /\r?\n/, $headers_text;
+	my $parsed = FuguLib::HTTP::parse_response($response) or return;
 
-	my $status_line = shift @lines;
-	my ($status) = $status_line =~ /HTTP\/1\.[01]\s+(\d+)/;
-
-	my %headers;
-	for my $line (@lines) {
-		if ( $line =~ /^([^:]+):\s*(.*)/ ) {
-			$headers{ lc $1 } = $2;
-		}
-	}
-
-	return ( $status, \%headers, $body // '' );
+	return ( $parsed->{status}, $parsed->{headers}, $parsed->{body} );
 }
 
 sub get_config_value ( $self, $key )
@@ -306,10 +293,10 @@ sub get_devices ($self)
 
 sub ensure_daemon_running ($self)
 {
-	if ( system('rcctl check openhapd >/dev/null 2>&1') != 0 ) {
-		system('rcctl start openhapd >/dev/null 2>&1');
+	if ( !_rcctl( 'check', 'openhapd' ) ) {
+		_rcctl( 'start', 'openhapd' );
 		sleep 1;
-		return if system('rcctl check openhapd >/dev/null 2>&1') != 0;
+		return if !_rcctl( 'check', 'openhapd' );
 	}
 
 	# A daemon that runs per rcctl does not serve yet. At
@@ -348,12 +335,12 @@ sub wait_for_hap_port ( $self, $timeout = 30 )
 
 sub ensure_daemon_stopped ($self)
 {
-	return 1 if system('rcctl check openhapd >/dev/null 2>&1') != 0;
+	return 1 if !_rcctl( 'check', 'openhapd' );
 
-	system('rcctl stop openhapd >/dev/null 2>&1');
+	_rcctl( 'stop', 'openhapd' );
 	sleep 1;
 
-	return system('rcctl check openhapd >/dev/null 2>&1') != 0;
+	return !_rcctl( 'check', 'openhapd' );
 }
 
 # $self->ensure_mdnsd_running():
@@ -365,16 +352,16 @@ sub ensure_daemon_stopped ($self)
 #	output, and the sub does not fail bare.
 sub ensure_mdnsd_running ($self)
 {
-	my $check = 'rcctl check mdnsd >/dev/null 2>&1';
+	my $check = sub { _rcctl( 'check', 'mdnsd' ) };
 
-	unless ( system($check) == 0 ) {
-		system('rcctl enable mdnsd >/dev/null 2>&1');
-		system('rcctl start mdnsd >/dev/null 2>&1');
+	unless ( $check->() ) {
+		_rcctl( 'enable', 'mdnsd' );
+		_rcctl( 'start',  'mdnsd' );
 	}
 
 	for my $probe ( 1 .. 3 ) {
 		sleep 1;
-		next if system($check) == 0;
+		next if $check->();
 		$self->_warn_mdnsd_diagnostics(
 			"mdnsd not running at settle probe $probe/3");
 		return;
@@ -389,31 +376,67 @@ sub ensure_mdnsd_running ($self)
 #	list, and recent syslog lines.
 sub _warn_mdnsd_diagnostics ( $self, $reason )
 {
-	my $syslog = SYSLOG_FILE;
-
 	warn "$reason\n";
-	warn 'rcctl get mdnsd: ' . `rcctl get mdnsd 2>&1`;
+	warn 'rcctl get mdnsd: ' . _capture( 'rcctl', 'get', 'mdnsd' );
+
+	my @processes = grep { /\bmdnsd\b/ && !/grep/ }
+	    split /\n/, _capture( 'ps', '-axo', 'pid,command' );
 	warn 'mdnsd processes: '
-	    . ( `ps -axo pid,command 2>/dev/null | grep -w mdnsd | grep -v grep`
-		    || "none\n" );
+	    . ( @processes ? join( "\n", @processes ) . "\n" : "none\n" );
+
+	my @syslog = grep { /mdnsd/ } _read_syslog_tail(200);
+	@syslog = splice( @syslog, -20 ) if @syslog > 20;
 	warn "recent mdnsd syslog lines:\n"
-	    . (        `tail -200 $syslog 2>/dev/null | grep mdnsd | tail -20`
-		    || "none\n" );
+	    . ( @syslog ? join( "\n", @syslog ) . "\n" : "none\n" );
 
 	return;
+}
+
+# _rcctl(@args):
+#	Run rcctl and report whether it succeeded. The run captures its
+#	output, so a check does not print to the TAP stream.
+sub _rcctl (@args)
+{
+	return FuguLib::Process->run( cmd => [ 'rcctl', @args ] )->{success};
+}
+
+# _capture(@cmd):
+#	Run a command and return what it wrote, for a diagnostic. A
+#	command that will not start returns the empty string.
+sub _capture (@cmd)
+{
+	my $result = FuguLib::Process->run( cmd => \@cmd );
+
+	return ( $result->{stdout} // '' ) . ( $result->{stderr} // '' );
+}
+
+# _read_syslog_tail($lines):
+#	Return the last lines of the system log. The read is a plain
+#	file read: a shell pipeline of tail and grep would need a
+#	shell, and every argument in it would need quoting.
+sub _read_syslog_tail ($lines)
+{
+	open my $fh, '<', SYSLOG_FILE or return ();
+	my @all = <$fh>;
+	close $fh;
+
+	@all = splice( @all, -$lines ) if @all > $lines;
+	chomp @all;
+
+	return @all;
 }
 
 sub ensure_mqtt_running ($self)
 {
 	# Check if the broker is already running
-	return 1 if system('rcctl check mosquitto >/dev/null 2>&1') == 0;
+	return 1 if _rcctl( 'check', 'mosquitto' );
 
 	# Try to start the broker
-	system('rcctl start mosquitto >/dev/null 2>&1');
+	_rcctl( 'start', 'mosquitto' );
 	sleep 1;
 
 	# Make sure the broker started
-	return system('rcctl check mosquitto >/dev/null 2>&1') == 0;
+	return _rcctl( 'check', 'mosquitto' );
 }
 
 sub clear_logs ($self)
@@ -478,7 +501,9 @@ sub _verify_system ($self)
 	return unless -r $self->{config_file};
 
 	# Check that the system user exists
-	return unless system('id _openhap >/dev/null 2>&1') == 0;
+	return
+	    unless FuguLib::Process->run( cmd => [ 'id', '_openhap' ] )
+	    ->{success};
 
 	# Check that the data directory exists
 	return unless -d '/var/db/openhapd';
@@ -486,56 +511,34 @@ sub _verify_system ($self)
 	return 1;
 }
 
+# $self->_parse_config:
+#	Read the daemon's own configuration through the parser the
+#	daemon uses. A second parser here would let the test agree
+#	with itself while it disagreed with openhapd.
 sub _parse_config ($self)
 {
-	open my $fh, '<', $self->{config_file} or return;
+	my $config = FuguLib::Config->new( file => $self->{config_file} );
+	$config->load or return;
 
-	my %config;
-	my @device_topics;
+	my %settings = map { $_ => $config->get($_) } $config->setting_names;
+
 	my @devices;
-	my $device;
-
-	while (<$fh>) {
-
-		# Skip comments and empty lines
-		next if /^\s*#/ || /^\s*$/;
-
-		# Device blocks: device <type> <subtype> <id> {
-		if (/^\s*device\s+(\w+)\s+(\w+)\s+(\w+)/) {
-			$device = {
-				type    => $1,
-				subtype => $2,
-				id      => $3,
-			};
-			next;
-		}
-		if (/^\s*\}/) {
-			push @devices, $device if defined $device;
-			$device = undef;
-			next;
-		}
-
-		# Simple key = value
-		if (/^\s*(\w+)\s*=\s*(.+)/) {
-			my ( $key, $value ) = ( $1, $2 );
-			$value =~ s/^"(.*)"$/$1/;    # Remove the quotes
-
-			if ( defined $device ) {
-				$device->{$key} = $value;
-				push @device_topics, $value
-				    if $key eq 'topic';
-				next;
-			}
-
-			$config{$key} = $value;
-
-			# Update hap_port if the config sets it
-			$self->{hap_port} = $value if $key eq 'hap_port';
-		}
+	my @device_topics;
+	for my $block ( $config->blocks('device') ) {
+		my ( $type, $subtype, $id ) = @{ $block->{args} };
+		push @devices,
+		    {
+			%{ $block->{settings} },
+			type    => $type,
+			subtype => $subtype,
+			id      => $id,
+		    };
+		push @device_topics, $block->{settings}{topic}
+		    if defined $block->{settings}{topic};
 	}
-	close $fh;
 
-	$self->{config}        = \%config;
+	$self->{hap_port} = $settings{hap_port} if defined $settings{hap_port};
+	$self->{config}   = \%settings;
 	$self->{device_topics} = \@device_topics;
 	$self->{devices}       = \@devices;
 
