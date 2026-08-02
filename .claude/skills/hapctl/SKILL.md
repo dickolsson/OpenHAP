@@ -43,8 +43,8 @@ validity, and configured devices — with `bin/hapctl`.
 `status` and `devices` ask the daemon over `/var/run/openhapd/control.sock`.
 Read the output line that names the source: with no socket, the report falls
 back to `/var/run/openhapd.pid` and the configuration file, and says so. The
-socket is mode 0600 in a directory of mode 0700, both owned by `_openhap`, so
-a user who is neither root nor `_openhap` always gets the fallback.
+socket is mode 0600 in a directory of mode 0700, both owned by `_openhap`, so a
+user who is neither root nor `_openhap` always gets the fallback.
 
 `-s <socket>` reaches a daemon whose `control` directive names another path.
 `hapctl` opens no other file, and it creates nothing.
