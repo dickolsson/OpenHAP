@@ -272,6 +272,36 @@ subtest 'an absent socket is not a refusal' => sub {
 	like( $client->error, qr/never-made\.sock/, 'the reason names the path' );
 };
 
+# A socket inside a directory the caller may not search looks absent
+# to a test for the file. It is not: the daemon is there and running.
+# An operator told "not running" about a running daemon looks in the
+# wrong place.
+subtest 'a socket behind a closed directory is a permission problem' => sub {
+	plan skip_all => 'the test runs as root, which searches any directory'
+	    if $> == 0;
+
+	my $closed = "$dir/closed";
+	mkdir $closed or die "mkdir: $!";
+	my $path = "$closed/control.sock";
+
+	my $control = FuguLib::Control->new( path => $path );
+	$control->register( ping => sub ($) { { pong => 1 } } );
+	ok( $control->listen, 'the server bound inside the directory' );
+
+	chmod 0000, $closed or die "chmod: $!";
+
+	my $client = FuguLib::Control::Client->new( path => $path );
+	is( $client->request('ping'), undef, 'the request fails' );
+	ok( !$client->socket_absent,
+		'and the client does not call the daemon absent' );
+	like( $client->error, qr/Permission denied/,
+		'the reason is the permission' );
+
+	chmod 0700, $closed;
+	$control->shutdown;
+	rmdir $closed;
+};
+
 subtest 'a listen refuses to take a live socket' => sub {
 	my ( $path, $pid ) = start_server(
 		sub ($control) {

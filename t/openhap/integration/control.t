@@ -19,6 +19,7 @@ use FuguLib::Imsg;
 use IO::Socket::UNIX;
 use JSON::PP ();
 use OpenHAP::Test::Integration;
+use POSIX       ();
 use Socket      qw(SOCK_STREAM);
 use Time::HiRes qw(sleep);
 
@@ -151,13 +152,52 @@ is_deeply( [ listing($dir) ], \@dir_before,
 # An unprivileged user cannot reach it
 # ------------------------------------------------------------------
 
-# nobody(1) is neither root nor _openhap, so the directory mode alone
-# stops it. The test asserts a clean report, not a crash.
-my $as_nobody = `su -m nobody -c '$hapctl status' 2>&1`;
+# nobody is neither root nor _openhap, so the directory mode alone
+# stops it. The drop happens in a forked child rather than through
+# su(1): the shell of nobody is /sbin/nologin, and su would fail for
+# that reason instead of the one under test.
+sub run_as_nobody (@command)
+{
+	my ( undef, undef, $uid, $gid ) = getpwnam('nobody')
+	    or die "no nobody user\n";
+
+	pipe my $reader, my $writer or die "pipe: $!";
+
+	my $pid = fork // die "fork: $!";
+	if ( $pid == 0 ) {
+		close $reader;
+		open STDOUT, '>&', $writer or POSIX::_exit(127);
+		open STDERR, '>&', \*STDOUT or POSIX::_exit(127);
+
+		# The group goes first. A process that gave up root
+		# cannot then change its group.
+		$) = "$gid $gid";
+		$( = $gid;
+		$> = $uid;
+		$< = $uid;
+		POSIX::_exit(126) if $> == 0 || $< == 0;
+
+		# The or form keeps perl from warning that the line
+		# after an exec is unreachable
+		exec { $command[0] } @command or POSIX::_exit(127);
+	}
+	close $writer;
+
+	my $output = do { local $/; <$reader> };
+	close $reader;
+	waitpid $pid, 0;
+
+	return $output // '';
+}
+
+my $as_nobody = run_as_nobody( $hapctl, 'status' );
+
 like( $as_nobody, qr/openhapd is (not )?running/,
 	'an unprivileged status still reports something' );
 like( $as_nobody, qr{read from /var/run/openhapd\.pid},
 	'and it says the answer came from the PID file' );
+like( $as_nobody, qr/Permission denied/,
+	'the reason is the permission, not an absent daemon' );
 unlike( $as_nobody, qr/Configuration num:/,
 	'it saw nothing that only the daemon knows' );
 

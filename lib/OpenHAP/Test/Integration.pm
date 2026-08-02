@@ -84,15 +84,15 @@ sub setup ($self)
 	die "OPENHAP_INTEGRATION_TEST not set\n"
 	    unless $ENV{OPENHAP_INTEGRATION_TEST};
 
-	# The controller drives the accessory's own crypto/pairing
-	# library code in this process. That code logs through the
-	# FuguLib::Log->default that the daemon normally installs. Give it
-	# a quiet logger. Then those calls do not die on an undefined
-	# logger. The unit tests set one up per file in the same way.
-	FuguLib::Log->default //= FuguLib::Log->new(
-		mode  => 'quiet',
-		ident => 'openhap-integration'
-	);
+	# The controller drives the accessory's own crypto and pairing
+	# code in this process, and that code reports through the
+	# process default logger. The default writes to standard error,
+	# which is the TAP stream. Install a quiet one.
+	FuguLib::Log->set_default(
+		FuguLib::Log->new(
+			mode  => 'quiet',
+			ident => 'openhap-integration'
+		) );
 
 	# Check the system prerequisites
 	$self->_verify_system or die "System prerequisites not met\n";

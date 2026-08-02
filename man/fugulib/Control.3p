@@ -138,6 +138,14 @@ for the first and
 for the second.
 A tool that cannot tell them apart reports the wrong thing to an
 operator half the time.
+.Pp
+A socket inside a directory that the caller may not search is not an
+absent socket.
+.Fn connect
+tells the two apart and reports the permission, because an operator
+who reads
+.Dq not running
+about a daemon that is running looks in the wrong place.
 .It Fn error
 The most recent failure.
 .El

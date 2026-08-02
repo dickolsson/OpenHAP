@@ -387,7 +387,7 @@ sub _log ($self)
 
 package FuguLib::Control::Client;
 
-use Errno qw(ENOENT);
+use Errno qw(EACCES ENOENT);
 use IO::Socket::UNIX;
 use JSON::PP ();
 use Socket   qw(SOCK_STREAM);
@@ -454,6 +454,16 @@ sub connect ($self)
 	$self->{absent} = 0;
 
 	unless ( -e $self->{path} ) {
+
+		# A socket inside a directory that the caller may not
+		# search fails this test too. That is a permission
+		# problem and not an absent daemon, and an operator
+		# needs to be told which one it is.
+		if ( $! == EACCES ) {
+			$self->{error} = "Cannot reach $self->{path}: $!";
+			return;
+		}
+
 		$self->{absent} = 1;
 		$self->{error}  = "No control socket at $self->{path}";
 		return;

@@ -191,7 +191,7 @@ names the reason it could not reach the daemon.
 An absent socket and a refused connection are different problems:
 .Bd -literal -offset indent
   (read from /var/run/openhapd.pid: no control socket)
-  (read from /var/run/openhapd.pid: Cannot connect to \
+  (read from /var/run/openhapd.pid: Cannot reach \
 /var/run/openhapd/control.sock: Permission denied)
 .Ed
 .Pp
@@ -199,6 +199,10 @@ The first is a stopped daemon, or one with
 .Ic control off
 in its configuration.
 The second is a running daemon that the caller may not reach.
+A caller who is neither root nor
+.Dq _openhap
+cannot search the directory of the socket, and thus cannot even see
+that the socket is there.
 .Sh SEE ALSO
 .Xr openhapd.conf 5 ,
 .Xr openhapd 8 ,
