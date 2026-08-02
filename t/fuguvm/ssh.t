@@ -49,18 +49,17 @@ is(FuguVM::SSH::BUFFER_SIZE(), 32768, 'BUFFER_SIZE is 32768');
     ok(!$ssh->is_available, 'is_available false for closed port');
 }
 
-# _exit_code maps a raw wait status to a 0-255 exit code. This lets
-# `fuguvm ssh`, when it runs a script over stdin, propagate a failing
-# remote command (for example a failing `prove` run). Without it, a raw
-# status like 256 truncates down to exit(256) -> 0.
+# interactive maps a raw wait status to a 0-255 exit code through
+# FuguLib::Process->exit_code. This lets `fuguvm ssh`, when it runs a
+# script over stdin, propagate a failing remote command (for example a
+# failing `prove` run). Without it, a raw status like 256 truncates
+# down to exit(256) -> 0. The mapping itself is proven in
+# t/fugulib/process.t; here only the one copy has to be gone.
 {
-    is(FuguVM::SSH::_exit_code(0), 0, 'status 0 -> exit 0');
-    is(FuguVM::SSH::_exit_code(1 << 8), 1, 'exit code 1 preserved');
-    is(FuguVM::SSH::_exit_code(2 << 8), 2, 'exit code 2 preserved');
-    is(FuguVM::SSH::_exit_code(255 << 8), 255, 'exit code 255 preserved');
-    is(FuguVM::SSH::_exit_code(-1), 1, 'system() failure (-1) -> EXIT_ERROR');
-    is(FuguVM::SSH::_exit_code(15), 143, 'signal 15 -> 128 + signal');
-    is(FuguVM::SSH::_exit_code(2), 130, 'signal 2 -> 128 + signal');
+    ok(!FuguVM::SSH->can('_exit_code'),
+        'the private copy of the mapping is gone');
+    ok(FuguLib::Process->can('exit_code'),
+        'FuguLib::Process owns the mapping');
 }
 
 done_testing();

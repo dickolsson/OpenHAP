@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 29 2026 $
+.Dd $Mdocdate: August 2 2026 $
 .Dt FuguLib::Sandbox 3p
 .Os
 .Sh NAME
@@ -28,6 +28,7 @@ FuguLib::Sandbox->unveil(
     paths => [
         ['/var/db/mydaemon',  'rwc'],
         ['/etc/mydaemon.conf', 'r', { optional => 1 }],
+        FuguLib::Sandbox->system_paths,
     ],
     on_skip => sub ($path) { ... },
 );
@@ -56,6 +57,14 @@ caused the failure, and with the errno.
 There is no force flag and no warn-and-continue mode.
 The module never logs.
 The caller decides what to report.
+.Pp
+Two methods,
+.Fn perl_lib_dirs
+and
+.Fn system_paths ,
+assemble path lists and call no syscall.
+They never touch the filesystem view.
+Thus a unit test can prove the inventory of a daemon on any platform.
 .Pp
 On
 .Ox ,
@@ -125,9 +134,59 @@ prevents more
 calls and locks the view for the life of the process.
 The method returns 1.
 It dies on failure.
+.Ss perl_lib_dirs
+.Fn perl_lib_dirs
+returns the library directories of the perl that runs.
+The values are
+.Va privlibexp ,
+.Va archlibexp ,
+.Va sitelibexp
+and
+.Va sitearchexp
+from
+.Xr Config 3p .
+.Pp
+These are stable facts about the interpreter build.
+They are not the live
+.Va @INC .
+A program adds directories to
+.Va @INC
+at run time, and a module can add one later still.
+A daemon that unveils the library tree for a late
+.Ic require
+must name the stable set, and never a set that depends on the moment of
+the call.
+.Ss system_paths
+.Fn system_paths
+returns the read-only
+.Fn unveil
+inventory that every daemon repeats:
+.Pa /dev/urandom ,
+.Pa /etc/resolv.conf ,
+.Pa /etc/hosts ,
+.Pa /etc/services ,
+.Pa /etc/protocols
+and
+.Pa /etc/localtime .
+The entries are ready for
+.Fn unveil .
+All of them carry the optional flag except
+.Pa /dev/urandom ,
+which every system has.
+A resolver file is absent on a host with no name service, and that host
+still runs the daemon.
+.Sh RETURN VALUES
+.Fn perl_lib_dirs
+returns a list of directory names.
+.Pp
+.Fn system_paths
+returns a list of
+.Fn unveil
+entries.
 .Sh SEE ALSO
 .Xr pledge 2 ,
 .Xr unveil 2 ,
+.Xr Config 3p ,
 .Xr OpenBSD::Pledge 3p ,
 .Xr OpenBSD::Unveil 3p
 .Sh AUTHORS

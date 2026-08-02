@@ -141,6 +141,20 @@ The long-term secret key (Ed25519 private key).
 The long-term public key (Ed25519 public key).
 .It Pa /var/run/openhapd.pid
 The process ID file.
+The daemon takes it while it is still root, and holds the lock for its
+whole life.
+The file stays root-owned, so the unprivileged daemon cannot rewrite it.
+.Nm
+does not remove the file at exit: an
+.Xr unlink 2
+in root-owned
+.Pa /var/run
+needs a directory permission that the daemon gives up at the privilege
+drop.
+A leftover file names a process that no longer runs, and
+.Xr hapctl 8
+reports that as
+.Dq not running .
 .El
 .Pp
 On

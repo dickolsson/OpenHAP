@@ -221,8 +221,8 @@ for my $page (@PAGES) {
 	# Sibling module manuals cross-link. This only works because the
 	# staging directory holds them under their FuguLib:: names.
 	my $daemon = slurp("$OUT/FuguLib::Daemon.3p.html");
-	like( $daemon, qr{<a class="Xr" href="\./FuguLib::State\.3p\.html">},
-		'.Xr FuguLib::State 3p links to the local page' );
+	like( $daemon, qr{<a class="Xr" href="\./FuguLib::Pidfile\.3p\.html">},
+		'.Xr FuguLib::Pidfile 3p links to the local page' );
 
 	# A browser reads a relative URL whose first segment holds a colon
 	# as a scheme. Thus links to module manuals must keep their './'.

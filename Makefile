@@ -47,9 +47,9 @@ DEPS			= scripts/deps
 MAN1			= man/fuguvm/fuguvm.1
 MAN3P			= man/fugulib/Daemon.3p man/fugulib/Imsg.3p \
 			  man/fugulib/Log.3p man/fugulib/MDNS.3p \
-			  man/fugulib/Privdrop.3p man/fugulib/Process.3p \
-			  man/fugulib/Sandbox.3p man/fugulib/Signal.3p \
-			  man/fugulib/State.3p
+			  man/fugulib/Pidfile.3p man/fugulib/Privdrop.3p \
+			  man/fugulib/Process.3p man/fugulib/Sandbox.3p \
+			  man/fugulib/Signal.3p
 MAN5			= man/openhap/openhapd.conf.5
 MAN8			= man/openhap/hapctl.8 man/openhap/openhapd.8
 CATMAN1			= $(MAN1:.1=.cat1)

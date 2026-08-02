@@ -110,6 +110,43 @@ subtest 'invalid length poisons the connection' => sub {
 	ok( !defined $rx->recv( timeout => 5 ), 'invalid len yields undef' );
 	ok( !defined $rx->recv( timeout => 0.1 ),
 		'connection stays dead afterwards' );
+	ok( $rx->is_dead, 'and is_dead reports it' );
+};
+
+subtest 'the header carries peerid and pid' => sub {
+	my ( $tx, $rx ) = pair();
+
+	ok( $tx->send( type => 3, data => 'x', peerid => 4242 ),
+		'send takes a peerid' );
+	my $msg = $rx->recv( timeout => 5 );
+	is( $msg->{peerid}, 4242, 'peerid round-trips' );
+	is( $msg->{pid},    $$,   'pid names the sender' );
+
+	# The default is 0, as the protocols that do not correlate
+	# expect
+	$tx->send( type => 3 );
+	is( $rx->recv( timeout => 5 )->{peerid}, 0, 'the default peerid is 0' );
+
+	# Several outstanding requests keep their own correlation
+	$tx->send( type => 1, data => 'a', peerid => 1 );
+	$tx->send( type => 1, data => 'b', peerid => 2 );
+	is( $rx->recv( timeout => 5 )->{peerid}, 1, 'first peerid' );
+	is( $rx->recv( timeout => 5 )->{peerid}, 2, 'second peerid' );
+};
+
+subtest 'close ends the connection for both sides' => sub {
+	my ( $tx, $rx ) = pair();
+
+	ok( !$tx->is_dead, 'a fresh object is not dead' );
+	ok( $tx->close,    'close returns 1' );
+	ok( $tx->is_dead,  'and the object is dead' );
+	ok( $tx->close,    'a second close is a success' );
+
+	ok( !defined $tx->send( type => 1 ), 'send after close fails' );
+
+	# The peer sees the end of the stream
+	ok( !defined $rx->recv( timeout => 5 ), 'the peer reads EOF' );
+	ok( $rx->is_dead, 'and the peer connection is dead' );
 };
 
 done_testing();

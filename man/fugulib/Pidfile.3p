@@ -14,51 +14,79 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 27 2026 $
-.Dt FuguLib::State 3p
+.Dd $Mdocdate: August 2 2026 $
+.Dt FuguLib::Pidfile 3p
 .Os
 .Sh NAME
-.Nm FuguLib::State
-.Nd PID file management
+.Nm FuguLib::Pidfile
+.Nd locked PID file
 .Sh SYNOPSIS
 .Bd -literal
-use FuguLib::State;
+use FuguLib::Pidfile;
 
-my $state = FuguLib::State->new('/var/run/mydaemon.pid');
+my $pidfile = FuguLib::Pidfile->new(path => '/var/run/mydaemon.pid');
 
-if (my $pid = $state->is_running) {
+if (my $pid = $pidfile->is_running) {
     die "already running as pid $pid\en";
 }
 
-$state->write_pid;
+$pidfile->acquire;
 .Ed
 .Sh DESCRIPTION
 .Nm
-reads and writes a PID file.
+manages one PID file.
 It also reports if the process that the file names still runs.
 The module exists so that a daemon,
 its
 .Xr rc.d 8
 script,
 and a control utility can all agree on the same question.
+.Pp
+Every write takes the lock before it truncates.
+Thus a concurrent reader never sees an empty file.
 .Ss new
-.Fn new "$pidfile"
-creates a state object for the named file.
-The argument is positional,
-not a keyword pair.
+.Fn new "%args"
+creates an object for the named file.
 The method does not create and does not read the file at this point.
+.Pp
+This is the argument:
+.Bl -tag -width "pathXX"
+.It Fa path
+The PID file.
+This argument is necessary.
+.El
+.Ss path
+.Fn path
+returns the file that the object manages.
 .Ss write_pid
 .Fn write_pid "$pid"
 writes
 .Fa $pid
-and a newline to the PID file.
-It truncates the previous contents.
+and a newline to the PID file,
+then releases the lock.
 The default for
 .Fa $pid
 is the process ID of the caller.
-The method locks the file with
-.Xr flock 2
-between the open and the write.
+.Ss acquire
+.Fn acquire "$pid"
+writes the PID and keeps the locked handle open.
+The lock lives until
+.Fn release ,
+or until the process exits.
+While one process holds the lock, an
+.Fn acquire
+from a second process fails at once and does not wait.
+Thus
+.Dq am I already running
+has an authoritative answer that no
+.Fn read_pid
+race can spoil.
+.Ss release
+.Fn release
+drops a lock that
+.Fn acquire
+holds.
+The file itself stays.
 .Ss read_pid
 .Fn read_pid
 returns the process ID that the file holds.
@@ -79,19 +107,25 @@ for the liveness check.
 reports if the PID file names a process that is not alive now.
 In this condition, a daemon can take the file and does not refuse to
 start.
+.Ss error
+.Fn error
+returns the most recent failure as a message that a log can carry.
 .Sh RETURN VALUES
 .Fn new
-returns a state object,
-or
-.Dv undef
-if
-.Fa $pidfile
-is
-.Dv undef .
+returns an object.
 .Pp
-.Fn write_pid
-returns 1 on success.
-It returns 0 if it cannot open or lock the file.
+.Fn write_pid ,
+.Fn acquire
+and
+.Fn remove
+return 1 on success.
+They return
+.Dv undef
+on failure and put the reason in
+.Fn error .
+.Pp
+.Fn release
+returns 1.
 .Pp
 .Fn read_pid
 and
@@ -101,35 +135,34 @@ or
 .Dv undef
 when there is no process ID to report.
 .Pp
-.Fn remove
-returns 1 if the file is already absent.
-If not, it returns the result of
-.Xr unlink 2 .
-.Pp
 .Fn is_stale
 returns 0 when the file holds no readable PID.
 Thus an absent PID file is not stale.
 .Sh EXAMPLES
-This example prevents a second start and removes the file after a
-crash:
+This example prevents a second start and holds the file for the life of
+the daemon:
 .Bd -literal -offset indent
-my $state = FuguLib::State->new('/var/run/mydaemon.pid');
+my $pidfile = FuguLib::Pidfile->new(path => '/var/run/mydaemon.pid');
 
-if (my $pid = $state->is_running) {
+if (my $pid = $pidfile->is_running) {
     die "mydaemon already running as pid $pid\en";
 }
-$state->remove if $state->is_stale;
 
 FuguLib::Daemon->daemonize(
-    on_fork => sub ($pid) { $state->write_pid($pid) },
+    pidfile => '/var/run/mydaemon.pid',
 );
 .Ed
 .Sh ERRORS
-No method dies.
-The methods report a failure to open, lock or unlink the file through
-the return value.
-The reason stays in
-.Va $! .
+.Fn new
+dies when
+.Fa path
+is absent or empty.
+That is a programming error.
+.Pp
+No other method dies.
+They report a failure to open, lock, write or unlink the file through
+the return value and
+.Fn error .
 .Sh SEE ALSO
 .Xr flock 2 ,
 .Xr unlink 2 ,
@@ -143,6 +176,9 @@ releases its lock when it closes the file,
 at the end of the call.
 The lock puts two concurrent writes in sequence.
 It does not hold the PID file for the life of the daemon.
+Use
+.Fn acquire
+for that.
 .Fn read_pid
 does not take a lock.
 .Pp
@@ -151,6 +187,8 @@ A check with
 and then an action on the answer is a race condition.
 In between, the process can exit,
 or a different process can claim the file.
+.Fn acquire
+has no such window.
 .Pp
 .Fn is_running
 has the same limits as the liveness check of

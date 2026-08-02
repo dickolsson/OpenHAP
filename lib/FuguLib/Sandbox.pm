@@ -19,6 +19,8 @@ use v5.36;
 
 package FuguLib::Sandbox;
 
+use Config;
+
 # FuguLib::Sandbox - pledge(2) and unveil(2) as a platform
 # abstraction. The calls are real on OpenBSD. Everywhere else they are
 # no-ops that return success. Thus callers never write $^O checks. The
@@ -27,6 +29,10 @@ package FuguLib::Sandbox;
 # There is no force or warn-and-continue mode. The module never logs.
 # A caller or a test uses is_supported, not a log line, to tell
 # enforcement from emulation.
+#
+# Two methods assemble path lists instead of calling a syscall. They
+# never touch the filesystem view. Thus a unit test can prove the
+# inventory of a daemon on any platform.
 
 use constant SUPPORTED => $^O eq 'openbsd';
 
@@ -45,16 +51,53 @@ BEGIN {
 # FuguLib::Sandbox->is_supported:
 #	The method returns true only where the system enforces pledge
 #	and unveil.
-sub is_supported ($)
+sub is_supported ($class)
 {
 	return SUPPORTED;
+}
+
+# FuguLib::Sandbox->perl_lib_dirs:
+#	Return the library directories of the perl that runs. The
+#	values come from %Config, which records the interpreter build.
+#	They are not the live @INC: a program adds directories to @INC
+#	at run time, and a module can add one later still. A daemon
+#	that unveils the tree must name the stable set, not whatever
+#	@INC holds at the moment of the call.
+sub perl_lib_dirs ($class)
+{
+	my @dirs;
+	for my $key (qw(privlibexp archlibexp sitelibexp sitearchexp)) {
+		my $dir = $Config{$key};
+		push @dirs, $dir if defined $dir && length $dir;
+	}
+
+	return @dirs;
+}
+
+# FuguLib::Sandbox->system_paths:
+#	Return the read-only unveil inventory that every daemon
+#	repeats: the resolver files, the service tables, the time zone
+#	and the random device. The entries are ready for unveil. All of
+#	them are optional except /dev/urandom, which every system has.
+#	A resolver file is absent on a host with no name service, and
+#	that host still runs the daemon.
+sub system_paths ($class)
+{
+	return (
+		[ '/dev/urandom',     'r' ],
+		[ '/etc/resolv.conf', 'r', { optional => 1 } ],
+		[ '/etc/hosts',       'r', { optional => 1 } ],
+		[ '/etc/services',    'r', { optional => 1 } ],
+		[ '/etc/protocols',   'r', { optional => 1 } ],
+		[ '/etc/localtime',   'r', { optional => 1 } ],
+	);
 }
 
 # FuguLib::Sandbox->pledge(%args):
 #	promises => $string	space-separated promise set
 #	Restrict the process to the promised syscalls. The method
 #	returns 1. On failure it dies with the promise string and $!.
-sub pledge ( $, %args )
+sub pledge ( $class, %args )
 {
 	my $promises = $args{promises};
 	die 'promises parameter required'
@@ -80,7 +123,7 @@ sub pledge ( $, %args )
 #	missing required path dies. To accept a typo'd path silently
 #	is the failure mode that makes unveil useless. The method
 #	returns 1, or dies and names the failing path.
-sub unveil ( $, %args )
+sub unveil ( $class, %args )
 {
 	my $paths = $args{paths};
 	die 'paths parameter required (arrayref of pairs)'
@@ -131,7 +174,7 @@ sub unveil ( $, %args )
 #	with no arguments at all. unveil(undef, undef) arrives as
 #	unveil("", "") and fails with ENOENT. The method returns 1.
 #	It dies on failure.
-sub unveil_lock ($)
+sub unveil_lock ($class)
 {
 	return 1 unless SUPPORTED;
 

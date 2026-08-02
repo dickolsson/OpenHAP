@@ -399,12 +399,12 @@ sub _process_request ( $self, $request )
 			$self->{log}->info( 'Cached to: %s', $path );
 		}
 		else {
-			$self->{log}->warn( 'Failed to cache: %s', $url );
+			$self->{log}->warning( 'Failed to cache: %s', $url );
 		}
 	}
 	elsif ( !$response->is_success ) {
 		$self->{log}
-		    ->warn( 'Not caching failed response: %s (status %d)',
+		    ->warning( 'Not caching failed response: %s (status %d)',
 			$url, $response->code );
 	}
 	elsif ( !$self->{cache}->is_cacheable( $url, $response->code ) ) {

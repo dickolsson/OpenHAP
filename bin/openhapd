@@ -6,8 +6,10 @@ use lib "$RealBin/../lib";
 
 use OpenHAP::HAP;
 use OpenHAP::Config;
+use FuguLib::Daemon;
 use FuguLib::Log;
 use FuguLib::MDNS;
+use FuguLib::Privdrop;
 use FuguLib::Sandbox;
 use OpenHAP::MQTT;
 use OpenHAP::Daemon;
@@ -39,8 +41,18 @@ if ($check_config) {
 
 # Daemonize first, before the log setup. This makes sure that the
 # child process opens the syslog connection.
+#
+# The child takes /var/run/openhapd.pid while it is still root and
+# holds the lock for life. The file is the trust anchor that hapctl and
+# rc.d read, so it stays root-owned: the dropped daemon must not be
+# able to rewrite it. Nothing removes it at exit, because an unlink in
+# root-owned /var/run needs a directory permission that the daemon
+# gives up. FuguLib::Pidfile->is_stale covers the leftover.
 if ( !$foreground ) {
-	OpenHAP::Daemon->daemonize('/var/log/openhapd.log');
+	FuguLib::Daemon->daemonize(
+		logfile => '/var/log/openhapd.log',
+		pidfile => '/var/run/openhapd.pid',
+	);
 }
 
 # Set up logging after the daemonize step
@@ -118,41 +130,25 @@ if ( $> == 0 ) {
 
 	# Make sure that _openhap owns db_path before the privilege
 	# drop. Then pairings and device state stay writable.
-	my ( $uid, $gid ) = ( getpwnam('_openhap') )[ 2, 3 ];
-	if ( defined $uid && -d $db_path ) {
-		chown $uid, $gid, $db_path
-		    or $OpenHAP::logger->warning("Cannot chown $db_path: $!");
+	FuguLib::Privdrop->prepare_statedir(
+		path    => $db_path,
+		user    => '_openhap',
+		mode    => 0700,
+		on_warn =>
+		    sub ($msg) { $OpenHAP::logger->warning( '%s', $msg ); },
+	);
 
-		# Also chown any existing files in the directory
-		if ( opendir( my $dh, $db_path ) ) {
-			while ( my $file = readdir($dh) ) {
-				next if $file =~ /^\.\.?$/;
-				my $path = "$db_path/$file";
-				chown $uid, $gid, $path
-				    or $OpenHAP::logger->warning(
-					"Cannot chown $path: $!");
-			}
-			closedir($dh);
-		}
-		else {
-			$OpenHAP::logger->warning(
-				"Cannot opendir $db_path: $!");
-		}
-	}
+	# Keep root's supplementary groups. On OpenBSD that is how the
+	# daemon reaches the mdnsd control socket after the drop.
+	FuguLib::Privdrop->drop_privileges(
+		user        => '_openhap',
+		keep_groups => 1,
+	);
 
-	use FuguLib::Privdrop;
-	FuguLib::Privdrop->drop_privileges( user => '_openhap' );
-
-	# Set up logging again after the privilege drop. The process
+	# Open the log again after the privilege drop. The process
 	# opened the syslog connection as root. It must open the
 	# connection again as _openhap.
-	$OpenHAP::logger = undef;
-	$OpenHAP::logger = FuguLib::Log->new(
-		mode     => $log_mode,
-		ident    => 'openhapd',
-		level    => $verbose ? 'debug' : $log_level,
-		facility => $log_facility,
-	);
+	$OpenHAP::logger->reopen;
 
 	$OpenHAP::logger->info('Dropped privileges to _openhap');
 }
@@ -161,30 +157,20 @@ if ( $> == 0 ) {
 # uses the mdnsd control protocol directly (spec/MDNS-Control.md) and
 # keeps the socket open. A close of the socket withdraws the service.
 # A missing mdnsd degrades discovery. It never degrades HAP service.
-if ( $mdns->connect ) {
-	if (
-		$mdns->publish_service(
-			name  => $hap_name,
-			app   => 'hap',
-			proto => 'tcp',
-			port  => $hap_port,
-			txt   => $hap->get_mdns_txt_string,
-		) )
-	{
-		$OpenHAP::logger->info(
-			'Registered mDNS service: %s._hap._tcp port %d',
-			$hap_name, $hap_port );
-	}
-	else {
-		$OpenHAP::logger->warning(
-			'mDNS registration failed: %s',
-			$mdns->error // 'unknown'
-		);
-	}
+if (
+	$mdns->publish(
+		name  => $hap_name,
+		app   => 'hap',
+		proto => 'tcp',
+		port  => $hap_port,
+		txt   => $hap->get_mdns_txt_string,
+	) )
+{
+	$OpenHAP::logger->info( 'Registered mDNS service: %s._hap._tcp port %d',
+		$hap_name, $hap_port );
 }
 else {
-	$OpenHAP::logger->warning(
-		'mdnsd not available - mDNS registration unavailable (%s)',
+	$OpenHAP::logger->warning( 'mDNS registration failed: %s',
 		$mdns->error // 'unknown' );
 }
 

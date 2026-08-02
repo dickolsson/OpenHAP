@@ -154,7 +154,7 @@ use File::Temp qw(tempdir);
 	    'db_path is not optional to the builder');
 }
 
-# Test 5: the PID file shim round-trips through FuguLib::State
+# Test 5: the PID file shim round-trips through FuguLib::Pidfile
 {
 	use OpenHAP::Daemon;
 

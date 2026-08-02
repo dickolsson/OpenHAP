@@ -28,6 +28,9 @@ use Time::HiRes qw(time);
 # by a payload. The module does serialization only. It never opens or
 # names a socket itself, and it never logs. The callers decide what an
 # error means.
+#
+# The wire format is in spec/MDNS-Imsg.md in the OpenHAP repository.
+# That document is a curated reference, not an installed manual.
 
 # Header and size constants per spec/MDNS-Imsg.md §1-§2. The header
 # has four native uint32 fields: type, len, peerid, pid. The len field
@@ -79,16 +82,22 @@ sub _decode_header ($bytes)
 }
 
 # $self->send(%args):
-#	type => $n	message type (required)
-#	data => $bytes	payload (default empty)
+#	type   => $n	message type (required)
+#	data   => $bytes payload (default empty)
+#	peerid => $n	caller-chosen correlation value (default 0)
 #	Frame and write one message. The method returns 1 on success.
 #	It returns undef, with $! set, on an oversized payload, a dead
 #	connection, or a write error. A peer that closed the socket
 #	shows as EPIPE, not as a fatal SIGPIPE.
+#
+#	The peerid field is opaque to this module [MDNS-Imsg §1]. A
+#	request and response protocol puts its correlation value there
+#	and reads it back from recv.
 sub send ( $self, %args )
 {
-	my $type = $args{type} // die 'type parameter required';
-	my $data = $args{data} // '';
+	my $type   = $args{type}   // die 'type parameter required';
+	my $data   = $args{data}   // '';
+	my $peerid = $args{peerid} // 0;
 
 	if ( $self->{dead} ) {
 		$! = EPIPE;
@@ -100,7 +109,8 @@ sub send ( $self, %args )
 	}
 
 	my $msg =
-	    _encode_header( $type, HEADER_SIZE + length($data), 0, $$ ) . $data;
+	    _encode_header( $type, HEADER_SIZE + length($data), $peerid, $$ )
+	    . $data;
 
 	local $SIG{PIPE} = 'IGNORE';
 	my $off = 0;
@@ -120,11 +130,11 @@ sub send ( $self, %args )
 
 # $self->recv(%args):
 #	timeout => $seconds	how long to wait (undef blocks forever)
-#	Return one whole message as { type => $n, data => $bytes }.
-#	The method accumulates short reads across calls. It returns
-#	undef on timeout, clean EOF, or an unrecoverable framing
-#	error. For a framing error, it sets $! to EBADMSG and marks
-#	the connection dead per spec/MDNS-Imsg.md §4.
+#	Return one whole message as a hashref with type, peerid, pid
+#	and data. The method accumulates short reads across calls. It
+#	returns undef on timeout, clean EOF, or an unrecoverable
+#	framing error. For a framing error, it sets $! to EBADMSG and
+#	marks the connection dead per spec/MDNS-Imsg.md §4.
 sub recv ( $self, %args )
 {
 	my $timeout  = $args{timeout};
@@ -171,7 +181,7 @@ sub _extract_message ($self)
 {
 	return if length( $self->{buffer} ) < HEADER_SIZE;
 
-	my ( $type, $len ) =
+	my ( $type, $len, $peerid, $pid ) =
 	    _decode_header( substr( $self->{buffer}, 0, HEADER_SIZE ) );
 	$len &= ~FD_MARK;
 
@@ -185,7 +195,37 @@ sub _extract_message ($self)
 	my $data = substr( $self->{buffer}, HEADER_SIZE, $len - HEADER_SIZE );
 	substr( $self->{buffer}, 0, $len ) = '';
 
-	return { type => $type, data => $data };
+	return {
+		type   => $type,
+		peerid => $peerid,
+		pid    => $pid,
+		data   => $data,
+	};
+}
+
+# $self->close:
+#	Close the socket and mark the connection dead. The method is
+#	idempotent and returns 1. A caller that owns the socket closes
+#	it here, and never by reaching into the object.
+sub close ($self)
+{
+	if ( $self->{fh} ) {
+		CORE::close $self->{fh};
+		$self->{fh} = undef;
+	}
+	$self->{dead}   = 1;
+	$self->{buffer} = '';
+
+	return 1;
+}
+
+# $self->is_dead:
+#	Report if the connection can no longer carry a message. A
+#	close, an EOF, a write error, or a framing error all lead
+#	here.
+sub is_dead ($self)
+{
+	return $self->{dead} ? 1 : 0;
 }
 
 1;

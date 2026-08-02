@@ -14,32 +14,38 @@ FuguLib does not know about OpenHAP.</p>
 
 <dl>
 <dt>FuguLib::Daemon</dt>
-<dd>The module forks, calls <code>setsid</code>, and redirects the standard
-descriptors.  A callback runs in the parent before the parent exits; the
-callback writes the PID file.</dd>
+<dd>The module forks, calls <code>setsid</code>, redirects the standard
+descriptors, changes to the root directory, and sets the file creation
+mask.  It also takes the PID file and holds the lock for the life of the
+process.</dd>
 
 <dt>FuguLib::Privdrop</dt>
-<dd>The module drops from root to a specified user and group.  It then
-makes sure that the process cannot get root again.</dd>
+<dd>The module prepares the state directory while the process is still
+root.  It then drops to a specified user and group, reduces the
+supplementary groups, and makes sure that the process cannot get root
+again.</dd>
 
 <dt>FuguLib::Process</dt>
-<dd>The module spawns and execs children, and makes sure that a child is
-alive after startup.  It stops a child with a grace period before
+<dd>The module spawns and execs children, and reports a failed exec over a
+close-on-exec pipe rather than after a sleep.  It runs a command and
+captures its output, stops a child with a grace period before
 <code>SIGKILL</code>, reaps zombies, and waits for exit.</dd>
 
 <dt>FuguLib::Signal</dt>
 <dd>The module registers handlers for a controlled shutdown, or for a flag
-that a long loop can poll.  It keeps a stack of cleanup callbacks and puts
-the previous handlers back.</dd>
+that a long loop can poll.  Each manager owns its cleanups and its
+interrupt flag, and puts the previous handlers back.</dd>
 
 <dt>FuguLib::Log</dt>
 <dd>The module gives one interface for syslog, stderr, and silence, with
 level filters and printf-style formats.  Thus a daemon and a CLI tool can
-use the same code.</dd>
+use the same code.  It holds the process default logger, which library
+code uses when the caller gives none.</dd>
 
-<dt>FuguLib::State</dt>
-<dd>The module reads and writes PID files with locks, and finds stale PIDs
-with <code>FuguLib::Process</code>.</dd>
+<dt>FuguLib::Pidfile</dt>
+<dd>The module manages one PID file.  Every write takes the lock before it
+truncates, and <code>acquire</code> holds the lock for the life of the
+process.  It finds stale PIDs with <code>FuguLib::Process</code>.</dd>
 
 <dt>FuguLib::Sandbox</dt>
 <dd>The module is a platform abstraction for
@@ -47,18 +53,20 @@ with <code>FuguLib::Process</code>.</dd>
 <a href="https://man.openbsd.org/unveil.2">unveil(2)</a>: the calls are real
 on OpenBSD and do nothing on other platforms.  Thus the callers do not
 examine the operating system.  A method that fails dies; there is no
-warn-and-continue mode.</dd>
+warn-and-continue mode.  It also assembles the path inventories that every
+daemon repeats.</dd>
 
 <dt>FuguLib::Imsg</dt>
 <dd>The module supplies the base-system imsg framing &mdash; a fixed
 native-endian header and a payload &mdash; over a connected stream socket.
-It reads full messages when the socket returns short counts.</dd>
+It reads full messages when the socket returns short counts, and carries
+the peer id that a request and response protocol correlates by.</dd>
 
 <dt>FuguLib::MDNS</dt>
 <dd>The module publishes services through <code>mdnsd(8)</code> with its
 control protocol directly, not through a <code>mdnsctl</code> child
 process.  The advertisement stays active while the module holds the
-socket.</dd>
+socket, and the destructor withdraws it.</dd>
 </dl>
 
 <h2>Reference</h2>

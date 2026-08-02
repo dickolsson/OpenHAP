@@ -3,7 +3,7 @@
 # Integration test: hapctl control utility functionality
 
 use v5.36;
-use Test::More tests => 15;
+use Test::More tests => 17;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
@@ -45,6 +45,20 @@ ok($status_works, 'status command works');
 # Test 7: hapctl status output is meaningful
 my $has_daemon_info = $status_output =~ /(openhapd|running|Pairing|status|not initialized)/i;
 ok($has_daemon_info, 'status output is meaningful');
+
+# Test 7b: status tells a running daemon from a stopped one. The
+# daemon is up here, so the report must say so and must name the PID
+# that the PID file holds.
+like($status_output, qr/openhapd is running \(PID \d+\)/,
+   'status reports the running daemon');
+
+# Test 7c: with the daemon stopped, status says the opposite
+system('rcctl stop openhapd >/dev/null 2>&1');
+my $stopped_output = `$hapctl -c $config_file status 2>&1`;
+system('rcctl start openhapd >/dev/null 2>&1');
+$env->wait_for_hap_port;
+like($stopped_output, qr/openhapd is not running/,
+   'status reports the stopped daemon');
 
 # Test 8: hapctl devices lists configured devices
 my $devices_output = `$hapctl -c $config_file devices 2>&1`;

@@ -20,9 +20,9 @@ use v5.36;
 package OpenHAP::Daemon;
 
 # OpenHAP::Daemon is now a wrapper around FuguLib for backward compatibility
-use Config;
 use FuguLib::Daemon;
-use FuguLib::State;
+use FuguLib::Pidfile;
+use FuguLib::Sandbox;
 
 # $class->daemonize($logfile):
 #	Fork into the background. Detach from the terminal. Redirect
@@ -41,8 +41,8 @@ sub daemonize ( $class, $logfile = '/var/log/openhapd.log' )
 #	on success.
 sub write_pidfile ( $class, $path )
 {
-	my $state = FuguLib::State->new($path);
-	unless ( $state->write_pid($$) ) {
+	my $pidfile = FuguLib::Pidfile->new( path => $path );
+	unless ( $pidfile->write_pid($$) ) {
 		$OpenHAP::logger->error( 'Cannot write PID file %s', $path )
 		    if $OpenHAP::logger;
 		return;
@@ -57,19 +57,18 @@ sub write_pidfile ( $class, $path )
 #	returns undef if the file does not exist or is not readable.
 sub read_pidfile ( $class, $path )
 {
-	my $state = FuguLib::State->new($path);
-	my $pid   = $state->read_pid();
-	return $pid;
+	my $pidfile = FuguLib::Pidfile->new( path => $path );
+	return $pidfile->read_pid;
 }
 
 # $class->check_running($pidfile):
 #	Check if the daemon runs. The check uses the PID file.
 #	The method returns the PID if the daemon runs. Otherwise,
 #	it returns undef.
-sub check_running ( $class, $pidfile )
+sub check_running ( $class, $path )
 {
-	my $state = FuguLib::State->new($pidfile);
-	return $state->is_running() ? $state->read_pid() : undef;
+	my $pidfile = FuguLib::Pidfile->new( path => $path );
+	return $pidfile->is_running;
 }
 
 # $class->unveil_paths(%args):
@@ -101,7 +100,7 @@ sub unveil_paths ( $class, %args )
 	my $config_file = $args{config_file};
 	my $log_file    = $args{log_file} // '/var/log/openhapd.log';
 
-	my @paths = ( [ $db_path, 'rwc' ], [ '/dev/urandom', 'r' ], );
+	my @paths = ( [ $db_path, 'rwc' ] );
 
 	# Unveil the perl library tree read-only for the lazy require
 	# on the MQTT reconnect path. Use an enumerated list, never
@@ -116,7 +115,9 @@ sub unveil_paths ( $class, %args )
 	# module loads late. But these few read-only lines cannot
 	# regress the MQTT reconnect.
 	my @perl_dirs =
-	    $args{perl_dirs} ? @{ $args{perl_dirs} } : _perl_lib_dirs();
+	    $args{perl_dirs}
+	    ? @{ $args{perl_dirs} }
+	    : FuguLib::Sandbox->perl_lib_dirs;
 
 	# Add the checkout's own lib directory, but only when it
 	# really is a checkout. The installed layout must not pick
@@ -132,32 +133,14 @@ sub unveil_paths ( $class, %args )
 	    if defined $config_file;
 	push @paths,
 	    [ $log_file, 'w', { optional => 1 } ],
-	    [ '/var/run/mdnsd.sock', 'rw', { optional => 1 } ],
-	    [ '/etc/resolv.conf',    'r',  { optional => 1 } ],
-	    [ '/etc/hosts',          'r',  { optional => 1 } ],
-	    [ '/etc/services',       'r',  { optional => 1 } ],
-	    [ '/etc/protocols',      'r',  { optional => 1 } ],
-	    [ '/etc/localtime',      'r',  { optional => 1 } ];
+	    [ '/var/run/mdnsd.sock', 'rw', { optional => 1 } ];
+
+	# The resolver files, the service tables, the time zone and the
+	# random device are the same for every daemon. FuguLib::Sandbox
+	# holds that list.
+	push @paths, FuguLib::Sandbox->system_paths;
 
 	return @paths;
-}
-
-# _perl_lib_dirs():
-#	Return the perl library directories from the interpreter
-#	build. These are stable facts from %Config, not the runtime
-#	@INC. The literal site_perl entry is the directory that
-#	OpenHAP::MQTT unshifts onto @INC at connect time. On
-#	OpenBSD, it equals sitelibexp and the dedupe removes it.
-sub _perl_lib_dirs ()
-{
-	my @dirs;
-	for my $key (qw(privlibexp archlibexp sitelibexp sitearchexp)) {
-		my $dir = $Config{$key};
-		push @dirs, $dir if defined $dir && length $dir;
-	}
-	push @dirs, '/usr/local/libdata/perl5/site_perl';
-
-	return @dirs;
 }
 
 1;

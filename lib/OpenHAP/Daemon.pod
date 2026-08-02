@@ -22,7 +22,7 @@ OpenHAP::Daemon - daemonization and process management
 
 C<daemonize>, C<write_pidfile>, C<read_pidfile>, and C<check_running>
 are a compatibility shim over L<FuguLib::Daemon> and
-L<FuguLib::State>. Those two modules document the behaviour. New code
+L<FuguLib::Pidfile>. Those two modules document the behaviour. New code
 must call those modules directly. C<unveil_paths> belongs here
 because the path list that it assembles applies only to openhapd.
 
@@ -109,10 +109,14 @@ These are the optional paths:
 These paths can be absent on a correct system. Their absence must
 never prevent the startup.
 
-The method gets the library directories from C<%Config>. It does not
-get them from the live C<@INC>. The method includes C<script_lib>
-read-only, and only when that directory holds an F<OpenHAP/>
-directory. Thus an installed layout never unveils F</usr/local/lib>.
+The library directories come from C<FuguLib::Sandbox-E<gt>perl_lib_dirs>,
+which reads C<%Config>. They never come from the live C<@INC>. The
+shared read-only entries - the resolver files, the service tables, the
+time zone and the random device - come from
+C<FuguLib::Sandbox-E<gt>system_paths>. The method includes
+C<script_lib> read-only, and only when that directory holds an
+F<OpenHAP/> directory. Thus an installed layout never unveils
+F</usr/local/lib>.
 
 The method only assembles data. It does not change the filesystem
 view. Thus unit tests for this method can run on all platforms. In
@@ -121,7 +125,7 @@ C<%Config>.
 
 =head1 SEE ALSO
 
-L<FuguLib::Daemon>, L<FuguLib::State>, L<rc.d(8)>
+L<FuguLib::Daemon>, L<FuguLib::Pidfile>, L<FuguLib::Sandbox>, L<rc.d(8)>
 
 =head1 AUTHOR
 

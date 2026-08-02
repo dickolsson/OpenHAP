@@ -21,6 +21,7 @@ package FuguVM::SSH;
 
 use Net::SSH2;
 use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_TRUNC);
+use FuguLib::Process;
 use FuguLib::Signal;
 
 use constant {
@@ -179,19 +180,7 @@ sub interactive ($self)
 	# become exit(256) -> 0. That result silently turns a failed
 	# remote command into success, for example a failed `prove` run
 	# driven over stdin.
-	return _exit_code( system(@cmd) );
-}
-
-# _exit_code($status):
-#	Map a raw system()/$? wait status to a 0-255 exit code. The low
-#	byte encodes the terminating signal. The high byte encodes the
-#	exit code. system() returns -1 when it cannot start the child
-#	at all.
-sub _exit_code ($status)
-{
-	return EXIT_ERROR               if $status == -1;
-	return 128 + ( $status & 0x7f ) if $status & 0x7f;
-	return $status >> 8;
+	return FuguLib::Process->exit_code( system(@cmd) );
 }
 
 # $self->write_file($remote_path, $content, $mode):

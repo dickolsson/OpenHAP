@@ -268,4 +268,65 @@ subtest 'update_txt is a no-op while unpublished' => sub {
 	ok( !$mdns->is_published, 'still unpublished' );
 };
 
+subtest 'publish connects on demand' => sub {
+	my ( $path, $dump, $pid ) = start_server(
+		sub ( $conn_no, $imsg, $fh ) {
+			my $msgs = dump_messages( $imsg, $fh, 3 ) or return 0;
+			my ($name) = unpack 'Z*', $msgs->[0]{data};
+			reply( $imsg, $name, 'published' );
+			drain($imsg);
+			return 0;
+		} );
+
+	my $mdns = FuguLib::MDNS->new( socket_path => $path );
+	ok( !$mdns->is_published, 'not connected yet' );
+	ok( $mdns->publish(%service), 'publish connects and publishes' );
+	ok( $mdns->is_published,      'the service is advertised' );
+
+	$mdns->withdraw;
+	waitpid $pid, 0;
+};
+
+subtest 'publish reports a missing mdnsd through error' => sub {
+	my $mdns = FuguLib::MDNS->new( socket_path => "$dir/absent2.sock" );
+	ok( !defined $mdns->publish(%service), 'publish returns undef' );
+	like( $mdns->error, qr/absent2\.sock/, 'error names the socket' );
+	ok( !$mdns->is_published, 'nothing is advertised' );
+};
+
+subtest 'the object going away withdraws the service' => sub {
+	my ( $path, $dump, $pid ) = start_server(
+		sub ( $conn_no, $imsg, $fh ) {
+			my $msgs = dump_messages( $imsg, $fh, 3 ) or return 0;
+			my ($name) = unpack 'Z*', $msgs->[0]{data};
+			reply( $imsg, $name, 'published' );
+
+			# The socket closing is the withdrawal. The
+			# child ends when the client goes away.
+			drain($imsg);
+			return 0;
+		} );
+
+	{
+		my $mdns = FuguLib::MDNS->new( socket_path => $path );
+		ok( $mdns->publish(%service), 'published inside the scope' );
+	}
+
+	# The destructor closed the socket, so the fake mdnsd sees the
+	# end of the stream and its accept loop ends.
+	is( waitpid( $pid, 0 ), $pid,
+		'the server saw the connection close on destruction' );
+};
+
+subtest 'new proves the struct template' => sub {
+	# The size is a measured fact about the platform. A template
+	# that no longer encodes it means every publish would send a
+	# malformed record, so new must refuse to build the object.
+	ok( eval { FuguLib::MDNS->new; 1 }, 'new accepts the shipped template' )
+	    or diag($@);
+	is( length( pack( FuguLib::MDNS::SERVICE_TEMPLATE(), '', '', '', 0, 0, 0, '' ) ),
+		FuguLib::MDNS::SERVICE_LEN(),
+		'the template encodes the documented size' );
+};
+
 done_testing();
