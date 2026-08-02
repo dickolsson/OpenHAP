@@ -8,14 +8,18 @@ command surface and `.fuguvmrc` grammar are unchanged.
 
 ### 3.1 Move FuguVM::SSH to FuguLib::SSH
 
-- The module moves nearly as-is; nothing in it is QEMU-aware.
-- `_exit_code` already moved to `FuguLib::Process` in phase 1; call it there.
+- The module moves nearly as-is; nothing in it is QEMU-aware. One structural
+  change: the compile-time `use Net::SSH2` becomes a lazy `require` at
+  `_connect` time, to keep the design's core-Perl load contract and the phase 2
+  `coreperl.t` walk green.
+- `FuguLib::Process->exit_code` replaced `_exit_code` in phase 1; nothing to
+  move here.
 - `wait_available` becomes a thin use of `FuguLib::Util::wait_until`.
-- Fix during the move: check the `read` return value; today a short read of
-  `/dev/urandom`-derived data passes silently (`FuguVM::Util` had the same bug
-  and dies with the module).
-- New `man/fugulib/SSH.3p`, `t/fugulib/ssh.t` (skips without Net::SSH2); delete
-  `lib/FuguVM/SSH.pm` and its test moves.
+- Fix during the move: check the return value of the SFTP
+  `$remote_fh->write($content)` call in `write_file`; it is unchecked today (the
+  channel reads already check theirs).
+- New `man/fugulib/SSH.3p`; `t/fuguvm/ssh.t` moves to `t/fugulib/ssh.t` (skips
+  without Net::SSH2); delete `lib/FuguVM/SSH.pm`.
 
 ### 3.2 Move the proxy to FuguLib::Proxy
 
@@ -67,6 +71,9 @@ command surface and `.fuguvmrc` grammar are unchanged.
 
 - The five repeated option-parse blocks and the dispatcher go; the subcommand
   bodies stay.
+- The `cache` subcommand bodies construct `FuguVM::Proxy::Cache` directly; they
+  move to the new `FuguLib::Proxy::Cache` name deleted by task 3.2 — the two
+  tasks land together.
 - Exit codes: generic constants from `FuguLib::CLI`; the domain codes
   (`EXIT_VM_NOT_FOUND` and friends) are defined once in `FuguVM::CLI` and
   `FuguVM::VM` uses them from there.
@@ -100,6 +107,15 @@ command surface and `.fuguvmrc` grammar are unchanged.
 - `man/fuguvm/fuguvm.1` needs no interface change; verify and adjust the FILES
   and DIAGNOSTICS sections where messages changed.
 - Update `web/fugulib.body.html` for the two new modules.
+- Test-file fates, stated so nothing dangles: `t/fuguvm/util.t` is deleted (its
+  coverage lives in `t/fugulib/crypto.t`); `t/fuguvm/ssh.t` moves to
+  `t/fugulib/ssh.t`; `t/fuguvm/{proxy-cache,proxy-metacache}.t` fold into the
+  new `t/fugulib/proxy.t`, and `t/fuguvm/proxy.t` keeps only the FuguVM policy
+  (patterns, prune, guest URL); `t/fuguvm/{cli,vm,state,config}.t` update in
+  place.
+- Net::SSH2 and HTTP::Daemon stay in the test and develop dependency tiers; the
+  installed FuguLib modules are inert without them, per the design's packaging
+  contract.
 
 ## Deliverables
 
@@ -114,12 +130,17 @@ command surface and `.fuguvmrc` grammar are unchanged.
 
 ## Acceptance criteria
 
-- `make check` is green; `make integration` provisions a VM end to end (install,
-  cache store, restore, snapshot, destroy) on a development host.
+- `make check` is green. `make integration` passes twice in sequence on a
+  development host: a cold run that installs and stores the base image, then a
+  warm run (after `fuguvm destroy`) that restores from the cache — the two runs
+  together exercise install, store, restore, and destroy.
 - Grep proves the deletions: no `FuguVM::Output`, `FuguVM::Util`, `FuguVM::SSH`,
   `Proxy::MetaCache` references; no bare `kill(0,` liveness checks under
   `lib/FuguVM`; no `$state->{` internals access outside `FuguVM::State`.
-- A VM whose QEMU became a zombie is reported as stopped, not running.
-- The proxy cache file layout on disk is unchanged; an existing cache populated
-  before this phase still hits after it.
-- `fuguvm` exit codes are unchanged for every documented failure.
+- A VM whose QEMU became a zombie is reported as stopped, not running
+  (unit-tested with an unreaped child).
+- The proxy cache file layout on disk is unchanged. One-time procedure before
+  merge: populate the cache with a pre-phase build, run the post-phase
+  `fuguvm up`, and record the cache hit in the pull request.
+- The exit codes that `t/fuguvm/cli.t` asserts today (0, 1, 2, 3, 5, 11) are
+  unchanged, and the constants keep the values `man/fuguvm/fuguvm.1` documents.

@@ -32,6 +32,10 @@ daemon a real shutdown path. HAP endpoint behavior does not change.
 - `while (1)` dies: the loop stops on the Signal interrupt flag, `run` returns,
   and `bin/openhapd` exits through the normal cleanup path instead of inside a
   signal handler.
+- SIGHUP gets a real meaning: `rc.d` reload sends HUP, which today exits the
+  daemon. `bin/openhapd` now handles HUP through the loop: it calls
+  `FuguLib::Log->default->reopen` and continues. INT and TERM keep the
+  graceful-exit path.
 - Key client sessions and event subscriptions by `fileno`, not by stringified
   references, so subscription purge is a delete, not a sweep.
 
@@ -42,8 +46,9 @@ daemon a real shutdown path. HAP endpoint behavior does not change.
   `every`, stop via signal flag; written against pipes, tolerant of timing
   variation.
 - Update `lib/OpenHAP/HAP.pod` for the new `run` structure.
-- `man/openhap/openhapd.8`: describe the clean shutdown (signals end the loop
-  and cleanups run), replacing the exit-from-handler behavior.
+- `man/openhap/openhapd.8`: describe the clean shutdown (INT and TERM end the
+  loop and cleanups run) and the new HUP behavior (reopen the log and continue),
+  replacing the exit-from-handler behavior.
 
 ## Deliverables
 
@@ -57,11 +62,19 @@ daemon a real shutdown path. HAP endpoint behavior does not change.
 - `make check` and the conformance tier are green: pairing, encrypted sessions,
   characteristic reads and writes, and event delivery behave as before through
   the new loop.
-- Event coalescing timing per HAP-HTTP holds under the timer implementation; the
-  conformance tests that cite it pass unchanged.
-- SIGTERM ends `openhapd` through the cleanup path: mDNS withdraws, the PID file
-  is removed, and the exit is visible in the log — verified in the integration
-  tier.
-- MQTT keeps ticking and reconnecting with the same observable cadence (tick
-  interval and backoff values unchanged).
-- No `while (1)` remains in `lib/OpenHAP`.
+- Event coalescing per HAP-HTTP holds under the timer implementation. The
+  conformance tests that drive `flush_events` by direct call migrate to driving
+  the loop, so they exercise the new `after`-timer path; the cited coalescing
+  behavior and the 250 ms constant are unchanged.
+- SIGTERM ends `openhapd` through the cleanup path — verified in the integration
+  tier by observable state, not logs: the process exits, the mDNS advertisement
+  disappears, and the HAP port closes. (The PID file remains by design; see
+  phase 1.)
+- SIGHUP no longer exits the daemon: the integration tier proves the daemon
+  keeps serving after `rcctl reload openhapd`.
+- The MQTT tick-interval and backoff constants are unchanged, and the existing
+  integration reconnect test still passes; no new wall-clock assertions are
+  added.
+- No `while (1)` remains in `lib/OpenHAP/HAP.pm` or `bin/openhapd`. (The test
+  clients under `lib/OpenHAP/Test/` keep their read loops; they are out of this
+  phase's scope.)

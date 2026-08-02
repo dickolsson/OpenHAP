@@ -49,8 +49,12 @@ Class methods over paths; no object state.
 - Signature and AEAD wrappers, moved from `OpenHAP::Crypto`: `ed25519_keypair`,
   `ed25519_sign`, `ed25519_verify`, `x25519_keypair`, `x25519_shared_secret`,
   `hkdf_sha512`, `chacha20poly1305_encrypt`, `chacha20poly1305_decrypt`.
-- The Crypt::* modules load lazily per function group with a clear failure
+- The Crypt::\* modules load lazily per function group with a clear failure
   message; `random_bytes` and `random_password` stay core-Perl.
+- A `preload` class method loads every Crypt::\* module eagerly. A daemon that
+  pledges without `prot_exec` calls it before the pledge, because a lazy
+  `require` after pledge dlopens shared objects and dies. `bin/openhapd` relies
+  on this in phase 4; its promise set keeps `prot_exec` absent.
 - The RFC 5054 SRP group constants do not move here; they are HAP policy and go
   to `OpenHAP::SRP` in phase 4.
 
@@ -100,6 +104,8 @@ The dispatch skeleton shared by `fuguvm` and `hapctl`.
 
 The newline-delimited JSON client duplicated by QMP and QGA.
 
+- The codec is JSON::PP (core), so the module keeps the core-Perl load contract;
+  the current copies use JSON::XS, which is CPAN.
 - `new(path => $socket, timeout => $s, greeting => 0|1)`; `connect` reads the
   greeting when asked (QMP) and skips it otherwise (QGA).
 - `request($hashref)` returns the decoded response or undef with `error`.
@@ -134,6 +140,8 @@ The newline-delimited JSON client duplicated by QMP and QGA.
   its final mode before it has content.
 - `t/fugulib/store.t` proves `load` survives a corrupt file and `save` is atomic
   (no partial file after a simulated failure).
-- FuguLib still loads with core Perl only: a test walks `lib/FuguLib` and
-  compiles every module without CPAN modules installed, or skips where the
-  environment cannot express that.
+- FuguLib still loads with core Perl only: a new `t/fugulib/coreperl.t` walks
+  `lib/FuguLib` and compiles every module in a subprocess whose `@INC` holds
+  only the core paths (`privlibexp`, `archlibexp`) plus `lib/`. The test runs
+  under `make check` on every platform and does not skip — the pruned `@INC`
+  simulates the missing-CPAN environment deterministically.

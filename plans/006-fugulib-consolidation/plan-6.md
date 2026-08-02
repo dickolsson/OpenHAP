@@ -18,36 +18,46 @@ guess-from-files status logic, which is broken today.
     absent" from "request failed".
 - Payloads are JSON (JSON::PP, core); the transport is `FuguLib::Imsg` with
   `peerid` correlation from phase 1.
-- The server creates the socket with mode 0600 before `listen`, removes it on
-  shutdown, and refuses oversized requests. External input is untrusted: unknown
+- An imsg frame carries at most ~16 KB of payload. A reply larger than one frame
+  spans several frames with a continuation flag in the imsg type; the client
+  reassembles by `peerid`. A `devices` reply can exceed one frame, so this is in
+  scope, with a documented total-reply cap.
+- The server creates the socket under a `umask 0177` guard, so it is mode 0600
+  from birth; it removes a stale socket before `bind` and the live one on
+  shutdown. It refuses oversized requests. External input is untrusted: unknown
   commands and malformed payloads get an error reply, never a die.
 
 ### 6.2 openhapd serves the socket
 
 - Socket path: `/var/run/openhapd/control.sock` by default; a `control`
   directive in `openhapd.conf` overrides it, and `control off` disables the
-  server. The parent directory is prepared by `Privdrop->prepare_statedir` so
-  the socket is created after the drop.
+  server. `Privdrop->prepare_statedir` (phase 1) creates `/var/run/openhapd`
+  while still root — OpenBSD clears `/var/run` at boot — with owner `_openhap`
+  and mode 0700, so the dropped daemon can bind and unlink the socket, and the
+  directory mode is the outer access boundary.
 - Commands and their policy live in `bin/openhapd` and `OpenHAP::HAP`: `status`
-  (uptime, paired state, pairing count, config number, mDNS state, MQTT state),
-  `devices` (the loaded accessory list), `config` (the running configuration
-  values).
-- Replies carry no secrets: no keys, no setup code, no pairing LTPKs.
-- Sandbox updates: unveil the socket directory read-write; the `unix` pledge
-  promise is already present.
+  (uptime, paired state, pairing count, config number, mDNS state, MQTT state)
+  and `devices` (the loaded accessory list). There is no command that echoes
+  configuration values: `openhapd.conf` carries `hap_pin` and `mqtt_pass`, and
+  no reply may carry a secret.
+- Replies carry no secrets: no keys, no setup code, no passwords, no pairing
+  LTPKs.
+- Sandbox updates: unveil the socket directory `rwc` — bind and unlink both
+  create and remove directory entries; the `unix` pledge promise is already
+  present.
 
 ### 6.3 hapctl rewrite
 
-- `bin/hapctl` moves onto `FuguLib::CLI` with commands `status`, `devices`,
-  `config`.
+- `bin/hapctl` moves onto `FuguLib::CLI` with commands `check`, `status`, and
+  `devices`. `check` stays what it is today — offline config validation through
+  `FuguLib::Config` — because the integration tests and the operator workflow
+  drive it.
 - `status` asks the daemon over `FuguLib::Control::Client`. When the socket is
   absent, it falls back to `FuguLib::Pidfile` and says which method answered.
 - This retires two live defects: `status` calls methods that do not exist on
   `OpenHAP::Storage`, so the pairing branch is unreachable; and the constructor
   argument mismatch makes a read-only status command create `/var/db/openhapd`.
   `hapctl` stops opening the storage directory at all.
-- `hapctl` keeps working without a running daemon for config validation (`-n`
-  parity) through `FuguLib::Config`.
 
 ### 6.4 Documentation and tests
 
@@ -56,19 +66,26 @@ guess-from-files status logic, which is broken today.
   status distinction, and the socket path.
 - `man/openhap/openhapd.8`: the control socket in FILES; the `control` directive
   cross-reference.
-- `man/openhap/openhapd.conf.5`: the `control` directive.
+- `man/openhap/openhapd.conf.5`: the `control` directive; add it to the shipped
+  example `share/openhap/examples/openhapd.conf.sample` too.
 - New `t/fugulib/control.t` (server and client over a temporary socket, bad
-  input, oversized frames) and `t/openhap/hapctl.t` growth for the fallback
-  path; an integration test drives `hapctl status` against the daemon in the VM.
-- Update `web/fugulib.body.html` for the new module.
+  input, oversized frames, multi-frame replies). The existing
+  `t/openhap/integration/hapctl.t` and `t/openhap/integration/configuration.t`
+  update for the new output and keep driving `check`; a new integration test
+  drives `hapctl status` and `devices` against the daemon in the VM.
+- Update `web/fugulib.body.html` for the new module, and the command notes in
+  `.claude/skills/hapctl/SKILL.md` (it documents `status` reading
+  `/var/db/openhapd` directly, which stops being true).
 
 ## Deliverables
 
 - `lib/FuguLib/Control.pm`, `man/fugulib/Control.3p`, `t/fugulib/control.t`
 - Reworked `bin/hapctl`; updated `bin/openhapd`, `lib/OpenHAP/HAP.pm` (+ `.pod`)
-- Updated `man/openhap/{hapctl.8,openhapd.8,openhapd.conf.5}`, `Makefile`,
-  `web/fugulib.body.html`
-- New integration test under `t/openhap/integration/`
+- Updated `man/openhap/{hapctl.8,openhapd.8,openhapd.conf.5}`,
+  `share/openhap/examples/openhapd.conf.sample`, `Makefile`,
+  `web/fugulib.body.html`, `.claude/skills/hapctl/SKILL.md`
+- New integration test under `t/openhap/integration/`; updated
+  `t/openhap/integration/{hapctl,configuration}.t`
 
 ## Acceptance criteria
 
@@ -76,9 +93,11 @@ guess-from-files status logic, which is broken today.
 - Against a running daemon, `hapctl status` reports live pairing state and
   device count; with the daemon stopped, it reports "not running" from the PID
   file and says so.
-- `hapctl status` as an unprivileged user cannot read the socket (mode 0600) and
-  reports a permission error, not a crash; it never creates files or
-  directories.
+- `hapctl status` as an unprivileged user cannot reach the socket (directory
+  mode 0700, socket mode 0600) and reports a permission error, not a crash — the
+  integration test runs it via `su(1)` to a non-root user. `hapctl status` never
+  creates files or directories, proven by a directory scan before and after the
+  run.
 - A malformed or oversized control request gets an error reply and the daemon
   stays up (fail closed, no die).
 - The integration tier proves the socket appears after privilege drop with owner

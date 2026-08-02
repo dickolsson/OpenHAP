@@ -9,8 +9,9 @@ two, three, or four times:
 
 - Three config parsers read the same `key = value` plus block grammar
   (`OpenHAP::Config`, `FuguVM::Config`, `OpenHAP::Test::Integration`).
-- Three HTTP codecs exist, and only the test client frames messages correctly
-  (`OpenHAP::HTTP`, `Test::Controller`, `Test::Integration`).
+- Three HTTP codecs exist, and only the two test clients frame messages by
+  `Content-Length`; the server does not (`OpenHAP::HTTP`, `Test::Controller`,
+  `Test::Integration`).
 - Two newline-JSON socket clients share ~120 identical lines (`FuguVM::QMP`,
   `FuguVM::QGA`).
 - Three PID-file implementations exist, and two of them have no `flock` and
@@ -52,7 +53,7 @@ users yet, so a clean break is possible: no shims, no compatibility layers.
 
 ### Target FuguLib
 
-Twenty modules. Bold names are new; the others exist and are redesigned.
+Twenty-two modules. Bold names are new; the others exist and are redesigned.
 
 | Module         | Source of the code                       | Function                                                            |
 | -------------- | ---------------------------------------- | ------------------------------------------------------------------- |
@@ -78,8 +79,6 @@ Twenty modules. Bold names are new; the others exist and are redesigned.
 | **Proxy**      | `FuguVM::Proxy{,::Cache,::MetaCache}`    | caching HTTP proxy; cache and metadata as packages in the same file |
 | **EventLoop**  | `OpenHAP::HAP::run`                      | IO::Select fd handlers, timers, signal-aware stop                   |
 | **Control**    | new, over Imsg                           | UNIX control socket: server handlers and a request/response client  |
-
-(The table lists 22 rows because Proxy carries two extra packages in one file.)
 
 ### Target OpenHAP
 
@@ -117,19 +116,28 @@ graph TD
     VM[FuguVM::VM] --> FLV[FuguLib: Process JSONSocket SSH Proxy Store Util]
 ```
 
-`hapctl` gets a live channel: `openhapd` serves `status`, `devices`, and
-`pairings` over a FuguLib::Control socket. `hapctl` falls back to the PID file
-when the socket is absent.
+`hapctl` gets a live channel: `openhapd` serves `status` and `devices` over a
+FuguLib::Control socket. `hapctl` keeps its offline `check` command and falls
+back to the PID file when the socket is absent.
 
 ## Contracts
 
 - FuguLib does not know OpenHAP or FuguVM. No names, paths, or defaults leak.
 - FuguLib loads with core Perl only. Modules that wrap CPAN libraries (MQTT,
   SSH, Crypto signatures, Proxy) `require` them lazily and fail with a clear
-  message.
-- Interface convention, applied to every FuguLib module: `Class->new(%args)`
-  with named arguments; named `$class`/`$self` invocants; `die` for programming
-  errors; `undef` return plus an `error` accessor for recoverable failures.
+  message. A pledge-constrained daemon must preload the shared objects of every
+  lazily loaded module before it pledges; `openhapd` keeps `prot_exec` out of
+  its promise set, so it warms up the Crypt::\* and MQTT modules first.
+- The install target ships `lib/FuguLib/*.pm` and all 3p pages wholesale.
+  Modules whose CPAN library sits in the test or develop dependency tier (SSH,
+  Proxy) install too; without the library they are inert and fail with the clear
+  lazy-require message. The dependency manifests do not change.
+- Interface convention: object modules use `Class->new(%args)` with named
+  arguments and named `$class`/`$self` invocants; stateless helpers (File, Util,
+  Process, Sandbox, Privdrop, Daemon) use class methods. Everything `die`s for
+  programming errors. Recoverable failures return `undef`, with an `error`
+  accessor on object modules and an error field in hashref results where a
+  method returns one (Process).
 - Logger convention: modules take `log => $logger` and fall back to
   `FuguLib::Log->default`, which always returns a logger. Library code never
   dies for the lack of a logger.
@@ -137,11 +145,18 @@ when the socket is absent.
   and a `t/fugulib/` test. Moved OpenHAP and FuguVM modules keep `.pod` sidecars
   next to the `.pm`.
 - HAP wire behavior is unchanged, except these deliberate fixes: the server
-  buffers per connection and frames requests by `Content-Length`; `openhapd`
-  writes its PID file; `hapctl status` reports real state.
+  buffers per connection, frames requests by `Content-Length`, and enforces
+  request-size limits; `openhapd` writes its PID file; `hapctl status` reports
+  real state.
+- The PID file is a trust anchor: root writes `/var/run/openhapd.pid` before the
+  privilege drop and keeps it root-owned, so the unprivileged daemon cannot
+  rewrite it. The daemon does not remove it at exit — unlink in root-owned
+  `/var/run` is impossible after the drop — and `Pidfile` stale detection covers
+  leftovers.
 - Security fixes ride along: PID files lock before truncate; liveness checks
   reap zombies; secret files get mode 0600 before the write, not after; the
-  Privdrop re-escalation check fails loudly.
+  Privdrop re-escalation check fails loudly; Privdrop clears supplementary
+  groups by default.
 - `make check` and `make spec-coverage` stay green after every phase.
 
 ## Strategy
