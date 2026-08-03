@@ -53,6 +53,14 @@ iOS Home App
 └─────────────┘     └───────────┘     └─────────────┘
 ```
 
+## The protocol library
+
+The HAP protocol itself lives in `Protocol::HAP`, under `lib/Protocol/`.
+The library is host-neutral: it uses core Perl plus four declared crypto
+modules, and it never touches sockets, timers, logging, or files.
+`openhapd` is its reference host. A CPAN release is planned; see
+`lib/Protocol/HAP.pod` for the library overview and the host contracts.
+
 ## License
 
 ISC License. See [LICENSE](LICENSE).

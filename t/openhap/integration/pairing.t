@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Integration test: the complete HAP pairing workflow against the
-# live daemon. OpenHAP::Test::Controller drives the workflow.
+# live daemon. Protocol::HAP::Controller drives the workflow.
 
 use v5.36;
 use Test::More tests => 18;

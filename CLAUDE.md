@@ -15,9 +15,13 @@ ChaCha20-Poly1305, HKDF-SHA-512, and TLV8 over encrypted HTTP/1.1, advertised
 via mDNS. OpenBSD is the production platform (pledge(2)/unveil(2), rc.d,
 `_openhap` user); Linux and Darwin are supported for development and CI only.
 
-The repo contains three Perl namespaces with distinct concerns:
+The repo contains four Perl namespaces with distinct concerns:
 
-- `OpenHAP::` (`lib/OpenHAP/`) — the HAP server itself
+- `Protocol::` (`lib/Protocol/`) — the host-neutral HAP protocol library:
+  codecs, crypto, pairing, the data model, the sans-IO server engine, and a
+  controller; self-contained, headed for CPAN
+- `OpenHAP::` (`lib/OpenHAP/`) — the reference host: the daemon plumbing,
+  persistence, MQTT device integration, and OpenBSD policy
 - `FuguLib::` (`lib/FuguLib/`) — generic OpenBSD-style daemon utilities
   (daemonize, privilege drop, signals, logging, process, state, pledge/unveil,
   imsg framing, mdnsd publishing)
@@ -52,10 +56,12 @@ make integration    # provision OpenBSD VM and run integration tests
   setup-code rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`), pairing and
   sessions (`Pairing.pm`, `Session.pm`, `Store.pod`, `Store/Memory.pm`), data
   model (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`), the
-  sans-IO engine (`Server.pm`); it is self-contained and never uses FuguLib,
-  FuguVM, or OpenHAP (`t/protocol/boundary.t` enforces this)
+  sans-IO engine (`Server.pm`), and the blocking client (`Controller.pm`); it
+  is self-contained and never uses FuguLib, FuguVM, or OpenHAP
+  (`t/protocol/boundary.t` enforces this)
 - `lib/OpenHAP/` — the host (`Server.pm`), persistence (`Storage.pm`), device
-  integration (`DeviceLoader.pm`, `Tasmota/*.pm`), test drivers (`Test/*.pm`)
+  integration (`DeviceLoader.pm`, `Tasmota/*.pm`), the integration-test driver
+  (`Test/Integration.pm`)
 - `t/openhap/`, `t/fugulib/`, `t/protocol/`, `t/fuguvm/` — unit tests;
   `t/conformance/` — spec-cited conformance tests; `t/scripts/`, `t/web/` —
   tooling tests, named after what they drive (see `t/CLAUDE.md`);
@@ -216,8 +222,8 @@ them up to 5.36.
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 `<type>(<scope>): <description>` with types `feat`, `fix`, `docs`, `style`,
 `refactor`, `perf`, `test`, `build`, `ci`, `chore` and module scopes such as
-`hap`, `mqtt`, `crypto`, `bridge`, `config`, `daemon`, `tasmota`, `vm`. Breaking
-changes take `!` or a `BREAKING CHANGE:` footer.
+`protocol`, `hap`, `mqtt`, `crypto`, `bridge`, `config`, `daemon`, `tasmota`,
+`vm`. Breaking changes take `!` or a `BREAKING CHANGE:` footer.
 
 ```
 feat(mqtt): add support for retained messages

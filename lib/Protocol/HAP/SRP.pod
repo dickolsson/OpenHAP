@@ -34,10 +34,22 @@ what M2 must carry and what both sides hash for u. About one B in 256
 is small enough that its natural encoding is one byte short, so a
 caller that packed the number itself would break one pairing in 256.
 
-For tests, L<OpenHAP::Test::Controller::SRP> supplies the client side.
+=head1 THE CONTROLLER ROLE
+
+The same file holds C<Protocol::HAP::SRP::Client>: the controller
+side of the exchange, with the same group, hash, and padding rules.
+One module holds both roles, so the conformance vectors exercise them
+against each other.
+
+    my $srp = Protocol::HAP::SRP::Client->new(password => $pin);
+    my $A   = $srp->compute_public;
+    my $M1  = $srp->compute_proof($salt, $B);   # undef on bogus B
+    $srp->verify_server_proof($M2) or die 'server proof invalid';
+    my $K = $srp->session_key;
 
 =head1 SEE ALSO
 
-L<Protocol::HAP::Pairing>, F<spec/HAP-Pairing.md>
+L<Protocol::HAP::Pairing>, L<Protocol::HAP::Controller>,
+F<spec/HAP-Pairing.md>
 
 =cut

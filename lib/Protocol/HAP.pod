@@ -100,10 +100,13 @@ four logger methods and drops every message.
 
 =item L<Protocol::HAP::Server> - the sans-IO accessory-server engine
 
+=item L<Protocol::HAP::Controller> - the blocking controller client
+
 =back
 
 The store contract itself lives in F<Protocol/HAP/Store.pod>. The
-controller joins the namespace in the last phase of the extraction.
+controller role of SRP lives beside the accessory role, as
+C<Protocol::HAP::SRP::Client> in the same file.
 
 =head1 SEE ALSO
 

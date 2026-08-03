@@ -17,20 +17,28 @@
 
 use v5.36;
 
-package OpenHAP::Test::Controller;
+package Protocol::HAP::Controller;
 
 use IO::Socket::INET;
 use IO::Select;
+use Protocol::HAP;
 use Protocol::HAP::Crypto;
 use Protocol::HAP::HTTP;
 use Protocol::HAP::TLV;
 use Protocol::HAP::Pairing;
-use OpenHAP::Test::Controller::SRP;
 
-# This module is a minimal HomeKit controller for tests. It completes
-# pair-setup (SRP M1-M6) and pair-verify (X25519). It uses the
-# encrypted session framing. It connects to a live accessory over
-# TCP, or runs in-process through an injected transport code ref.
+# The controller role of SRP lives beside the accessory role
+use Protocol::HAP::SRP;
+
+# This module is a minimal HomeKit controller. It completes pair-setup
+# (SRP M1-M6) and pair-verify (X25519). It uses the encrypted session
+# framing. It connects to a live accessory over TCP, or runs
+# in-process through an injected transport code ref.
+#
+# The controller is the documented exception to the sans-IO rule of
+# Protocol::HAP: it is a blocking convenience client that owns its
+# socket. An embedder with an event loop uses the codec modules
+# directly instead.
 
 use constant MAX_FRAME => 1024;
 
@@ -43,9 +51,10 @@ use constant MAX_MESSAGE => 1048576;
 sub new ( $class, %args )
 {
 	my $self = bless {
-		host      => $args{host} // '127.0.0.1',
-		port      => $args{port} // 51827,
-		pin       => $args{pin}  // '031-45-154',
+		host      => $args{host}   // '127.0.0.1',
+		port      => $args{port}   // 51827,
+		pin       => $args{pin}    // '031-45-154',
+		logger    => $args{logger} // Protocol::HAP->null_logger,
 		transport => $args{transport},
 
 		# Socket read timeout. The default is correct for fast
@@ -334,10 +343,9 @@ sub pair_setup ($self)
 	}
 
 	# M3 -> M4
-	my $srp =
-	    OpenHAP::Test::Controller::SRP->new( password => $self->{pin} );
-	my $A  = $srp->compute_public;
-	my $M1 = $srp->compute_proof( $salt, $B );
+	my $srp = Protocol::HAP::SRP::Client->new( password => $self->{pin} );
+	my $A   = $srp->compute_public;
+	my $M1  = $srp->compute_proof( $salt, $B );
 	unless ( defined $M1 ) {
 		$self->{last_error} = 'bogus server public key';
 		return;

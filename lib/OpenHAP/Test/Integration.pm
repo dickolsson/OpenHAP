@@ -129,14 +129,14 @@ sub teardown ($self)
 }
 
 # $self->get_controller(%args):
-#	Construct an OpenHAP::Test::Controller for the configured
+#	Construct an Protocol::HAP::Controller for the configured
 #	host/port/PIN. The harness tracks the connection and closes
 #	it in teardown.
 sub get_controller ( $self, %args )
 {
-	require OpenHAP::Test::Controller;
+	require Protocol::HAP::Controller;
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		host => '127.0.0.1',
 		port => $self->{hap_port},
 		pin  => $self->get_config_value('hap_pin') // DEFAULT_HAP_PIN,

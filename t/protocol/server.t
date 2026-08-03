@@ -184,7 +184,7 @@ sub make_engine (%extra)
 # no socket: the controller speaks to the engine through receive and
 # the captured output.
 subtest 'full pairing flow over the sans-IO engine' => sub {
-	require OpenHAP::Test::Controller;
+	require Protocol::HAP::Controller;
 
 	my $engine  = make_engine();
 	my $session = $engine->session_open;
@@ -195,7 +195,7 @@ subtest 'full pairing flow over the sans-IO engine' => sub {
 		return delete $OUT{ $session->id };
 	};
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		pin       => '123-45-678',
 		transport => $transport,
 	);

@@ -98,7 +98,7 @@ include each controller connection that C<get_controller> supplied.
     my $c = $env->get_controller;
     $c->pair_setup or die 'pair-setup: ' . $c->last_error;
 
-The method constructs an L<OpenHAP::Test::Controller> for the
+The method constructs an L<Protocol::HAP::Controller> for the
 configured host, port, and setup code. It reads the setup code from
 the C<hap_pin> configuration key. The environment keeps a record of
 the connection and closes it in C<teardown>. The method passes extra
@@ -223,7 +223,7 @@ The method gets the MQTT client connection.
 
 =head1 SEE ALSO
 
-L<FuguLib::Config>, L<Protocol::HAP::HTTP>, L<OpenHAP::Test::Controller>
+L<FuguLib::Config>, L<Protocol::HAP::HTTP>, L<Protocol::HAP::Controller>
 
 =head1 AUTHOR
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Unit tests for OpenHAP::Test::Controller: constructor, transport
+# Unit tests for Protocol::HAP::Controller: constructor, transport
 # injection and error paths. The conformance tests in
 # t/conformance/hap-pairing-exchange.t cover the full protocol
 # exchanges.
@@ -9,8 +9,6 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
-use lib "$RealBin/../lib";
-use FuguLib::TestLog;
 
 BEGIN {
 	eval {
@@ -24,14 +22,14 @@ BEGIN {
 	}
 }
 
-use_ok('OpenHAP::Test::Controller');
-use_ok('OpenHAP::Test::Controller::SRP');
+use_ok('Protocol::HAP::Controller');
+use_ok('Protocol::HAP::SRP');
 use_ok('Protocol::HAP::TLV');
 use_ok('Protocol::HAP::Pairing');
 
 # Constructor defaults and identity generation
 {
-	my $controller = OpenHAP::Test::Controller->new;
+	my $controller = Protocol::HAP::Controller->new;
 
 	ok( defined $controller, 'controller created with defaults' );
 	is( $controller->{host}, '127.0.0.1', 'default host' );
@@ -50,7 +48,7 @@ use_ok('Protocol::HAP::Pairing');
 		return "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
 	};
 	my $controller =
-	    OpenHAP::Test::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new( transport => $transport );
 
 	my $response = $controller->request( 'GET', '/accessories' );
 	like( $seen, qr{^GET /accessories HTTP/1\.1\r\n},
@@ -63,7 +61,7 @@ use_ok('Protocol::HAP::Pairing');
 
 # Connection refused: pair_setup fails and sets last_error
 {
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		host    => '127.0.0.1',
 		port    => 1,      # nothing listens here
 		timeout => 1,
@@ -88,7 +86,7 @@ use_ok('Protocol::HAP::Pairing');
 		    . $body;
 	};
 	my $controller =
-	    OpenHAP::Test::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new( transport => $transport );
 
 	ok( !$controller->pair_setup, 'malformed TLV response fails' );
 	ok( defined $controller->last_error, 'last_error set' );
@@ -111,7 +109,7 @@ use_ok('Protocol::HAP::Pairing');
 		    . $body;
 	};
 	my $controller =
-	    OpenHAP::Test::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new( transport => $transport );
 
 	ok( !$controller->pair_setup, 'error TLV fails the exchange' );
 	is( $controller->last_error,
@@ -126,7 +124,7 @@ use_ok('Protocol::HAP::Pairing');
 		    . "Content-Length: 0\r\n\r\n";
 	};
 	my $controller =
-	    OpenHAP::Test::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new( transport => $transport );
 
 	ok( !$controller->pair_setup, 'non-200 status fails' );
 	is( $controller->last_error, 'HTTP 470', 'status in last_error' );
@@ -135,7 +133,7 @@ use_ok('Protocol::HAP::Pairing');
 # Client SRP dies on out-of-order calls
 {
 	my $srp =
-	    OpenHAP::Test::Controller::SRP->new( password => '123-45-678' );
+	    Protocol::HAP::SRP::Client->new( password => '123-45-678' );
 
 	eval { $srp->compute_proof( 'salt', 'B' ) };
 	like( $@, qr/compute_public not called/,
@@ -149,7 +147,7 @@ use_ok('Protocol::HAP::Pairing');
 # Client SRP rejects a bogus server public key
 {
 	my $srp =
-	    OpenHAP::Test::Controller::SRP->new( password => '123-45-678' );
+	    Protocol::HAP::SRP::Client->new( password => '123-45-678' );
 	$srp->compute_public;
 
 	my $M1 = $srp->compute_proof( 'x' x 16, "\x00" x 384 );

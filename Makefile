@@ -114,7 +114,6 @@ install: install-man
 	install -d $(DESTDIR)$(LIBDIR)/OpenHAP
 	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota
 	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Test
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller
 	install -d $(DESTDIR)$(LIBDIR)/FuguLib
 	install -m 644 lib/OpenHAP/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/
 	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
@@ -125,10 +124,6 @@ install: install-man
 	for f in lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod; do \
 		[ -e "$$f" ] || continue; \
 		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/; \
-	done
-	for f in lib/OpenHAP/Test/Controller/*.pm lib/OpenHAP/Test/Controller/*.pod; do \
-		[ -e "$$f" ] || continue; \
-		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/Controller/; \
 	done
 	# FuguLib's API documentation lives in man3p, not in sidecars
 	install -m 644 lib/FuguLib/*.pm $(DESTDIR)$(LIBDIR)/FuguLib/
@@ -199,7 +194,7 @@ spec-coverage:
 package: clean
 	mkdir -p build/$(PACKAGE)/bin
 	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Tasmota
-	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test/Controller
+	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test
 	mkdir -p build/$(PACKAGE)/lib/FuguLib
 	mkdir -p build/$(PACKAGE)/lib/Protocol/HAP
 	mkdir -p build/$(PACKAGE)/etc/rc.d
@@ -214,7 +209,6 @@ package: clean
 	cp lib/OpenHAP/*.pm lib/OpenHAP/*.pod build/$(PACKAGE)/lib/OpenHAP/
 	cp lib/OpenHAP/Tasmota/*.pm lib/OpenHAP/Tasmota/*.pod build/$(PACKAGE)/lib/OpenHAP/Tasmota/
 	cp lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/
-	cp lib/OpenHAP/Test/Controller/*.pm lib/OpenHAP/Test/Controller/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/Controller/
 	cp lib/FuguLib/*.pm build/$(PACKAGE)/lib/FuguLib/
 	cp lib/Protocol/*.pm lib/Protocol/*.pod build/$(PACKAGE)/lib/Protocol/
 	cp lib/Protocol/HAP/*.pm lib/Protocol/HAP/*.pod build/$(PACKAGE)/lib/Protocol/HAP/

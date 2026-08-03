@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Session-framing assertions for spec/HAP-Encryption.md.
-# OpenHAP::Test::Controller makes a real verified in-process session.
+# Protocol::HAP::Controller makes a real verified in-process session.
 # The tests assert on the frames of that session.
 
 use v5.36;
@@ -28,7 +28,7 @@ use_ok('Protocol::HAP::Server');
 use_ok('Protocol::HAP::Store::Memory');
 use_ok('Protocol::HAP::HTTP');
 use_ok('Protocol::HAP::Pairing');
-use_ok('OpenHAP::Test::Controller');
+use_ok('Protocol::HAP::Controller');
 
 my $PIN = '123-45-678';
 
@@ -71,7 +71,7 @@ sub make_verified_pair ()
 		return $response;
 	};
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		pin       => $PIN,
 		transport => $transport,
 	);

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Full pair-setup and pair-verify exchanges for spec/HAP-Pairing.md.
-# OpenHAP::Test::Controller connects in-process to a Protocol::HAP::Server
+# Protocol::HAP::Controller connects in-process to a Protocol::HAP::Server
 # instance. The tests do not mock the crypto. The accessory is really
 # paired when these tests end.
 
@@ -10,6 +10,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
+use Config;
 use FuguLib::TestLog;
 
 BEGIN {
@@ -28,7 +29,7 @@ BEGIN {
 use_ok('Protocol::HAP::Server');
 use_ok('Protocol::HAP::Store::Memory');
 use_ok('Protocol::HAP::Pairing');
-use_ok('OpenHAP::Test::Controller');
+use_ok('Protocol::HAP::Controller');
 
 my $PIN = '123-45-678';
 
@@ -58,7 +59,7 @@ sub make_pair ( %controller_args )
 		return delete $OUT{ $session->id };
 	};
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		pin       => $PIN,
 		transport => $transport,
 		%controller_args,
@@ -115,7 +116,7 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 		$hap->receive( $session2, $request_bytes ) or return;
 		return delete $OUT{ $session2->id };
 	};
-	my $second = OpenHAP::Test::Controller->new(
+	my $second = Protocol::HAP::Controller->new(
 		pin           => $PIN,
 		transport     => $transport2,
 		controller_id => 'second-ctrl',
@@ -187,6 +188,55 @@ subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
 	my ( $controller2, $hap2 ) = make_pair();
 	ok( $controller2->pair_setup, 'pair-setup succeeds after unpair' );
 
+};
+
+# The one socket-based flow of the conformance suite. Every other
+# exchange runs sans-IO; this one covers the blocking client itself
+# and the OpenHAP::Server host plumbing, over a real TCP connection.
+subtest '[HAP-Pairing §2.2][HAP-Pairing §3] socket transport against a '
+    . 'listening host' => sub {
+	plan skip_all => 'fork not available on this platform'
+	    unless $Config::Config{d_fork};
+	require OpenHAP::Server;
+	require File::Temp;
+
+	my $server = OpenHAP::Server->new(
+		port         => 0,    # the kernel picks a free port
+		pin          => $PIN,
+		name         => 'Socket Bridge',
+		storage_path => File::Temp::tempdir( CLEANUP => 1 ),
+	);
+	my $listener = $server->listen;
+	my $port     = $listener->sockport;
+
+	# The child serves; the parent is the controller. The listener
+	# was opened before the fork, so the parent cannot race the
+	# child to the connect.
+	my $pid = fork // die "fork: $!";
+	if ( $pid == 0 ) {
+		$server->run;
+		exit 0;
+	}
+
+	my $controller = Protocol::HAP::Controller->new(
+		host => '127.0.0.1',
+		port => $port,
+		pin  => $PIN,
+	);
+
+	ok( $controller->pair_setup, 'pair-setup completes over TCP' );
+	ok( $controller->pair_verify,
+		'pair-verify completes over the same connection' );
+
+	my $response = $controller->request( 'GET', '/accessories' );
+	ok( defined $response, 'encrypted request round-trips over TCP' );
+	is( $response->{status}, 200, 'GET /accessories returns 200' );
+	like( $response->{body}, qr/"accessories"/,
+		'accessory database returned' );
+
+	$controller->close;
+	kill 'TERM', $pid;
+	is( waitpid( $pid, 0 ), $pid, 'the serving child ends' );
 };
 
 done_testing();
