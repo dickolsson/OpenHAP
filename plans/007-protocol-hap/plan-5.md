@@ -33,7 +33,8 @@ contains only product code.
   `hap-pairing-exchange.t`, `hap-encryption-exchange.t`, and any other file that
   imports the test controller.
 - Where an exchange test can run sans-IO — controller codec against engine
-  `output` capture — prefer that form; keep one socket-based flow to cover the
+  `output` capture — prefer that form. No socket-based conformance flow exists
+  today; add exactly one, against a listening `OpenHAP::Server`, to cover the
   blocking client itself.
 
 ### 5.4 Documentation pass

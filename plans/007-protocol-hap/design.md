@@ -36,7 +36,8 @@ compatibility layers. Old names die when their replacement lands.
 - No CPAN release in this effort. PAUSE registration, `$VERSION` policy, and
   distribution tooling are release work, recorded in `TODO.md`.
 - No new protocol features.
-- No changes to FuguVM.
+- No functional changes to FuguVM. Phase 1 retargets one import line to
+  `FuguLib::Random`.
 - No repository split.
 
 ## Architecture
@@ -96,15 +97,18 @@ constructor argument.
    `save_accessory_keys`, `load_pairings`, `save_pairing`, `remove_pairing`,
    `remove_all_pairings`, `get_config_number`, `increment_config_number`,
    `get_config_digest`, `save_config_digest`, `get_auth_attempts`,
-   `set_auth_attempts`. `OpenHAP::Storage` conforms unchanged.
-   `Protocol::HAP::Store::Memory` is the reference implementation.
+   `set_auth_attempts`. The mutating pairing methods (`save_pairing`,
+   `remove_pairing`, `remove_all_pairings`) increment the configuration number
+   themselves, as `OpenHAP::Storage` does today. `OpenHAP::Storage` conforms
+   unchanged. `Protocol::HAP::Store::Memory` is the reference implementation.
 3. `output` — a code ref `sub ($session, $bytes)`. The engine sends every write
    through it: responses and EVENT notifications alike. The host writes the
    bytes to the connection that it filed the session under.
 4. `after` and `cancel` — code refs for one-shot timers, used for event
    coalescing [HAP-HTTP §14]. `FuguLib::EventLoop` provides both directly. They
-   are optional: without them, the host must call `flush_events`. Conformance
-   tests do that.
+   are optional: without them, the host must call `flush_events`. The
+   conformance suite drives the engine that way, and covers the timer-less path
+   by doing so.
 5. `on_pairing_changed` — an optional code ref `sub ($paired)`. The engine calls
    it when the paired state flips. The host re-advertises the mDNS TXT record
    [HAP-mDNS §8].
@@ -124,7 +128,8 @@ constructor argument.
 - The request bound (64 KB) and the read buffer live in the engine, because an
   unauthenticated client reaches `/pair-setup`.
 - `mdns_txt_records` returns the TXT records as a hash [HAP-mDNS §3]. The host
-  formats and publishes them.
+  formats and publishes them. The record values move unchanged, including
+  `pv=1`, which every current host publishes.
 
 ### Wiring after the change
 
@@ -174,6 +179,12 @@ graph TD
 - `t/protocol/boundary.t` parses `use` and `require` under `lib/Protocol/` and
   fails on FuguLib, FuguVM, OpenHAP, or an undeclared CPAN module.
 - Module tests for moved code move with it and keep their coverage.
+- The user lists in the phase tasks are starting points. The acceptance greps
+  define completeness: retarget every file they match, tests included.
+- Every phase that adds or removes a `.pod` sidecar updates the page
+  expectations in `t/web/site.t`.
+- The `Makefile` install and package targets and the CI path filters ship and
+  watch `lib/Protocol/` and `t/protocol/` from phase 1.
 
 ## Phases
 

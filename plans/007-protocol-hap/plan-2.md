@@ -20,11 +20,17 @@ imports and keep their behavior.
 - Remove `use FuguLib::Log` from `Characteristic` and `Bridge`, the two model
   modules that log.
 - Add the `logger` constructor argument to all four modules. The default is the
-  null logger from `Protocol::HAP`. A `Bridge` passes its logger to the
-  accessories it creates; an `Accessory` passes it to its services and
-  characteristics.
-- `OpenHAP::HAP` passes `FuguLib::Log->default` when it builds the bridge, so
-  the daemon's log output does not change.
+  null logger from `Protocol::HAP`. An object passes its logger only to the
+  objects it creates itself: the `Bridge` to its own `ProtocolInformation`
+  service, an `Accessory` to the services and characteristics it builds.
+  `add_bridged_accessory` never touches the logger of an accessory it receives —
+  no stamping, no fallback.
+- The production log lines live in `Characteristic::set_value` and
+  `enable_events`, and the Tasmota drivers create those characteristics. The
+  drivers and `OpenHAP::DeviceLoader` therefore pass
+  `logger => FuguLib::Log->default` to every accessory, service, and
+  characteristic they create. `OpenHAP::HAP` does the same for the bridge. With
+  both paths wired, the daemon's log output does not change.
 
 ### 2.3 JSON
 
@@ -57,5 +63,7 @@ imports and keep their behavior.
 - `t/protocol/boundary.t` passes: the model modules load no FuguLib code.
 - A model test proves the default logger is silent and an injected logger
   receives the messages.
+- `t/openhap/tasmota.t` asserts that a characteristic a driver creates carries
+  the injected logger, so the write and subscription debug lines survive.
 - `t/openhap/tasmota.t` and `t/openhap/device-loading.t` pass unchanged in what
-  they assert.
+  they assert otherwise.

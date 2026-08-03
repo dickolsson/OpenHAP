@@ -34,7 +34,9 @@ The engine takes the protocol half of `OpenHAP::HAP`:
   and returns 1, or undef on a fatal condition.
 - Endpoints: `/pair-setup`, `/pair-verify`, `/identify`, `/pairings` (add,
   remove, list), `/accessories`, `/characteristics` GET and PUT, `/prepare`. The
-  handlers move as they are; only logging and storage calls change spelling.
+  handlers move with their behavior intact; the logging, storage, and JSON calls
+  change spelling. `JSON::XS` becomes core `JSON::PP` here — the boundary test
+  forbids `JSON::XS` under `lib/Protocol/`.
 - Events: the subscription registry, coalescing through `after`/`cancel`,
   `queue_event`, `flush_events`, and `send_event` over `output`.
 - Identity and discovery: `is_paired`, `get_config_number`,
@@ -78,9 +80,11 @@ The host takes the other half:
 - Split `t/openhap/hap.t`: engine behavior becomes `t/protocol/server.t`, driven
   sans-IO over `Store::Memory` with captured `output`; host wiring becomes
   `t/openhap/server.t`.
-- Retarget `t/conformance/hap-http.t`, `hap-mdns.t`, and the two exchange tests.
-  Socket-based exchange flows keep working through `OpenHAP::Test::Controller`
-  until phase 5.
+- Rework the transport of `t/conformance/hap-http.t`, `hap-mdns.t`, and the two
+  exchange tests. They drive the private `$hap->_dispatch` in-process today, and
+  this phase deletes it. The replacement is the public engine API:
+  `session_open`, `receive`, and captured `output`. The assertions and their
+  citations stay as they are.
 - `t/openhap/integration/` names the daemon, not the modules; verify, and update
   only if a test names `OpenHAP::HAP`.
 

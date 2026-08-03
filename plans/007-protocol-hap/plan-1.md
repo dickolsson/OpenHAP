@@ -75,6 +75,18 @@ enforces the dependency rules for every later phase.
 - Update the Layout section of the root `CLAUDE.md`: add `lib/Protocol/` and the
   `t/protocol/` tier, and correct the stale `lib/OpenHAP/` module list.
 
+### 1.7 Install, package, and CI
+
+- Extend the `Makefile` `install`, `package`, and `uninstall` targets: they name
+  `lib/OpenHAP/` and `lib/FuguLib/` paths explicitly, so `lib/Protocol/` (`.pm`
+  and `.pod`, including the later `Store/` subdirectory) must join them. Without
+  this, the installed daemon dies on a missing `Protocol::HAP::Crypto`.
+- Extend the path filters in `.github/workflows/integration.yml` with
+  `lib/Protocol/**.pm` and `t/protocol/**`; today they watch only
+  `lib/FuguLib/*.pm` and `lib/OpenHAP/**.pm`. `check.yml` already matches
+  `lib/**.pm`; verify its test filters cover `t/protocol/` too.
+- Update the page expectations in `t/web/site.t` for the new `.pod` sidecars.
+
 ## Deliverables
 
 - `lib/Protocol/HAP.pm`, `TLV.pm`, `PIN.pm`, `Crypto.pm`, `SRP.pm`, each with a
@@ -82,12 +94,14 @@ enforces the dependency rules for every later phase.
 - `lib/FuguLib/Random.pm` and `man/fugulib/Random.3p`.
 - `t/protocol/` with `boundary.t`, `tlv.t`, `pin.t`, `crypto.t`, `srp.t`,
   `srp_padding.t`; `t/fugulib/random.t`.
-- Updated `Makefile`, root `CLAUDE.md`, `t/CLAUDE.md`, `TODO.md`,
-  `web/fugulib.body.html`.
+- Updated `Makefile` (test, install, package, uninstall, `MAN3P`), root
+  `CLAUDE.md`, `t/CLAUDE.md`, `TODO.md`, `web/fugulib.body.html`,
+  `.github/workflows/integration.yml`.
 
 ## Acceptance criteria
 
 - `make check` passes.
+- `make package` ships `lib/Protocol/` beside `lib/OpenHAP/` and `lib/FuguLib/`.
 - `grep -r 'OpenHAP::TLV\|OpenHAP::PIN\|OpenHAP::SRP\|FuguLib::Crypto' lib bin t`
   finds nothing.
 - `t/protocol/boundary.t` passes and fails correctly when given a planted
