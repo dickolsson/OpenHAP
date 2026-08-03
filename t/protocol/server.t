@@ -219,4 +219,43 @@ subtest 'full pairing flow over the sans-IO engine' => sub {
 	ok( 1, 'session_close runs' );
 };
 
+# The JSON layer speaks octets, never wide-character strings. A
+# non-ASCII value must reach the wire as UTF-8 bytes: the AEAD layer
+# refuses wide characters, and Content-Length counts bytes. A codec
+# without utf8 mode dies inside the encrypted session here.
+subtest 'non-ASCII values survive the encrypted JSON path' => sub {
+	require Protocol::HAP::Controller;
+
+	my $engine  = make_engine( name => "Caf\x{e9} \x{65e5}\x{672c}" );
+	my $session = $engine->session_open;
+
+	my $transport = sub ($request_bytes) {
+		$OUT{ $session->id } = '';
+		$engine->receive( $session, $request_bytes ) or return;
+		return delete $OUT{ $session->id };
+	};
+
+	my $controller = Protocol::HAP::Controller->new(
+		pin       => '123-45-678',
+		transport => $transport,
+	);
+
+	ok( $controller->pair_setup,  'pair-setup completes' );
+	ok( $controller->pair_verify, 'pair-verify completes' );
+
+	my $response = $controller->request( 'GET', '/accessories' );
+	ok( defined $response,
+		'the encrypted response survives the non-ASCII name' );
+	is( $response->{status}, 200, 'GET /accessories returns 200' );
+	is( length( $response->{body} ),
+		$response->{headers}{'content-length'},
+		'Content-Length counts the UTF-8 bytes of the body' );
+
+	# The name comes back as the same UTF-8 bytes it went in as
+	my $expected = "Caf\x{e9} \x{65e5}\x{672c}";
+	utf8::encode($expected);
+	like( $response->{body}, qr/\Q$expected\E/,
+		'the body carries the name as UTF-8 octets' );
+};
+
 done_testing();

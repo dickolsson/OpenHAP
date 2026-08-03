@@ -125,7 +125,12 @@ sub new ( $class, %args )
 		event_queue         => {},       # Queued events for coalescing
 		event_flush_timer   => undef,    # The pending flush, if any
 
-		json => JSON::PP->new,
+		# utf8 mode: the codec takes and returns octets, never
+		# wide-character strings. The wire carries octets, the
+		# AEAD layer refuses wide characters, and Content-Length
+		# counts bytes. Without this flag, a non-ASCII value
+		# breaks all three.
+		json => JSON::PP->new->utf8,
 	}, $class;
 
 	$self->_initialize;
@@ -985,9 +990,11 @@ sub flush_events ($self)
 	$self->{event_queue} = {};
 
 	# A direct call empties the queue, so the pending timer has
-	# nothing left to do
+	# nothing left to do. Test the handle for definedness, not
+	# truth: the timer contract promises a handle, and a host is
+	# free to hand out a false one.
 	$self->{cancel}->( $self->{event_flush_timer} )
-	    if $self->{cancel} && $self->{event_flush_timer};
+	    if $self->{cancel} && defined $self->{event_flush_timer};
 	$self->{event_flush_timer} = undef;
 
 	return;
