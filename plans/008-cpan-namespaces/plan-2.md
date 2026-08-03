@@ -25,18 +25,37 @@ The phase depends on phase 1. Phase 3 depends on this one.
 - Users: `bin/openhapd`, `t/openhap/server.t`, and the comments in
   `t/protocol/server.t`.
 
-### 2.3 OpenHAP::Storage becomes App::OpenHAP::Store::File
+### 2.3 OpenHAP::Storage becomes Protocol::HAP::Store::File
 
-- `mkdir lib/App/OpenHAP/Store`, then `git mv` the module and its sidecar into
-  it as `File.pm` and `File.pod`.
-- The name states the contract and the medium. The module cannot live in
-  `Protocol::HAP::Store::File`, because it uses `Fugu::File` and the layering
-  rules forbid that direction. Say so in the sidecar.
-- The twelve contract methods do not change. This is a rename, not a rewrite.
-- Users: `bin/openhapd` and `t/openhap/storage.t`.
-- `lib/Protocol/HAP/Store.pod:11` names `OpenHAP::Storage` in prose. It is a
-  shipped `.pod` that `make web` publishes, and `t/protocol/boundary.t` reads
-  `.pm` files only, so nothing else catches it.
+This task is the one rewrite in the effort. Land it in a commit of its own, so a
+bisect separates it from the namespace move. Task 2.1 must not carry the module
+into `lib/App/OpenHAP/` first: the old name and its replacement never exist
+together, and a move to `App::` would be a name that this task deletes.
+
+- `git mv lib/OpenHAP/Storage.pm lib/Protocol/HAP/Store/File.pm`, and the
+  sidecar with it as `File.pod`. The directory already holds `Memory.pm`.
+- The twelve contract methods keep their behavior, and the layout on disk does
+  not change. Three host dependencies go, as the design describes:
+  - `FuguLib::Log` becomes a `logger` argument, with
+    `Protocol::HAP->null_logger` as the default.
+  - `FuguLib::File` becomes private `_read`, `_write`, `_write_atomic`, and
+    `_ensure_dir` methods over `Fcntl` and `File::Path`. `_write` takes the mode
+    and applies it at the `sysopen`. A `chmod` after the write is a fault, not a
+    style choice.
+  - `FuguLib::Store` becomes a private JSON file over `JSON::PP`. Keep the two
+    guarantees of `Fugu::Store`: `load` tolerates a missing and a corrupt file,
+    and `save` writes through a temporary file and renames over the target.
+- `Fcntl`, `File::Path`, and `JSON::PP` are core Perl, so `%DECLARED` in
+  `t/protocol/boundary.t` needs no new entry. Prove that the test still passes.
+- `db_path` becomes `path`, and `new` dies without it. The `/var/db/openhapd`
+  default moves to `bin/openhapd`, beside the other path policy.
+- Users: `lib/OpenHAP/Server.pm:78`, which becomes
+  `Protocol::HAP::Store::File->new( path => ..., logger => Fugu::Log->default )`.
+- `lib/Protocol/HAP/Store.pod:11` names `OpenHAP::Storage` as a production
+  implementation elsewhere. It now names `Protocol::HAP::Store::File` as the
+  file implementation in this distribution. It is a shipped `.pod` that
+  `make web` publishes, and `t/protocol/boundary.t` reads `.pm` files only, so
+  nothing else catches it.
 
 ### 2.4 OpenHAP::DeviceLoader becomes App::OpenHAP::Devices
 
@@ -67,7 +86,10 @@ The phase depends on phase 1. Phase 3 depends on this one.
 ### 2.7 Retarget the callers
 
 - `bin/openhapd`: the `use OpenHAP::DeviceLoader` and `use OpenHAP::Server`
-  lines, and the `Storage` constructor call.
+  lines. The daemon now owns the `/var/db/openhapd` default, per task 2.3.
+- `bin/openhapd:282` and the pledge comment at `bin/openhapd:296` to `:300` name
+  `Storage` six times. The promises do not change: the same module makes the
+  same calls under a new name. Only the name in the comments changes.
 - `bin/openhapd:380` is
   `push @perl_dirs, $script_lib if -d "$script_lib/OpenHAP";`. This is a
   filesystem probe on a directory name, not a package name, so no grep for
@@ -80,9 +102,20 @@ The phase depends on phase 1. Phase 3 depends on this one.
 
 ### 2.8 Move and retarget the tests
 
-- `git mv t/openhap/server.t t/openhap/host.t` and
-  `git mv t/openhap/storage.t t/openhap/store-file.t`. The tier directory keeps
-  its name: it is named after the product, not the namespace.
+- `git mv t/openhap/server.t t/openhap/host.t`. The tier directory keeps its
+  name: it is named after the product, not the namespace.
+- `git mv t/openhap/storage.t t/protocol/store-file.t`. The test follows its
+  module into the protocol tier. Keep the file-specific assertions here: the
+  layout on disk, the counters that survive a restart, and the mode of every
+  file that the store creates. Nothing asserts the mode of `accessory_ltsk` or
+  `pairings.db` today, and both must be 0600 from their first byte.
+- Add `t/protocol/store.t`: the twelve contract methods of
+  `Protocol/HAP/Store.pod`, driven over `Store::Memory` and `Store::File` from
+  one loop. It replaces the `can` loop at the end of `t/openhap/storage.t`,
+  which proved that the methods exist and never that they agree. Above all it
+  proves the increment rule that `Store.pod` calls a rule with no slack: each of
+  `save_pairing`, `remove_pairing`, and `remove_all_pairings` moves `c#` by one,
+  in both implementations.
 - `mkdir -p t/lib/App`, then `git mv t/lib/OpenHAP t/lib/App/OpenHAP`, and
   rename the `OpenHAP::TestMock::MQTT` package. Retarget the four
   `t/conformance/mqtt-*.t` files that load it.
@@ -106,8 +139,10 @@ The phase depends on phase 1. Phase 3 depends on this one.
 
 - `Makefile`: `install`, `package`, and `uninstall` name `$(LIBDIR)/OpenHAP`,
   `/OpenHAP/Tasmota`, and `/OpenHAP/Test`. Each gains the `App/` level, and
-  `install -d $(DESTDIR)$(LIBDIR)/App` comes first. The `Store/` subdirectory
-  needs a directory rule and a copy rule.
+  `install -d $(DESTDIR)$(LIBDIR)/App` comes first. The store needs no new rule:
+  the `lib/Protocol/HAP/Store/*` loops at `Makefile:137` and `Makefile:217`
+  already cover it, and the comment at `Makefile:130` that the loop accepts zero
+  files is now stale, because the directory holds two modules.
 - `uninstall` must not do `rm -rf $(DESTDIR)$(LIBDIR)/App`. `App/` is a shared
   parent that holds other distributions, such as `App::cpanminus`. Remove
   `App/OpenHAP` and then `rmdir` the parent, which fails harmlessly when the
@@ -130,6 +165,10 @@ The phase depends on phase 1. Phase 3 depends on this one.
   group and its `id="modules"` anchor vanish from `manuals.html`.
   `web/index.body.html` links `manuals.html#modules`, and `t/web/site.t`
   requires that anchor to resolve. Line 60 names the path in a comment.
+- The store sidecar changes group. `web/mkindex.sh:150` already covers it with
+  the `lib/Protocol/` prefix, so `Store/File.pod` leaves the `OpenHAP modules`
+  group and joins `Protocol::HAP modules` with no edit. The total sidecar count
+  does not change: the file moves, it does not appear.
 - `t/web/site.t:203` matches `^(?:OpenHAP|FuguVM|Protocol)::` and asserts one
   page per sidecar at line 206. This phase sets it to
   `^(?:App|FuguVM|Protocol)::`. `FuguVM` must stay until phase 3, because 11
@@ -149,10 +188,10 @@ The phase depends on phase 1. Phase 3 depends on this one.
 
 ## Deliverables
 
-- `lib/App/OpenHAP/` with `Host.pm`, `Devices.pm`, `Store/File.pm`,
-  `Tasmota/Device.pm`, the four device classes, and `Test/Integration.pm`, each
-  with a `.pod` sidecar.
-- `t/openhap/host.t`, `t/openhap/store-file.t`, and
+- `lib/App/OpenHAP/` with `Host.pm`, `Devices.pm`, `Tasmota/Device.pm`, the four
+  device classes, and `Test/Integration.pm`, each with a `.pod` sidecar.
+- `lib/Protocol/HAP/Store/File.pm` and `File.pod`, with no `Fugu::` import.
+- `t/openhap/host.t`, `t/protocol/store-file.t`, `t/protocol/store.t`, and
   `t/lib/App/OpenHAP/TestMock/MQTT.pm`.
 - Updated `Makefile`, `scripts/integration`, `scripts/vm-provision`,
   `.github/workflows/integration.yml`, `bin/openhapd`, `bin/hapctl`,
@@ -169,7 +208,15 @@ The phase depends on phase 1. Phase 3 depends on this one.
 - `t/protocol/boundary.t` fails correctly on a planted `use App::OpenHAP::Host;`
   inside `lib/Fugu/`. Prove it once by hand.
 - `make install DESTDIR=...` into an empty directory installs
-  `$(LIBDIR)/App/OpenHAP/Store/File.pm`, and no `$(LIBDIR)/OpenHAP` path.
+  `$(LIBDIR)/Protocol/HAP/Store/File.pm`, and no `$(LIBDIR)/OpenHAP` path.
+- `t/protocol/boundary.t` passes over the new `lib/Protocol/HAP/Store/File.pm`,
+  and fails correctly on a planted `use Fugu::File;` inside it.
+- `t/protocol/store.t` fails correctly when one implementation skips the
+  increment in `remove_pairing`. Prove it once by hand, in each implementation.
+- `t/protocol/store-file.t` asserts mode 0600 on `accessory_ltsk`,
+  `pairings.db`, and `state.json`, and mode 0644 on `accessory_ltpk`.
+- A paired daemon still starts: `make integration` covers this, and the store
+  reads a directory that the previous run wrote.
 - `make uninstall DESTDIR=...` against a directory that also holds
   `$(LIBDIR)/App/Other.pm` and `$(LIBDIR)/Protocol/Other.pm` leaves both files
   in place.
