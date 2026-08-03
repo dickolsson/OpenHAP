@@ -581,8 +581,8 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
 - [ ] A `$VERSION` policy for the modules (none carry one today)
 - [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`,
       distribution tests
-- [ ] A redistribution-license review of `spec/` before any spec text
-      ships in the distribution
+- [ ] A redistribution-license review of `spec/` before any spec text ships in
+      the distribution
 
 ## Technical Debt
 

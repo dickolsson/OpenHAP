@@ -56,8 +56,8 @@ make integration    # provision OpenBSD VM and run integration tests
   setup-code rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`), pairing and
   sessions (`Pairing.pm`, `Session.pm`, `Store.pod`, `Store/Memory.pm`), data
   model (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`), the
-  sans-IO engine (`Server.pm`), and the blocking client (`Controller.pm`); it
-  is self-contained and never uses FuguLib, FuguVM, or OpenHAP
+  sans-IO engine (`Server.pm`), and the blocking client (`Controller.pm`); it is
+  self-contained and never uses FuguLib, FuguVM, or OpenHAP
   (`t/protocol/boundary.t` enforces this)
 - `lib/OpenHAP/` — the host (`Server.pm`), persistence (`Storage.pm`), device
   integration (`DeviceLoader.pm`, `Tasmota/*.pm`), the integration-test driver
