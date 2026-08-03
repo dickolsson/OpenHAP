@@ -16,6 +16,7 @@ use FuguLib::Sandbox;
 use FuguLib::Signal;
 use OpenHAP::DeviceLoader;
 use OpenHAP::Server;
+use Protocol::HAP::PIN qw(normalize_pin);
 
 # Default configuration
 my $config_file  = '/etc/openhapd.conf';
@@ -37,6 +38,18 @@ GetOptions(
 my $config = FuguLib::Config->new( file => $config_file );
 if ( -f $config_file && !$config->load ) {
 	print STDERR $config->error . "\n";
+	exit 1;
+}
+
+# Refuse an unusable setup code here, before the daemonize step. The
+# engine requires a valid code, and it must not fail with a raw die
+# after the process left the terminal. The old server substituted the
+# default code silently, which had the operator serve a code they did
+# not choose.
+my $config_pin = $config->get( 'hap_pin', '1995-1018' );
+unless ( defined normalize_pin($config_pin) ) {
+	print STDERR "openhapd: hap_pin \"$config_pin\" is not a valid"
+	    . " setup code: use 8 digits, for example 1995-1018\n";
 	exit 1;
 }
 
