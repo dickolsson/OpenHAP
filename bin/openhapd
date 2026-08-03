@@ -6,7 +6,7 @@ use lib "$RealBin/../lib";
 
 use FuguLib::Config;
 use FuguLib::Control;
-use FuguLib::Crypto;
+use Protocol::HAP::Crypto;
 use FuguLib::Daemon;
 use FuguLib::Log;
 use FuguLib::MDNS;
@@ -15,7 +15,8 @@ use FuguLib::Privdrop;
 use FuguLib::Sandbox;
 use FuguLib::Signal;
 use OpenHAP::DeviceLoader;
-use OpenHAP::HAP;
+use OpenHAP::Server;
+use Protocol::HAP::PIN qw(normalize_pin);
 
 # Default configuration
 my $config_file  = '/etc/openhapd.conf';
@@ -37,6 +38,18 @@ GetOptions(
 my $config = FuguLib::Config->new( file => $config_file );
 if ( -f $config_file && !$config->load ) {
 	print STDERR $config->error . "\n";
+	exit 1;
+}
+
+# Refuse an unusable setup code here, before the daemonize step. The
+# engine requires a valid code, and it must not fail with a raw die
+# after the process left the terminal. The old server substituted the
+# default code silently, which had the operator serve a code they did
+# not choose.
+my $config_pin = $config->get( 'hap_pin', '1995-1018' );
+unless ( defined normalize_pin($config_pin) ) {
+	print STDERR "openhapd: hap_pin \"$config_pin\" is not a valid"
+	    . " setup code: use 8 digits, for example 1995-1018\n";
 	exit 1;
 }
 
@@ -95,8 +108,8 @@ $control_path = undef if lc $control_path eq 'off';
 my $control_dir;
 $control_dir = $control_path =~ s{/[^/]+$}{}r if defined $control_path;
 
-# Create the HAP server
-my $hap = OpenHAP::HAP->new(
+# Create the HAP server: the host of the Protocol::HAP engine
+my $hap = OpenHAP::Server->new(
 	port         => $hap_port,
 	pin          => $hap_pin,
 	name         => $hap_name,
@@ -191,7 +204,7 @@ if (
 		app   => 'hap',
 		proto => 'tcp',
 		port  => $hap_port,
-		txt   => $hap->get_mdns_txt_string,
+		txt   => $hap->mdns_txt_string,
 	) )
 {
 	$log->info( 'Registered mDNS service: %s._hap._tcp port %d',
@@ -241,11 +254,11 @@ if ($control_path) {
 #
 # Step 1: load every module that would otherwise load later.
 #
-# FuguLib::Crypto opens a shared object for each Crypt::* library. The
+# Protocol::HAP::Crypto opens a shared object for each Crypt::* library. The
 # promise set below has no prot_exec, so a load after the pledge kills
 # the process. The warm-up must therefore happen here, and it must not
 # be optional: a daemon that cannot sign cannot pair.
-FuguLib::Crypto->preload;
+Protocol::HAP::Crypto->preload;
 #
 # Net::MQTT::Simple is pure Perl, so this is not about prot_exec. The
 # step resolves the transitive dependencies of the module while @INC

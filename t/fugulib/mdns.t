@@ -318,6 +318,16 @@ subtest 'the object going away withdraws the service' => sub {
 		'the server saw the connection close on destruction' );
 };
 
+subtest 'format_txt formats TXT records for mdnsd [MDNS-Control §5]' =>
+    sub {
+	is( FuguLib::MDNS::format_txt( b => 2, a => 1, c => 3 ),
+		'a=1.b=2.c=3',
+		'key=value pairs joined with dots in sorted key order' );
+	is( FuguLib::MDNS::format_txt(), '', 'no records give no string' );
+	is( FuguLib::MDNS::format_txt( 'c#' => 1, sf => 0 ),
+		'c#=1.sf=0', 'HAP-style keys pass through unchanged' );
+};
+
 subtest 'new proves the struct template' => sub {
 	# The size is a measured fact about the platform. A template
 	# that no longer encodes it means every publish would send a

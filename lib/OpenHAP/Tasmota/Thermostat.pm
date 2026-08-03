@@ -5,8 +5,8 @@ package OpenHAP::Tasmota::Thermostat;
 use FuguLib::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
-use OpenHAP::Service;
-use OpenHAP::Characteristic;
+use Protocol::HAP::Service;
+use Protocol::HAP::Characteristic;
 
 use JSON::XS;
 
@@ -18,6 +18,7 @@ sub new ( $class, %args )
 {
 
 	my $self = $class->SUPER::new(
+		logger       => $args{logger},
 		aid          => $args{aid},
 		name         => $args{name},
 		model        => 'Tasmota Thermostat',
@@ -41,13 +42,15 @@ sub new ( $class, %args )
 	$self->{target_heating_state} = 0;
 
 	# Add the Thermostat service
-	my $thermostat = OpenHAP::Service->new(
-		type => 'Thermostat',
-		iid  => 10,
+	my $thermostat = Protocol::HAP::Service->new(
+		logger => $self->{logger},
+		type   => 'Thermostat',
+		iid    => 10,
 	);
 
 	$thermostat->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'CurrentHeatingCoolingState',
 			iid    => 11,
 			format => 'uint8',
@@ -56,7 +59,8 @@ sub new ( $class, %args )
 		) );
 
 	$thermostat->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'TargetHeatingCoolingState',
 			iid    => 12,
 			format => 'uint8',
@@ -66,7 +70,8 @@ sub new ( $class, %args )
 		) );
 
 	$thermostat->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'CurrentTemperature',
 			iid    => 13,
 			format => 'float',
@@ -78,7 +83,8 @@ sub new ( $class, %args )
 		) );
 
 	$thermostat->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'TargetTemperature',
 			iid    => 14,
 			format => 'float',
@@ -92,7 +98,8 @@ sub new ( $class, %args )
 		) );
 
 	$thermostat->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'TemperatureDisplayUnits',
 			iid    => 15,
 			format => 'uint8',

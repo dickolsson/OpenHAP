@@ -16,8 +16,8 @@ BEGIN {
 	}
 }
 
-use_ok('FuguLib::Crypto');
-use_ok('OpenHAP::Session');
+use_ok('Protocol::HAP::Crypto');
+use_ok('Protocol::HAP::Session');
 
 # Fixed 32-byte keys for deterministic frame tests
 my $key_a2c = pack( 'H*', '11' x 32 );
@@ -26,7 +26,7 @@ my $key_c2a = pack( 'H*', '22' x 32 );
 # The accessory-side session encrypts with a2c and decrypts with c2a
 sub accessory_session ()
 {
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9001 );
 	$session->set_encryption( $key_a2c, $key_c2a );
 	return $session;
 }
@@ -40,7 +40,7 @@ sub controller_decrypt ( $frame, $counter )
 	my $ciphertext = substr( $frame, 2, $length );
 	my $tag        = substr( $frame, 2 + $length, 16 );
 	my $nonce      = pack( 'x[4]Q<', $counter );
-	return FuguLib::Crypto->chacha20poly1305_decrypt( $key_a2c, $nonce,
+	return Protocol::HAP::Crypto->chacha20poly1305_decrypt( $key_a2c, $nonce,
 		$ciphertext, $tag, $aad );
 }
 
@@ -95,7 +95,7 @@ subtest '[HAP-Encryption §3] AAD is the length field' => sub {
 	my $tag        = substr( $frame, 2 + $length, 16 );
 	my $nonce      = pack( 'x[4]Q<', 0 );
 	my $plaintext =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $key_a2c, $nonce,
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $key_a2c, $nonce,
 		$ciphertext, $tag, pack( 'v', $length + 1 ) );
 	ok( !defined $plaintext, 'wrong AAD fails authentication' );
 };
@@ -119,7 +119,7 @@ subtest '[HAP-Encryption §4] nonce is 4 zero bytes + LE counter' => sub {
 	# traffic does not change it.
 	my $c2a_nonce = pack( 'x[4]Q<', 0 );
 	my ( $ciphertext, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $key_c2a, $c2a_nonce,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $key_c2a, $c2a_nonce,
 		'PUT /characteristics', pack( 'v', 20 ) );
 	my $inbound = pack( 'v', 20 ) . $ciphertext . $tag;
 	is( $session->decrypt($inbound),
@@ -143,7 +143,7 @@ subtest '[HAP-Encryption §7] ChaCha20-Poly1305 RFC 8439 vector' => sub {
 	    . 'sunscreen would be it.';
 
 	my ( $ciphertext, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $key, $nonce,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $key, $nonce,
 		$plaintext, $aad );
 
 	is( unpack( 'H*', $ciphertext ),
@@ -162,7 +162,7 @@ subtest '[HAP-Encryption §7] ChaCha20-Poly1305 RFC 8439 vector' => sub {
 		'RFC 8439 §2.8.2 auth tag' );
 
 	is(
-		FuguLib::Crypto->chacha20poly1305_decrypt(
+		Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 			$key, $nonce, $ciphertext, $tag, $aad
 		),
 		$plaintext,
@@ -176,7 +176,7 @@ subtest '[HAP-Encryption §9] error handling' => sub {
 	# Build a valid inbound frame. Then tamper with it.
 	my $nonce = pack( 'x[4]Q<', 0 );
 	my ( $ciphertext, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $key_c2a, $nonce,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $key_c2a, $nonce,
 		'GET /accessories', pack( 'v', 16 ) );
 	my $good = pack( 'v', 16 ) . $ciphertext . $tag;
 
@@ -209,10 +209,10 @@ subtest '[HAP-Encryption §1] session key derivation' => sub {
 	# with Control-Salt
 	my $shared = pack( 'H*', 'ab' x 32 );
 	my $read_key =
-	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	my $write_key =
-	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Write-Encryption-Key', 32 );
 
 	is( length($read_key),  32, 'AccessoryToControllerKey is 32 bytes' );
@@ -222,12 +222,12 @@ subtest '[HAP-Encryption §1] session key derivation' => sub {
 		'read and write keys differ' );
 
 	# The accessory session encrypts outbound data with the read key
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9002 );
 	$session->set_encryption( $read_key, $write_key );
 	my $frame = $session->encrypt('response');
 	my $aad   = substr( $frame, 0, 2 );
 	is(
-		FuguLib::Crypto->chacha20poly1305_decrypt(
+		Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 			$read_key, pack( 'x[4]Q<', 0 ),
 			substr( $frame, 2, -16 ),
 			substr( $frame, -16 ), $aad
@@ -238,7 +238,7 @@ subtest '[HAP-Encryption §1] session key derivation' => sub {
 };
 
 subtest '[HAP-Encryption §10] connection lifecycle' => sub {
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9003 );
 
 	# Before pair-verify the session passes data through unencrypted
 	ok( !$session->is_encrypted, 'session starts unencrypted' );

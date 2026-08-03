@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Full pair-setup and pair-verify exchanges for spec/HAP-Pairing.md.
-# OpenHAP::Test::Controller connects in-process to an OpenHAP::HAP
+# Protocol::HAP::Controller connects in-process to a Protocol::HAP::Server
 # instance. The tests do not mock the crypto. The accessory is really
 # paired when these tests end.
 
@@ -10,8 +10,8 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
+use Config;
 use FuguLib::TestLog;
-use File::Temp qw(tempdir);
 
 BEGIN {
 	eval {
@@ -26,48 +26,40 @@ BEGIN {
 	}
 }
 
-use_ok('OpenHAP::HAP');
-use_ok('FuguLib::HTTP');
-use_ok('OpenHAP::Session');
-use_ok('OpenHAP::Pairing');
-use_ok('OpenHAP::Test::Controller');
+use_ok('Protocol::HAP::Server');
+use_ok('Protocol::HAP::Store::Memory');
+use_ok('Protocol::HAP::Pairing');
+use_ok('Protocol::HAP::Controller');
 
 my $PIN = '123-45-678';
 
-# Wire a controller to a fresh OpenHAP::HAP instance through an
-# in-process transport. The transport parses and dispatches requests
-# directly. Each controller connection gets one accessory-side
-# session.
+# Everything the engine writes, keyed by session id: the output
+# contract of the sans-IO engine.
+my %OUT;
+
+# Wire a controller to a fresh Protocol::HAP::Server engine through an
+# in-process transport over the public engine API: session_open,
+# receive, and captured output. Each controller connection gets one
+# accessory-side session.
 sub make_pair ( %controller_args )
 {
-	OpenHAP::Pairing->clear_pairing_state();
-
-	my $hap = OpenHAP::HAP->new(
-		port         => 51827,
-		pin          => $PIN,
-		name         => 'Exchange Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
+	my $hap = Protocol::HAP::Server->new(
+		pin    => $PIN,
+		name   => 'Exchange Bridge',
+		store  => Protocol::HAP::Store::Memory->new,
+		output => sub ( $session, $bytes ) {
+			$OUT{ $session->id } .= $bytes;
+		},
 	);
-	$hap->{pairing}->reset_auth_attempts;
 
-	# Mirror _handle_client: dispatch just enabled encryption, but
-	# the transport sends the pair-verify M4 response in the clear
-	my $session   = OpenHAP::Session->new( socket => 'in-process' );
+	my $session   = $hap->session_open;
 	my $transport = sub ($request_bytes) {
-		my $was_encrypted = $session->is_encrypted;
-		my $plain =
-		    $was_encrypted
-		    ? $session->decrypt($request_bytes)
-		    : $request_bytes;
-		return unless defined $plain;
-		my $request  = FuguLib::HTTP::parse_request($plain);
-		my $response = $hap->_dispatch( $request, $session );
-		return $was_encrypted
-		    ? $session->encrypt($response)
-		    : $response;
+		$OUT{ $session->id } = '';
+		$hap->receive( $session, $request_bytes ) or return;
+		return delete $OUT{ $session->id };
 	};
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		pin       => $PIN,
 		transport => $transport,
 		%controller_args,
@@ -90,13 +82,12 @@ subtest '[HAP-Pairing §2.2][HAP-Pairing §2.8] full pair-setup M1-M6' =>
 
 	# The accessory is paired now
 	ok( $hap->is_paired, 'accessory is paired after M6' );
-	my $pairings = $hap->{storage}->load_pairings;
+	my $pairings = $hap->{store}->load_pairings;
 	ok( exists $pairings->{'openhap-test-ctrl'},
 		'controller identifier persisted' );
 	is( $pairings->{'openhap-test-ctrl'}{permissions},
 		1, 'initial controller is admin' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.6][HAP-Pairing §8] wrong PIN rejected' => sub {
@@ -104,15 +95,14 @@ subtest '[HAP-Pairing §2.6][HAP-Pairing §8] wrong PIN rejected' => sub {
 
 	ok( !$controller->pair_setup, 'pair-setup fails with wrong PIN' );
 	is( $controller->last_error,
-		OpenHAP::Pairing::kTLVError_Authentication(),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'M4 carries kTLVError_Authentication (0x02)' );
 	ok( !$hap->is_paired, 'accessory remains unpaired' );
-	is( OpenHAP::Pairing->get_failed_attempts(),
+	is( $hap->{pairing}->get_failed_attempts,
 		1, 'attempt counter incremented' );
-	is( $hap->{storage}->get_auth_attempts,
+	is( $hap->{store}->get_auth_attempts,
 		1, 'attempt counter persisted' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
@@ -120,22 +110,22 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 	ok( $controller->pair_setup, 'first pairing succeeds' );
 
 	# The accessory refuses a second controller on a fresh connection
-	my $session2   = OpenHAP::Session->new( socket => 'in-process-2' );
+	my $session2   = $hap->session_open;
 	my $transport2 = sub ($request_bytes) {
-		my $request = FuguLib::HTTP::parse_request($request_bytes);
-		return $hap->_dispatch( $request, $session2 );
+		$OUT{ $session2->id } = '';
+		$hap->receive( $session2, $request_bytes ) or return;
+		return delete $OUT{ $session2->id };
 	};
-	my $second = OpenHAP::Test::Controller->new(
+	my $second = Protocol::HAP::Controller->new(
 		pin           => $PIN,
 		transport     => $transport2,
 		controller_id => 'second-ctrl',
 	);
 	ok( !$second->pair_setup, 'second pair-setup refused' );
 	is( $second->last_error,
-		OpenHAP::Pairing::kTLVError_Unavailable(),
+		Protocol::HAP::Pairing::kTLVError_Unavailable(),
 		'M2 carries kTLVError_Unavailable (0x06)' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §3] pair-verify and key derivation' => sub {
@@ -159,7 +149,6 @@ subtest '[HAP-Pairing §3] pair-verify and key derivation' => sub {
 	like( $response->{body}, qr/"accessories"/,
 		'accessory database returned over the encrypted session' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §7.2] remove-pairing and last-admin behavior' =>
@@ -185,7 +174,6 @@ subtest '[HAP-Pairing §7.2] remove-pairing and last-admin behavior' =>
 	isnt( $hap->{accessory_ltpk}, $old_ltpk,
 		'accessory identity regenerated after last admin removal' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
@@ -194,14 +182,61 @@ subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
 
 	# Unpair directly through storage. The encrypted session died
 	# when the previous flow regenerated the identity.
-	$hap->{storage}->remove_all_pairings;
+	$hap->{store}->remove_all_pairings;
 	ok( !$hap->is_paired, 'unpaired again' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 	my ( $controller2, $hap2 ) = make_pair();
 	ok( $controller2->pair_setup, 'pair-setup succeeds after unpair' );
 
-	OpenHAP::Pairing->clear_pairing_state();
+};
+
+# The one socket-based flow of the conformance suite. Every other
+# exchange runs sans-IO; this one covers the blocking client itself
+# and the OpenHAP::Server host plumbing, over a real TCP connection.
+subtest '[HAP-Pairing §2.2][HAP-Pairing §3] socket transport against a '
+    . 'listening host' => sub {
+	plan skip_all => 'fork not available on this platform'
+	    unless $Config::Config{d_fork};
+	require OpenHAP::Server;
+	require File::Temp;
+
+	my $server = OpenHAP::Server->new(
+		port         => 0,    # the kernel picks a free port
+		pin          => $PIN,
+		name         => 'Socket Bridge',
+		storage_path => File::Temp::tempdir( CLEANUP => 1 ),
+	);
+	my $listener = $server->listen;
+	my $port     = $listener->sockport;
+
+	# The child serves; the parent is the controller. The listener
+	# was opened before the fork, so the parent cannot race the
+	# child to the connect.
+	my $pid = fork // die "fork: $!";
+	if ( $pid == 0 ) {
+		$server->run;
+		exit 0;
+	}
+
+	my $controller = Protocol::HAP::Controller->new(
+		host => '127.0.0.1',
+		port => $port,
+		pin  => $PIN,
+	);
+
+	ok( $controller->pair_setup, 'pair-setup completes over TCP' );
+	ok( $controller->pair_verify,
+		'pair-verify completes over the same connection' );
+
+	my $response = $controller->request( 'GET', '/accessories' );
+	ok( defined $response, 'encrypted request round-trips over TCP' );
+	is( $response->{status}, 200, 'GET /accessories returns 200' );
+	like( $response->{body}, qr/"accessories"/,
+		'accessory database returned' );
+
+	$controller->close;
+	kill 'TERM', $pid;
+	is( waitpid( $pid, 0 ), $pid, 'the serving child ends' );
 };
 
 done_testing();

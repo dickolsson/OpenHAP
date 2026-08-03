@@ -22,8 +22,8 @@ package OpenHAP::Tasmota::Lightbulb;
 use FuguLib::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
-use OpenHAP::Service;
-use OpenHAP::Characteristic;
+use Protocol::HAP::Service;
+use Protocol::HAP::Characteristic;
 
 use JSON::XS;
 
@@ -37,6 +37,7 @@ use constant {
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(
+		logger       => $args{logger},
 		aid          => $args{aid},
 		name         => $args{name},
 		model        => 'Tasmota Light',
@@ -66,7 +67,8 @@ sub new ( $class, %args )
 	    ( $self->{capabilities} & CAP_CT ) ? 1 : 0;
 
 	# Add the Lightbulb service
-	my $lightbulb = OpenHAP::Service->new(
+	my $lightbulb = Protocol::HAP::Service->new(
+		logger  => $self->{logger},
 		type    => 'Lightbulb',
 		iid     => 10,
 		primary => 1,
@@ -74,7 +76,8 @@ sub new ( $class, %args )
 
 	# On characteristic (required)
 	$lightbulb->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'On',
 			iid    => 11,
 			format => 'bool',
@@ -86,7 +89,8 @@ sub new ( $class, %args )
 	# Brightness characteristic (optional, for dimmers)
 	if ( $self->{has_dimmer} ) {
 		$lightbulb->add_characteristic(
-			OpenHAP::Characteristic->new(
+			Protocol::HAP::Characteristic->new(
+				logger => $self->{logger},
 				type   => 'Brightness',
 				iid    => 12,
 				format => 'int',
@@ -103,7 +107,8 @@ sub new ( $class, %args )
 	# Color characteristics (optional, for RGB lights)
 	if ( $self->{has_color} ) {
 		$lightbulb->add_characteristic(
-			OpenHAP::Characteristic->new(
+			Protocol::HAP::Characteristic->new(
+				logger => $self->{logger},
 				type   => 'Hue',
 				iid    => 13,
 				format => 'float',
@@ -117,7 +122,8 @@ sub new ( $class, %args )
 			) );
 
 		$lightbulb->add_characteristic(
-			OpenHAP::Characteristic->new(
+			Protocol::HAP::Characteristic->new(
+				logger => $self->{logger},
 				type   => 'Saturation',
 				iid    => 14,
 				format => 'float',
@@ -134,7 +140,8 @@ sub new ( $class, %args )
 	# Color temperature characteristic (optional, for CCT lights)
 	if ( $self->{has_ct} ) {
 		$lightbulb->add_characteristic(
-			OpenHAP::Characteristic->new(
+			Protocol::HAP::Characteristic->new(
+				logger => $self->{logger},
 				type   => 'ColorTemperature',
 				iid    => 15,
 				format => 'uint32',

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Session-framing assertions for spec/HAP-Encryption.md.
-# OpenHAP::Test::Controller makes a real verified in-process session.
+# Protocol::HAP::Controller makes a real verified in-process session.
 # The tests assert on the frames of that session.
 
 use v5.36;
@@ -10,7 +10,6 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use FuguLib::TestLog;
-use File::Temp qw(tempdir);
 
 BEGIN {
 	eval {
@@ -25,30 +24,33 @@ BEGIN {
 	}
 }
 
-use_ok('OpenHAP::HAP');
-use_ok('FuguLib::HTTP');
-use_ok('OpenHAP::Session');
-use_ok('OpenHAP::Pairing');
-use_ok('OpenHAP::Test::Controller');
+use_ok('Protocol::HAP::Server');
+use_ok('Protocol::HAP::Store::Memory');
+use_ok('Protocol::HAP::HTTP');
+use_ok('Protocol::HAP::Pairing');
+use_ok('Protocol::HAP::Controller');
 
 my $PIN = '123-45-678';
 
 # The transport records the raw encrypted bytes in both directions
 my @wire;
 
+# Everything the engine writes, keyed by session id: the output
+# contract of the sans-IO engine.
+my %OUT;
+
 sub make_verified_pair ()
 {
-	OpenHAP::Pairing->clear_pairing_state();
-
-	my $hap = OpenHAP::HAP->new(
-		port         => 51827,
-		pin          => $PIN,
-		name         => 'Frame Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
+	my $hap = Protocol::HAP::Server->new(
+		pin    => $PIN,
+		name   => 'Frame Bridge',
+		store  => Protocol::HAP::Store::Memory->new,
+		output => sub ( $session, $bytes ) {
+			$OUT{ $session->id } .= $bytes;
+		},
 	);
-	$hap->{pairing}->reset_auth_attempts;
 
-	my $session   = OpenHAP::Session->new( socket => 'in-process' );
+	my $session   = $hap->session_open;
 	my $transport = sub ($request_bytes) {
 		my $was_encrypted = $session->is_encrypted;
 		push @wire,
@@ -57,14 +59,9 @@ sub make_verified_pair ()
 			encrypted => $was_encrypted,
 			bytes     => $request_bytes
 		    };
-		my $plain =
-		    $was_encrypted
-		    ? $session->decrypt($request_bytes)
-		    : $request_bytes;
-		return unless defined $plain;
-		my $request  = FuguLib::HTTP::parse_request($plain);
-		my $response = $hap->_dispatch( $request, $session );
-		$response = $session->encrypt($response) if $was_encrypted;
+		$OUT{ $session->id } = '';
+		$hap->receive( $session, $request_bytes ) or return;
+		my $response = delete $OUT{ $session->id };
 		push @wire,
 		    {
 			direction => 'a2c',
@@ -74,7 +71,7 @@ sub make_verified_pair ()
 		return $response;
 	};
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		pin       => $PIN,
 		transport => $transport,
 	);
@@ -132,7 +129,6 @@ subtest '[HAP-Encryption §2][HAP-Encryption §3] frame layout both '
 	unlike( $a2c->{bytes}, qr/"accessories"/,
 		'accessory JSON not visible in the encrypted stream' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
@@ -159,7 +155,6 @@ subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
 		$controller->{decrypt_count},
 		'accessory write counter mirrors controller reads' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Encryption §9] tampered frame fails the session' => sub {
@@ -174,7 +169,6 @@ subtest '[HAP-Encryption §9] tampered frame fails the session' => sub {
 	ok( !defined $session->decrypt($encrypted),
 		'accessory rejects the tampered frame' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 done_testing();

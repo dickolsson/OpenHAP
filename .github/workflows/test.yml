@@ -11,7 +11,7 @@ on:
       # The files that the suite loads
       - "bin/*"
       - "lib/**.pm"
-      # Every *.t in the tree, not only the four directories that
+      # Every *.t in the tree, not only the directories that
       # `make test` proves. spec-coverage scans all of t/ for spec
       # citations. Thus a stale citation anywhere must be able to fail
       # this workflow.

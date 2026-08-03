@@ -24,7 +24,7 @@ use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
 use FuguLib::Config;
-use FuguLib::HTTP;
+use Protocol::HAP::HTTP;
 use FuguLib::Log;
 use FuguLib::Process;
 
@@ -129,14 +129,14 @@ sub teardown ($self)
 }
 
 # $self->get_controller(%args):
-#	Construct an OpenHAP::Test::Controller for the configured
+#	Construct an Protocol::HAP::Controller for the configured
 #	host/port/PIN. The harness tracks the connection and closes
 #	it in teardown.
 sub get_controller ( $self, %args )
 {
-	require OpenHAP::Test::Controller;
+	require Protocol::HAP::Controller;
 
-	my $controller = OpenHAP::Test::Controller->new(
+	my $controller = Protocol::HAP::Controller->new(
 		host => '127.0.0.1',
 		port => $self->{hap_port},
 		pin  => $self->get_config_value('hap_pin') // DEFAULT_HAP_PIN,
@@ -248,7 +248,7 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 
 	push @{ $self->{sockets} }, $socket;
 
-	print {$socket} FuguLib::HTTP::build_request(
+	print {$socket} Protocol::HAP::HTTP::build_request(
 		method  => $method,
 		path    => $path,
 		body    => $body,
@@ -261,7 +261,7 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 	my $response = '';
 	while (1) {
 		last
-		    if FuguLib::HTTP::message_complete( $response,
+		    if Protocol::HAP::HTTP::message_complete( $response,
 			max_size => MAX_RESPONSE );
 
 		my $bytes = $socket->sysread( my $chunk, 65536 );
@@ -276,7 +276,7 @@ sub parse_http_response ($response)
 {
 	return unless defined $response;
 
-	my $parsed = FuguLib::HTTP::parse_response($response) or return;
+	my $parsed = Protocol::HAP::HTTP::parse_response($response) or return;
 
 	return ( $parsed->{status}, $parsed->{headers}, $parsed->{body} );
 }

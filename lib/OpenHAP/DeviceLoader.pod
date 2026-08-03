@@ -7,12 +7,12 @@ OpenHAP::DeviceLoader - loader for the devices in the configuration
     use OpenHAP::DeviceLoader;
     use FuguLib::Config;
     use FuguLib::MQTT;
-    use OpenHAP::HAP;
+    use OpenHAP::Server;
 
     my $config = FuguLib::Config->new(file => '/etc/openhapd.conf');
     $config->load();
 
-    my $hap = OpenHAP::HAP->new(...);
+    my $hap = OpenHAP::Server->new(...);
     my $mqtt = FuguLib::MQTT->new(...);
 
     my $loader = OpenHAP::DeviceLoader->new();
@@ -137,7 +137,7 @@ daemon. The loader logs that device and skips it.
 
 =head1 SEE ALSO
 
-L<FuguLib::Config>, L<FuguLib::MQTT>, L<OpenHAP::HAP>,
+L<FuguLib::Config>, L<FuguLib::MQTT>, L<OpenHAP::Server>,
 L<OpenHAP::Tasmota::Thermostat>
 
 =head1 AUTHOR

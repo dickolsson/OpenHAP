@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Integration test: the complete HAP pairing workflow against the
-# live daemon. OpenHAP::Test::Controller drives the workflow.
+# live daemon. Protocol::HAP::Controller drives the workflow.
 
 use v5.36;
 use Test::More tests => 18;
@@ -9,7 +9,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
 use OpenHAP::Test::Integration;
-use OpenHAP::Pairing;
+use Protocol::HAP::Pairing;
 
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
@@ -82,7 +82,7 @@ my $bad = $env->get_controller(pin => '876-54-321',
 	controller_id => 'bad-ctrl');
 ok(!$bad->pair_setup, 'pair-setup fails with the wrong PIN');
 is($bad->last_error,
-   OpenHAP::Pairing::kTLVError_Authentication(),
+   Protocol::HAP::Pairing::kTLVError_Authentication(),
    '[HAP-Pairing §2.6] M4 returns kTLVError_Authentication');
 $bad->close;
 

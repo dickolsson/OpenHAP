@@ -1,0 +1,82 @@
+=head1 NAME
+
+Protocol::HAP::PIN - HomeKit Accessory Protocol PIN checks and normalization
+
+=head1 SYNOPSIS
+
+    use Protocol::HAP::PIN qw(normalize_pin validate_pin);
+
+    # Normalize PIN (strip dashes/spaces)
+    my $normalized = normalize_pin('9876-5432');  # Returns '98765432'
+    my $normalized = normalize_pin('9876 5432');  # Returns '98765432'
+    my $normalized = normalize_pin('98765432');   # Returns '98765432'
+
+    # Validate PIN
+    if (validate_pin('9876-5432')) {
+        print "Valid PIN\n";
+    }
+
+    if (!validate_pin('1234-5678')) {
+        print "Invalid PIN (sequential pattern)\n";
+    }
+
+=head1 DESCRIPTION
+
+This module handles HAP setup codes: the 8-digit numeric codes that
+pairing uses.
+
+The HAP specification says that dashes and spaces are format characters
+only. The module removes them before use. Thus C<9876-5432> and
+C<98765432> are the same setup code.
+
+=head1 FUNCTIONS
+
+=head2 normalize_pin($pin)
+
+This function removes the dashes and the spaces from a PIN. It returns
+the 8-digit numeric string.
+
+    my $normalized = normalize_pin('9876-5432');
+    # Returns: '98765432'
+
+The function returns C<undef> if the input format is not valid. A valid
+input has exactly 8 digits after normalization.
+
+=head2 validate_pin($pin)
+
+This function does a check of a PIN against these HAP requirements:
+
+=over 4
+
+=item * The PIN must have exactly 8 digits after the removal of the
+dashes and the spaces.
+
+=item * The PIN must not be a trivial or sequential pattern.
+
+=back
+
+The function returns C<1> if the PIN is valid. It returns C<undef> if
+the PIN is not valid.
+
+    if (validate_pin('9876-5432')) {
+        # PIN is valid
+    }
+
+=head1 INVALID PINS
+
+The HAP specification rejects these setup codes:
+
+    00000000  11111111  22222222  33333333  44444444
+    55555555  66666666  77777777  88888888  99999999
+    12345678  87654321
+
+=head1 SEE ALSO
+
+L<Protocol::HAP::SRP>, L<Protocol::HAP::Pairing>, L<openhapd.conf(5)>, F<spec/HAP-Pairing.md>
+
+=head1 STANDARDS
+
+HomeKit Accessory Protocol Specification (Non-Commercial Version)
+Release R2, Section 5.6: Setup Code
+
+=cut

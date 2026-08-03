@@ -9,22 +9,22 @@ use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use FuguLib::TestLog;
 
-use_ok('OpenHAP::TLV');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::TLV');
+use_ok('Protocol::HAP::Pairing');
 
 subtest '[HAP-TLV8 §1] basic record structure' => sub {
-	my $encoded = OpenHAP::TLV::encode( 0x06, "\x01" );
+	my $encoded = Protocol::HAP::TLV::encode( 0x06, "\x01" );
 	is( length($encoded), 3, 'record is type + length + value' );
 	is( unpack( 'H*', $encoded ), '060101',
 		'type, length and value bytes in order' );
 
-	my $empty = OpenHAP::TLV::encode( 0x0A, '' );
+	my $empty = Protocol::HAP::TLV::encode( 0x0A, '' );
 	is( unpack( 'H*', $empty ), '0a00', 'zero-length value encodes' );
 };
 
 subtest '[HAP-TLV8 §2] fragmentation of long values' => sub {
 	my $value   = 'X' x 500;
-	my $encoded = OpenHAP::TLV::encode( 0x03, $value );
+	my $encoded = Protocol::HAP::TLV::encode( 0x03, $value );
 
 	# 500 bytes -> 255 + 245: 2 records with 2-byte headers each
 	is( length($encoded), 500 + 4, 'two records for 500 bytes' );
@@ -39,14 +39,14 @@ subtest '[HAP-TLV8 §2] fragmentation of long values' => sub {
 	is( $l2, 245,  'final fragment carries the remainder' );
 
 	# The decoder concatenates same-type records
-	my %decoded = OpenHAP::TLV::decode($encoded);
+	my %decoded = Protocol::HAP::TLV::decode($encoded);
 	is( $decoded{0x03}, $value, 'fragments concatenated on decode' );
 };
 
 subtest '[HAP-TLV8 §8][HAP-TLV8 §8.2] 384-byte SRP key splits FF/81' =>
     sub {
 	my $key     = 'K' x 384;
-	my $encoded = OpenHAP::TLV::encode( 0x03, $key );
+	my $encoded = Protocol::HAP::TLV::encode( 0x03, $key );
 
 	is( length($encoded), 384 + 4, '384 bytes need two records' );
 	is( unpack( 'C', substr( $encoded, 1, 1 ) ),
@@ -54,48 +54,48 @@ subtest '[HAP-TLV8 §8][HAP-TLV8 §8.2] 384-byte SRP key splits FF/81' =>
 	is( unpack( 'C', substr( $encoded, 257 + 1, 1 ) ),
 		0x81, 'second fragment length byte is 81 (129)' );
 
-	my %decoded = OpenHAP::TLV::decode($encoded);
+	my %decoded = Protocol::HAP::TLV::decode($encoded);
 	is( length( $decoded{0x03} ), 384, 'round-trips to 384 bytes' );
 };
 
 subtest '[HAP-TLV8 §3] separators between list items' => sub {
-	my $encoded = OpenHAP::TLV::encode_separator();
+	my $encoded = Protocol::HAP::TLV::encode_separator();
 	is( unpack( 'H*', $encoded ), 'ff00',
 		'separator is type 0xFF with zero length' );
-	is( OpenHAP::TLV::kTLVType_Separator(), 0xFF, 'separator type 0xFF' );
+	is( Protocol::HAP::TLV::kTLVType_Separator(), 0xFF, 'separator type 0xFF' );
 };
 
 subtest '[HAP-TLV8 §4] value encodings' => sub {
 
 	# [HAP-TLV8 §4.1] integers are little-endian and use the minimum
 	# bytes
-	is( unpack( 'H*', OpenHAP::TLV::encode( 0x0B, pack( 'C', 1 ) ) ),
+	is( unpack( 'H*', Protocol::HAP::TLV::encode( 0x0B, pack( 'C', 1 ) ) ),
 		'0b0101', '[HAP-TLV8 §4.1] integer 1 encodes as 01' );
-	is( unpack( 'H*', OpenHAP::TLV::encode( 0x0B, pack( 'v', 256 ) ) ),
+	is( unpack( 'H*', Protocol::HAP::TLV::encode( 0x0B, pack( 'v', 256 ) ) ),
 		'0b020001',
 		'[HAP-TLV8 §4.1] integer 256 encodes as 00 01 (LE)' );
-	is( unpack( 'H*', OpenHAP::TLV::encode( 0x0B, pack( 'V', 65536 ) ) ),
+	is( unpack( 'H*', Protocol::HAP::TLV::encode( 0x0B, pack( 'V', 65536 ) ) ),
 		'0b0400000100',
 		'[HAP-TLV8 §4.1] integer 65536 encodes as 00 00 01 00 (LE)' );
 
 	# [HAP-TLV8 §4.2] strings without null terminator
-	is( unpack( 'H*', OpenHAP::TLV::encode( 0x01, 'Hello' ) ),
+	is( unpack( 'H*', Protocol::HAP::TLV::encode( 0x01, 'Hello' ) ),
 		'010548656c6c6f',
 		'[HAP-TLV8 §4.2] UTF-8 bytes, no null terminator' );
 
 	# [HAP-TLV8 §4.3] binary data round-trips raw
 	my $binary  = pack( 'H*', '00ff10deadbeef' );
 	my %decoded =
-	    OpenHAP::TLV::decode( OpenHAP::TLV::encode( 0x05, $binary ) );
+	    Protocol::HAP::TLV::decode( Protocol::HAP::TLV::encode( 0x05, $binary ) );
 	is( unpack( 'H*', $decoded{0x05} ),
 		'00ff10deadbeef',
 		'[HAP-TLV8 §4.3] raw bytes preserved' );
 
 	# [HAP-TLV8 §4.4] a TLV value can be a nested TLV structure
-	my $inner = OpenHAP::TLV::encode( 0x01, 'id', 0x0A, 'sig' );
+	my $inner = Protocol::HAP::TLV::encode( 0x01, 'id', 0x0A, 'sig' );
 	my %outer =
-	    OpenHAP::TLV::decode( OpenHAP::TLV::encode( 0x05, $inner ) );
-	my %nested = OpenHAP::TLV::decode( $outer{0x05} );
+	    Protocol::HAP::TLV::decode( Protocol::HAP::TLV::encode( 0x05, $inner ) );
+	my %nested = Protocol::HAP::TLV::decode( $outer{0x05} );
 	is( $nested{0x01}, 'id',
 		'[HAP-TLV8 §4.4] nested TLV decodes from sub-TLV value' );
 	is( $nested{0x0A}, 'sig', '[HAP-TLV8 §4.4] all nested fields kept' );
@@ -122,7 +122,7 @@ subtest '[HAP-TLV8 §5] pairing TLV type codes' => sub {
 		Separator     => 0xFF,
 	);
 	for my $name ( sort keys %types ) {
-		my $constant = OpenHAP::Pairing->can("kTLVType_$name");
+		my $constant = Protocol::HAP::Pairing->can("kTLVType_$name");
 		ok( $constant, "kTLVType_$name defined" );
 		is( $constant->(), $types{$name},
 			sprintf( '[HAP-TLV8 §5/%s] kTLVType_%s is 0x%02X',
@@ -141,7 +141,7 @@ subtest '[HAP-TLV8 §7] pairing error codes' => sub {
 		Busy           => 0x07,
 	);
 	for my $name ( sort keys %errors ) {
-		my $constant = OpenHAP::Pairing->can("kTLVError_$name");
+		my $constant = Protocol::HAP::Pairing->can("kTLVError_$name");
 		ok( $constant, "kTLVError_$name defined" );
 		is( $constant->(), $errors{$name},
 			sprintf( '[HAP-TLV8 §7/%s] kTLVError_%s is 0x%02X',
@@ -150,24 +150,24 @@ subtest '[HAP-TLV8 §7] pairing error codes' => sub {
 };
 
 subtest '[HAP-TLV8 §8.1] pair setup M1 wire bytes' => sub {
-	my $m1 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+	my $m1 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	is( unpack( 'H*', $m1 ), '060101000100',
 		'M1 request is 06 01 01 00 01 00' );
 
-	my %decoded = OpenHAP::TLV::decode( pack( 'H*', '060101000100' ) );
+	my %decoded = Protocol::HAP::TLV::decode( pack( 'H*', '060101000100' ) );
 	is( unpack( 'C', $decoded{0x06} ), 1, 'spec bytes decode State=M1' );
 	is( unpack( 'C', $decoded{0x00} ), 0,
 		'spec bytes decode Method=PairSetup' );
 };
 
 subtest '[HAP-TLV8 §8.3] error response wire bytes' => sub {
-	my $error = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 2 ),
-		OpenHAP::Pairing::kTLVType_Error(),
-		pack( 'C', OpenHAP::Pairing::kTLVError_Authentication() ),
+	my $error = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ),
+		Protocol::HAP::Pairing::kTLVType_Error(),
+		pack( 'C', Protocol::HAP::Pairing::kTLVError_Authentication() ),
 	);
 	is( unpack( 'H*', $error ), '060102070102',
 		'M2 authentication error is 06 01 02 07 01 02' );
@@ -181,7 +181,7 @@ subtest '[HAP-TLV8 §9] base64 encoding in JSON' => sub {
 	is( unpack( 'H*', $decoded ), '060101000100',
 		'spec base64 example decodes to M1 bytes' );
 
-	my %tlv = OpenHAP::TLV::decode($decoded);
+	my %tlv = Protocol::HAP::TLV::decode($decoded);
 	is( unpack( 'C', $tlv{0x06} ), 1, 'decoded TLV carries State=M1' );
 
 	is( MIME::Base64::encode_base64( pack( 'H*', '060101000100' ), '' ),
@@ -192,47 +192,47 @@ subtest '[HAP-TLV8 §10] parser rules with hostile buffers' => sub {
 
 	# Rule 1: the parser keeps unknown types. They are not fatal.
 	my %decoded =
-	    OpenHAP::TLV::decode( pack( 'H*', '060101' . 'aa0142' ) );
+	    Protocol::HAP::TLV::decode( pack( 'H*', '060101' . 'aa0142' ) );
 	is( unpack( 'C', $decoded{0x06} ), 1, 'known type decoded' );
 	is( $decoded{0xAA}, 'B', 'unknown type tolerated by parser' );
 
 	# Rule 3: consecutive same types concatenate
-	%decoded = OpenHAP::TLV::decode( pack( 'H*', '01024142' . '010243'
+	%decoded = Protocol::HAP::TLV::decode( pack( 'H*', '01024142' . '010243'
 		    . '44' ) );
 	is( $decoded{0x01}, 'ABCD', 'consecutive same types concatenate' );
 
 	# Rule 4: zero-length values are valid
-	%decoded = OpenHAP::TLV::decode( pack( 'H*', 'ff00' ) );
+	%decoded = Protocol::HAP::TLV::decode( pack( 'H*', 'ff00' ) );
 	ok( exists $decoded{0xFF}, 'zero-length value is valid' );
 	is( $decoded{0xFF}, '', 'zero-length value is empty string' );
 
 	# Malformed: length runs past end of buffer
-	my @result = OpenHAP::TLV::decode( pack( 'H*', '06ff0102' ) );
+	my @result = Protocol::HAP::TLV::decode( pack( 'H*', '06ff0102' ) );
 	is( scalar @result, 0, 'length past end of buffer is rejected' );
 
 	# Malformed: truncated record header (type without length)
-	@result = OpenHAP::TLV::decode( pack( 'H*', '06010106' ) );
+	@result = Protocol::HAP::TLV::decode( pack( 'H*', '06010106' ) );
 	is( scalar @result, 0, 'truncated record header is rejected' );
 
 	# Malformed input to pair-setup returns an error TLV, not a crash
-	require OpenHAP::Session;
+	require Protocol::HAP::Session;
 	require OpenHAP::Storage;
 	require File::Temp;
 	my $storage =
 	    OpenHAP::Storage->new(
 		db_path => File::Temp::tempdir( CLEANUP => 1 ) );
-	my $pairing = OpenHAP::Pairing->new(
+	my $pairing = Protocol::HAP::Pairing->new(
 		pin            => '123-45-678',
-		storage        => $storage,
+		store        => $storage,
 		accessory_ltsk => 'x' x 64,
 		accessory_ltpk => 'y' x 32,
 	);
-	my $session  = OpenHAP::Session->new( socket => 'dummy' );
+	my $session  = Protocol::HAP::Session->new( id => 9001 );
 	my $response =
 	    $pairing->handle_pair_setup( pack( 'H*', '06ff0102' ), $session );
-	my %resp = OpenHAP::TLV::decode($response);
-	is( unpack( 'C', $resp{ OpenHAP::Pairing::kTLVType_Error() } ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+	my %resp = Protocol::HAP::TLV::decode($response);
+	is( unpack( 'C', $resp{ Protocol::HAP::Pairing::kTLVType_Error() } ),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'malformed pair-setup body answered with kTLVError_Unknown' );
 };
 

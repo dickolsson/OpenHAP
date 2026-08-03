@@ -20,12 +20,12 @@ refinements.
 
 - [x] **Implement full unveil(2) restrictions**
   - Implemented: ordered inventory with per-path required/optional dispositions,
-    assembled by `OpenHAP::Daemon->unveil_paths`, applied and locked between the
-    privilege drop and the pledge; optional paths (config file, daemon log,
+    assembled by `unveil_paths` in `bin/openhapd`, applied and locked between
+    the privilege drop and the pledge; optional paths (config file, daemon log,
     mdnsd socket, resolver files) never fail startup
-  - Proven by: `t/openhap/daemon.t` (inventory), `t/fugulib/sandbox.t`
-    (enforcement), `t/openhap/integration/sandbox.t` (trace and lock ordering)
-  - Files: `lib/OpenHAP/Daemon.pm`, `bin/openhapd`
+  - Proven by: `t/fugulib/sandbox.t` (enforcement) and
+    `t/openhap/integration/sandbox.t` (trace and lock ordering)
+  - Files: `lib/FuguLib/Sandbox.pm`, `bin/openhapd`
 
 - [ ] **Pledge and unveil hapctl**
   - Current: only openhapd is restricted
@@ -50,7 +50,7 @@ refinements.
     if mdnsd restarts, discovery is gone until openhapd restarts. Parity with
     the old mdnsctl behaviour - a known limitation, now recorded
   - Need: detect the closed socket in the event loop and republish
-  - File: `lib/OpenHAP/HAP.pm`, `bin/openhapd`
+  - File: `lib/OpenHAP/Server.pm`, `bin/openhapd`
 
 - [ ] **Implement mdnsd browse, resolve and lookup**
   - Current: `spec/MDNS-Control.md` §11 specifies all three message shapes, but
@@ -69,37 +69,39 @@ refinements.
   - Files: `bin/openhapd`, `etc/rc.d/openhapd`
 
 - [ ] **Rate limiting for pairing attempts**
-  - Current: No rate limiting in Pairing.pm
-  - Need: Implement backoff/lockout after failed attempts
+  - Current: a persistent counter locks pair-setup after 100 failed attempts
+    (kTLVError_MaxTries); there is no time window and no per-IP tracking
+  - Need: Implement backoff/lockout per time window
   - Spec: Max 100 attempts per 15 minutes per IP
-  - File: `lib/OpenHAP/Pairing.pm`
+  - File: `lib/Protocol/HAP/Pairing.pm`
 
 - [ ] **Secure PIN generation**
   - Current: Default PIN '1995-1018' in code (configurable via config file)
   - Need: Generate cryptographically random PIN on first run if not configured
   - Should: Display PIN on console, save to secure file
   - File: `lib/OpenHAP/Storage.pm`, `bin/openhapd`
-  - Note: PIN validation implemented in `lib/OpenHAP/PIN.pm`
+  - Note: PIN validation implemented in `lib/Protocol/HAP/PIN.pm`
 
 - [ ] **Input validation**
   - Current: Limited validation on HTTP requests
   - Need: Validate all TLV inputs, characteristic values, JSON payloads
-  - File: `lib/OpenHAP/HTTP.pm`, `lib/OpenHAP/Pairing.pm`, `lib/OpenHAP/HAP.pm`
+  - File: `lib/Protocol/HAP/HTTP.pm`, `lib/Protocol/HAP/Pairing.pm`,
+    `lib/Protocol/HAP/Server.pm`
 
 ### Core Functionality
 
-- [ ] **HAP EVENT notifications**
-  - Current: Event callbacks exist but no EVENT streaming
-  - Need: Implement Server-Sent Events over HTTP/1.1
-  - Protocol: Long-lived connection with chunked transfer encoding
-  - File: `lib/OpenHAP/HAP.pm`
+- [x] **HAP EVENT notifications**
+  - Implemented: EVENT/1.0 notifications over the encrypted session, with 250 ms
+    coalescing and originator exclusion
+  - Proven by: `t/conformance/hap-http.t` and `t/openhap/integration/events.t`
+  - File: `lib/Protocol/HAP/Server.pm`, `lib/Protocol/HAP/HTTP.pm`
 
 - [x] **MQTT subscription with callbacks**
   - Implemented: Event loop integration via tick() method
   - Features: Topic wildcards (+/#), callback dispatch, reconnection support
   - Integration: HAP server polls MQTT in select loop with 100ms timeout
   - Reconnection: Automatic reconnection every 30 seconds with resubscription
-  - Files: `lib/OpenHAP/MQTT.pm`, `lib/OpenHAP/HAP.pm`
+  - Files: `lib/FuguLib/MQTT.pm`, `lib/OpenHAP/Server.pm`
 
 - [x] **Proper daemon mode**
   - Implemented: Fork to background, setsid, redirect I/O to
@@ -107,8 +109,8 @@ refinements.
   - Features: Daemonizes unless -f flag is used, proper process separation
   - Includes: Connection timeout for MQTT to prevent blocking on startup
   - Includes: Automatic MQTT reconnection every 30 seconds if connection lost
-  - File: `bin/openhapd`, `lib/OpenHAP/Daemon.pm`, `lib/OpenHAP/MQTT.pm`,
-    `lib/OpenHAP/HAP.pm`
+  - File: `bin/openhapd`, `lib/FuguLib/Daemon.pm`, `lib/FuguLib/MQTT.pm`,
+    `lib/OpenHAP/Server.pm`
 
 - [x] **Signal handling**
   - Implemented: `FuguLib::Signal` handlers for graceful shutdown on SIGTERM,
@@ -118,45 +120,37 @@ refinements.
   - File: `bin/openhapd`, `lib/FuguLib/Signal.pm`
 
 - [ ] **Logging with syslog**
-  - Current: Partial syslog implementation exists in `lib/OpenHAP/Log.pm`
+  - Current: Partial syslog implementation exists in `lib/FuguLib/Log.pm`
   - Status: Log module with syslog integration completed
-  - Need: Verify all modules use Log.pm consistently
+  - Need: Verify all modules use FuguLib::Log consistently
   - Levels: debug, info, notice, warning, error, critical (implemented)
-  - File: `lib/OpenHAP/Log.pm` (implemented), verify usage in all other modules
+  - File: `lib/FuguLib/Log.pm` (implemented), verify usage in all other modules
 
 ### Protocol Compliance
 
-- [ ] **Pair-Remove implementation**
-  - Current: Storage has remove_pairing but no endpoint
-  - Need: Add `/pairings` POST endpoint for removing pairings
-  - File: `lib/OpenHAP/HAP.pm`, `lib/OpenHAP/Pairing.pm`
+- [x] **Pair-Remove, Pair-Add and Pair-List implementation**
+  - Implemented: the `/pairings` endpoint answers add, remove, and list, with
+    the admin permission check and the last-admin factory reset
+  - Proven by: `t/conformance/hap-http.t` and
+    `t/conformance/hap-pairing-exchange.t`
+  - File: `lib/Protocol/HAP/Server.pm`
 
-- [ ] **Pair-Add implementation**
-  - Current: No support for adding additional controllers
-  - Need: Add `/pairings` POST endpoint for adding pairings
-  - Requires: Admin controller permissions check
-  - File: `lib/OpenHAP/HAP.pm`, `lib/OpenHAP/Pairing.pm`
-
-- [ ] **Pair-List implementation**
-  - Current: No endpoint to list pairings
-  - Need: Add `/pairings` GET endpoint
-  - File: `lib/OpenHAP/HAP.pm`
-
-- [ ] **Proper HTTP/1.1 persistent connections**
-  - Current: Connection closes after each request
-  - Need: Support Connection: keep-alive header
-  - File: `lib/OpenHAP/HAP.pm`, `lib/OpenHAP/HTTP.pm`
+- [x] **Proper HTTP/1.1 persistent connections**
+  - Implemented: the connection stays open across requests, and the engine
+    receive loop serves pipelined requests in order
+  - File: `lib/Protocol/HAP/Server.pm`, `lib/Protocol/HAP/HTTP.pm`
 
 - [ ] **Content-Type validation**
   - Current: Accepts any content type
   - Need: Validate Content-Type headers (application/hap+json,
     application/pairing+tlv8)
-  - File: `lib/OpenHAP/HTTP.pm`, `lib/OpenHAP/HAP.pm`
+  - File: `lib/Protocol/HAP/HTTP.pm`, `lib/Protocol/HAP/Server.pm`
 
-- [ ] **Multi-status responses for characteristics**
-  - Current: Simple 204 for all PUT requests
-  - Need: Return 207 Multi-Status with individual status codes
-  - File: `lib/OpenHAP/HAP.pm`
+- [x] **Multi-status responses for characteristics**
+  - Implemented: 204 when every write succeeds, 207 Multi-Status with a per-item
+    status code otherwise
+  - Proven by: `t/conformance/hap-http.t`
+  - File: `lib/Protocol/HAP/Server.pm`
 
 ## Medium Priority
 
@@ -185,46 +179,46 @@ refinements.
   - Current: Manual configuration only
   - Need: Auto-discover Tasmota devices via MQTT
   - Method: Subscribe to `tasmota/discovery/#`
-  - File: `lib/OpenHAP/MQTT.pm`, `bin/openhapd`
+  - File: `lib/FuguLib/MQTT.pm`, `bin/openhapd`
 
 ### Configuration
 
 - [ ] **Configuration reload**
   - Current: Requires daemon restart
   - Need: Reload config on SIGHUP without losing pairings
-  - File: `bin/openhapd`, `lib/OpenHAP/Config.pm`
+  - File: `bin/openhapd`, `lib/FuguLib/Config.pm`
 
 - [ ] **Configuration validation**
   - Current: Minimal validation
   - Need: Validate device blocks, required fields, data types
-  - File: `lib/OpenHAP/Config.pm`
+  - File: `lib/FuguLib/Config.pm`
 
 - [ ] **Environment variable support**
   - Current: No environment variable substitution
   - Need: Support ${VAR} syntax in config file
-  - File: `lib/OpenHAP/Config.pm`
+  - File: `lib/FuguLib/Config.pm`
 
 ### Testing
 
 - [x] **Unit tests for core modules**
-  - [x] `OpenHAP::TLV` - TLV8 encoding/decoding
-  - [x] `OpenHAP::HTTP` - HTTP request parsing
-  - [x] `OpenHAP::Config` - Configuration file parsing
-  - [x] `OpenHAP::Crypto` - Encryption and key generation
-  - [x] `OpenHAP::SRP` - SRP protocol
-  - [x] `OpenHAP::Pairing` - Pairing flows
-  - [x] `OpenHAP::Session` - Session encryption
+  - [x] `Protocol::HAP::TLV` - TLV8 encoding/decoding
+  - [x] `Protocol::HAP::HTTP` - HTTP request parsing
+  - [x] `FuguLib::Config` - Configuration file parsing
+  - [x] `Protocol::HAP::Crypto` - Encryption and key generation
+  - [x] `Protocol::HAP::SRP` - SRP protocol
+  - [x] `Protocol::HAP::Pairing` - Pairing flows
+  - [x] `Protocol::HAP::Session` - Session encryption
   - [x] `OpenHAP::Storage` - Persistence layer
-  - [x] `OpenHAP::Accessory` - Accessory management
-  - [x] `OpenHAP::Bridge` - Bridge functionality
-  - [x] `OpenHAP::Characteristic` - Characteristic handling
-  - [x] `OpenHAP::Service` - Service management
-  - [x] `OpenHAP::MQTT` - MQTT client
-  - [x] `OpenHAP::Daemon` - Daemon utilities
-  - [x] `OpenHAP::Log` - Logging system
-  - [x] `OpenHAP::PIN` - PIN validation
+  - [x] `Protocol::HAP::Accessory` - Accessory management
+  - [x] `Protocol::HAP::Bridge` - Bridge functionality
+  - [x] `Protocol::HAP::Characteristic` - Characteristic handling
+  - [x] `Protocol::HAP::Service` - Service management
+  - [x] `FuguLib::MQTT` - MQTT client
+  - [x] `FuguLib::Daemon` - Daemon utilities
+  - [x] `FuguLib::Log` - Logging system
+  - [x] `Protocol::HAP::PIN` - PIN validation
   - [x] `OpenHAP::DeviceLoader` - Device configuration loading
-  - Total: 17 test files in `t/openhap/`
+  - The module tests live in `t/protocol/`, `t/openhap/`, and `t/fugulib/`
 
 - [ ] **Integration test infrastructure**
   - Status: Framework exists but needs QEMU VM setup to be functional
@@ -513,11 +507,10 @@ refinements.
   - Need: Simple if-then rules (temp > 20 -> turn off heater)
   - File: New `lib/OpenHAP/Automation.pm`
 
-- [ ] **Status monitoring endpoint**
-  - Current: No status API
-  - Need: HTTP endpoint for daemon status, device status
-  - Endpoint: `/status` or Unix socket
-  - File: `lib/OpenHAP/HAP.pm`
+- [x] **Status monitoring endpoint**
+  - Implemented: the control socket answers status and devices from process
+    state; `hapctl status` and `hapctl devices` read it
+  - File: `bin/hapctl`, `lib/OpenHAP/Server.pm`, `lib/FuguLib/Control.pm`
 
 - [ ] **Metrics/statistics**
   - Current: No metrics collected
@@ -572,30 +565,42 @@ refinements.
   - Need: Version tagging, changelog, release notes
   - Files: New `CHANGELOG.md`, version tagging
 
+### Protocol::HAP CPAN release
+
+The `Protocol::HAP` library under `lib/Protocol/` is host-neutral and
+self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
+
+- [ ] PAUSE registration of the `Protocol-HAP` distribution name
+- [ ] A `$VERSION` policy for the modules (none carry one today)
+- [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`,
+      distribution tests
+- [ ] A redistribution-license review of `spec/` before any spec text ships in
+      the distribution
+
 ## Technical Debt
 
 ### Known Shortcuts/Limitations
 
 - [ ] **SRP implementation completeness**
-  - Location: `lib/OpenHAP/SRP.pm`
+  - Location: `lib/Protocol/HAP/SRP.pm`
   - Issue: Uses Math::BigInt which is slower than C implementation
   - Need: Consider Crypt::SRP for better performance
   - Impact: Pairing takes longer than necessary
 
 - [ ] **HTTP parser robustness**
-  - Location: `lib/OpenHAP/HTTP.pm`
+  - Location: `lib/Protocol/HAP/HTTP.pm`
   - Issue: Simple regex-based parsing, not fully RFC compliant
   - Need: Handle edge cases, malformed requests
   - Impact: May fail on unusual requests
 
 - [ ] **Session management**
-  - Location: `lib/OpenHAP/HAP.pm:86-99`
+  - Location: `lib/OpenHAP/Server.pm` (the connection map)
   - Issue: No session timeout, unlimited sessions in memory
   - Need: Session timeout and cleanup
   - Impact: Memory leak potential
 
 - [ ] **Encryption error handling**
-  - Location: `lib/OpenHAP/Session.pm:48-96`
+  - Location: `lib/Protocol/HAP/Session.pm`
   - Issue: Decryption failure returns undef, no context
   - Need: Better error reporting
   - Impact: Hard to debug encryption issues
@@ -607,7 +612,7 @@ refinements.
   - Impact: Potential deadlock
 
 - [ ] **Config parser error handling**
-  - Location: `lib/OpenHAP/Config.pm:21-62`
+  - Location: `lib/FuguLib/Config.pm`
   - Issue: Parse errors silently skipped
   - Need: Validation and error reporting
   - Impact: Invalid config may be partially loaded
@@ -640,7 +645,7 @@ refinements.
   - Current: Automatic reconnection implemented every 30 seconds
   - Status: Basic reconnection works, resubscribes to all topics
   - Enhancement: Could add exponential backoff for failed reconnects
-  - File: `lib/OpenHAP/MQTT.pm`, `lib/OpenHAP/HAP.pm`
+  - File: `lib/FuguLib/MQTT.pm`, `lib/OpenHAP/Server.pm`
 
 - [ ] **File system full conditions**
   - Current: No space checking before writing
@@ -702,7 +707,7 @@ implementation is minimal with basic commands. Future enhancements planned:
 - [ ] **Monitoring hooks** - Export metrics for Prometheus/Nagios
 - [ ] **Syslog correlation** - Cross-reference log entries by timestamp
 
-Files: `bin/hapctl`, `lib/OpenHAP/Daemon.pm`, `lib/OpenHAP/Storage.pm`
+Files: `bin/hapctl`, `lib/FuguLib/Daemon.pm`, `lib/OpenHAP/Storage.pm`
 
 ## Future Enhancements
 

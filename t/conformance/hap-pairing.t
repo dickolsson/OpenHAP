@@ -4,7 +4,7 @@
 #
 # The tests script the controller side of pair-setup and pair-verify
 # inline from the spec formulas. They use Math::BigInt for SRP and
-# FuguLib::Crypto primitives for the rest. The controller side is
+# Protocol::HAP::Crypto primitives for the rest. The controller side is
 # independent of the accessory-side modules under test.
 
 use v5.36;
@@ -30,12 +30,12 @@ BEGIN {
 
 use Digest::SHA qw(sha512);
 
-use_ok('FuguLib::Crypto');
-use_ok('OpenHAP::SRP');
-use_ok('OpenHAP::Pairing');
-use_ok('OpenHAP::Session');
+use_ok('Protocol::HAP::Crypto');
+use_ok('Protocol::HAP::SRP');
+use_ok('Protocol::HAP::Pairing');
+use_ok('Protocol::HAP::Session');
 use_ok('OpenHAP::Storage');
-use_ok('OpenHAP::TLV');
+use_ok('Protocol::HAP::TLV');
 
 my $PIN = '123-45-678';
 
@@ -43,49 +43,48 @@ sub b2i ($bytes) { Math::BigInt->from_hex( unpack( 'H*', $bytes ) ) }
 
 sub i2b ( $int, $len = undef )
 {
-	return OpenHAP::SRP::_bigint_to_bytes( $int, $len );
+	return Protocol::HAP::SRP::_bigint_to_bytes( $int, $len );
 }
 
 sub make_pairing ( $storage = undef )
 {
 	$storage //= OpenHAP::Storage->new(
 		db_path => tempdir( CLEANUP => 1 ) );
-	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
-	my $pairing = OpenHAP::Pairing->new(
+	my ( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
+	my $pairing = Protocol::HAP::Pairing->new(
 		pin            => $PIN,
-		storage        => $storage,
+		store         => $storage,
 		accessory_ltsk => $ltsk,
 		accessory_ltpk => $ltpk,
 	);
-	OpenHAP::Pairing->clear_pairing_state();
 	$pairing->reset_auth_attempts;
 	return ( $pairing, $storage, $ltpk );
 }
 
 sub tlv_field ( $response, $type )
 {
-	my %tlv = OpenHAP::TLV::decode($response);
+	my %tlv = Protocol::HAP::TLV::decode($response);
 	return $tlv{$type};
 }
 
 sub error_code ($response)
 {
 	my $error =
-	    tlv_field( $response, OpenHAP::Pairing::kTLVType_Error() );
+	    tlv_field( $response, Protocol::HAP::Pairing::kTLVType_Error() );
 	return defined $error ? unpack( 'C', $error ) : undef;
 }
 
 # Do client-side SRP as HAP-Pairing.md §2.5 specifies. The function
-# does not use OpenHAP::SRP state. It returns (A_bytes, M1, K).
+# does not use Protocol::HAP::SRP state. It returns (A_bytes, M1, K).
 sub client_srp ( $salt, $B_bytes, $pin )
 {
 	my $I = 'Pair-Setup';
 	( my $P = $pin ) =~ s/-//g;
 
-	my $N = b2i($OpenHAP::SRP::N_3072);
+	my $N = b2i($Protocol::HAP::SRP::N_3072);
 	my $g = Math::BigInt->new(5);
 
-	my $a = b2i( FuguLib::Crypto->random_bytes(32) );
+	my $a = b2i( Protocol::HAP::Crypto->random_bytes(32) );
 	my $A = $g->copy->bmodpow( $a, $N );
 
 	my $u = b2i( sha512( i2b( $A, 384 ) . i2b( b2i($B_bytes), 384 ) ) );
@@ -113,24 +112,24 @@ sub client_srp ( $salt, $B_bytes, $pin )
 # It returns (m4_response, K, session).
 sub run_m1_to_m4 ( $pairing, $pin )
 {
-	my $session = OpenHAP::Session->new( socket => 'client' );
+	my $session = Protocol::HAP::Session->new( id => 9001 );
 
-	my $m1 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+	my $m1 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	my $m2 = $pairing->handle_pair_setup( $m1, $session );
 
-	my $salt = tlv_field( $m2, OpenHAP::Pairing::kTLVType_Salt() );
-	my $B = tlv_field( $m2, OpenHAP::Pairing::kTLVType_PublicKey() );
+	my $salt = tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_Salt() );
+	my $B = tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_PublicKey() );
 	return unless defined $salt && defined $B;
 
 	my ( $A, $M1, $K ) = client_srp( $salt, $B, $pin );
 
-	my $m3 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_PublicKey(), $A,
-		OpenHAP::Pairing::kTLVType_Proof(),     $M1,
+	my $m3 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey(), $A,
+		Protocol::HAP::Pairing::kTLVType_Proof(),     $M1,
 	);
 	my $m4 = $pairing->handle_pair_setup( $m3, $session );
 
@@ -140,7 +139,7 @@ sub run_m1_to_m4 ( $pairing, $pin )
 subtest '[HAP-Pairing §1] HKDF-SHA-512 known-answer vector' => sub {
 
 	# RFC 5869 test case 1 parameters with SHA-512
-	my $okm = FuguLib::Crypto->hkdf_sha512(
+	my $okm = Protocol::HAP::Crypto->hkdf_sha512(
 		"\x0b" x 22,
 		pack( 'H*', '000102030405060708090a0b0c' ),
 		pack( 'H*', 'f0f1f2f3f4f5f6f7f8f9' ), 42
@@ -163,15 +162,15 @@ subtest '[HAP-Pairing §1] Ed25519 RFC 8032 known-answer vector' => sub {
 		    . '5fb8821590a33bacc61e39701cf9b46b'
 		    . 'd25bf5f0595bbe24655141438e7a100b' );
 
-	ok( FuguLib::Crypto->ed25519_verify( $signature, '', $public ),
+	ok( Protocol::HAP::Crypto->ed25519_verify( $signature, '', $public ),
 		'RFC 8032 TEST 1 signature verifies' );
-	ok( !FuguLib::Crypto->ed25519_verify( $signature, 'x', $public ),
+	ok( !Protocol::HAP::Crypto->ed25519_verify( $signature, 'x', $public ),
 		'RFC 8032 signature fails for different message' );
 
 	# Sign/verify round-trip with a generated keypair
-	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
-	my $sig = FuguLib::Crypto->ed25519_sign( 'message', $ltsk, $ltpk );
-	ok( FuguLib::Crypto->ed25519_verify( $sig, 'message', $ltpk ),
+	my ( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
+	my $sig = Protocol::HAP::Crypto->ed25519_sign( 'message', $ltsk, $ltpk );
+	ok( Protocol::HAP::Crypto->ed25519_verify( $sig, 'message', $ltpk ),
 		'generated keypair round-trips' );
 };
 
@@ -198,14 +197,14 @@ subtest '[HAP-Pairing §1] X25519 RFC 7748 known-answer vector' => sub {
 		'RFC 7748 public key for b' );
 	is(
 		unpack( 'H*',
-			FuguLib::Crypto->x25519_shared_secret( $a, $b_pub ) ),
+			Protocol::HAP::Crypto->x25519_shared_secret( $a, $b_pub ) ),
 		'4a5d9d5ba4ce2de1728e3bf480350f25'
 		    . 'e07e21c947d19e3376f09b3c1e161742',
 		'RFC 7748 shared secret'
 	);
 	is(
 		unpack( 'H*',
-			FuguLib::Crypto->x25519_shared_secret( $b, $a_pub ) ),
+			Protocol::HAP::Crypto->x25519_shared_secret( $b, $a_pub ) ),
 		'4a5d9d5ba4ce2de1728e3bf480350f25'
 		    . 'e07e21c947d19e3376f09b3c1e161742',
 		'shared secret agrees from both sides'
@@ -233,12 +232,12 @@ subtest '[HAP-Pairing §2.2] SRP-6a group parameters' => sub {
 	    . 'BBE117577A615D6C770988C0BAD946E208E24FA074E5AB31'
 	    . '43DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF';
 
-	is( uc( unpack( 'H*', $OpenHAP::SRP::N_3072 ) ),
+	is( uc( unpack( 'H*', $Protocol::HAP::SRP::N_3072 ) ),
 		$rfc5054_3072, 'N is the RFC 5054 3072-bit prime' );
-	is( length($OpenHAP::SRP::N_3072), 384, 'N is 384 bytes' );
-	is( $OpenHAP::SRP::g, 5, 'g is 5' );
+	is( length($Protocol::HAP::SRP::N_3072), 384, 'N is 384 bytes' );
+	is( $Protocol::HAP::SRP::g, 5, 'g is 5' );
 
-	my $srp = OpenHAP::SRP->new( password => $PIN );
+	my $srp = Protocol::HAP::SRP->new( password => $PIN );
 	is( $srp->{username}, 'Pair-Setup', 'I is "Pair-Setup"' );
 	is( $srp->{password}, '12345678',
 		'P is the 8-digit setup code without dashes' );
@@ -249,82 +248,80 @@ subtest '[HAP-Pairing §2.2] SRP-6a group parameters' => sub {
 	my $x    = b2i( sha512( $salt . sha512('Pair-Setup:12345678') ) );
 	my $expected_v =
 	    Math::BigInt->new(5)
-	    ->bmodpow( $x, b2i($OpenHAP::SRP::N_3072) );
+	    ->bmodpow( $x, b2i($Protocol::HAP::SRP::N_3072) );
 	ok( $v == $expected_v, 'verifier v = g^x mod N' );
 };
 
 subtest '[HAP-Pairing §2][HAP-Pairing §2.1] pair setup state machine' =>
     sub {
 	my ($pairing) = make_pairing();
-	my $session = OpenHAP::Session->new( socket => 'client' );
+	my $session = Protocol::HAP::Session->new( id => 9002 );
 
 	# The handler rejects an invalid state value
-	my $bogus = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 99 ),
+	my $bogus = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 99 ),
 	);
 	is( error_code( $pairing->handle_pair_setup( $bogus, $session ) ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'invalid state rejected with kTLVError_Unknown' );
 
 	# The handler rejects M3 without a preceding M1
-	my $m3 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_PublicKey(), 'A' x 384,
-		OpenHAP::Pairing::kTLVType_Proof(),     'P' x 64,
+	my $m3 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey(), 'A' x 384,
+		Protocol::HAP::Pairing::kTLVType_Proof(),     'P' x 64,
 	);
 	is( error_code( $pairing->handle_pair_setup( $m3, $session ) ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'M3 before M1 rejected' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §3.1] pair verify state machine' => sub {
 	my ($pairing) = make_pairing();
-	my $session = OpenHAP::Session->new( socket => 'client' );
+	my $session = Protocol::HAP::Session->new( id => 9003 );
 
 	# The handler rejects an invalid state value
-	my $bogus = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 99 ),
+	my $bogus = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 99 ),
 	);
 	is( error_code( $pairing->handle_pair_verify( $bogus, $session ) ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'invalid state rejected with kTLVError_Unknown' );
 
 	# The handler rejects M3 without a preceding M1
-	my $m3 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_EncryptedData(), 'X' x 32,
+	my $m3 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_EncryptedData(), 'X' x 32,
 	);
 	is( error_code( $pairing->handle_pair_verify( $m3, $session ) ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'verify M3 before M1 rejected' );
 };
 
 subtest '[HAP-Pairing §2.3][HAP-Pairing §2.4] M1 -> M2 shape' => sub {
 	my ($pairing) = make_pairing();
-	my $session = OpenHAP::Session->new( socket => 'client' );
+	my $session = Protocol::HAP::Session->new( id => 9004 );
 
-	my $m1 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+	my $m1 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	my $m2 = $pairing->handle_pair_setup( $m1, $session );
 
 	is( unpack( 'C',
-		    tlv_field( $m2, OpenHAP::Pairing::kTLVType_State() ) ),
+		    tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_State() ) ),
 		2, 'M2 has State 0x02' );
-	is( length( tlv_field( $m2, OpenHAP::Pairing::kTLVType_Salt() ) ),
+	is( length( tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_Salt() ) ),
 		16, 'M2 salt is 16 random bytes' );
 	is(
 		length( tlv_field(
-			$m2, OpenHAP::Pairing::kTLVType_PublicKey() ) ),
+			$m2, Protocol::HAP::Pairing::kTLVType_PublicKey() ) ),
 		384,
 		'M2 public key B is 384 bytes'
 	);
 	ok( !defined error_code($m2), 'M2 success carries no Error TLV' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.4] M2 error responses' => sub {
@@ -332,25 +329,23 @@ subtest '[HAP-Pairing §2.4] M2 error responses' => sub {
 	# Already paired -> 0x06 Unavailable
 	my ( $pairing, $storage ) = make_pairing();
 	$storage->save_pairing( 'controller', 'X' x 32, 1 );
-	my $m1 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+	my $m1 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
-	my $session = OpenHAP::Session->new( socket => 'c1' );
+	my $session = Protocol::HAP::Session->new( id => 9005 );
 	is( error_code( $pairing->handle_pair_setup( $m1, $session ) ),
-		OpenHAP::Pairing::kTLVError_Unavailable(),
+		Protocol::HAP::Pairing::kTLVError_Unavailable(),
 		'already paired returns 0x06 Unavailable' );
-	OpenHAP::Pairing->clear_pairing_state();
 
 	# Another pairing in progress -> 0x07 Busy
 	my ($pairing2) = make_pairing();
-	my $s1 = OpenHAP::Session->new( socket => 'c2' );
-	my $s2 = OpenHAP::Session->new( socket => 'c3' );
+	my $s1 = Protocol::HAP::Session->new( id => 9006 );
+	my $s2 = Protocol::HAP::Session->new( id => 9007 );
 	$pairing2->handle_pair_setup( $m1, $s1 );
 	is( error_code( $pairing2->handle_pair_setup( $m1, $s2 ) ),
-		OpenHAP::Pairing::kTLVError_Busy(),
+		Protocol::HAP::Pairing::kTLVError_Busy(),
 		'concurrent pairing returns 0x07 Busy' );
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.5][HAP-Pairing §2.6] M3 -> M4 SRP proof' => sub {
@@ -360,11 +355,11 @@ subtest '[HAP-Pairing §2.5][HAP-Pairing §2.6] M3 -> M4 SRP proof' => sub {
 	my ( $m4, $K, $session, $A, $M1 ) = run_m1_to_m4( $pairing, $PIN );
 
 	is( unpack( 'C',
-		    tlv_field( $m4, OpenHAP::Pairing::kTLVType_State() ) ),
+		    tlv_field( $m4, Protocol::HAP::Pairing::kTLVType_State() ) ),
 		4, 'M4 has State 0x04' );
 	ok( !defined error_code($m4), 'correct proof accepted' );
 
-	my $proof = tlv_field( $m4, OpenHAP::Pairing::kTLVType_Proof() );
+	my $proof = tlv_field( $m4, Protocol::HAP::Pairing::kTLVType_Proof() );
 	is( length($proof), 64, 'M4 proof is 64 bytes (SHA-512)' );
 
 	# M2 = H(PAD(A) | M1 | K). The test checks it on the client
@@ -372,35 +367,32 @@ subtest '[HAP-Pairing §2.5][HAP-Pairing §2.6] M3 -> M4 SRP proof' => sub {
 	is( unpack( 'H*', $proof ),
 		unpack( 'H*', sha512( $A . $M1 . $K ) ),
 		'server proof M2 = H(A | M1 | K) verifies' );
-	OpenHAP::Pairing->clear_pairing_state();
 
 	# Wrong PIN: M4 returns 0x02 Authentication
 	my ($pairing2) = make_pairing();
 	my ($m4_bad) = run_m1_to_m4( $pairing2, '876-54-321' );
 	is( error_code($m4_bad),
-		OpenHAP::Pairing::kTLVError_Authentication(),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'wrong setup code returns 0x02 Authentication in M4' );
-	is( OpenHAP::Pairing->get_failed_attempts(),
+	is( $pairing2->get_failed_attempts,
 		1, 'failed proof increments attempt counter' );
-	OpenHAP::Pairing->clear_pairing_state();
 
 	# A mod N == 0: the handler rejects it before proof verification
 	my ($pairing3) = make_pairing();
-	my $s = OpenHAP::Session->new( socket => 'client' );
-	my $m1 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+	my $s = Protocol::HAP::Session->new( id => 9008 );
+	my $m1 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	$pairing3->handle_pair_setup( $m1, $s );
-	my $m3 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_PublicKey(), "\x00" x 384,
-		OpenHAP::Pairing::kTLVType_Proof(),     'X' x 64,
+	my $m3 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),     pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey(), "\x00" x 384,
+		Protocol::HAP::Pairing::kTLVType_Proof(),     'X' x 64,
 	);
 	is( error_code( $pairing3->handle_pair_setup( $m3, $s ) ),
-		OpenHAP::Pairing::kTLVError_Authentication(),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'A mod N == 0 rejected with 0x02' );
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
@@ -409,45 +401,45 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 	ok( !defined error_code($m4), 'SRP phase succeeded' );
 
 	# [HAP-Pairing §4/Pair Setup Encryption] session encryption key
-	my $encrypt_key = FuguLib::Crypto->hkdf_sha512( $K,
+	my $encrypt_key = Protocol::HAP::Crypto->hkdf_sha512( $K,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
 	# Controller long-term identity and signature
 	# [HAP-Pairing §4/Controller Signature]
 	my ( $ios_ltsk, $ios_ltpk ) =
-	    FuguLib::Crypto->ed25519_keypair;
+	    Protocol::HAP::Crypto->ed25519_keypair;
 	my $ios_id = 'ios-controller-1';
-	my $ios_x  = FuguLib::Crypto->hkdf_sha512(
+	my $ios_x  = Protocol::HAP::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Controller-Sign-Salt',
 		'Pair-Setup-Controller-Sign-Info', 32
 	);
 	my $ios_signature =
-	    FuguLib::Crypto->ed25519_sign( $ios_x . $ios_id . $ios_ltpk,
+	    Protocol::HAP::Crypto->ed25519_sign( $ios_x . $ios_id . $ios_ltpk,
 		$ios_ltsk, $ios_ltpk );
 
-	my $inner = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_Identifier(), $ios_id,
-		OpenHAP::Pairing::kTLVType_PublicKey(),  $ios_ltpk,
-		OpenHAP::Pairing::kTLVType_Signature(),  $ios_signature,
+	my $inner = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_Identifier(), $ios_id,
+		Protocol::HAP::Pairing::kTLVType_PublicKey(),  $ios_ltpk,
+		Protocol::HAP::Pairing::kTLVType_Signature(),  $ios_signature,
 	);
 
 	# [HAP-Pairing §5/M5] nonce PS-Msg05
 	is( unpack( 'H*', pack('x[4]') . 'PS-Msg05' ),
 		'0000000050532d4d73673035', 'M5 nonce is PS-Msg05' );
 	my ( $encrypted, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $encrypt_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg05', $inner );
 
-	my $m5 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 5 ),
-		OpenHAP::Pairing::kTLVType_EncryptedData(),
+	my $m5 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 5 ),
+		Protocol::HAP::Pairing::kTLVType_EncryptedData(),
 		$encrypted . $tag,
 	);
 	my $m6 = $pairing->handle_pair_setup( $m5, $session );
 
 	is( unpack( 'C',
-		    tlv_field( $m6, OpenHAP::Pairing::kTLVType_State() ) ),
+		    tlv_field( $m6, Protocol::HAP::Pairing::kTLVType_State() ) ),
 		6, 'M6 has State 0x06' );
 	ok( !defined error_code($m6), 'M5 accepted' );
 
@@ -465,40 +457,39 @@ subtest '[HAP-Pairing §2.7][HAP-Pairing §2.8] M5 -> M6 exchange' => sub {
 
 	# Decrypt M6 with nonce PS-Msg06 ([HAP-Pairing §5/M6])
 	my $m6_data =
-	    tlv_field( $m6, OpenHAP::Pairing::kTLVType_EncryptedData() );
+	    tlv_field( $m6, Protocol::HAP::Pairing::kTLVType_EncryptedData() );
 	my $m6_tag = substr( $m6_data, -16, 16, '' );
 	my $m6_plain =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $encrypt_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg06', $m6_data, $m6_tag );
 	ok( defined $m6_plain, 'M6 sub-TLV decrypts with PS-Msg06 nonce' );
 
 	# Verify the accessory signature
 	# ([HAP-Pairing §4/Accessory Signature])
-	my %m6_inner = OpenHAP::TLV::decode($m6_plain);
+	my %m6_inner = Protocol::HAP::TLV::decode($m6_plain);
 	my $acc_id =
-	    $m6_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
+	    $m6_inner{ Protocol::HAP::Pairing::kTLVType_Identifier() };
 	my $acc_ltpk =
-	    $m6_inner{ OpenHAP::Pairing::kTLVType_PublicKey() };
+	    $m6_inner{ Protocol::HAP::Pairing::kTLVType_PublicKey() };
 	my $acc_sig =
-	    $m6_inner{ OpenHAP::Pairing::kTLVType_Signature() };
+	    $m6_inner{ Protocol::HAP::Pairing::kTLVType_Signature() };
 
 	is( $acc_ltpk, $accessory_ltpk, 'M6 carries accessory LTPK' );
 	like( $acc_id, qr/^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/,
 		'accessory pairing ID is MAC-like' );
 
-	my $acc_x = FuguLib::Crypto->hkdf_sha512(
+	my $acc_x = Protocol::HAP::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
 	);
 	ok(
-		FuguLib::Crypto->ed25519_verify(
+		Protocol::HAP::Crypto->ed25519_verify(
 			$acc_sig, $acc_x . $acc_id . $acc_ltpk, $acc_ltpk
 		),
 		'accessory signature verifies'
 	);
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
@@ -506,50 +497,50 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	# Pair first so the accessory knows the controller LTPK
 	my ( $pairing, $storage, $accessory_ltpk ) = make_pairing();
 	my ( $ios_ltsk, $ios_ltpk ) =
-	    FuguLib::Crypto->ed25519_keypair;
+	    Protocol::HAP::Crypto->ed25519_keypair;
 	my $ios_id = 'ios-controller-1';
 	$storage->save_pairing( $ios_id, $ios_ltpk, 1 );
 
-	my $session = OpenHAP::Session->new( socket => 'client' );
+	my $session = Protocol::HAP::Session->new( id => 9009 );
 
 	# [HAP-Pairing §3.2] M1: controller ephemeral public key
 	my ( $ios_secret, $ios_public ) =
-	    FuguLib::Crypto->x25519_keypair;
-	my $m1 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_PublicKey(), $ios_public,
+	    Protocol::HAP::Crypto->x25519_keypair;
+	my $m1 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey(), $ios_public,
 	);
 	my $m2 = $pairing->handle_pair_verify( $m1, $session );
 
 	# [HAP-Pairing §3.3] M2: accessory public key + encrypted proof
 	is( unpack( 'C',
-		    tlv_field( $m2, OpenHAP::Pairing::kTLVType_State() ) ),
+		    tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_State() ) ),
 		2, 'M2 has State 0x02' );
 	my $acc_public =
-	    tlv_field( $m2, OpenHAP::Pairing::kTLVType_PublicKey() );
+	    tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_PublicKey() );
 	is( length($acc_public), 32,
 		'M2 carries 32-byte Curve25519 public key' );
 
 	my $shared =
-	    FuguLib::Crypto->x25519_shared_secret( $ios_secret,
+	    Protocol::HAP::Crypto->x25519_shared_secret( $ios_secret,
 		$acc_public );
 
 	# [HAP-Pairing §4/Pair Verify Encryption] + [HAP-Pairing §5/PV M2]
-	my $pv_key = FuguLib::Crypto->hkdf_sha512( $shared,
+	my $pv_key = Protocol::HAP::Crypto->hkdf_sha512( $shared,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 	my $m2_data =
-	    tlv_field( $m2, OpenHAP::Pairing::kTLVType_EncryptedData() );
+	    tlv_field( $m2, Protocol::HAP::Pairing::kTLVType_EncryptedData() );
 	my $m2_tag = substr( $m2_data, -16, 16, '' );
 	my $m2_plain =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $pv_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg02', $m2_data, $m2_tag );
 	ok( defined $m2_plain, 'M2 sub-TLV decrypts with PV-Msg02 nonce' );
 
-	my %m2_inner = OpenHAP::TLV::decode($m2_plain);
-	my $acc_id = $m2_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
-	my $acc_sig = $m2_inner{ OpenHAP::Pairing::kTLVType_Signature() };
+	my %m2_inner = Protocol::HAP::TLV::decode($m2_plain);
+	my $acc_id = $m2_inner{ Protocol::HAP::Pairing::kTLVType_Identifier() };
+	my $acc_sig = $m2_inner{ Protocol::HAP::Pairing::kTLVType_Signature() };
 	ok(
-		FuguLib::Crypto->ed25519_verify(
+		Protocol::HAP::Crypto->ed25519_verify(
 			$acc_sig, $acc_public . $acc_id . $ios_public,
 			$accessory_ltpk
 		),
@@ -557,26 +548,26 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	);
 
 	# [HAP-Pairing §3.4] M3: controller proof
-	my $ios_sig = FuguLib::Crypto->ed25519_sign(
+	my $ios_sig = Protocol::HAP::Crypto->ed25519_sign(
 		$ios_public . $ios_id . $acc_public,
 		$ios_ltsk, $ios_ltpk );
-	my $m3_inner = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_Identifier(), $ios_id,
-		OpenHAP::Pairing::kTLVType_Signature(),  $ios_sig,
+	my $m3_inner = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_Identifier(), $ios_id,
+		Protocol::HAP::Pairing::kTLVType_Signature(),  $ios_sig,
 	);
 	my ( $m3_encrypted, $m3_tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $pv_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg03', $m3_inner );
-	my $m3 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_EncryptedData(),
+	my $m3 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_EncryptedData(),
 		$m3_encrypted . $m3_tag,
 	);
 	my $m4 = $pairing->handle_pair_verify( $m3, $session );
 
 	# [HAP-Pairing §3.5] M4: success. The session becomes encrypted.
 	is( unpack( 'C',
-		    tlv_field( $m4, OpenHAP::Pairing::kTLVType_State() ) ),
+		    tlv_field( $m4, Protocol::HAP::Pairing::kTLVType_State() ) ),
 		4, 'M4 has State 0x04' );
 	ok( !defined error_code($m4), 'pair-verify succeeded' );
 	ok( $session->is_verified,  'session marked verified' );
@@ -586,11 +577,11 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	# The accessory encrypts with the Read key and decrypts with the
 	# Write key
 	my $read_key =
-	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	my $frame = $session->encrypt('event data');
 	my $aad   = substr( $frame, 0, 2 );
-	my $plain = FuguLib::Crypto->chacha20poly1305_decrypt(
+	my $plain = Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 		$read_key,
 		pack( 'x[4]Q<', 0 ),
 		substr( $frame, 2, -16 ),
@@ -601,32 +592,32 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 	);
 
 	# The accessory rejects an unknown controller with 0x02
-	my $session2 = OpenHAP::Session->new( socket => 'client2' );
+	my $session2 = Protocol::HAP::Session->new( id => 9010 );
 	my ( $pairing2, $storage2 ) = make_pairing();
 	my $m2_2 = $pairing2->handle_pair_verify( $m1, $session2 );
 	my $acc_public2 =
-	    tlv_field( $m2_2, OpenHAP::Pairing::kTLVType_PublicKey() );
+	    tlv_field( $m2_2, Protocol::HAP::Pairing::kTLVType_PublicKey() );
 	my $shared2 =
-	    FuguLib::Crypto->x25519_shared_secret( $ios_secret,
+	    Protocol::HAP::Crypto->x25519_shared_secret( $ios_secret,
 		$acc_public2 );
-	my $pv_key2 = FuguLib::Crypto->hkdf_sha512( $shared2,
+	my $pv_key2 = Protocol::HAP::Crypto->hkdf_sha512( $shared2,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
-	my $ios_sig2 = FuguLib::Crypto->ed25519_sign(
+	my $ios_sig2 = Protocol::HAP::Crypto->ed25519_sign(
 		$ios_public . $ios_id . $acc_public2,
 		$ios_ltsk, $ios_ltpk );
-	my $m3_inner2 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_Identifier(), $ios_id,
-		OpenHAP::Pairing::kTLVType_Signature(),  $ios_sig2,
+	my $m3_inner2 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_Identifier(), $ios_id,
+		Protocol::HAP::Pairing::kTLVType_Signature(),  $ios_sig2,
 	);
 	my ( $enc2, $tag2 ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $pv_key2,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $pv_key2,
 		pack('x[4]') . 'PV-Msg03', $m3_inner2 );
-	my $m3_2 = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_EncryptedData(), $enc2 . $tag2,
+	my $m3_2 = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_EncryptedData(), $enc2 . $tag2,
 	);
 	is( error_code( $pairing2->handle_pair_verify( $m3_2, $session2 ) ),
-		OpenHAP::Pairing::kTLVError_Authentication(),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'[HAP-Pairing §3.5] unknown controller rejected with 0x02' );
 };
 
@@ -637,17 +628,17 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 
 	# The limit is 100 attempts. At the limit, M1 returns 0x05
 	# MaxTries.
-	is( OpenHAP::Pairing::MAX_AUTH_ATTEMPTS(),
+	is( Protocol::HAP::Pairing::MAX_AUTH_ATTEMPTS(),
 		100, 'maximum unsuccessful attempts is 100' );
 
-	$OpenHAP::Pairing::failed_auth_attempts = 100;
-	my $session = OpenHAP::Session->new( socket => 'client' );
-	my $m1      = OpenHAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+	$pairing->{failed_auth_attempts} = 100;
+	my $session = Protocol::HAP::Session->new( id => 9011 );
+	my $m1      = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	is( error_code( $pairing->handle_pair_setup( $m1, $session ) ),
-		OpenHAP::Pairing::kTLVError_MaxTries(),
+		Protocol::HAP::Pairing::kTLVError_MaxTries(),
 		'M1 at the limit returns 0x05 MaxTries' );
 
 	# The accessory stores the counter persistently. Thus the
@@ -655,13 +646,13 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 	my ($pairing2) = run_failed_attempt($storage);
 	is( $storage->get_auth_attempts, 1, 'failed attempt persisted' );
 
-	my $revived = OpenHAP::Pairing->new(
+	my $revived = Protocol::HAP::Pairing->new(
 		pin            => $PIN,
-		storage        => $storage,
+		store         => $storage,
 		accessory_ltsk => 'x' x 64,
 		accessory_ltpk => 'y' x 32,
 	);
-	is( OpenHAP::Pairing->get_failed_attempts(),
+	is( $revived->get_failed_attempts,
 		1, 'attempt counter restored from storage on restart' );
 
 	# The counter resets only after the SRP proof
@@ -669,27 +660,24 @@ subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
 	my ( $pairing3, undef, undef ) = make_pairing($storage);
 	my ($m4) = run_m1_to_m4( $pairing3, $PIN );
 	ok( !defined error_code($m4), 'successful SRP proof' );
-	is( OpenHAP::Pairing->get_failed_attempts(),
+	is( $pairing3->get_failed_attempts,
 		0, 'counter reset after successful SRP proof' );
 	is( $storage->get_auth_attempts, 0, 'reset persisted' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 # Run one failed pairing attempt with a wrong PIN against $storage
 sub run_failed_attempt ($storage)
 {
-	OpenHAP::Pairing->clear_pairing_state();
-	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
-	my $pairing = OpenHAP::Pairing->new(
+	my ( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
+	my $pairing = Protocol::HAP::Pairing->new(
 		pin            => $PIN,
-		storage        => $storage,
+		store         => $storage,
 		accessory_ltsk => $ltsk,
 		accessory_ltpk => $ltpk,
 	);
 	$pairing->reset_auth_attempts;
 	run_m1_to_m4( $pairing, '876-54-321' );
-	OpenHAP::Pairing->clear_pairing_state();
 	return $pairing;
 }
 

@@ -83,12 +83,10 @@ it with one rename.</dd>
 bounded poll that stops on an interrupt, and a byte count that a person
 can read.</dd>
 
-<dt>FuguLib::Crypto</dt>
-<dd>The module gives randomness from <code>/dev/urandom</code>, Ed25519
-signatures, X25519 key agreement, HKDF over SHA-512, and
-ChaCha20-Poly1305.  Each group loads its library on first use, and a
-daemon that pledges without <code>prot_exec</code> loads them all
-first.</dd>
+<dt>FuguLib::Random</dt>
+<dd>The module gives random bytes from <code>/dev/urandom</code> and
+random passwords built from them, in an alphabet that survives a shell,
+a URL and a configuration file with no quoting.</dd>
 
 <dt>FuguLib::Config</dt>
 <dd>The module parses the OpenBSD-style grammar of settings and blocks.
@@ -122,14 +120,6 @@ A caller registers descriptors and timers instead of writing a
 periodic job.  The select timeout comes from the nearest deadline, and an
 interrupt flag ends the loop so the shutdown happens in the daemon and not
 inside a signal handler.</dd>
-
-<dt>FuguLib::HTTP</dt>
-<dd>The module is one HTTP/1.1 codec for both ends of a connection: a
-server parses requests and builds responses, a client does the reverse, and
-neither can drift from the other.  It also answers the framing question
-that a stream socket forces &mdash; how much of this buffer is one message
-&mdash; so a split request is not mangled and a pipelined one is not
-dropped.</dd>
 
 <dt>FuguLib::MQTT</dt>
 <dd>The module is a subscribing MQTT client for a daemon with one process

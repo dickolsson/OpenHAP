@@ -36,7 +36,7 @@ use FuguVM::Proxy;
 use FuguVM::QMP;
 use FuguVM::QGA;
 
-use FuguLib::Crypto;
+use FuguLib::Random;
 use FuguLib::Process;
 use FuguLib::SSH;
 use FuguLib::Util;
@@ -206,7 +206,7 @@ sub up ($self)
 		my $install_proxy_url = $proxy_vm_url // 'none';
 
 		# Generate a strong random password for this installation
-		my $root_password = FuguLib::Crypto->random_password(32);
+		my $root_password = FuguLib::Random->random_password(32);
 		$state->set_root_password($root_password);
 		$log->info("Generated secure root password");
 
