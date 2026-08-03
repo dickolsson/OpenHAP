@@ -15,8 +15,8 @@ use OpenHAP::Session;
 use OpenHAP::Pairing;
 use OpenHAP::Storage;
 use Protocol::HAP::Crypto;
-use OpenHAP::Bridge;
-use OpenHAP::Characteristic;
+use Protocol::HAP::Bridge;
+use Protocol::HAP::Characteristic;
 use Protocol::HAP::PIN qw(normalize_pin);
 
 # How much the server reads from a client at a time.
@@ -113,8 +113,13 @@ sub _initialize ($self)
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
 
-	# Initialize the bridge
-	$self->{bridge} = OpenHAP::Bridge->new( name => $self->{name}, );
+	# Initialize the bridge. The model logs through the injected
+	# logger; without this, the debug lines of the data model
+	# disappear into the null logger.
+	$self->{bridge} = Protocol::HAP::Bridge->new(
+		name   => $self->{name},
+		logger => FuguLib::Log->default,
+	);
 
 	# Deliver device-side changes as EVENT/1.0 notifications.
 	# The bridge forwards the notify_change of each bridged
@@ -1158,7 +1163,8 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 
 	# The immediate types bypass coalescing
 	my $char_type =
-	    OpenHAP::Characteristic::_uuid_to_short( $char->{type} // '' );
+	    Protocol::HAP::Characteristic::_uuid_to_short( $char->{type}
+		    // '' );
 	if ( IMMEDIATE_EVENT_TYPES->{$char_type} ) {
 		$self->send_event( $aid, $iid, $value, $originator );
 		return;

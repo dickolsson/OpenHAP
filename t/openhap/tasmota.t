@@ -9,6 +9,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
+use FuguLib::Log;
 use FuguLib::TestLog;
 
 use_ok('OpenHAP::TestMock::MQTT');
@@ -163,5 +164,38 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 	is( $s, 0,  'RGB gray: saturation=0' );
 	is( $b, 50, 'RGB gray: brightness=50' );
 }
+
+# A characteristic that a driver creates carries the injected logger.
+# Without this, the write and subscription debug lines of the daemon
+# would disappear into the null logger.
+subtest 'a driver passes its logger to its characteristics' => sub {
+	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $logger = FuguLib::Log->new( mode => FuguLib::Log::MODE_QUIET );
+	my $heater = OpenHAP::Tasmota::Heater->new(
+		aid         => 2,
+		name        => 'Logger Test',
+		mqtt_topic  => 'heater',
+		mqtt_client => $mqtt,
+		logger      => $logger,
+	);
+
+	is( $heater->{logger}, $logger, 'the accessory carries the logger' );
+
+	my ($switch) = grep { $_->get_characteristic_by_type('On') }
+	    $heater->get_services;
+	ok( defined $switch, 'the heater has its switch service' );
+	is( $switch->{logger}, $logger, 'the service carries the logger' );
+
+	my $on = $switch->get_characteristic_by_type('On');
+	is( $on->{logger}, $logger,
+		'the driver-created characteristic carries the logger' );
+
+	# The accessory-information characteristics come from the model
+	# itself, and they carry the same logger
+	my $info = $heater->get_service('AccessoryInformation');
+	my $name = $info->get_characteristic_by_type('Name');
+	is( $name->{logger}, $logger,
+		'the model-created characteristic carries the logger' );
+};
 
 done_testing();

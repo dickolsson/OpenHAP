@@ -5,8 +5,8 @@ package OpenHAP::Tasmota::Sensor;
 use FuguLib::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
-use OpenHAP::Service;
-use OpenHAP::Characteristic;
+use Protocol::HAP::Service;
+use Protocol::HAP::Characteristic;
 
 use JSON::XS;
 
@@ -17,6 +17,7 @@ use constant SENSOR_TYPES =>
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(
+		logger       => $args{logger},
 		aid          => $args{aid},
 		name         => $args{name},
 		model        => 'Tasmota Sensor',
@@ -34,14 +35,16 @@ sub new ( $class, %args )
 	$self->{has_humidity}     = $args{has_humidity} // 0;
 
 	# Add the Temperature Sensor service
-	my $temp_sensor = OpenHAP::Service->new(
+	my $temp_sensor = Protocol::HAP::Service->new(
+		logger  => $self->{logger},
 		type    => 'TemperatureSensor',
 		iid     => 10,
 		primary => 1,
 	);
 
 	$temp_sensor->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'CurrentTemperature',
 			iid    => 11,
 			format => 'float',
@@ -58,13 +61,15 @@ sub new ( $class, %args )
 	if ( $self->{has_humidity} ) {
 		$self->{current_humidity} = 50.0;
 
-		my $humidity_sensor = OpenHAP::Service->new(
-			type => 'HumiditySensor',
-			iid  => 20,
+		my $humidity_sensor = Protocol::HAP::Service->new(
+			logger => $self->{logger},
+			type   => 'HumiditySensor',
+			iid    => 20,
 		);
 
 		$humidity_sensor->add_characteristic(
-			OpenHAP::Characteristic->new(
+			Protocol::HAP::Characteristic->new(
+				logger => $self->{logger},
 				type   => 'CurrentRelativeHumidity',
 				iid    => 21,
 				format => 'float',

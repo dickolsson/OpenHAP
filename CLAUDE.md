@@ -49,11 +49,11 @@ make integration    # provision OpenBSD VM and run integration tests
 - `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `fuguvm` (OpenBSD VM
   CLI)
 - `lib/Protocol/` — the `Protocol::HAP` library: codecs (`TLV.pm`), setup-code
-  rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`); it is self-contained and
-  never uses FuguLib, FuguVM, or OpenHAP (`t/protocol/boundary.t` enforces
-  this)
+  rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`), data model
+  (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`); it is
+  self-contained and never uses FuguLib, FuguVM, or OpenHAP
+  (`t/protocol/boundary.t` enforces this)
 - `lib/OpenHAP/` — protocol engine (`HAP.pm`, `Pairing.pm`, `Session.pm`),
-  data model (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`),
   persistence (`Storage.pm`), device integration (`DeviceLoader.pm`,
   `Tasmota/*.pm`), test drivers (`Test/*.pm`)
 - `t/openhap/`, `t/fugulib/`, `t/protocol/`, `t/fuguvm/` — unit tests;

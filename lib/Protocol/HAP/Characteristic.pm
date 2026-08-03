@@ -1,10 +1,8 @@
 use v5.36;
 
-package OpenHAP::Characteristic;
+package Protocol::HAP::Characteristic;
 
-use FuguLib::Log;
-
-use JSON::XS;
+use Protocol::HAP;
 
 # HAP Base UUID suffix for Apple-defined characteristics
 use constant HAP_BASE_UUID => '-0000-1000-8000-0026BB765291';
@@ -92,6 +90,7 @@ sub new ( $class, %args )
 		iid    => $args{iid}    // die('Instance ID required'),
 		format => $args{format} // 'string',
 		perms  => $args{perms}  // ['pr'],
+		logger => $args{logger} // Protocol::HAP->null_logger,
 
 		# Value: a scalar reference makes the value mutable
 		value => $args{value},
@@ -132,8 +131,7 @@ sub get_value ($self)
 
 sub set_value ( $self, $value )
 {
-	FuguLib::Log->default->debug(
-		'Setting characteristic IID=%d to value: %s',
+	$self->{logger}->debug( 'Setting characteristic IID=%d to value: %s',
 		$self->{iid}, defined $value ? $value : 'undef' );
 
 	# Use the custom setter if the characteristic has one
@@ -152,7 +150,7 @@ sub set_value ( $self, $value )
 
 sub enable_events ( $self, $enabled )
 {
-	FuguLib::Log->default->debug(
+	$self->{logger}->debug(
 		'Events %s for characteristic IID=%d',
 		$enabled ? 'enabled' : 'disabled',
 		$self->{iid} );

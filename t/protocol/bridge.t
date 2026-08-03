@@ -1,27 +1,24 @@
 #!/usr/bin/env perl
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
-use lib "$RealBin/../lib";
-use FuguLib::TestLog;
 
-use_ok('OpenHAP::Bridge');
+use_ok('Protocol::HAP::Bridge');
 
 # Test bridge creation
 {
-    my $bridge = OpenHAP::Bridge->new(
+    my $bridge = Protocol::HAP::Bridge->new(
         name => 'Test Bridge',
     );
     
     ok(defined $bridge, 'Bridge object created');
-    isa_ok($bridge, 'OpenHAP::Bridge');
-    isa_ok($bridge, 'OpenHAP::Accessory');
+    isa_ok($bridge, 'Protocol::HAP::Bridge');
+    isa_ok($bridge, 'Protocol::HAP::Accessory');
     is($bridge->{aid}, 1, 'Bridge has AID 1');
 }
 
 # Test default values
 {
-    my $bridge = OpenHAP::Bridge->new();
+    my $bridge = Protocol::HAP::Bridge->new();
     
     ok(defined $bridge->{name}, 'Default name set');
     like($bridge->{name}, qr/Bridge/i, 'Default name contains "Bridge"');
@@ -29,10 +26,10 @@ use_ok('OpenHAP::Bridge');
 
 # Test adding bridged accessories
 {
-    my $bridge = OpenHAP::Bridge->new();
+    my $bridge = Protocol::HAP::Bridge->new();
     
-    require OpenHAP::Accessory;
-    my $accessory = OpenHAP::Accessory->new(
+    require Protocol::HAP::Accessory;
+    my $accessory = Protocol::HAP::Accessory->new(
         aid => 2,
         name => 'Test Device',
     );
@@ -46,11 +43,11 @@ use_ok('OpenHAP::Bridge');
 
 # Test multiple bridged accessories
 {
-    my $bridge = OpenHAP::Bridge->new();
+    my $bridge = Protocol::HAP::Bridge->new();
     
-    require OpenHAP::Accessory;
+    require Protocol::HAP::Accessory;
     for my $i (2..4) {
-        my $acc = OpenHAP::Accessory->new(aid => $i, name => "Device $i");
+        my $acc = Protocol::HAP::Accessory->new(aid => $i, name => "Device $i");
         $bridge->add_bridged_accessory($acc);
     }
     
@@ -60,11 +57,11 @@ use_ok('OpenHAP::Bridge');
 
 # Test get_all_accessories
 {
-    my $bridge = OpenHAP::Bridge->new();
+    my $bridge = Protocol::HAP::Bridge->new();
     
-    require OpenHAP::Accessory;
-    my $acc1 = OpenHAP::Accessory->new(aid => 2, name => 'Device 1');
-    my $acc2 = OpenHAP::Accessory->new(aid => 3, name => 'Device 2');
+    require Protocol::HAP::Accessory;
+    my $acc1 = Protocol::HAP::Accessory->new(aid => 2, name => 'Device 1');
+    my $acc2 = Protocol::HAP::Accessory->new(aid => 3, name => 'Device 2');
     
     $bridge->add_bridged_accessory($acc1);
     $bridge->add_bridged_accessory($acc2);
@@ -78,10 +75,10 @@ use_ok('OpenHAP::Bridge');
 
 # Test get_accessory by AID
 {
-    my $bridge = OpenHAP::Bridge->new();
+    my $bridge = Protocol::HAP::Bridge->new();
     
-    require OpenHAP::Accessory;
-    my $acc = OpenHAP::Accessory->new(aid => 2, name => 'Test Device');
+    require Protocol::HAP::Accessory;
+    my $acc = Protocol::HAP::Accessory->new(aid => 2, name => 'Test Device');
     $bridge->add_bridged_accessory($acc);
     
     my $found_bridge = $bridge->get_accessory(1);
@@ -98,10 +95,10 @@ use_ok('OpenHAP::Bridge');
 
 # Test JSON serialization
 {
-    my $bridge = OpenHAP::Bridge->new(name => 'My Bridge');
+    my $bridge = Protocol::HAP::Bridge->new(name => 'My Bridge');
     
-    require OpenHAP::Accessory;
-    my $acc = OpenHAP::Accessory->new(aid => 2, name => 'Device');
+    require Protocol::HAP::Accessory;
+    my $acc = Protocol::HAP::Accessory->new(aid => 2, name => 'Device');
     $bridge->add_bridged_accessory($acc);
     
     my $json = $bridge->to_json();
@@ -115,7 +112,7 @@ use_ok('OpenHAP::Bridge');
 
 # Test event forwarding
 {
-    my $bridge = OpenHAP::Bridge->new();
+    my $bridge = Protocol::HAP::Bridge->new();
     
     my $callback_called = 0;
     my $callback_aid;
@@ -125,8 +122,8 @@ use_ok('OpenHAP::Bridge');
         ($callback_aid) = @_;
     });
     
-    require OpenHAP::Accessory;
-    my $acc = OpenHAP::Accessory->new(aid => 2, name => 'Device');
+    require Protocol::HAP::Accessory;
+    my $acc = Protocol::HAP::Accessory->new(aid => 2, name => 'Device');
     $bridge->add_bridged_accessory($acc);
     
     # Trigger an event on the bridged accessory

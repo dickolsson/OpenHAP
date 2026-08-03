@@ -1,15 +1,12 @@
 #!/usr/bin/env perl
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
-use lib "$RealBin/../lib";
-use FuguLib::TestLog;
 
-use_ok('OpenHAP::Accessory');
+use_ok('Protocol::HAP::Accessory');
 
 # Test accessory creation
 {
-    my $accessory = OpenHAP::Accessory->new(
+    my $accessory = Protocol::HAP::Accessory->new(
         aid => 1,
         name => 'Test Accessory',
         manufacturer => 'Test Corp',
@@ -18,14 +15,14 @@ use_ok('OpenHAP::Accessory');
     );
     
     ok(defined $accessory, 'Accessory object created');
-    isa_ok($accessory, 'OpenHAP::Accessory');
+    isa_ok($accessory, 'Protocol::HAP::Accessory');
     is($accessory->{aid}, 1, 'AID set correctly');
     is($accessory->{name}, 'Test Accessory', 'Name set correctly');
 }
 
 # Test default values
 {
-    my $accessory = OpenHAP::Accessory->new(aid => 2);
+    my $accessory = Protocol::HAP::Accessory->new(aid => 2);
     
     ok(defined $accessory->{name}, 'Default name set');
     ok(defined $accessory->{manufacturer}, 'Default manufacturer set');
@@ -35,7 +32,7 @@ use_ok('OpenHAP::Accessory');
 
 # Test Accessory Information service
 {
-    my $accessory = OpenHAP::Accessory->new(
+    my $accessory = Protocol::HAP::Accessory->new(
         aid => 1,
         name => 'Test',
         manufacturer => 'Acme',
@@ -55,10 +52,10 @@ use_ok('OpenHAP::Accessory');
 
 # Test adding services
 {
-    my $accessory = OpenHAP::Accessory->new(aid => 1);
+    my $accessory = Protocol::HAP::Accessory->new(aid => 1);
     
-    require OpenHAP::Service;
-    my $service = OpenHAP::Service->new(type => 'Switch', iid => 10);
+    require Protocol::HAP::Service;
+    my $service = Protocol::HAP::Service->new(type => 'Switch', iid => 10);
     
     $accessory->add_service($service);
     
@@ -69,7 +66,7 @@ use_ok('OpenHAP::Accessory');
 
 # Test get_characteristic
 {
-    my $accessory = OpenHAP::Accessory->new(aid => 1);
+    my $accessory = Protocol::HAP::Accessory->new(aid => 1);
     
     # Get the characteristic from the AccessoryInformation service
     my $char = $accessory->get_characteristic(2);  # IID 2 is Identify
@@ -78,7 +75,7 @@ use_ok('OpenHAP::Accessory');
 
 # Test JSON serialization
 {
-    my $accessory = OpenHAP::Accessory->new(
+    my $accessory = Protocol::HAP::Accessory->new(
         aid => 1,
         name => 'Test Accessory',
     );
@@ -93,7 +90,7 @@ use_ok('OpenHAP::Accessory');
 
 # Test event callbacks
 {
-    my $accessory = OpenHAP::Accessory->new(aid => 1);
+    my $accessory = Protocol::HAP::Accessory->new(aid => 1);
     
     my $callback_called = 0;
     my $callback_aid;
@@ -113,7 +110,7 @@ use_ok('OpenHAP::Accessory');
 
 # Test multiple event callbacks
 {
-    my $accessory = OpenHAP::Accessory->new(aid => 1);
+    my $accessory = Protocol::HAP::Accessory->new(aid => 1);
     
     my $count1 = 0;
     my $count2 = 0;

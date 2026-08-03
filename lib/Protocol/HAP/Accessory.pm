@@ -1,6 +1,8 @@
 use v5.36;
 
-package OpenHAP::Accessory;
+package Protocol::HAP::Accessory;
+
+use Protocol::HAP;
 
 sub new ( $class, %args )
 {
@@ -11,8 +13,9 @@ sub new ( $class, %args )
 		model             => $args{model}        // 'HAP Accessory',
 		serial            => $args{serial}       // 'ACC-001',
 		firmware_revision => $args{firmware_revision} // '1.0.0',
-		services          => [],
-		event_callbacks   => [],
+		logger          => $args{logger} // Protocol::HAP->null_logger,
+		services        => [],
+		event_callbacks => [],
 	}, $class;
 
 	# Add the required Accessory Information service
@@ -24,65 +27,72 @@ sub new ( $class, %args )
 sub _add_accessory_info_service ($self)
 {
 
-	require OpenHAP::Service;
-	require OpenHAP::Characteristic;
+	require Protocol::HAP::Service;
+	require Protocol::HAP::Characteristic;
 
-	my $info = OpenHAP::Service->new(
-		type => 'AccessoryInformation',
-		iid  => 1,
+	my $info = Protocol::HAP::Service->new(
+		type   => 'AccessoryInformation',
+		iid    => 1,
+		logger => $self->{logger},
 	);
 
 	$info->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'Identify',
 			iid    => 2,
 			format => 'bool',
 			perms  => ['pw'],
+			logger => $self->{logger},
 			on_set => sub { $self->identify() },
 		) );
 
 	$info->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'Manufacturer',
 			iid    => 3,
 			format => 'string',
 			perms  => ['pr'],
+			logger => $self->{logger},
 			value  => $self->{manufacturer},
 		) );
 
 	$info->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'Model',
 			iid    => 4,
 			format => 'string',
 			perms  => ['pr'],
+			logger => $self->{logger},
 			value  => $self->{model},
 		) );
 
 	$info->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'Name',
 			iid    => 5,
 			format => 'string',
 			perms  => ['pr'],
+			logger => $self->{logger},
 			value  => $self->{name},
 		) );
 
 	$info->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'SerialNumber',
 			iid    => 6,
 			format => 'string',
 			perms  => ['pr'],
+			logger => $self->{logger},
 			value  => $self->{serial},
 		) );
 
 	$info->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'FirmwareRevision',
 			iid    => 7,
 			format => 'string',
 			perms  => ['pr'],
+			logger => $self->{logger},
 			value  => $self->{firmware_revision},
 		) );
 
@@ -102,8 +112,9 @@ sub get_services ($self)
 sub get_service ( $self, $type )
 {
 	# Look up the full UUID when the caller gives a short name
-	require OpenHAP::Service;
-	my $target_uuid = $OpenHAP::Service::SERVICE_TYPES{$type} // $type;
+	require Protocol::HAP::Service;
+	my $target_uuid = $Protocol::HAP::Service::SERVICE_TYPES{$type}
+	    // $type;
 
 	for my $service ( @{ $self->{services} } ) {
 		return $service if $service->{type} eq $target_uuid;

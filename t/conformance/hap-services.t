@@ -14,9 +14,9 @@ use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
 use FuguLib::TestLog;
 
-use_ok('OpenHAP::Service');
-use_ok('OpenHAP::Characteristic');
-use_ok('OpenHAP::Bridge');
+use_ok('Protocol::HAP::Service');
+use_ok('Protocol::HAP::Characteristic');
+use_ok('Protocol::HAP::Bridge');
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Heater');
 use_ok('OpenHAP::Tasmota::Sensor');
@@ -41,17 +41,17 @@ subtest '[HAP-Services §6] service UUID table' => sub {
 		my $short = $uuid_table{$name};
 		my $full  = sprintf '%08s-0000-1000-8000-0026BB765291',
 		    '0' x ( 8 - length $short ) . $short;
-		is( $OpenHAP::Service::SERVICE_TYPES{$name},
+		is( $Protocol::HAP::Service::SERVICE_TYPES{$name},
 			$full, "[HAP-Services §6/$name] UUID is $full" );
 	}
 };
 
 subtest '[HAP-Services §2] UUID short form in JSON' => sub {
-	my $service = OpenHAP::Service->new( type => 'Lightbulb', iid => 10 );
+	my $service = Protocol::HAP::Service->new( type => 'Lightbulb', iid => 10 );
 	is( $service->to_json->{type}, '43',
 		'Apple service UUID shortened to hex prefix' );
 
-	my $custom = OpenHAP::Service->new(
+	my $custom = Protocol::HAP::Service->new(
 		type => '12345678-1234-1234-1234-123456789012',
 		iid  => 11,
 	);
@@ -83,7 +83,7 @@ subtest '[HAP-Services §3] AccessoryInformation on every accessory' =>
     sub {
 	my $mqtt        = OpenHAP::TestMock::MQTT->new;
 	my @accessories = (
-		OpenHAP::Bridge->new( name => 'Bridge' ),
+		Protocol::HAP::Bridge->new( name => 'Bridge' ),
 		OpenHAP::Tasmota::Heater->new(
 			aid         => 2,
 			name        => 'Heater',
@@ -116,7 +116,7 @@ subtest '[HAP-Services §3] AccessoryInformation on every accessory' =>
 };
 
 subtest '[HAP-Services §3] ProtocolInformation on the bridge only' => sub {
-	my $bridge = OpenHAP::Bridge->new( name => 'Bridge' );
+	my $bridge = Protocol::HAP::Bridge->new( name => 'Bridge' );
 	my $protocol = find_service( $bridge, 'A2' );
 	ok( $protocol, 'bridge carries ProtocolInformation' );
 
@@ -220,14 +220,14 @@ subtest '[HAP-Services §4] required characteristics per service' => sub {
 
 subtest '[HAP-Services §1][HAP-Services §7] service JSON structure' =>
     sub {
-	my $service = OpenHAP::Service->new(
+	my $service = Protocol::HAP::Service->new(
 		type    => 'Switch',
 		iid     => 10,
 		hidden  => 1,
 		primary => 1,
 	);
 	$service->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'On',
 			iid    => 11,
 			format => 'bool',
@@ -247,7 +247,7 @@ subtest '[HAP-Services §1][HAP-Services §7] service JSON structure' =>
 };
 
 subtest '[HAP-Services §5] primary service marking' => sub {
-	my $service = OpenHAP::Service->new(
+	my $service = Protocol::HAP::Service->new(
 		type    => 'Switch',
 		iid     => 10,
 		primary => 1,
@@ -255,7 +255,7 @@ subtest '[HAP-Services §5] primary service marking' => sub {
 	my $json = $service->to_json;
 	is( ${ $json->{primary} }, 1, 'primary service marked in JSON' );
 
-	my $plain = OpenHAP::Service->new( type => 'Switch', iid => 11 );
+	my $plain = Protocol::HAP::Service->new( type => 'Switch', iid => 11 );
 	ok( !exists $plain->to_json->{primary},
 		'non-primary service omits the flag' );
 };

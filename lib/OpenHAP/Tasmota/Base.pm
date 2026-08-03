@@ -20,8 +20,8 @@ use v5.36;
 package OpenHAP::Tasmota::Base;
 
 use FuguLib::Log;
-require OpenHAP::Accessory;
-our @ISA = qw(OpenHAP::Accessory);
+require Protocol::HAP::Accessory;
+our @ISA = qw(Protocol::HAP::Accessory);
 
 use JSON::XS;
 

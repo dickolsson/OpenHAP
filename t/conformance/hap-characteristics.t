@@ -14,8 +14,8 @@ use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
 use FuguLib::TestLog;
 
-use_ok('OpenHAP::Characteristic');
-use_ok('OpenHAP::Bridge');
+use_ok('Protocol::HAP::Characteristic');
+use_ok('Protocol::HAP::Bridge');
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Heater');
 use_ok('OpenHAP::Tasmota::Sensor');
@@ -122,13 +122,13 @@ my %catalog = (
 );
 
 subtest '[HAP-Characteristics §6] characteristic UUID table' => sub {
-	for my $name ( sort keys %OpenHAP::Characteristic::CHAR_TYPES ) {
+	for my $name ( sort keys %Protocol::HAP::Characteristic::CHAR_TYPES ) {
 		my $row = $catalog{$name};
 		ok( $row, "catalog covers implemented type $name" ) or next;
 		my $short = $row->{short};
 		my $full  = sprintf '%08s-0000-1000-8000-0026BB765291',
 		    '0' x ( 8 - length $short ) . $short;
-		is( $OpenHAP::Characteristic::CHAR_TYPES{$name},
+		is( $Protocol::HAP::Characteristic::CHAR_TYPES{$name},
 			$full,
 			"[HAP-Characteristics §6/$name] UUID is $full" );
 	}
@@ -138,20 +138,20 @@ subtest '[HAP-Characteristics §2] data formats' => sub {
 	my @spec_formats =
 	    qw(bool uint8 uint16 uint32 uint64 int float string tlv8 data);
 	for my $format (@spec_formats) {
-		ok( $OpenHAP::Characteristic::FORMATS{$format},
+		ok( $Protocol::HAP::Characteristic::FORMATS{$format},
 			"format $format recognized" );
 	}
-	is( scalar keys %OpenHAP::Characteristic::FORMATS,
+	is( scalar keys %Protocol::HAP::Characteristic::FORMATS,
 		scalar @spec_formats, 'no formats beyond the spec table' );
 };
 
 subtest '[HAP-Characteristics §3] permissions' => sub {
 	my @spec_perms = qw(pr pw ev aa tw hd wr);
 	for my $perm (@spec_perms) {
-		ok( $OpenHAP::Characteristic::PERMISSIONS{$perm},
+		ok( $Protocol::HAP::Characteristic::PERMISSIONS{$perm},
 			"permission $perm recognized" );
 	}
-	is( scalar keys %OpenHAP::Characteristic::PERMISSIONS,
+	is( scalar keys %Protocol::HAP::Characteristic::PERMISSIONS,
 		scalar @spec_perms,
 		'no permissions beyond the spec table' );
 };
@@ -159,7 +159,7 @@ subtest '[HAP-Characteristics §3] permissions' => sub {
 subtest '[HAP-Characteristics §1][HAP-Characteristics §7] JSON shape' =>
     sub {
 	my $value = 75;
-	my $char  = OpenHAP::Characteristic->new(
+	my $char  = Protocol::HAP::Characteristic->new(
 		type   => 'Brightness',
 		iid    => 10,
 		format => 'int',
@@ -184,7 +184,7 @@ subtest '[HAP-Characteristics §1][HAP-Characteristics §7] JSON shape' =>
 
 	# [HAP-Characteristics §8] a write-only characteristic omits the
 	# value
-	my $write_only = OpenHAP::Characteristic->new(
+	my $write_only = Protocol::HAP::Characteristic->new(
 		type   => 'Identify',
 		iid    => 2,
 		format => 'bool',
@@ -200,7 +200,7 @@ subtest '[HAP-Characteristics §5] device characteristics match rows' =>
     sub {
 	my $mqtt        = OpenHAP::TestMock::MQTT->new;
 	my @accessories = (
-		OpenHAP::Bridge->new( name => 'Bridge' ),
+		Protocol::HAP::Bridge->new( name => 'Bridge' ),
 		OpenHAP::Tasmota::Heater->new(
 			aid         => 2,
 			name        => 'Heater',

@@ -5,12 +5,13 @@ package OpenHAP::Tasmota::Heater;
 use FuguLib::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
-use OpenHAP::Service;
-use OpenHAP::Characteristic;
+use Protocol::HAP::Service;
+use Protocol::HAP::Characteristic;
 
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(
+		logger       => $args{logger},
 		aid          => $args{aid},
 		name         => $args{name},
 		model        => 'Tasmota Switch',
@@ -26,14 +27,16 @@ sub new ( $class, %args )
 	$self->{power_state} = 0;
 
 	# Add the Switch/Outlet service
-	my $switch = OpenHAP::Service->new(
+	my $switch = Protocol::HAP::Service->new(
+		logger  => $self->{logger},
 		type    => 'Switch',
 		iid     => 10,
 		primary => 1,
 	);
 
 	$switch->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
+			logger => $self->{logger},
 			type   => 'On',
 			iid    => 11,
 			format => 'bool',

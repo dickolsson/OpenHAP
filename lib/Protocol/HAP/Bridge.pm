@@ -1,11 +1,9 @@
 use v5.36;
 
-package OpenHAP::Bridge;
+package Protocol::HAP::Bridge;
 
-use FuguLib::Log;
-
-require OpenHAP::Accessory;
-our @ISA = qw(OpenHAP::Accessory);
+require Protocol::HAP::Accessory;
+our @ISA = qw(Protocol::HAP::Accessory);
 
 sub new ( $class, %args )
 {
@@ -16,6 +14,7 @@ sub new ( $class, %args )
 		model             => $args{model}        // 'OpenHAP',
 		serial            => $args{serial}       // 'BRIDGE-001',
 		firmware_revision => $args{firmware_revision} // '1.0.0',
+		logger            => $args{logger},
 	);
 
 	$self->{bridged_accessories} = [];
@@ -30,20 +29,22 @@ sub new ( $class, %args )
 
 sub _add_protocol_info_service ($self)
 {
-	require OpenHAP::Service;
-	require OpenHAP::Characteristic;
+	require Protocol::HAP::Service;
+	require Protocol::HAP::Characteristic;
 
-	my $protocol = OpenHAP::Service->new(
-		type => 'ProtocolInformation',
-		iid  => 8,
+	my $protocol = Protocol::HAP::Service->new(
+		type   => 'ProtocolInformation',
+		iid    => 8,
+		logger => $self->{logger},
 	);
 
 	$protocol->add_characteristic(
-		OpenHAP::Characteristic->new(
+		Protocol::HAP::Characteristic->new(
 			type   => 'Version',
 			iid    => 9,
 			format => 'string',
 			perms  => ['pr'],
+			logger => $self->{logger},
 			value  => '1.1.0',
 		) );
 
@@ -52,8 +53,7 @@ sub _add_protocol_info_service ($self)
 
 sub add_bridged_accessory ( $self, $accessory )
 {
-	FuguLib::Log->default->debug(
-		'Adding bridged accessory: AID=%d, name=%s',
+	$self->{logger}->debug( 'Adding bridged accessory: AID=%d, name=%s',
 		$accessory->{aid}, $accessory->{name} );
 	push @{ $self->{bridged_accessories} }, $accessory;
 

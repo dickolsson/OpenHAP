@@ -82,11 +82,19 @@ four logger methods and drops every message.
 
 =item L<Protocol::HAP::SRP> - SRP-6a exchange
 
+=item L<Protocol::HAP::Accessory> - accessory data model
+
+=item L<Protocol::HAP::Service> - service data model
+
+=item L<Protocol::HAP::Characteristic> - characteristic data model
+
+=item L<Protocol::HAP::Bridge> - bridge accessory
+
 =back
 
-The pairing and session state machines, the data model, the HTTP
-codec, the server engine, and the controller join the namespace in
-later phases of the extraction.
+The pairing and session state machines, the HTTP codec, the server
+engine, and the controller join the namespace in later phases of the
+extraction.
 
 =head1 SEE ALSO
 

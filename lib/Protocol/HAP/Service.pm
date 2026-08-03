@@ -1,6 +1,8 @@
 use v5.36;
 
-package OpenHAP::Service;
+package Protocol::HAP::Service;
+
+use Protocol::HAP;
 
 # HAP Base UUID suffix for Apple-defined services
 use constant HAP_BASE_UUID => '-0000-1000-8000-0026BB765291';
@@ -38,6 +40,7 @@ sub new ( $class, %args )
 	my $self = bless {
 		type            => $uuid,
 		iid             => $args{iid},
+		logger          => $args{logger} // Protocol::HAP->null_logger,
 		characteristics => [],
 		hidden          => $args{hidden}  // 0,
 		primary         => $args{primary} // 0,
@@ -63,8 +66,9 @@ sub get_characteristic ( $self, $iid )
 
 sub get_characteristic_by_type ( $self, $type )
 {
-	require OpenHAP::Characteristic;
-	my $target_uuid = $OpenHAP::Characteristic::CHAR_TYPES{$type} // $type;
+	require Protocol::HAP::Characteristic;
+	my $target_uuid = $Protocol::HAP::Characteristic::CHAR_TYPES{$type}
+	    // $type;
 
 	for my $char ( @{ $self->{characteristics} } ) {
 		return $char if $char->{type} eq $target_uuid;

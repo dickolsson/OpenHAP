@@ -280,6 +280,12 @@ sub _instantiate_device ( $self, $device, $mqtt, $type, $subtype )
 		mqtt_client => $mqtt,
 		serial      => $device->{id},
 		relay_index => $device->{relay_index} // 0,
+
+		# The model logs through the injected logger. The device
+		# passes it on to every service and characteristic it
+		# builds, so the write and subscription debug lines keep
+		# reaching the daemon log.
+		logger => FuguLib::Log->default,
 	);
 	%args = ( %args, $entry->{args}->($device) ) if $entry->{args};
 
