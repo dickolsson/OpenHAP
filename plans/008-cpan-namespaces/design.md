@@ -41,8 +41,12 @@ The project has no users. A clean break is possible.
    specification has replaced.
 4. `Protocol::Imsg` is a sans-IO codec. `Fugu::Imsg` owns the socket and uses
    the codec.
-5. Behavior does not change, with one exception: `hapctl` prints a device class,
-   so its output and its manual change with the package names.
+5. Every implementation of a `Protocol::` contract lives beside the contract.
+   `Protocol::HAP::Store::File` joins `Protocol::HAP::Store::Memory`, and one
+   test proves the contract over both.
+6. Behavior does not change, with two exceptions: `hapctl` prints a device
+   class, so its output and its manual change with the package names, and the
+   file store takes the path of its directory from the caller.
 
 The products keep their names. The daemon is still OpenHAP, the command is still
 `openhapd`, and the VM utility is still FuguVM. The one exception is FuguLib:
@@ -53,15 +57,16 @@ changes with the packages.
 
 - No CPAN release. No `$VERSION`, no `Makefile.PL`, no distribution main
   modules, and no `no_index` metadata. `TODO.md` records that work.
-- No new features and no API changes, except the two that a rename forces: the
-  split of `FuguLib::Util` and the split of `FuguLib::Imsg`.
+- No new features and no API changes, except the three that this effort forces:
+  the split of `FuguLib::Util`, the split of `FuguLib::Imsg`, and the move of
+  the file store into `Protocol::HAP`.
 
 No naming question is out of scope. This is the naming effort, so every name in
 the tree is decided here, and none is recorded for later.
 
 ## Accepted trade-offs
 
-Three choices in this design have a real argument against them. Take them
+Four choices in this design have a real argument against them. Take them
 knowingly.
 
 1. **`App::` holds no command implementations.** `bin/openhapd` and `bin/hapctl`
@@ -74,12 +79,16 @@ knowingly.
    protocols. `OpenBSD::` is the honest alternative and it is unusable: OpenBSD
    base perl owns that namespace with `OpenBSD::Pledge`, `OpenBSD::Unveil`, and
    the `pkg_add` tree. `Protocol::Imsg` states the limit in its first paragraph.
-3. **`App::OpenHAP::Store::File` sits far from the contract it implements.**
-   Someone who takes `Protocol::HAP` to CPAN and wants file persistence will
-   look for `Protocol::HAP::Store::File`. It cannot live there: it uses
-   `Fugu::File`, and the layering rules forbid that direction. Goal 3 does not
-   claim unique leaf names either. `Proxy`, `Config`, and `CLI` each repeat,
-   every time as a subclass of the `Fugu::` module with the same leaf name.
+3. **`Protocol::HAP::Store::File` opens files inside the protocol tier.** The
+   tier holds a sans-IO engine, and a store that writes files is not sans-IO.
+   Accept it, because sans-IO describes `Protocol::HAP::Server`, and the store
+   is the injected seam that keeps the engine pure. `Protocol::HAP::Controller`
+   already opens TCP sockets in this tier, so four files set no new precedent.
+   The alternative puts the only file store of `Protocol::HAP::Store` where no
+   user of the library looks for it.
+4. **Leaf names repeat.** Goal 3 does not claim unique leaf names. `Proxy`,
+   `Config`, and `CLI` each repeat, every time as a subclass of the `Fugu::`
+   module with the same leaf name.
 
 ## The clean-break rule
 
@@ -116,22 +125,22 @@ live one, and `grep -r` reads the generated pages in `build/` and `web/build/`.
 
 ### Modules that change name
 
-| Now                          | Target                           | Reason                                                      |
-| ---------------------------- | -------------------------------- | ----------------------------------------------------------- |
-| `OpenHAP::Server`            | `App::OpenHAP::Host`             | It hosts the engine. Two modules must not both be `Server`. |
-| `OpenHAP::Storage`           | `App::OpenHAP::Store::File`      | It implements `Protocol::HAP::Store` in a file.             |
-| `OpenHAP::DeviceLoader`      | `App::OpenHAP::Devices`          | It holds the devices. `Loader` names the mechanism.         |
-| `FuguVM::VM`                 | `App::FuguVM::Guest`             | The name must not repeat the parent.                        |
-| `FuguVM::Expect`             | `App::FuguVM::Console`           | It drives the serial console. `Expect` is the dependency.   |
-| `OpenHAP::Tasmota::Base`     | `App::OpenHAP::Tasmota::Device`  | `Base` names a mechanism, as `Loader` did.                  |
-| `FuguVM::Image`              | `App::FuguVM::Miniroot`          | It downloads and caches the install media.                  |
-| `FuguVM::ImageCache`         | `App::FuguVM::DiskCache`         | It caches installed qcow2 disks, not the media above.       |
-| `FuguLib::Util`              | `Fugu::Timeout`                  | `bounded` and `wait_until` are one idea.                    |
-| `FuguLib::Util::format_size` | `App::FuguVM::CLI::_format_size` | The command-line interface is its only caller.              |
-| `FuguLib::Store`             | `Fugu::StateFile`                | Its own abstract calls it a JSON state file.                |
-| `FuguLib::MDNS`              | `Fugu::Mdnsd`                    | It controls `mdnsd(8)`. It does not implement mDNS.         |
-| `FuguLib::Imsg`              | `Fugu::Imsg` + `Protocol::Imsg`  | The codec and the socket separate.                          |
-| `Protocol::HAP::PIN`         | `Protocol::HAP::SetupCode`       | The specification says "setup code" [HAP-Pairing §2].       |
+| Now                          | Target                           | Reason                                                       |
+| ---------------------------- | -------------------------------- | ------------------------------------------------------------ |
+| `OpenHAP::Server`            | `App::OpenHAP::Host`             | It hosts the engine. Two modules must not both be `Server`.  |
+| `OpenHAP::Storage`           | `Protocol::HAP::Store::File`     | It implements `Protocol::HAP::Store`, so it joins that tier. |
+| `OpenHAP::DeviceLoader`      | `App::OpenHAP::Devices`          | It holds the devices. `Loader` names the mechanism.          |
+| `FuguVM::VM`                 | `App::FuguVM::Guest`             | The name must not repeat the parent.                         |
+| `FuguVM::Expect`             | `App::FuguVM::Console`           | It drives the serial console. `Expect` is the dependency.    |
+| `OpenHAP::Tasmota::Base`     | `App::OpenHAP::Tasmota::Device`  | `Base` names a mechanism, as `Loader` did.                   |
+| `FuguVM::Image`              | `App::FuguVM::Miniroot`          | It downloads and caches the install media.                   |
+| `FuguVM::ImageCache`         | `App::FuguVM::DiskCache`         | It caches installed qcow2 disks, not the media above.        |
+| `FuguLib::Util`              | `Fugu::Timeout`                  | `bounded` and `wait_until` are one idea.                     |
+| `FuguLib::Util::format_size` | `App::FuguVM::CLI::_format_size` | The command-line interface is its only caller.               |
+| `FuguLib::Store`             | `Fugu::StateFile`                | Its own abstract calls it a JSON state file.                 |
+| `FuguLib::MDNS`              | `Fugu::Mdnsd`                    | It controls `mdnsd(8)`. It does not implement mDNS.          |
+| `FuguLib::Imsg`              | `Fugu::Imsg` + `Protocol::Imsg`  | The codec and the socket separate.                           |
+| `Protocol::HAP::PIN`         | `Protocol::HAP::SetupCode`       | The specification says "setup code" [HAP-Pairing §2].        |
 
 Three of these need a word. `Console`, not `Installer`, because the module has
 two public verbs and `fuguvm expect <script>` is a documented subcommand that
@@ -179,6 +188,35 @@ failing. Phase 2 must widen it to `^App\b`, and phase 4 must add the
 `Protocol::` allowlist. The plans call this out because the acceptance greps
 cannot see it: the literal text is `OpenHAP)`, with no trailing colons.
 
+## The file store
+
+`OpenHAP::Storage` holds nothing that is specific to the host. It keeps the
+twelve contract methods, the key files, the pairings format, and the counters.
+All four are HAP, so the module moves to `Protocol::HAP::Store::File` whole.
+
+Three host dependencies go away. None of them is deep.
+
+- `FuguLib::Log` becomes an injected `logger`, with `Protocol::HAP->null_logger`
+  as the default. Every other class in the tier already takes that argument.
+- `FuguLib::File` gives the store four of its eleven functions: `read`, `write`
+  with a mode, `write_atomic`, and `ensure_dir`. The replacement is about 80
+  lines over `Fcntl` and `File::Path`. `atomic_dir`, `sweep_temp`, `share_path`,
+  `expand_tilde`, and `valid_name` do not follow it.
+- `FuguLib::Store` gives the store a JSON file of counters. The replacement is
+  about 40 lines over `JSON::PP`, and it keeps the atomic write.
+
+`Fcntl`, `File::Path`, and `JSON::PP` are core Perl, so direction one of the
+layering rules already permits all three. The boundary test needs no new entry.
+
+The duplicated logic that matters is the mode at the open. Two copies of that
+rule can drift, and the rule protects the identity of the accessory. Thus one
+test asserts the mode of every file that the store creates. Nothing asserts the
+mode of `accessory_ltsk` or `pairings.db` today, so this is a gain, not a cost.
+
+`db_path` becomes `path`, and it is required. The `/var/db/openhapd` default
+moves to `openhapd`, beside the other path policy. Nothing else about the
+constructor changes, and the layout on disk does not change at all.
+
 ## The Imsg contract
 
 `Protocol::Imsg` is pure. It takes bytes and returns bytes.
@@ -217,7 +255,7 @@ graph TD
     fuguvm[bin/fuguvm] --> VC[App::FuguVM::CLI] --> G[App::FuguVM::Guest]
     G --> I[App::FuguVM::Console]
     H --> PS[Protocol::HAP::Server]
-    H --> SF[App::OpenHAP::Store::File] -. store contract .-> PS
+    H --> SF[Protocol::HAP::Store::File] -. store contract .-> PS
     H --> FH[Fugu: EventLoop Log MQTT MDNS Timeout]
     D --> TAS[App::OpenHAP::Tasmota::*]
     FM[Fugu::Mdnsd] --> FI[Fugu::Imsg] --> PI[Protocol::Imsg]
@@ -256,8 +294,10 @@ distribution on the machine, and `App/` would be worse.
 
 1. `FuguLib::` becomes `Fugu::`. Names only, plus the two gates that later
    phases depend on: `t/scripts/namespaces.t` and the CI compile step.
-2. `OpenHAP::` becomes `App::OpenHAP::`, with `Host`, `Store::File`, `Devices`,
-   and `Tasmota::Device`.
+2. `OpenHAP::` becomes `App::OpenHAP::`, with `Host`, `Devices`, and
+   `Tasmota::Device`. `OpenHAP::Storage` leaves the host for
+   `Protocol::HAP::Store::File`, in a commit of its own: it is the one rewrite
+   in this effort, and a bisect must separate it from the namespace move.
 3. `FuguVM::` becomes `App::FuguVM::`, with `Guest`, `Console`, `Miniroot`, and
    `DiskCache`.
 4. `Protocol::Imsg` splits out of `Fugu::Imsg`.

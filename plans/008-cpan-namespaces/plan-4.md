@@ -6,6 +6,11 @@ socket is host policy. This phase separates them.
 
 The phase depends on phase 1 only.
 
+Phase 2 does the same thing to the file store, and it lands earlier in the
+order. This phase does not depend on it, but it repeats its shape: a part with
+no host policy in it joins the `Protocol::` tier and keeps its behavior, while
+the caller keeps the policy — the socket here, the default path there.
+
 ## Tasks
 
 ### 4.1 Create Protocol::Imsg
@@ -122,8 +127,11 @@ them split rather than move.
 ### 4.7 Update the documentation
 
 - Root `CLAUDE.md`: the `lib/Protocol/` row in Layout describes the
-  `Protocol::HAP` library. It now holds two libraries. State that `Protocol::`
-  is the sans-IO tier.
+  `Protocol::HAP` library. It now holds two libraries. Do not call `Protocol::`
+  the sans-IO tier: `Protocol::HAP::Server` and `Protocol::Imsg` are sans-IO,
+  and `Protocol::HAP::Controller` and `Protocol::HAP::Store::File` are not.
+  State the rule that does hold: `Protocol::` uses core Perl and its declared
+  CPAN modules, and never `Fugu::` or `App::`.
 - `t/CLAUDE.md`: the `t/protocol/` tier row says "the Protocol::HAP library".
 - `TODO.md`: record that a `Protocol-Imsg` distribution needs descriptor passing
   or an explicit statement of the subset, and that the native-endian header

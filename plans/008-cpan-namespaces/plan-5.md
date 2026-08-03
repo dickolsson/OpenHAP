@@ -34,8 +34,10 @@ The phase depends on phases 1 to 3. It does not depend on phase 4.
 - The rename also ends the three-`Store` problem. After it, `Store` in this tree
   means the `Protocol::HAP` persistence contract and its two implementations,
   and nothing else.
-- Users: `Fugu::Proxy`, `App::OpenHAP::Store::File`, `App::FuguVM::State` and
-  its `.pod`, `t/fugu/proxy.t`, and `t/fuguvm/proxy.t`.
+- Users: `Fugu::Proxy`, `App::FuguVM::State` and its `.pod`, `t/fugu/proxy.t`,
+  and `t/fuguvm/proxy.t`. `Protocol::HAP::Store::File` is not among them: phase
+  2 gave it a private JSON file, because `Fugu::` is closed to the protocol
+  tier.
 - `git mv t/fugu/store.t t/fugu/statefile.t`.
 
 ### 5.3 Fugu::MDNS becomes Fugu::Mdnsd
