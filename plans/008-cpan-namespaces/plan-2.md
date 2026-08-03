@@ -34,6 +34,9 @@ together, and a move to `App::` would be a name that this task deletes.
 
 - `git mv lib/OpenHAP/Storage.pm lib/Protocol/HAP/Store/File.pm`, and the
   sidecar with it as `File.pod`. The directory already holds `Memory.pm`.
+- `File.pod` documents `new`, the layout on disk, and the mode of each file. It
+  does not document the twelve methods: `Store.pod` owns those, and every fact
+  lives in one place. `Memory.pod` is the model — follow what it does.
 - The twelve contract methods keep their behavior, and the layout on disk does
   not change. Three host dependencies go, as the design describes:
   - `FuguLib::Log` becomes a `logger` argument, with
@@ -121,6 +124,16 @@ together, and a move to `App::` would be a name that this task deletes.
   `t/conformance/mqtt-*.t` files that load it.
 - Retarget the six `t/conformance/hap-*.t` files and the 17 files under
   `t/openhap/integration/` that name an `OpenHAP::` module.
+- Two conformance files build the store themselves, and both need the new
+  constructor argument, not only the new package name:
+  - `t/conformance/hap-pairing.t:37` imports it, and `:51` and `:626` call
+    `new( db_path => tempdir(...) )`. Both become `path =>`.
+  - `t/conformance/hap-tlv8.t:219` does `require OpenHAP::Storage` inside a
+    subtest, and `:222` calls `new( db_path => ... )`. A grep for
+    `use OpenHAP::` does not find the `require`, so name it here.
+  - Both files now load a `Protocol::` module only. That is what they should
+    have done from the start: a conformance test of the pairing wire format has
+    no reason to build a host.
 - `t/protocol/boundary.t` needs both patterns changed in this phase:
   - Direction one, line 73, is `^(?:Fugu|FuguVM|OpenHAP)\b` after phase 1. It
     becomes `^(?:Fugu|FuguVM|App)\b`. `FuguVM` needs its own alternative until
