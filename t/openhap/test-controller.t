@@ -27,7 +27,7 @@ BEGIN {
 use_ok('OpenHAP::Test::Controller');
 use_ok('OpenHAP::Test::Controller::SRP');
 use_ok('Protocol::HAP::TLV');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::Pairing');
 
 # Constructor defaults and identity generation
 {
@@ -98,9 +98,9 @@ use_ok('OpenHAP::Pairing');
 {
 	my $transport = sub ($request) {
 		my $body = Protocol::HAP::TLV::encode(
-			OpenHAP::Pairing::kTLVType_State() => pack( 'C', 2 ),
-			OpenHAP::Pairing::kTLVType_Error() => pack(
-				'C', OpenHAP::Pairing::kTLVError_MaxTries()
+			Protocol::HAP::Pairing::kTLVType_State() => pack( 'C', 2 ),
+			Protocol::HAP::Pairing::kTLVType_Error() => pack(
+				'C', Protocol::HAP::Pairing::kTLVError_MaxTries()
 			),
 		);
 		return
@@ -115,7 +115,7 @@ use_ok('OpenHAP::Pairing');
 
 	ok( !$controller->pair_setup, 'error TLV fails the exchange' );
 	is( $controller->last_error,
-		OpenHAP::Pairing::kTLVError_MaxTries(),
+		Protocol::HAP::Pairing::kTLVError_MaxTries(),
 		'TLV error code exposed through last_error' );
 }
 

@@ -72,7 +72,7 @@ The HAP specification rejects these setup codes:
 
 =head1 SEE ALSO
 
-L<Protocol::HAP::SRP>, L<OpenHAP::Pairing>, L<openhapd.conf(5)>, F<spec/HAP-Pairing.md>
+L<Protocol::HAP::SRP>, L<Protocol::HAP::Pairing>, L<openhapd.conf(5)>, F<spec/HAP-Pairing.md>
 
 =head1 STANDARDS
 

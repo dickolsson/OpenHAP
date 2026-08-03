@@ -10,7 +10,7 @@ use lib "$RealBin/../lib";
 use FuguLib::TestLog;
 
 use_ok('Protocol::HAP::TLV');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::Pairing');
 
 subtest '[HAP-TLV8 §1] basic record structure' => sub {
 	my $encoded = Protocol::HAP::TLV::encode( 0x06, "\x01" );
@@ -122,7 +122,7 @@ subtest '[HAP-TLV8 §5] pairing TLV type codes' => sub {
 		Separator     => 0xFF,
 	);
 	for my $name ( sort keys %types ) {
-		my $constant = OpenHAP::Pairing->can("kTLVType_$name");
+		my $constant = Protocol::HAP::Pairing->can("kTLVType_$name");
 		ok( $constant, "kTLVType_$name defined" );
 		is( $constant->(), $types{$name},
 			sprintf( '[HAP-TLV8 §5/%s] kTLVType_%s is 0x%02X',
@@ -141,7 +141,7 @@ subtest '[HAP-TLV8 §7] pairing error codes' => sub {
 		Busy           => 0x07,
 	);
 	for my $name ( sort keys %errors ) {
-		my $constant = OpenHAP::Pairing->can("kTLVError_$name");
+		my $constant = Protocol::HAP::Pairing->can("kTLVError_$name");
 		ok( $constant, "kTLVError_$name defined" );
 		is( $constant->(), $errors{$name},
 			sprintf( '[HAP-TLV8 §7/%s] kTLVError_%s is 0x%02X',
@@ -151,8 +151,8 @@ subtest '[HAP-TLV8 §7] pairing error codes' => sub {
 
 subtest '[HAP-TLV8 §8.1] pair setup M1 wire bytes' => sub {
 	my $m1 = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	is( unpack( 'H*', $m1 ), '060101000100',
 		'M1 request is 06 01 01 00 01 00' );
@@ -165,9 +165,9 @@ subtest '[HAP-TLV8 §8.1] pair setup M1 wire bytes' => sub {
 
 subtest '[HAP-TLV8 §8.3] error response wire bytes' => sub {
 	my $error = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(), pack( 'C', 2 ),
-		OpenHAP::Pairing::kTLVType_Error(),
-		pack( 'C', OpenHAP::Pairing::kTLVError_Authentication() ),
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ),
+		Protocol::HAP::Pairing::kTLVType_Error(),
+		pack( 'C', Protocol::HAP::Pairing::kTLVError_Authentication() ),
 	);
 	is( unpack( 'H*', $error ), '060102070102',
 		'M2 authentication error is 06 01 02 07 01 02' );
@@ -215,24 +215,24 @@ subtest '[HAP-TLV8 §10] parser rules with hostile buffers' => sub {
 	is( scalar @result, 0, 'truncated record header is rejected' );
 
 	# Malformed input to pair-setup returns an error TLV, not a crash
-	require OpenHAP::Session;
+	require Protocol::HAP::Session;
 	require OpenHAP::Storage;
 	require File::Temp;
 	my $storage =
 	    OpenHAP::Storage->new(
 		db_path => File::Temp::tempdir( CLEANUP => 1 ) );
-	my $pairing = OpenHAP::Pairing->new(
+	my $pairing = Protocol::HAP::Pairing->new(
 		pin            => '123-45-678',
-		storage        => $storage,
+		store        => $storage,
 		accessory_ltsk => 'x' x 64,
 		accessory_ltpk => 'y' x 32,
 	);
-	my $session  = OpenHAP::Session->new( socket => 'dummy' );
+	my $session  = Protocol::HAP::Session->new( id => 9001 );
 	my $response =
 	    $pairing->handle_pair_setup( pack( 'H*', '06ff0102' ), $session );
 	my %resp = Protocol::HAP::TLV::decode($response);
-	is( unpack( 'C', $resp{ OpenHAP::Pairing::kTLVType_Error() } ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+	is( unpack( 'C', $resp{ Protocol::HAP::Pairing::kTLVType_Error() } ),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'malformed pair-setup body answered with kTLVError_Unknown' );
 };
 

@@ -17,7 +17,7 @@ BEGIN {
 }
 
 use_ok('Protocol::HAP::Crypto');
-use_ok('OpenHAP::Session');
+use_ok('Protocol::HAP::Session');
 
 # Fixed 32-byte keys for deterministic frame tests
 my $key_a2c = pack( 'H*', '11' x 32 );
@@ -26,7 +26,7 @@ my $key_c2a = pack( 'H*', '22' x 32 );
 # The accessory-side session encrypts with a2c and decrypts with c2a
 sub accessory_session ()
 {
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9001 );
 	$session->set_encryption( $key_a2c, $key_c2a );
 	return $session;
 }
@@ -222,7 +222,7 @@ subtest '[HAP-Encryption §1] session key derivation' => sub {
 		'read and write keys differ' );
 
 	# The accessory session encrypts outbound data with the read key
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9002 );
 	$session->set_encryption( $read_key, $write_key );
 	my $frame = $session->encrypt('response');
 	my $aad   = substr( $frame, 0, 2 );
@@ -238,7 +238,7 @@ subtest '[HAP-Encryption §1] session key derivation' => sub {
 };
 
 subtest '[HAP-Encryption §10] connection lifecycle' => sub {
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9003 );
 
 	# Before pair-verify the session passes data through unencrypted
 	ok( !$session->is_encrypted, 'session starts unencrypted' );

@@ -1,26 +1,22 @@
 use v5.36;
 
-package OpenHAP::Session;
+package Protocol::HAP::Session;
 
-use FuguLib::Log;
+use Protocol::HAP;
 use Protocol::HAP::Crypto;
-
-# Every session gets a number of its own, for the whole life of the
-# process. The server files a session under it, so dropping a
-# connection is a delete of what that connection holds.
-#
-# The number is not the descriptor. The kernel gives a closed
-# descriptor to the next connection, so a subscription that a purge
-# missed would arrive at whoever inherits the number. A counter never
-# repeats.
-my $next_id = 1;
 
 sub new ( $class, %args )
 {
+	# The id is required, and the server allocates it from an
+	# instance counter. The id is not the descriptor: the kernel
+	# gives a closed descriptor to the next connection, so a
+	# subscription that a purge missed would arrive at whoever
+	# inherits the number. A counter never repeats.
+	my $id = $args{id} // die 'session id required';
 
 	my $self = bless {
-		id            => $next_id++,
-		socket        => $args{socket},
+		id            => $id,
+		logger        => $args{logger} // Protocol::HAP->null_logger,
 		encrypted     => 0,
 		verified      => 0,
 		controller_id => undef,
@@ -60,7 +56,7 @@ sub set_encryption ( $self, $encrypt_key, $decrypt_key )
 	$self->{encrypted}     = 1;
 	$self->{encrypt_count} = 0;
 	$self->{decrypt_count} = 0;
-	FuguLib::Log->default->debug('Session encryption enabled');
+	$self->{logger}->debug('Session encryption enabled');
 }
 
 sub encrypt ( $self, $data )
@@ -151,8 +147,8 @@ sub set_verified ( $self, $controller_id )
 {
 	$self->{verified}      = 1;
 	$self->{controller_id} = $controller_id;
-	FuguLib::Log->default->debug( 'Session verified for controller: %s',
-		$controller_id );
+	$self->{logger}
+	    ->debug( 'Session verified for controller: %s', $controller_id );
 
 	return;
 }

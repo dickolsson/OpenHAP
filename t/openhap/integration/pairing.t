@@ -9,7 +9,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
 use OpenHAP::Test::Integration;
-use OpenHAP::Pairing;
+use Protocol::HAP::Pairing;
 
 my $env = OpenHAP::Test::Integration->new;
 $env->setup;
@@ -82,7 +82,7 @@ my $bad = $env->get_controller(pin => '876-54-321',
 	controller_id => 'bad-ctrl');
 ok(!$bad->pair_setup, 'pair-setup fails with the wrong PIN');
 is($bad->last_error,
-   OpenHAP::Pairing::kTLVError_Authentication(),
+   Protocol::HAP::Pairing::kTLVError_Authentication(),
    '[HAP-Pairing §2.6] M4 returns kTLVError_Authentication');
 $bad->close;
 

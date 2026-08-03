@@ -28,8 +28,8 @@ BEGIN {
 
 use_ok('OpenHAP::HAP');
 use_ok('FuguLib::HTTP');
-use_ok('OpenHAP::Session');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::Session');
+use_ok('Protocol::HAP::Pairing');
 use_ok('OpenHAP::Test::Controller');
 
 my $PIN = '123-45-678';
@@ -40,7 +40,6 @@ my $PIN = '123-45-678';
 # session.
 sub make_pair ( %controller_args )
 {
-	OpenHAP::Pairing->clear_pairing_state();
 
 	my $hap = OpenHAP::HAP->new(
 		port         => 51827,
@@ -52,7 +51,7 @@ sub make_pair ( %controller_args )
 
 	# Mirror _handle_client: dispatch just enabled encryption, but
 	# the transport sends the pair-verify M4 response in the clear
-	my $session   = OpenHAP::Session->new( socket => 'in-process' );
+	my $session   = Protocol::HAP::Session->new( id => 9001 );
 	my $transport = sub ($request_bytes) {
 		my $was_encrypted = $session->is_encrypted;
 		my $plain =
@@ -96,7 +95,6 @@ subtest '[HAP-Pairing §2.2][HAP-Pairing §2.8] full pair-setup M1-M6' =>
 	is( $pairings->{'openhap-test-ctrl'}{permissions},
 		1, 'initial controller is admin' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.6][HAP-Pairing §8] wrong PIN rejected' => sub {
@@ -104,15 +102,14 @@ subtest '[HAP-Pairing §2.6][HAP-Pairing §8] wrong PIN rejected' => sub {
 
 	ok( !$controller->pair_setup, 'pair-setup fails with wrong PIN' );
 	is( $controller->last_error,
-		OpenHAP::Pairing::kTLVError_Authentication(),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'M4 carries kTLVError_Authentication (0x02)' );
 	ok( !$hap->is_paired, 'accessory remains unpaired' );
-	is( OpenHAP::Pairing->get_failed_attempts(),
+	is( $hap->{pairing}->get_failed_attempts,
 		1, 'attempt counter incremented' );
 	is( $hap->{storage}->get_auth_attempts,
 		1, 'attempt counter persisted' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
@@ -120,7 +117,7 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 	ok( $controller->pair_setup, 'first pairing succeeds' );
 
 	# The accessory refuses a second controller on a fresh connection
-	my $session2   = OpenHAP::Session->new( socket => 'in-process-2' );
+	my $session2   = Protocol::HAP::Session->new( id => 9002 );
 	my $transport2 = sub ($request_bytes) {
 		my $request = FuguLib::HTTP::parse_request($request_bytes);
 		return $hap->_dispatch( $request, $session2 );
@@ -132,10 +129,9 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 	);
 	ok( !$second->pair_setup, 'second pair-setup refused' );
 	is( $second->last_error,
-		OpenHAP::Pairing::kTLVError_Unavailable(),
+		Protocol::HAP::Pairing::kTLVError_Unavailable(),
 		'M2 carries kTLVError_Unavailable (0x06)' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §3] pair-verify and key derivation' => sub {
@@ -159,7 +155,6 @@ subtest '[HAP-Pairing §3] pair-verify and key derivation' => sub {
 	like( $response->{body}, qr/"accessories"/,
 		'accessory database returned over the encrypted session' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §7.2] remove-pairing and last-admin behavior' =>
@@ -185,7 +180,6 @@ subtest '[HAP-Pairing §7.2] remove-pairing and last-admin behavior' =>
 	isnt( $hap->{accessory_ltpk}, $old_ltpk,
 		'accessory identity regenerated after last admin removal' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
@@ -197,11 +191,9 @@ subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
 	$hap->{storage}->remove_all_pairings;
 	ok( !$hap->is_paired, 'unpaired again' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 	my ( $controller2, $hap2 ) = make_pair();
 	ok( $controller2->pair_setup, 'pair-setup succeeds after unpair' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 done_testing();

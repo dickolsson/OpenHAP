@@ -1,14 +1,13 @@
 use v5.36;
 
-package OpenHAP::Pairing;
+package Protocol::HAP::Pairing;
 
-use FuguLib::Log;
+use Protocol::HAP;
 use Protocol::HAP::TLV;
 use Protocol::HAP::SRP;
 use Protocol::HAP::Crypto;
 
 use Protocol::HAP::PIN qw(normalize_pin);
-use Digest::SHA        qw(sha512);
 
 # TLV Types for pairing
 use constant {
@@ -45,69 +44,81 @@ use constant {
 # Maximum failed authentication attempts before lockout (per HAP-Pairing.md §8)
 use constant MAX_AUTH_ATTEMPTS => 100;
 
-# Global state for concurrent pairing protection and attempt tracking
-our $pairing_in_progress  = 0;
-our $pairing_session_id   = undef;
-our $failed_auth_attempts = 0;
-
 sub new ( $class, %args )
 {
 	my $pin = normalize_pin( $args{pin} ) // die "PIN required";
 
+	# The store is required. The attempt counter of HAP-Pairing.md
+	# §8 needs persistence; a silent in-memory fallback would fail
+	# open after a restart.
+	my $store = $args{store} // die "store required";
+
 	my $self = bless {
 		pin            => $pin,
-		storage        => $args{storage},
+		store          => $store,
+		logger         => $args{logger} // Protocol::HAP->null_logger,
 		accessory_ltsk => $args{accessory_ltsk},
 		accessory_ltpk => $args{accessory_ltpk},
-	}, $class;
 
-	# Restore the persisted attempt counter so the limit survives
-	# restarts (HAP-Pairing.md §8)
-	$failed_auth_attempts = $self->{storage}->get_auth_attempts
-	    if $self->{storage};
+		# The pairing lock and the attempt counter are instance
+		# state. Two servers in one process must not share a
+		# lock or a counter.
+		pairing_in_progress => 0,
+		pairing_session_id  => undef,
+
+		# Restore the persisted attempt counter so the limit
+		# survives restarts (HAP-Pairing.md §8)
+		failed_auth_attempts => $store->get_auth_attempts,
+	}, $class;
 
 	return $self;
 }
 
-# clear_pairing_state() - Reset the global pairing state
-# The server calls this after successful pairing or on
-# connection close.
-sub clear_pairing_state ( $class_or_self, $session = undef )
+# $self->clear_pairing_state($session):
+#	Reset the pairing lock. The server calls this after successful
+#	pairing or on connection close.
+sub clear_pairing_state ( $self, $session = undef )
 {
 	# Clear the state only if this session owns the lock or
 	# the caller gives no session
 	if (       !defined $session
-		|| !defined $pairing_session_id
-		|| $pairing_session_id == $session )
+		|| !defined $self->{pairing_session_id}
+		|| $self->{pairing_session_id} == $session )
 	{
-		$pairing_in_progress = 0;
-		$pairing_session_id  = undef;
+		$self->{pairing_in_progress} = 0;
+		$self->{pairing_session_id}  = undef;
 	}
+
+	return;
 }
 
-# reset_auth_attempts() - Reset the failed authentication counter
-# The server calls this after the SRP proof verification succeeds.
-# Administrative actions also call it.
-sub reset_auth_attempts ($class_or_self)
+# $self->reset_auth_attempts:
+#	Reset the failed authentication counter. The server calls this
+#	after the SRP proof verification succeeds. Administrative
+#	actions also call it.
+sub reset_auth_attempts ($self)
 {
-	$failed_auth_attempts = 0;
-	$class_or_self->{storage}->set_auth_attempts(0)
-	    if ref $class_or_self && $class_or_self->{storage};
+	$self->{failed_auth_attempts} = 0;
+	$self->{store}->set_auth_attempts(0);
+
+	return;
 }
 
-# _record_failed_attempt() - Count and persist a failed attempt (§8)
+# $self->_record_failed_attempt:
+#	Count and persist a failed attempt (§8).
 sub _record_failed_attempt ($self)
 {
-	$failed_auth_attempts++;
-	$self->{storage}->set_auth_attempts($failed_auth_attempts)
-	    if $self->{storage};
+	$self->{failed_auth_attempts}++;
+	$self->{store}->set_auth_attempts( $self->{failed_auth_attempts} );
+
+	return;
 }
 
-# get_failed_attempts() - Get the current failed attempt count
-# (for testing)
-sub get_failed_attempts ($class_or_self)
+# $self->get_failed_attempts:
+#	Get the current failed attempt count (for testing).
+sub get_failed_attempts ($self)
 {
-	return $failed_auth_attempts;
+	return $self->{failed_auth_attempts};
 }
 
 # _get_accessory_pairing_id() - Generate a MAC-like pairing ID
@@ -125,15 +136,15 @@ sub handle_pair_setup ( $self, $body, $session )
 
 	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
-		FuguLib::Log->default->warning(
-			'Pair-setup rejected: malformed TLV request');
+		$self->{logger}
+		    ->warning('Pair-setup rejected: malformed TLV request');
 		return $self->_error_response( kTLVError_Unknown, 2 );
 	}
 
 	my $state  = unpack( 'C', $request{ kTLVType_State() } );
 	my $method = unpack( 'C', $request{ kTLVType_Method() } // "\x00" );
-	FuguLib::Log->default->debug( 'Pair-setup M%d received (method=%d)',
-		$state, $method );
+	$self->{logger}
+	    ->debug( 'Pair-setup M%d received (method=%d)', $state, $method );
 
 	# Validate the method (0x00 = PairSetup, 0x01 = PairSetupWithAuth)
 	if ( $method != 0 && $method != 1 ) {
@@ -157,9 +168,9 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 {
 	# Check if the failed attempts exceed the maximum
 	# (HAP-Pairing.md §8)
-	if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
-		FuguLib::Log->default->warning(
-			'Pair-setup rejected: max attempts exceeded');
+	if ( $self->{failed_auth_attempts} >= MAX_AUTH_ATTEMPTS ) {
+		$self->{logger}
+		    ->warning('Pair-setup rejected: max attempts exceeded');
 		return $self->_error_response( kTLVError_MaxTries, 2 );
 	}
 
@@ -168,25 +179,27 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	# permits pairing even when the accessory is already
 	# paired.
 	if ( $method == 0 ) {
-		my $pairings = $self->{storage}->load_pairings();
+		my $pairings = $self->{store}->load_pairings();
 		if ( keys %$pairings > 0 ) {
-			FuguLib::Log->default->debug(
-				'Pair-setup rejected: already paired');
+			$self->{logger}
+			    ->debug('Pair-setup rejected: already paired');
 			return $self->_error_response( kTLVError_Unavailable,
 				2 );
 		}
 	}
 
 	# Check for a concurrent pairing attempt (HAP-Pairing.md §2.4)
-	if ( $pairing_in_progress && $pairing_session_id != $session ) {
-		FuguLib::Log->default->debug(
-			'Pair-setup rejected: another pairing in progress');
+	if (       $self->{pairing_in_progress}
+		&& $self->{pairing_session_id} != $session )
+	{
+		$self->{logger}
+		    ->debug('Pair-setup rejected: another pairing in progress');
 		return $self->_error_response( kTLVError_Busy, 2 );
 	}
 
 	# Mark the pairing as in progress
-	$pairing_in_progress = 1;
-	$pairing_session_id  = $session;
+	$self->{pairing_in_progress} = 1;
+	$self->{pairing_session_id}  = $session;
 
 	# Initialize SRP
 	my $srp  = Protocol::HAP::SRP->new( password => $self->{pin} );
@@ -220,9 +233,9 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	my $K = $srp->compute_session_key($A);
 	unless ( defined $K ) {
 		$self->_record_failed_attempt;
-		FuguLib::Log->default->warning(
-			'Pair-setup M3 rejected: invalid public key A');
-		if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
+		$self->{logger}
+		    ->warning('Pair-setup M3 rejected: invalid public key A');
+		if ( $self->{failed_auth_attempts} >= MAX_AUTH_ATTEMPTS ) {
 			return $self->_error_response( kTLVError_MaxTries, 4 );
 		}
 		return $self->_error_response( kTLVError_Authentication, 4 );
@@ -230,11 +243,11 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 
 	unless ( $srp->verify_client_proof($M1) ) {
 		$self->_record_failed_attempt;
-		FuguLib::Log->default->warning(
+		$self->{logger}->warning(
 'Pair-setup M3 proof verification failed (attempt %d/%d)',
-			$failed_auth_attempts, MAX_AUTH_ATTEMPTS
+			$self->{failed_auth_attempts}, MAX_AUTH_ATTEMPTS
 		);
-		if ( $failed_auth_attempts >= MAX_AUTH_ATTEMPTS ) {
+		if ( $self->{failed_auth_attempts} >= MAX_AUTH_ATTEMPTS ) {
 			return $self->_error_response( kTLVError_MaxTries, 4 );
 		}
 		return $self->_error_response( kTLVError_Authentication, 4 );
@@ -245,7 +258,7 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 
 	# Generate the server proof
 	my $M2 = $srp->generate_server_proof();
-	FuguLib::Log->default->debug('Pair-setup M3 verified, sending M4');
+	$self->{logger}->debug('Pair-setup M3 verified, sending M4');
 
 	# M4: Send the proof
 	my $response =
@@ -303,17 +316,16 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	}
 
 	# Save the pairing
-	$self->{storage}
+	$self->{store}
 	    ->save_pairing( $ios_device_pairing_id, $ios_device_ltpk, 1 );
-	FuguLib::Log->default->debug(
-		'Pair-setup M5 verified, pairing saved for %s',
+	$self->{logger}->debug( 'Pair-setup M5 verified, pairing saved for %s',
 		$ios_device_pairing_id );
 
 	# The pairing is successful. Reset the attempt counter.
 	# Clear the pairing lock.
 	$self->reset_auth_attempts;
-	$pairing_in_progress = 0;
-	$pairing_session_id  = undef;
+	$self->{pairing_in_progress} = 0;
+	$self->{pairing_session_id}  = undef;
 
 	# Generate the accessory signature
 	my $accessory_x = Protocol::HAP::Crypto->hkdf_sha512(
@@ -358,13 +370,13 @@ sub handle_pair_verify ( $self, $body, $session )
 
 	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
-		FuguLib::Log->default->warning(
-			'Pair-verify rejected: malformed TLV request');
+		$self->{logger}
+		    ->warning('Pair-verify rejected: malformed TLV request');
 		return $self->_error_response( kTLVError_Unknown, 2 );
 	}
 
 	my $state = unpack( 'C', $request{ kTLVType_State() } );
-	FuguLib::Log->default->debug( 'Pair-verify M%d received', $state );
+	$self->{logger}->debug( 'Pair-verify M%d received', $state );
 
 	if ( $state == 1 ) {
 		return $self->_pair_verify_m1_m2( \%request, $session );
@@ -380,8 +392,7 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 {
 
 	my $ios_public_key = $request->{ kTLVType_PublicKey() };
-	FuguLib::Log->default->debug(
-		'Pair-verify M1: generating ephemeral keypair');
+	$self->{logger}->debug('Pair-verify M1: generating ephemeral keypair');
 
 	# Generate the accessory ephemeral keypair
 	my ( $accessory_secret, $accessory_public ) =
@@ -465,7 +476,7 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	my $ios_signature  = $inner{ kTLVType_Signature() };
 
 	# Load the pairing
-	my $pairings = $self->{storage}->load_pairings();
+	my $pairings = $self->{store}->load_pairings();
 	my $pairing  = $pairings->{$ios_pairing_id};
 
 	return $self->_error_response( kTLVError_Authentication, 4 )
@@ -496,8 +507,8 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	# Set up the encrypted session
 	$session->set_encryption( $encrypt_key, $decrypt_key );
 	$session->set_verified($ios_pairing_id);
-	FuguLib::Log->default->debug(
-		'Pair-verify M3 verified successfully, session encrypted');
+	$self->{logger}
+	    ->debug('Pair-verify M3 verified successfully, session encrypted');
 
 	# M4: Success
 	my $response =

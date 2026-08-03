@@ -30,9 +30,9 @@ BEGIN {
 
 use_ok('OpenHAP::HAP');
 use_ok('FuguLib::HTTP');
-use_ok('OpenHAP::Session');
+use_ok('Protocol::HAP::Session');
 use_ok('Protocol::HAP::TLV');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::Pairing');
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Heater');
 
@@ -68,7 +68,7 @@ sub make_hap ()
 
 sub verified_session ( $controller_id = 'test-controller' )
 {
-	my $session = OpenHAP::Session->new( socket => 'dummy' );
+	my $session = Protocol::HAP::Session->new( id => 9001 );
 	$session->set_verified($controller_id);
 	return $session;
 }
@@ -107,7 +107,7 @@ sub find_char ( $accessories, $type )
 
 subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 	my $hap        = make_hap();
-	my $unverified = OpenHAP::Session->new( socket => 'dummy' );
+	my $unverified = Protocol::HAP::Session->new( id => 9002 );
 
 	for my $probe (
 		[ 'POST', '/pairings' ],
@@ -126,20 +126,19 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 
 	# Pairing endpoints do not need a verified session
 	my $m1 = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	my ( $status, undef, undef ) =
 	    dispatch( $hap, 'POST', '/pair-setup', $m1, $unverified );
 	is( $status, 200,
 		'[HAP-HTTP §4] POST /pair-setup open to unverified sessions'
 	);
-	OpenHAP::Pairing->clear_pairing_state();
 
 	# Pair-verify is also open and answers with TLV
 	my $pv_m1 = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_PublicKey(), 'X' x 32,
+		Protocol::HAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey(), 'X' x 32,
 	);
 	( $status, my $headers, undef ) =
 	    dispatch( $hap, 'POST', '/pair-verify', $pv_m1, $unverified );
@@ -152,16 +151,15 @@ subtest '[HAP-HTTP §2] content types' => sub {
 	my $hap = make_hap();
 
 	my $m1 = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
 	my ( undef, $headers, undef ) =
 	    dispatch( $hap, 'POST', '/pair-setup', $m1,
-		OpenHAP::Session->new( socket => 'dummy' ) );
+		Protocol::HAP::Session->new( id => 9003 ) );
 	is( $headers->{'content-type'},
 		'application/pairing+tlv8',
 		'pairing endpoints use application/pairing+tlv8' );
-	OpenHAP::Pairing->clear_pairing_state();
 
 	( undef, $headers, undef ) = dispatch( $hap, 'GET', '/accessories' );
 	is( $headers->{'content-type'},
@@ -171,7 +169,7 @@ subtest '[HAP-HTTP §2] content types' => sub {
 
 subtest '[HAP-HTTP §3] POST /identify paired vs unpaired' => sub {
 	my $hap = make_hap();
-	my $unverified = OpenHAP::Session->new( socket => 'dummy' );
+	my $unverified = Protocol::HAP::Session->new( id => 9004 );
 
 	my ( $status, undef, undef ) =
 	    dispatch( $hap, 'POST', '/identify', undef, $unverified );
@@ -334,60 +332,60 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 	$hap->{storage}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
 
 	my $add = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
-		OpenHAP::Pairing::kTLVType_PublicKey(),  'N' x 32,
-		OpenHAP::Pairing::kTLVType_Permissions(), pack( 'C', 0 ),
+		Protocol::HAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
+		Protocol::HAP::Pairing::kTLVType_PublicKey(),  'N' x 32,
+		Protocol::HAP::Pairing::kTLVType_Permissions(), pack( 'C', 0 ),
 	);
 
 	# Non-admin controller -> 0x02 Authentication
 	my ( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$add, verified_session('user-ctrl') );
 	my %tlv = Protocol::HAP::TLV::decode($body);
-	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Error() } ),
-		OpenHAP::Pairing::kTLVError_Authentication(),
+	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_Error() } ),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'[HAP-Pairing §7.4] non-admin add rejected with 0x02' );
 
 	# Admin controller -> success M2
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$add, verified_session('admin-ctrl') );
 	%tlv = Protocol::HAP::TLV::decode($body);
-	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_State() } ),
+	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_State() } ),
 		2, 'admin add returns M2' );
-	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
+	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'admin add succeeds' );
 	ok( exists $hap->{storage}->load_pairings()->{'new-ctrl'},
 		'pairing stored' );
 
 	# Same identifier, different LTPK -> 0x01 Unknown
 	my $conflict = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
-		OpenHAP::Pairing::kTLVType_PublicKey(),  'Z' x 32,
-		OpenHAP::Pairing::kTLVType_Permissions(), pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
+		Protocol::HAP::Pairing::kTLVType_PublicKey(),  'Z' x 32,
+		Protocol::HAP::Pairing::kTLVType_Permissions(), pack( 'C', 1 ),
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$conflict, verified_session('admin-ctrl') );
 	%tlv = Protocol::HAP::TLV::decode($body);
-	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Error() } ),
-		OpenHAP::Pairing::kTLVError_Unknown(),
+	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_Error() } ),
+		Protocol::HAP::Pairing::kTLVError_Unknown(),
 		'[HAP-Pairing §7.4] existing identifier with different '
 		    . 'LTPK rejected with 0x01' );
 
 	# Same identifier, same LTPK -> permissions updated, success
 	my $update = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
-		OpenHAP::Pairing::kTLVType_PublicKey(),  'N' x 32,
-		OpenHAP::Pairing::kTLVType_Permissions(), pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
+		Protocol::HAP::Pairing::kTLVType_PublicKey(),  'N' x 32,
+		Protocol::HAP::Pairing::kTLVType_Permissions(), pack( 'C', 1 ),
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$update, verified_session('admin-ctrl') );
 	%tlv = Protocol::HAP::TLV::decode($body);
-	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
+	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'matching LTPK updates permissions' );
 	is( $hap->{storage}->load_pairings()->{'new-ctrl'}{permissions},
 		1, '[HAP-Pairing §6.1] permissions updated to admin (0x01)' );
@@ -400,14 +398,14 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 
 	# List pairings (admin only)
 	my $list = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 5 ),
+		Protocol::HAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 5 ),
 	);
 	my ( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$list, verified_session('user-ctrl') );
 	my %tlv = Protocol::HAP::TLV::decode($body);
-	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Error() } ),
-		OpenHAP::Pairing::kTLVError_Authentication(),
+	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_Error() } ),
+		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'[HAP-Pairing §7.4] non-admin list rejected with 0x02' );
 
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
@@ -419,26 +417,26 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 
 	# The removal of a pairing that does not exist returns success
 	my $remove_ghost = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
-		OpenHAP::Pairing::kTLVType_Identifier(), 'ghost-ctrl',
+		Protocol::HAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier(), 'ghost-ctrl',
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$remove_ghost, verified_session('admin-ctrl') );
 	%tlv = Protocol::HAP::TLV::decode($body);
-	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
+	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'removing nonexistent pairing returns success' );
 
 	# The removal of the last admin clears all pairings
 	my $remove_admin = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
-		OpenHAP::Pairing::kTLVType_Identifier(), 'admin-ctrl',
+		Protocol::HAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier(), 'admin-ctrl',
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$remove_admin, verified_session('admin-ctrl') );
 	%tlv = Protocol::HAP::TLV::decode($body);
-	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
+	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'removing last admin succeeds' );
 	is( scalar keys %{ $hap->{storage}->load_pairings() },
 		0, 'all pairings removed with the last admin' );
@@ -523,14 +521,23 @@ subtest '[HAP-HTTP §16][HAP-HTTP §16.3] event subscription via ev:true' =>
 		'[HAP-HTTP §12] notification-not-supported is -70406' );
 };
 
-# encrypted_session($sock, $id): verified session with test session keys
-my $EVENT_KEY = pack( 'H*', '11' x 32 );
+# encrypted_session($hap, $sock, $id): verified session with test
+# session keys. The session holds no socket, so the helper files the
+# mock socket in the connection map of the server, exactly where
+# send_event reads it from.
+my $EVENT_KEY          = pack( 'H*', '11' x 32 );
+my $next_event_session = 9100;
 
-sub encrypted_session ( $sock, $id )
+sub encrypted_session ( $hap, $sock, $id )
 {
-	my $session = OpenHAP::Session->new( socket => $sock );
+	my $session =
+	    Protocol::HAP::Session->new( id => $next_event_session++ );
 	$session->set_verified($id);
 	$session->set_encryption( $EVENT_KEY, pack( 'H*', '22' x 32 ) );
+	$hap->{connections}{ $session->id } = {
+		session => $session,
+		socket  => $sock,
+	};
 	return $session;
 }
 
@@ -576,11 +583,11 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	# bystander. The writer is also subscribed. The bystander never
 	# subscribes.
 	my $sub_sock    = MockSocket->new;
-	my $sub_sess    = encrypted_session( $sub_sock, 'subscriber' );
+	my $sub_sess    = encrypted_session( $hap, $sub_sock, 'subscriber' );
 	my $writer_sock = MockSocket->new;
-	my $writer_sess = encrypted_session( $writer_sock, 'writer' );
+	my $writer_sess = encrypted_session( $hap, $writer_sock, 'writer' );
 	my $other_sock  = MockSocket->new;
-	my $other_sess  = encrypted_session( $other_sock, 'bystander' );
+	my $other_sess  = encrypted_session( $hap, $other_sock, 'bystander' );
 
 	my $subscribe = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, ev => \1 } ] } );
@@ -665,7 +672,7 @@ subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
 	$heater->subscribe_mqtt;
 
 	my $sub_sock = MockSocket->new;
-	my $sub_sess = encrypted_session( $sub_sock, 'subscriber' );
+	my $sub_sess = encrypted_session( $hap, $sub_sock, 'subscriber' );
 	my $subscribe = $json->encode( { characteristics =>
 		    [ { aid => 2, iid => 11, ev => \1 } ] } );
 	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );

@@ -90,11 +90,17 @@ four logger methods and drops every message.
 
 =item L<Protocol::HAP::Bridge> - bridge accessory
 
+=item L<Protocol::HAP::Pairing> - pair-setup and pair-verify state machines
+
+=item L<Protocol::HAP::Session> - per-connection state and the AEAD frame codec
+
+=item L<Protocol::HAP::Store::Memory> - the reference store implementation
+
 =back
 
-The pairing and session state machines, the HTTP codec, the server
-engine, and the controller join the namespace in later phases of the
-extraction.
+The store contract itself lives in F<Protocol/HAP/Store.pod>. The
+HTTP codec, the server engine, and the controller join the namespace
+in later phases of the extraction.
 
 =head1 SEE ALSO
 

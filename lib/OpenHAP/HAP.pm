@@ -11,8 +11,8 @@ use Time::HiRes  qw(time);
 use FuguLib::EventLoop;
 use FuguLib::HTTP;
 
-use OpenHAP::Session;
-use OpenHAP::Pairing;
+use Protocol::HAP::Session;
+use Protocol::HAP::Pairing;
 use OpenHAP::Storage;
 use Protocol::HAP::Crypto;
 use Protocol::HAP::Bridge;
@@ -60,10 +60,17 @@ sub new ( $class, %args )
 		storage_path => $args{storage_path} // '/var/db/openhapd',
 		setup_id     => $args{setup_id},    # Optional 4-char setup ID
 
-		bridge   => undef,
-		storage  => undef,
-		pairing  => undef,
-		sessions => {},
+		bridge  => undef,
+		storage => undef,
+		pairing => undef,
+
+		# Each connection is filed under its session id: the
+		# session and its socket together. A fileno index
+		# resolves reads to the session id. The kernel reuses
+		# descriptors; session ids never repeat.
+		connections     => {},
+		by_fileno       => {},
+		next_session_id => 1,
 
 		accessory_ltsk => undef,
 		accessory_ltpk => undef,
@@ -106,9 +113,10 @@ sub _initialize ($self)
 	$self->{accessory_ltpk} = $ltpk;
 
 	# Initialize the pairing handler
-	$self->{pairing} = OpenHAP::Pairing->new(
+	$self->{pairing} = Protocol::HAP::Pairing->new(
 		pin            => $self->{pin},
-		storage        => $self->{storage},
+		store          => $self->{storage},
+		logger         => FuguLib::Log->default,
 		accessory_ltsk => $self->{accessory_ltsk},
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
@@ -292,15 +300,15 @@ sub stop ($self)
 #	calls this after run returns.
 sub shutdown ($self)
 {
-	for my $key ( keys %{ $self->{sessions} } ) {
-		my $session = $self->{sessions}{$key};
-		my $socket  = $session->{socket};
+	for my $conn ( values %{ $self->{connections} } ) {
+		my $socket = $conn->{socket};
 		next unless ref $socket;
 
 		$self->loop->remove_fd($socket);
 		$socket->close;
 	}
-	$self->{sessions} = {};
+	$self->{connections} = {};
+	$self->{by_fileno}   = {};
 
 	if ( $self->{server} ) {
 		$self->loop->remove_fd( $self->{server} );
@@ -379,8 +387,18 @@ sub _init_session ( $self, $socket )
 {
 	FuguLib::Log->default->info( 'Client connected from %s',
 		$socket->peerhost );
-	$self->{sessions}{ fileno $socket } =
-	    OpenHAP::Session->new( socket => $socket, );
+
+	my $session = Protocol::HAP::Session->new(
+		id     => $self->{next_session_id}++,
+		logger => FuguLib::Log->default,
+	);
+	$self->{connections}{ $session->id } = {
+		session => $session,
+		socket  => $socket,
+	};
+	$self->{by_fileno}{ fileno $socket } = $session->id;
+
+	return $session;
 }
 
 # $self->_handle_client($sock):
@@ -393,9 +411,13 @@ sub _init_session ( $self, $socket )
 #	message.
 sub _handle_client ( $self, $sock )
 {
-	my $session = $self->{sessions}{ fileno $sock } or return;
-	my $data    = '';
-	my $bytes   = $sock->sysread( $data, READ_SIZE );
+	my $sid     = $self->{by_fileno}{ fileno $sock };
+	my $conn    = defined $sid ? $self->{connections}{$sid} : undef;
+	my $session = $conn        ? $conn->{session}           : undef;
+	return unless $session;
+
+	my $data  = '';
+	my $bytes = $sock->sysread( $data, READ_SIZE );
 
 	if ( !$bytes ) {
 
@@ -450,7 +472,7 @@ sub _handle_client ( $self, $sock )
 			$was_encrypted );
 
 		# The dispatch can have closed the connection
-		return unless exists $self->{sessions}{ fileno $sock };
+		return unless exists $self->{connections}{$sid};
 	}
 
 	return;
@@ -496,14 +518,19 @@ sub _serve_request ( $self, $sock, $session, $message, $was_encrypted )
 #	Drop a client and everything the server kept for it.
 sub _close_client ( $self, $sock )
 {
-	my $key     = fileno $sock;
-	my $session = defined $key ? $self->{sessions}{$key} : undef;
+	my $fileno  = fileno $sock;
+	my $sid     = defined $fileno ? $self->{by_fileno}{$fileno} : undef;
+	my $conn    = defined $sid    ? $self->{connections}{$sid}  : undef;
+	my $session = $conn           ? $conn->{session}            : undef;
 
-	OpenHAP::Pairing->clear_pairing_state($session) if $session;
-	$self->_purge_event_subscriptions($session)     if $session;
+	if ($session) {
+		$self->{pairing}->clear_pairing_state($session);
+		$self->_purge_event_subscriptions($session);
+	}
 
 	$self->loop->remove_fd($sock);
-	delete $self->{sessions}{$key} if defined $key;
+	delete $self->{by_fileno}{$fileno} if defined $fileno;
+	delete $self->{connections}{$sid}  if defined $sid;
 	$sock->close();
 
 	return;
@@ -857,7 +884,7 @@ sub _handle_pairings ( $self, $request, $session )
 {
 	my %tlv = Protocol::HAP::TLV::decode( $request->{body} );
 
-	my $method_raw = $tlv{ OpenHAP::Pairing::kTLVType_Method() };
+	my $method_raw = $tlv{ Protocol::HAP::Pairing::kTLVType_Method() };
 	my $method     = defined $method_raw ? unpack( 'C', $method_raw ) : -1;
 
 	FuguLib::Log->default->debug( 'Pairings request method=%d', $method );
@@ -875,10 +902,10 @@ sub _handle_pairings ( $self, $request, $session )
 
 	# Unknown method
 	my $error = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),
+		Protocol::HAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
-		OpenHAP::Pairing::kTLVType_Error(),
-		pack( 'C', OpenHAP::Pairing::kTLVError_Unknown() ),
+		Protocol::HAP::Pairing::kTLVType_Error(),
+		pack( 'C', Protocol::HAP::Pairing::kTLVError_Unknown() ),
 	);
 	return _response(
 		status  => 200,
@@ -889,10 +916,12 @@ sub _handle_pairings ( $self, $request, $session )
 
 sub _handle_add_pairing ( $self, $tlv, $session )
 {
-	my $identifier = $tlv->{ OpenHAP::Pairing::kTLVType_Identifier() };
-	my $ltpk       = $tlv->{ OpenHAP::Pairing::kTLVType_PublicKey() };
-	my $perms      = unpack( 'C',
-		$tlv->{ OpenHAP::Pairing::kTLVType_Permissions() } // "\x00" );
+	my $identifier =
+	    $tlv->{ Protocol::HAP::Pairing::kTLVType_Identifier() };
+	my $ltpk  = $tlv->{ Protocol::HAP::Pairing::kTLVType_PublicKey() };
+	my $perms = unpack( 'C',
+		$tlv->{ Protocol::HAP::Pairing::kTLVType_Permissions() }
+		    // "\x00" );
 
 	FuguLib::Log->default->debug( 'Add pairing request for: %s',
 		$identifier // 'unknown' );
@@ -903,11 +932,14 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
 		my $error = Protocol::HAP::TLV::encode(
-			OpenHAP::Pairing::kTLVType_State(),
+			Protocol::HAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
-			OpenHAP::Pairing::kTLVType_Error(),
-			pack( 'C',
-				OpenHAP::Pairing::kTLVError_Authentication() ),
+			Protocol::HAP::Pairing::kTLVType_Error(),
+			pack(
+				'C',
+				Protocol::HAP::Pairing::kTLVError_Authentication(
+				)
+			),
 		);
 		return _response(
 			status  => 200,
@@ -923,10 +955,12 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	my $existing = $pairings->{$identifier};
 	if ( $existing && $existing->{ltpk} ne $ltpk ) {
 		my $error = Protocol::HAP::TLV::encode(
-			OpenHAP::Pairing::kTLVType_State(),
+			Protocol::HAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
-			OpenHAP::Pairing::kTLVType_Error(),
-			pack( 'C', OpenHAP::Pairing::kTLVError_Unknown() ),
+			Protocol::HAP::Pairing::kTLVType_Error(),
+			pack(
+				'C', Protocol::HAP::Pairing::kTLVError_Unknown()
+			),
 		);
 		return _response(
 			status  => 200,
@@ -942,7 +976,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 		$identifier );
 
 	my $response = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),
+		Protocol::HAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 	);
 	return _response(
@@ -954,7 +988,8 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 
 sub _handle_remove_pairing ( $self, $tlv, $session )
 {
-	my $identifier = $tlv->{ OpenHAP::Pairing::kTLVType_Identifier() };
+	my $identifier =
+	    $tlv->{ Protocol::HAP::Pairing::kTLVType_Identifier() };
 
 	FuguLib::Log->default->debug( 'Remove pairing request for: %s',
 		$identifier // 'unknown' );
@@ -965,11 +1000,14 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
 		my $error = Protocol::HAP::TLV::encode(
-			OpenHAP::Pairing::kTLVType_State(),
+			Protocol::HAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
-			OpenHAP::Pairing::kTLVType_Error(),
-			pack( 'C',
-				OpenHAP::Pairing::kTLVError_Authentication() ),
+			Protocol::HAP::Pairing::kTLVType_Error(),
+			pack(
+				'C',
+				Protocol::HAP::Pairing::kTLVError_Authentication(
+				)
+			),
 		);
 		return _response(
 			status  => 200,
@@ -998,7 +1036,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	}
 
 	my $response = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State(),
+		Protocol::HAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 	);
 	return _response(
@@ -1018,11 +1056,14 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
 		my $error = Protocol::HAP::TLV::encode(
-			OpenHAP::Pairing::kTLVType_State(),
+			Protocol::HAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
-			OpenHAP::Pairing::kTLVType_Error(),
-			pack( 'C',
-				OpenHAP::Pairing::kTLVError_Authentication() ),
+			Protocol::HAP::Pairing::kTLVType_Error(),
+			pack(
+				'C',
+				Protocol::HAP::Pairing::kTLVError_Authentication(
+				)
+			),
 		);
 		return _response(
 			status  => 200,
@@ -1035,7 +1076,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 	# Build the response with all pairings. Separate them with
 	# 0xFF.
 	my @response_items =
-	    ( OpenHAP::Pairing::kTLVType_State(), pack( 'C', 2 ) );
+	    ( Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ) );
 
 	my $first = 1;
 	for my $id ( sort keys %$pairings ) {
@@ -1044,14 +1085,15 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 		# Add a separator between pairings
 		unless ($first) {
 			push @response_items,
-			    OpenHAP::Pairing::kTLVType_Separator(), '';
+			    Protocol::HAP::Pairing::kTLVType_Separator(), '';
 		}
 		$first = 0;
 
 		push @response_items,
-		    OpenHAP::Pairing::kTLVType_Identifier(), $id,
-		    OpenHAP::Pairing::kTLVType_PublicKey(),  $pairing->{ltpk},
-		    OpenHAP::Pairing::kTLVType_Permissions(),
+		    Protocol::HAP::Pairing::kTLVType_Identifier(), $id,
+		    Protocol::HAP::Pairing::kTLVType_PublicKey(),
+		    $pairing->{ltpk},
+		    Protocol::HAP::Pairing::kTLVType_Permissions(),
 		    pack( 'C', $pairing->{permissions} );
 	}
 
@@ -1241,7 +1283,11 @@ sub send_event ( $self, $aid, $iid, $value, $originator = undef )
 		next if defined $originator && $session == $originator;
 
 		my $encrypted = $session->encrypt($event_msg);
-		my $socket    = $session->{socket};
+
+		# The socket lives in the connection map, not in the
+		# session
+		my $conn   = $self->{connections}{ $session->id };
+		my $socket = $conn ? $conn->{socket} : undef;
 		if ( $socket && $socket->connected ) {
 			eval { $socket->syswrite($encrypted) };
 			if ($@) {
@@ -1281,7 +1327,7 @@ sub control_status ($self)
 		pairings      => scalar keys %$pairings,
 		config_number => $self->get_config_number,
 		devices       => scalar @devices,
-		connections   => scalar keys %{ $self->{sessions} },
+		connections   => scalar keys %{ $self->{connections} },
 		mdns          => $self->{mdns}
 		    && $self->{mdns}->is_published ? 'published' : 'absent',
 		mqtt => !$self->{mqtt_client} ? 'none'
@@ -1429,15 +1475,16 @@ sub _regenerate_identity ($self)
 	$self->{accessory_ltpk} = $ltpk;
 
 	# Reinitialize the pairing handler with the new keys
-	$self->{pairing} = OpenHAP::Pairing->new(
+	$self->{pairing} = Protocol::HAP::Pairing->new(
 		pin            => $self->{pin},
-		storage        => $self->{storage},
+		store          => $self->{storage},
+		logger         => FuguLib::Log->default,
 		accessory_ltsk => $self->{accessory_ltsk},
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
 
 	# Reset the authentication attempt counter
-	OpenHAP::Pairing->reset_auth_attempts();
+	$self->{pairing}->reset_auth_attempts;
 
 	FuguLib::Log->default->info('Accessory identity regenerated');
 	return;

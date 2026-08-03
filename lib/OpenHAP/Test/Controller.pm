@@ -24,7 +24,7 @@ use IO::Select;
 use Protocol::HAP::Crypto;
 use FuguLib::HTTP;
 use Protocol::HAP::TLV;
-use OpenHAP::Pairing;
+use Protocol::HAP::Pairing;
 use OpenHAP::Test::Controller::SRP;
 
 # This module is a minimal HomeKit controller for tests. It completes
@@ -302,7 +302,7 @@ sub _tlv_request ( $self, $path, %tlv_items )
 	}
 
 	my %tlv   = Protocol::HAP::TLV::decode( $response->{body} );
-	my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
+	my $error = $tlv{ Protocol::HAP::Pairing::kTLVType_Error() };
 	if ( defined $error ) {
 		$self->{last_error} = unpack( 'C', $error );
 		return;
@@ -322,12 +322,12 @@ sub pair_setup ($self)
 	# M1 -> M2
 	my $m2 = $self->_tlv_request(
 		'/pair-setup',
-		OpenHAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method() => pack( 'C', 0 ),
+		Protocol::HAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method() => pack( 'C', 0 ),
 	) or return;
 
-	my $salt = $m2->{ OpenHAP::Pairing::kTLVType_Salt() };
-	my $B    = $m2->{ OpenHAP::Pairing::kTLVType_PublicKey() };
+	my $salt = $m2->{ Protocol::HAP::Pairing::kTLVType_Salt() };
+	my $B    = $m2->{ Protocol::HAP::Pairing::kTLVType_PublicKey() };
 	unless ( defined $salt && defined $B ) {
 		$self->{last_error} = 'M2 missing salt or public key';
 		return;
@@ -345,12 +345,12 @@ sub pair_setup ($self)
 
 	my $m4 = $self->_tlv_request(
 		'/pair-setup',
-		OpenHAP::Pairing::kTLVType_State()     => pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_PublicKey() => $A,
-		OpenHAP::Pairing::kTLVType_Proof()     => $M1,
+		Protocol::HAP::Pairing::kTLVType_State()     => pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey() => $A,
+		Protocol::HAP::Pairing::kTLVType_Proof()     => $M1,
 	) or return;
 
-	my $M2 = $m4->{ OpenHAP::Pairing::kTLVType_Proof() };
+	my $M2 = $m4->{ Protocol::HAP::Pairing::kTLVType_Proof() };
 	unless ( $srp->verify_server_proof($M2) ) {
 		$self->{last_error} = 'server proof verification failed';
 		return;
@@ -371,10 +371,10 @@ sub pair_setup ($self)
 		$self->{ltsk}, $self->{ltpk} );
 
 	my $inner = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_Identifier() =>
+		Protocol::HAP::Pairing::kTLVType_Identifier() =>
 		    $self->{controller_id},
-		OpenHAP::Pairing::kTLVType_PublicKey() => $self->{ltpk},
-		OpenHAP::Pairing::kTLVType_Signature() => $signature,
+		Protocol::HAP::Pairing::kTLVType_PublicKey() => $self->{ltpk},
+		Protocol::HAP::Pairing::kTLVType_Signature() => $signature,
 	);
 	my ( $encrypted, $tag ) =
 	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $encrypt_key,
@@ -382,11 +382,12 @@ sub pair_setup ($self)
 
 	my $m6 = $self->_tlv_request(
 		'/pair-setup',
-		OpenHAP::Pairing::kTLVType_State()         => pack( 'C', 5 ),
-		OpenHAP::Pairing::kTLVType_EncryptedData() => $encrypted . $tag,
+		Protocol::HAP::Pairing::kTLVType_State() => pack( 'C', 5 ),
+		Protocol::HAP::Pairing::kTLVType_EncryptedData() => $encrypted
+		    . $tag,
 	) or return;
 
-	my $m6_data = $m6->{ OpenHAP::Pairing::kTLVType_EncryptedData() };
+	my $m6_data = $m6->{ Protocol::HAP::Pairing::kTLVType_EncryptedData() };
 	unless ( defined $m6_data && length($m6_data) > 16 ) {
 		$self->{last_error} = 'M6 missing encrypted data';
 		return;
@@ -402,9 +403,10 @@ sub pair_setup ($self)
 	}
 
 	my %m6_inner = Protocol::HAP::TLV::decode($m6_plain);
-	my $acc_id   = $m6_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
-	my $acc_ltpk = $m6_inner{ OpenHAP::Pairing::kTLVType_PublicKey() };
-	my $acc_sig  = $m6_inner{ OpenHAP::Pairing::kTLVType_Signature() };
+	my $acc_id = $m6_inner{ Protocol::HAP::Pairing::kTLVType_Identifier() };
+	my $acc_ltpk =
+	    $m6_inner{ Protocol::HAP::Pairing::kTLVType_PublicKey() };
+	my $acc_sig = $m6_inner{ Protocol::HAP::Pairing::kTLVType_Signature() };
 
 	my $acc_x = Protocol::HAP::Crypto->hkdf_sha512(
 		$K,
@@ -439,12 +441,12 @@ sub pair_verify ($self)
 	# M1 -> M2
 	my $m2 = $self->_tlv_request(
 		'/pair-verify',
-		OpenHAP::Pairing::kTLVType_State()     => pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_PublicKey() => $public,
+		Protocol::HAP::Pairing::kTLVType_State()     => pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_PublicKey() => $public,
 	) or return;
 
-	my $acc_public = $m2->{ OpenHAP::Pairing::kTLVType_PublicKey() };
-	my $m2_data    = $m2->{ OpenHAP::Pairing::kTLVType_EncryptedData() };
+	my $acc_public = $m2->{ Protocol::HAP::Pairing::kTLVType_PublicKey() };
+	my $m2_data = $m2->{ Protocol::HAP::Pairing::kTLVType_EncryptedData() };
 	unless ( defined $acc_public && defined $m2_data ) {
 		$self->{last_error} = 'M2 missing public key or data';
 		return;
@@ -466,8 +468,8 @@ sub pair_verify ($self)
 	}
 
 	my %m2_inner = Protocol::HAP::TLV::decode($m2_plain);
-	my $acc_id   = $m2_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
-	my $acc_sig  = $m2_inner{ OpenHAP::Pairing::kTLVType_Signature() };
+	my $acc_id = $m2_inner{ Protocol::HAP::Pairing::kTLVType_Identifier() };
+	my $acc_sig = $m2_inner{ Protocol::HAP::Pairing::kTLVType_Signature() };
 
 	# Verify the accessory signature when the controller knows
 	# the accessory LTPK
@@ -488,9 +490,9 @@ sub pair_verify ($self)
 		$public . $self->{controller_id} . $acc_public,
 		$self->{ltsk}, $self->{ltpk} );
 	my $inner = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_Identifier() =>
+		Protocol::HAP::Pairing::kTLVType_Identifier() =>
 		    $self->{controller_id},
-		OpenHAP::Pairing::kTLVType_Signature() => $signature,
+		Protocol::HAP::Pairing::kTLVType_Signature() => $signature,
 	);
 	my ( $encrypted, $tag ) =
 	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $pv_key,
@@ -498,8 +500,9 @@ sub pair_verify ($self)
 
 	$self->_tlv_request(
 		'/pair-verify',
-		OpenHAP::Pairing::kTLVType_State()         => pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_EncryptedData() => $encrypted . $tag,
+		Protocol::HAP::Pairing::kTLVType_State() => pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_EncryptedData() => $encrypted
+		    . $tag,
 	) or return;
 
 	# Session keys: the controller writes with the Write key and
@@ -525,11 +528,11 @@ sub add_pairing ( $self, $identifier, $ltpk, $permissions = 0 )
 
 	my $result = $self->_tlv_request(
 		'/pairings',
-		OpenHAP::Pairing::kTLVType_State()       => pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method()      => pack( 'C', 3 ),
-		OpenHAP::Pairing::kTLVType_Identifier()  => $identifier,
-		OpenHAP::Pairing::kTLVType_PublicKey()   => $ltpk,
-		OpenHAP::Pairing::kTLVType_Permissions() =>
+		Protocol::HAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method() => pack( 'C', 3 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier()  => $identifier,
+		Protocol::HAP::Pairing::kTLVType_PublicKey()   => $ltpk,
+		Protocol::HAP::Pairing::kTLVType_Permissions() =>
 		    pack( 'C', $permissions ),
 	) or return;
 
@@ -543,9 +546,9 @@ sub remove_pairing ( $self, $identifier = undef )
 
 	my $result = $self->_tlv_request(
 		'/pairings',
-		OpenHAP::Pairing::kTLVType_State()      => pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method()     => pack( 'C', 4 ),
-		OpenHAP::Pairing::kTLVType_Identifier() => $identifier,
+		Protocol::HAP::Pairing::kTLVType_State()      => pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method()     => pack( 'C', 4 ),
+		Protocol::HAP::Pairing::kTLVType_Identifier() => $identifier,
 	) or return;
 
 	return 1;
@@ -556,8 +559,8 @@ sub list_pairings ($self)
 	$self->{last_error} = undef;
 
 	my $body = Protocol::HAP::TLV::encode(
-		OpenHAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
-		OpenHAP::Pairing::kTLVType_Method() => pack( 'C', 5 ),
+		Protocol::HAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
+		Protocol::HAP::Pairing::kTLVType_Method() => pack( 'C', 5 ),
 	);
 	my $response = $self->request( 'POST', '/pairings', $body,
 		{ 'Content-Type' => 'application/pairing+tlv8' } );
@@ -574,10 +577,10 @@ sub list_pairings ($self)
 	my @pairings;
 	for my $entry ( split /\xFF\x00/, $response->{body} ) {
 		my %tlv = Protocol::HAP::TLV::decode($entry);
-		my $id  = $tlv{ OpenHAP::Pairing::kTLVType_Identifier() };
+		my $id  = $tlv{ Protocol::HAP::Pairing::kTLVType_Identifier() };
 		next unless defined $id;
 
-		my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
+		my $error = $tlv{ Protocol::HAP::Pairing::kTLVType_Error() };
 		if ( defined $error ) {
 			$self->{last_error} = unpack( 'C', $error );
 			return;
@@ -586,11 +589,13 @@ sub list_pairings ($self)
 		push @pairings,
 		    {
 			identifier => $id,
-			ltpk => $tlv{ OpenHAP::Pairing::kTLVType_PublicKey() },
+			ltpk       => $tlv{
+				Protocol::HAP::Pairing::kTLVType_PublicKey()
+			},
 			permissions => unpack(
 				'C',
 				$tlv{
-					OpenHAP::Pairing::kTLVType_Permissions(
+					Protocol::HAP::Pairing::kTLVType_Permissions(
 					)
 				} // "\x00"
 			),
@@ -600,7 +605,7 @@ sub list_pairings ($self)
 	# A lone error TLV with no identifiers means the request failed
 	if ( !@pairings ) {
 		my %tlv   = Protocol::HAP::TLV::decode( $response->{body} );
-		my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
+		my $error = $tlv{ Protocol::HAP::Pairing::kTLVType_Error() };
 		if ( defined $error ) {
 			$self->{last_error} = unpack( 'C', $error );
 			return;

@@ -181,4 +181,22 @@ subtest 'a storage directory from before the state file' => sub {
 	is( $again->get_auth_attempts, 3, 'and the other counters' );
 };
 
+# OpenHAP::Storage is a store in the sense of Protocol/HAP/Store.pod.
+# The engine calls these twelve methods and no others; a missing one
+# must fail here, not in a paired home.
+subtest 'the store contract of Protocol::HAP' => sub {
+	my @contract = qw(
+	    load_accessory_keys save_accessory_keys
+	    load_pairings save_pairing remove_pairing remove_all_pairings
+	    get_config_number increment_config_number
+	    get_config_digest save_config_digest
+	    get_auth_attempts set_auth_attempts
+	);
+
+	for my $method (@contract) {
+		ok( OpenHAP::Storage->can($method),
+			"OpenHAP::Storage provides $method" );
+	}
+};
+
 done_testing();

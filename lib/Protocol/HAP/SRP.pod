@@ -38,6 +38,6 @@ For tests, L<OpenHAP::Test::Controller::SRP> supplies the client side.
 
 =head1 SEE ALSO
 
-L<OpenHAP::Pairing>, F<spec/HAP-Pairing.md>
+L<Protocol::HAP::Pairing>, F<spec/HAP-Pairing.md>
 
 =cut

@@ -1,12 +1,12 @@
 =head1 NAME
 
-OpenHAP::Session - encrypted session state for HAP connections
+Protocol::HAP::Session - encrypted session state for HAP connections
 
 =head1 SYNOPSIS
 
-    use OpenHAP::Session;
+    use Protocol::HAP::Session;
 
-    my $session = OpenHAP::Session->new(socket => $socket);
+    my $session = Protocol::HAP::Session->new(id => $id);
 
     # After pair-verify
     $session->set_encryption($encrypt_key, $decrypt_key);
@@ -25,8 +25,16 @@ on a failed authentication tag, on a truncated frame, or on a frame
 that declares more than 1024 bytes of plaintext. The caller must then
 close the connection.
 
+The session holds protocol state only, never a descriptor. The server
+owns the connection, files it beside the session, and allocates the
+required C<id> from an instance counter. The id is not the
+descriptor: the kernel reuses descriptors, session ids never repeat.
+
+The constructor also takes an optional C<logger> argument, defaulting
+to the null logger of L<Protocol::HAP>.
+
 =head1 SEE ALSO
 
-L<Protocol::HAP::Crypto>, F<spec/HAP-Encryption.md>
+L<Protocol::HAP>, L<Protocol::HAP::Crypto>, F<spec/HAP-Encryption.md>
 
 =cut

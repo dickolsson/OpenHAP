@@ -27,8 +27,8 @@ BEGIN {
 
 use_ok('OpenHAP::HAP');
 use_ok('FuguLib::HTTP');
-use_ok('OpenHAP::Session');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::Session');
+use_ok('Protocol::HAP::Pairing');
 use_ok('OpenHAP::Test::Controller');
 
 my $PIN = '123-45-678';
@@ -38,7 +38,6 @@ my @wire;
 
 sub make_verified_pair ()
 {
-	OpenHAP::Pairing->clear_pairing_state();
 
 	my $hap = OpenHAP::HAP->new(
 		port         => 51827,
@@ -48,7 +47,7 @@ sub make_verified_pair ()
 	);
 	$hap->{pairing}->reset_auth_attempts;
 
-	my $session   = OpenHAP::Session->new( socket => 'in-process' );
+	my $session   = Protocol::HAP::Session->new( id => 9001 );
 	my $transport = sub ($request_bytes) {
 		my $was_encrypted = $session->is_encrypted;
 		push @wire,
@@ -132,7 +131,6 @@ subtest '[HAP-Encryption §2][HAP-Encryption §3] frame layout both '
 	unlike( $a2c->{bytes}, qr/"accessories"/,
 		'accessory JSON not visible in the encrypted stream' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
@@ -159,7 +157,6 @@ subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
 		$controller->{decrypt_count},
 		'accessory write counter mirrors controller reads' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 subtest '[HAP-Encryption §9] tampered frame fails the session' => sub {
@@ -174,7 +171,6 @@ subtest '[HAP-Encryption §9] tampered frame fails the session' => sub {
 	ok( !defined $session->decrypt($encrypted),
 		'accessory rejects the tampered frame' );
 
-	OpenHAP::Pairing->clear_pairing_state();
 };
 
 done_testing();

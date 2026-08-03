@@ -22,7 +22,7 @@ BEGIN {
 use_ok('OpenHAP::HAP');
 use_ok('OpenHAP::Storage');
 use_ok('Protocol::HAP::Crypto');
-use_ok('OpenHAP::Pairing');
+use_ok('Protocol::HAP::Pairing');
 
 # Test HAP object creation
 {
