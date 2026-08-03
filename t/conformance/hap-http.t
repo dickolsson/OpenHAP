@@ -2,25 +2,22 @@
 # ex:ts=8 sw=4:
 # Conformance tests for spec/HAP-HTTP.md
 #
-# The tests drive OpenHAP::HAP request dispatch in-process, without
-# sockets. The tests set the session's verified state directly to
-# model the paired and unpaired cases.
+# The tests drive the sans-IO Protocol::HAP::Server engine through its
+# public API - session_open, receive, and a captured output contract -
+# without sockets. The tests set the session's verified state directly
+# to model the paired and unpaired cases.
 
 use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use lib "$RealBin/../lib";
 use FuguLib::TestLog;
-use File::Temp qw(tempdir);
-use JSON::PP   ();
+use JSON::PP ();
 
 BEGIN {
 	eval {
-		require IO::Socket::INET;
 		require Crypt::Ed25519;
-		require JSON::XS;
 		require Crypt::AuthEnc::ChaCha20Poly1305;
 	};
 	if ($@) {
@@ -28,32 +25,31 @@ BEGIN {
 	}
 }
 
-use_ok('OpenHAP::HAP');
-use_ok('FuguLib::HTTP');
-use_ok('Protocol::HAP::Session');
+use_ok('Protocol::HAP::Server');
+use_ok('Protocol::HAP::Store::Memory');
+use_ok('Protocol::HAP::HTTP');
+use_ok('Protocol::HAP::Crypto');
 use_ok('Protocol::HAP::TLV');
 use_ok('Protocol::HAP::Pairing');
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Heater');
 
-# Mock socket that records writes for event delivery tests
-package MockSocket;
-
-sub new ($class) { bless { written => '' }, $class }
-sub connected ($self) { 1 }
-sub syswrite ( $self, $data ) { $self->{written} .= $data; length $data }
-
-package main;
-
 my $json = JSON::PP->new;
+
+# Everything the engine writes, keyed by session id. This is the
+# output contract: the host files the bytes under the connection the
+# session belongs to.
+my %OUT;
 
 sub make_hap ()
 {
-	my $hap = OpenHAP::HAP->new(
-		port         => 51827,
-		pin          => '123-45-678',
-		name         => 'Conformance Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
+	my $hap = Protocol::HAP::Server->new(
+		pin    => '123-45-678',
+		name   => 'Conformance Bridge',
+		store  => Protocol::HAP::Store::Memory->new,
+		output => sub ( $session, $bytes ) {
+			$OUT{ $session->id } .= $bytes;
+		},
 	);
 	my $mqtt   = OpenHAP::TestMock::MQTT->new;
 	my $heater = OpenHAP::Tasmota::Heater->new(
@@ -66,22 +62,83 @@ sub make_hap ()
 	return $hap;
 }
 
-sub verified_session ( $controller_id = 'test-controller' )
+sub verified_session ( $hap, $controller_id = 'test-controller' )
 {
-	my $session = Protocol::HAP::Session->new( id => 9001 );
+	my $session = $hap->session_open;
 	$session->set_verified($controller_id);
 	return $session;
 }
 
+# The controller half of the encrypted session framing, for the tests
+# that subscribe to events. The accessory encrypts with one key and
+# decrypts with the other; the client counters run independently of
+# the session's.
+my $ACC_TO_CTRL = pack( 'H*', '11' x 32 );
+my $CTRL_TO_ACC = pack( 'H*', '22' x 32 );
+my %CLIENT;
+
+sub client_state ($session)
+{
+	return $CLIENT{ $session->id } //= { enc => 0, dec => 0 };
+}
+
+sub client_encrypt ( $session, $data )
+{
+	my $state = client_state($session);
+	my $out   = '';
+	while ( length($data) > 0 ) {
+		my $chunk = substr( $data, 0, 1024, '' );
+		my $aad   = pack( 'v',      length($chunk) );
+		my $nonce = pack( 'x[4]Q<', $state->{enc}++ );
+		my ( $ciphertext, $tag ) =
+		    Protocol::HAP::Crypto->chacha20poly1305_encrypt(
+			$CTRL_TO_ACC, $nonce, $chunk, $aad );
+		$out .= $aad . $ciphertext . $tag;
+	}
+	return $out;
+}
+
+sub client_decrypt ( $session, $data )
+{
+	my $state = client_state($session);
+	my $out   = '';
+	my $pos   = 0;
+	while ( $pos < length($data) ) {
+		my $length = unpack( 'v', substr( $data, $pos, 2 ) );
+		my $aad    = substr( $data, $pos, 2 );
+		$pos += 2;
+		my $ciphertext = substr( $data, $pos, $length );
+		$pos += $length;
+		my $tag = substr( $data, $pos, 16 );
+		$pos += 16;
+
+		my $nonce = pack( 'x[4]Q<', $state->{dec}++ );
+		my $plain =
+		    Protocol::HAP::Crypto->chacha20poly1305_decrypt(
+			$ACC_TO_CTRL, $nonce, $ciphertext, $tag, $aad );
+		return unless defined $plain;
+		$out .= $plain;
+	}
+	return $out;
+}
+
 sub dispatch ( $hap, $method, $path, $body = undef, $session = undef )
 {
-	$session //= verified_session();
-	my $request = {
+	$session //= verified_session($hap);
+
+	my $raw = Protocol::HAP::HTTP::build_request(
 		method => $method,
 		path   => $path,
 		body   => $body // '',
-	};
-	my $response = $hap->_dispatch( $request, $session );
+	);
+	$raw = client_encrypt( $session, $raw ) if $session->is_encrypted;
+
+	$OUT{ $session->id } = '';
+	$hap->receive( $session, $raw );
+	my $response = delete $OUT{ $session->id };
+	$response = client_decrypt( $session, $response )
+	    if $session->is_encrypted;
+
 	my ( $head, $resp_body ) = split /\r\n\r\n/, $response, 2;
 	my ($status) = $head =~ m{^HTTP/1\.1 (\d+)};
 	my %headers;
@@ -107,7 +164,7 @@ sub find_char ( $accessories, $type )
 
 subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 	my $hap        = make_hap();
-	my $unverified = Protocol::HAP::Session->new( id => 9002 );
+	my $unverified = $hap->session_open;
 
 	for my $probe (
 		[ 'POST', '/pairings' ],
@@ -156,7 +213,7 @@ subtest '[HAP-HTTP §2] content types' => sub {
 	);
 	my ( undef, $headers, undef ) =
 	    dispatch( $hap, 'POST', '/pair-setup', $m1,
-		Protocol::HAP::Session->new( id => 9003 ) );
+		$hap->session_open );
 	is( $headers->{'content-type'},
 		'application/pairing+tlv8',
 		'pairing endpoints use application/pairing+tlv8' );
@@ -169,13 +226,13 @@ subtest '[HAP-HTTP §2] content types' => sub {
 
 subtest '[HAP-HTTP §3] POST /identify paired vs unpaired' => sub {
 	my $hap = make_hap();
-	my $unverified = Protocol::HAP::Session->new( id => 9004 );
+	my $unverified = $hap->session_open;
 
 	my ( $status, undef, undef ) =
 	    dispatch( $hap, 'POST', '/identify', undef, $unverified );
 	is( $status, 204, 'unpaired identify returns 204 No Content' );
 
-	$hap->{storage}->save_pairing( 'controller', 'X' x 32, 1 );
+	$hap->{store}->save_pairing( 'controller', 'X' x 32, 1 );
 	( $status, undef, my $body ) =
 	    dispatch( $hap, 'POST', '/identify', undef, $unverified );
 	is( $status, 400, 'paired identify returns 400' );
@@ -303,7 +360,7 @@ subtest '[HAP-HTTP §9] PUT /characteristics' => sub {
 
 subtest '[HAP-HTTP §10] PUT /prepare timed write' => sub {
 	my $hap = make_hap();
-	my $session = verified_session();
+	my $session = verified_session($hap);
 
 	my $prepare = $json->encode( { ttl => 2500, pid => 11122333 } );
 	my ( $status, undef, $body ) =
@@ -328,8 +385,8 @@ subtest '[HAP-HTTP §10] PUT /prepare timed write' => sub {
 subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
     sub {
 	my $hap = make_hap();
-	$hap->{storage}->save_pairing( 'admin-ctrl', 'A' x 32, 1 );
-	$hap->{storage}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
+	$hap->{store}->save_pairing( 'admin-ctrl', 'A' x 32, 1 );
+	$hap->{store}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
 
 	my $add = Protocol::HAP::TLV::encode(
 		Protocol::HAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
@@ -341,7 +398,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 
 	# Non-admin controller -> 0x02 Authentication
 	my ( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$add, verified_session('user-ctrl') );
+		$add, verified_session( $hap, 'user-ctrl' ) );
 	my %tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_Error() } ),
 		Protocol::HAP::Pairing::kTLVError_Authentication(),
@@ -349,13 +406,13 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 
 	# Admin controller -> success M2
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$add, verified_session('admin-ctrl') );
+		$add, verified_session( $hap, 'admin-ctrl' ) );
 	%tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_State() } ),
 		2, 'admin add returns M2' );
 	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'admin add succeeds' );
-	ok( exists $hap->{storage}->load_pairings()->{'new-ctrl'},
+	ok( exists $hap->{store}->load_pairings()->{'new-ctrl'},
 		'pairing stored' );
 
 	# Same identifier, different LTPK -> 0x01 Unknown
@@ -367,7 +424,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 		Protocol::HAP::Pairing::kTLVType_Permissions(), pack( 'C', 1 ),
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$conflict, verified_session('admin-ctrl') );
+		$conflict, verified_session( $hap, 'admin-ctrl' ) );
 	%tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_Error() } ),
 		Protocol::HAP::Pairing::kTLVError_Unknown(),
@@ -383,18 +440,18 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 		Protocol::HAP::Pairing::kTLVType_Permissions(), pack( 'C', 1 ),
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$update, verified_session('admin-ctrl') );
+		$update, verified_session( $hap, 'admin-ctrl' ) );
 	%tlv = Protocol::HAP::TLV::decode($body);
 	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'matching LTPK updates permissions' );
-	is( $hap->{storage}->load_pairings()->{'new-ctrl'}{permissions},
+	is( $hap->{store}->load_pairings()->{'new-ctrl'}{permissions},
 		1, '[HAP-Pairing §6.1] permissions updated to admin (0x01)' );
 };
 
 subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 	my $hap = make_hap();
-	$hap->{storage}->save_pairing( 'admin-ctrl', 'A' x 32, 1 );
-	$hap->{storage}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
+	$hap->{store}->save_pairing( 'admin-ctrl', 'A' x 32, 1 );
+	$hap->{store}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
 
 	# List pairings (admin only)
 	my $list = Protocol::HAP::TLV::encode(
@@ -402,14 +459,14 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 		Protocol::HAP::Pairing::kTLVType_Method(), pack( 'C', 5 ),
 	);
 	my ( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$list, verified_session('user-ctrl') );
+		$list, verified_session( $hap, 'user-ctrl' ) );
 	my %tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ Protocol::HAP::Pairing::kTLVType_Error() } ),
 		Protocol::HAP::Pairing::kTLVError_Authentication(),
 		'[HAP-Pairing §7.4] non-admin list rejected with 0x02' );
 
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$list, verified_session('admin-ctrl') );
+		$list, verified_session( $hap, 'admin-ctrl' ) );
 	like( $body, qr/admin-ctrl/, 'list contains admin identifier' );
 	like( $body, qr/user-ctrl/,  'list contains user identifier' );
 	like( $body, qr/\xFF\x00/,
@@ -422,7 +479,7 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 		Protocol::HAP::Pairing::kTLVType_Identifier(), 'ghost-ctrl',
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$remove_ghost, verified_session('admin-ctrl') );
+		$remove_ghost, verified_session( $hap, 'admin-ctrl' ) );
 	%tlv = Protocol::HAP::TLV::decode($body);
 	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'removing nonexistent pairing returns success' );
@@ -434,11 +491,11 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 		Protocol::HAP::Pairing::kTLVType_Identifier(), 'admin-ctrl',
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
-		$remove_admin, verified_session('admin-ctrl') );
+		$remove_admin, verified_session( $hap, 'admin-ctrl' ) );
 	%tlv = Protocol::HAP::TLV::decode($body);
 	ok( !exists $tlv{ Protocol::HAP::Pairing::kTLVType_Error() },
 		'removing last admin succeeds' );
-	is( scalar keys %{ $hap->{storage}->load_pairings() },
+	is( scalar keys %{ $hap->{store}->load_pairings() },
 		0, 'all pairings removed with the last admin' );
 };
 
@@ -500,7 +557,7 @@ subtest '[HAP-HTTP §16][HAP-HTTP §16.3] event subscription via ev:true' =>
 	    dispatch( $hap, 'GET', '/accessories' );
 	my ( $aid, $iid ) = find_char( $json->decode($acc_body), '25' );
 
-	my $session = verified_session();
+	my $session = verified_session($hap);
 	my $put     = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, ev => \1 } ] } );
 	my ( $status, undef, undef ) =
@@ -521,57 +578,9 @@ subtest '[HAP-HTTP §16][HAP-HTTP §16.3] event subscription via ev:true' =>
 		'[HAP-HTTP §12] notification-not-supported is -70406' );
 };
 
-# encrypted_session($hap, $sock, $id): verified session with test
-# session keys. The session holds no socket, so the helper files the
-# mock socket in the connection map of the server, exactly where
-# send_event reads it from.
-my $EVENT_KEY          = pack( 'H*', '11' x 32 );
-my $next_event_session = 9100;
-
-sub encrypted_session ( $hap, $sock, $id )
-{
-	my $session =
-	    Protocol::HAP::Session->new( id => $next_event_session++ );
-	$session->set_verified($id);
-	$session->set_encryption( $EVENT_KEY, pack( 'H*', '22' x 32 ) );
-	$hap->{connections}{ $session->id } = {
-		session => $session,
-		socket  => $sock,
-	};
-	return $session;
-}
-
-# decrypt_event($sock, $counter): decrypt one event frame from the
-# mock socket. Return the plaintext EVENT/1.0 message.
-sub decrypt_event ( $sock, $counter = 0 )
-{
-	my $frame  = $sock->{written};
-	my $aad    = substr( $frame, 0, 2 );
-	my $length = unpack( 'v', $aad );
-	require Protocol::HAP::Crypto;
-	return Protocol::HAP::Crypto->chacha20poly1305_decrypt(
-		$EVENT_KEY,
-		pack( 'x[4]Q<', $counter ),
-		substr( $frame, 2, $length ),
-		substr( $frame, 2 + $length, 16 ), $aad
-	);
-}
-
-# run_coalesce_window($hap): let the coalescing timer fire.
-#
-#	A queued event schedules one timer on the server's event loop.
-#	The loop returns as soon as it has nothing left to wait for,
-#	which is right after that timer runs. Thus the test exercises
-#	the real delivery path and does not have to guess a sleep.
-#	A server that scheduled nothing gives a loop with nothing to
-#	wait for. That loop returns at once, so a missing flush fails
-#	the assertions below instead of hanging this file.
-sub run_coalesce_window ($hap)
-{
-	$hap->loop->run;
-
-	return;
-}
+# The events below drive the engine without the timer contract: no
+# after/cancel was injected, so the host calls flush_events itself.
+# That covers the timer-less path of the engine.
 
 subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	my $hap = make_hap();
@@ -579,15 +588,15 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	    dispatch( $hap, 'GET', '/accessories' );
 	my ( $aid, $iid ) = find_char( $json->decode($acc_body), '25' );
 
-	# Three encrypted sessions: a subscriber, the writer, and a
-	# bystander. The writer is also subscribed. The bystander never
-	# subscribes.
-	my $sub_sock    = MockSocket->new;
-	my $sub_sess    = encrypted_session( $hap, $sub_sock, 'subscriber' );
-	my $writer_sock = MockSocket->new;
-	my $writer_sess = encrypted_session( $hap, $writer_sock, 'writer' );
-	my $other_sock  = MockSocket->new;
-	my $other_sess  = encrypted_session( $hap, $other_sock, 'bystander' );
+	# Three sessions: a subscriber, the writer, and a bystander.
+	# The writer is also subscribed. The bystander never
+	# subscribes. They subscribe and write in the clear; the
+	# sessions then turn encrypted before the flush, because
+	# delivery needs an encrypted session and the event must
+	# arrive in session frames.
+	my $sub_sess    = verified_session( $hap, 'subscriber' );
+	my $writer_sess = verified_session( $hap, 'writer' );
+	my $other_sess  = verified_session( $hap, 'bystander' );
 
 	my $subscribe = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, ev => \1 } ] } );
@@ -605,18 +614,22 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	my ( $status, undef, undef ) =
 	    dispatch( $hap, 'PUT', '/characteristics', $put, $writer_sess );
 	is( $status, 204, 'value write accepted' );
-	run_coalesce_window($hap);
 
-	ok( length( $sub_sock->{written} ) > 0,
+	$_->set_encryption( $ACC_TO_CTRL, $CTRL_TO_ACC )
+	    for ( $sub_sess, $writer_sess, $other_sess );
+	$OUT{ $_->id } = '' for ( $sub_sess, $writer_sess, $other_sess );
+	$hap->flush_events;
+
+	ok( length( $OUT{ $sub_sess->id } ) > 0,
 		'write via PUT handler delivers an event to the subscriber' );
-	is( $other_sock->{written}, '',
+	is( $OUT{ $other_sess->id }, '',
 		'subscriptions are per-connection: bystander receives nothing'
 	);
-	is( $writer_sock->{written}, '',
+	is( $OUT{ $writer_sess->id }, '',
 		'originating connection receives no event for its own write' );
 
 	# Decrypt the frame. Check the EVENT/1.0 message format.
-	my $plain = decrypt_event($sub_sock);
+	my $plain = client_decrypt( $sub_sess, $OUT{ $sub_sess->id } );
 	like( $plain, qr{^EVENT/1\.0 200 OK\r\n},
 		'event starts with EVENT/1.0 200 OK' );
 	like( $plain, qr{Content-Type: application/hap\+json\r\n},
@@ -628,38 +641,42 @@ subtest '[HAP-HTTP §14][HAP-HTTP §16.4] EVENT/1.0 notifications' => sub {
 	ok( $data->{characteristics}[0]{value},
 		'event carries the new value (true)' );
 
-	# An unsubscribe with ev:false stops delivery
-	$sub_sock->{written} = '';
+	# An unsubscribe with ev:false stops delivery. The sessions
+	# are encrypted now, so these requests travel in session
+	# frames and prove that receive decrypts them.
 	my $unsubscribe = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, ev => \0 } ] } );
 	dispatch( $hap, 'PUT', '/characteristics', $unsubscribe, $sub_sess );
 	$put = $json->encode( { characteristics =>
 		    [ { aid => $aid, iid => $iid, value => \0 } ] } );
 	dispatch( $hap, 'PUT', '/characteristics', $put, $writer_sess );
-	run_coalesce_window($hap);
-	is( $sub_sock->{written}, '',
+	$OUT{ $sub_sess->id } = '';
+	$hap->flush_events;
+	is( $OUT{ $sub_sess->id }, '',
 		'unsubscribed session receives nothing' );
 
 	# A session that disconnects loses all its subscriptions
 	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
 	ok( exists $hap->{event_subscriptions}{"$aid.$iid"}{ $sub_sess->id },
 		'session re-subscribed' );
-	$hap->_purge_event_subscriptions($sub_sess);
+	$hap->session_close($sub_sess);
 	ok( !exists $hap->{event_subscriptions}{"$aid.$iid"}{ $sub_sess->id },
 		'subscriptions purged on disconnect' );
 
 	# The event coalescing delay is 250ms
-	is( OpenHAP::HAP::EVENT_COALESCE_DELAY(),
+	is( Protocol::HAP::Server::EVENT_COALESCE_DELAY(),
 		0.250, 'coalescing delay is 250ms' );
 };
 
 subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
     => sub {
-	my $hap  = OpenHAP::HAP->new(
-		port         => 51827,
-		pin          => '123-45-678',
-		name         => 'Conformance Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
+	my $hap = Protocol::HAP::Server->new(
+		pin    => '123-45-678',
+		name   => 'Conformance Bridge',
+		store  => Protocol::HAP::Store::Memory->new,
+		output => sub ( $session, $bytes ) {
+			$OUT{ $session->id } .= $bytes;
+		},
 	);
 	my $mqtt   = OpenHAP::TestMock::MQTT->new;
 	my $heater = OpenHAP::Tasmota::Heater->new(
@@ -671,20 +688,21 @@ subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
 	$hap->add_accessory($heater);
 	$heater->subscribe_mqtt;
 
-	my $sub_sock = MockSocket->new;
-	my $sub_sess = encrypted_session( $hap, $sub_sock, 'subscriber' );
+	my $sub_sess = verified_session( $hap, 'subscriber' );
 	my $subscribe = $json->encode( { characteristics =>
 		    [ { aid => 2, iid => 11, ev => \1 } ] } );
 	dispatch( $hap, 'PUT', '/characteristics', $subscribe, $sub_sess );
+	$sub_sess->set_encryption( $ACC_TO_CTRL, $CTRL_TO_ACC );
+	$OUT{ $sub_sess->id } = '';
 
 	# A Tasmota state report reaches the subscriber as an event.
 	# The event carries the device aid, not the bridge aid.
 	$mqtt->simulate_message( 'stat/heater/POWER', 'ON' );
-	run_coalesce_window($hap);
+	$hap->flush_events;
 
-	ok( length( $sub_sock->{written} ) > 0,
+	ok( length( $OUT{ $sub_sess->id } ) > 0,
 		'MQTT state change delivers an event' );
-	my $plain = decrypt_event($sub_sock);
+	my $plain = client_decrypt( $sub_sess, $OUT{ $sub_sess->id } );
 	my ($event_body) = ( $plain // '' ) =~ /\r\n\r\n(.*)$/s;
 	my $data = $json->decode( $event_body // '{}' );
 	is( $data->{characteristics}[0]{aid}, 2,

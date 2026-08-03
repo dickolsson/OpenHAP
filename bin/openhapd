@@ -15,7 +15,7 @@ use FuguLib::Privdrop;
 use FuguLib::Sandbox;
 use FuguLib::Signal;
 use OpenHAP::DeviceLoader;
-use OpenHAP::HAP;
+use OpenHAP::Server;
 
 # Default configuration
 my $config_file  = '/etc/openhapd.conf';
@@ -95,8 +95,8 @@ $control_path = undef if lc $control_path eq 'off';
 my $control_dir;
 $control_dir = $control_path =~ s{/[^/]+$}{}r if defined $control_path;
 
-# Create the HAP server
-my $hap = OpenHAP::HAP->new(
+# Create the HAP server: the host of the Protocol::HAP engine
+my $hap = OpenHAP::Server->new(
 	port         => $hap_port,
 	pin          => $hap_pin,
 	name         => $hap_name,
@@ -191,7 +191,7 @@ if (
 		app   => 'hap',
 		proto => 'tcp',
 		port  => $hap_port,
-		txt   => $hap->get_mdns_txt_string,
+		txt   => $hap->mdns_txt_string,
 	) )
 {
 	$log->info( 'Registered mDNS service: %s._hap._tcp port %d',

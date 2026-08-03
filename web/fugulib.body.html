@@ -121,14 +121,6 @@ periodic job.  The select timeout comes from the nearest deadline, and an
 interrupt flag ends the loop so the shutdown happens in the daemon and not
 inside a signal handler.</dd>
 
-<dt>FuguLib::HTTP</dt>
-<dd>The module is one HTTP/1.1 codec for both ends of a connection: a
-server parses requests and builds responses, a client does the reverse, and
-neither can drift from the other.  It also answers the framing question
-that a stream socket forces &mdash; how much of this buffer is one message
-&mdash; so a split request is not mangled and a pipelined one is not
-dropped.</dd>
-
 <dt>FuguLib::MQTT</dt>
 <dd>The module is a subscribing MQTT client for a daemon with one process
 and one event loop.  It never blocks the caller: a tick drains what arrived

@@ -150,6 +150,18 @@ The method also returns
 on an absent connection, on an error reply (for example, a name
 collision),
 on an end-of-file, or on a timeout.
+.Ss format_txt
+.Fn format_txt "%records"
+formats TXT records for mdnsd: key=value pairs in sorted key order,
+joined with
+.Sq \&. .
+.Pp
+The join is mdnsd's format, not the protocol's.
+mdnsd uses
+.Sq \&.
+as the TXT record delimiter and does not support escaping.
+The sorted order keeps the wire form deterministic.
+This is a plain function, not a method.
 .Ss update_txt
 .Fn update_txt "txt => $string" "timeout => $seconds"
 replaces the TXT record.

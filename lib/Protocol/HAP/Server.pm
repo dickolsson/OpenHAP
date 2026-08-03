@@ -1,28 +1,48 @@
+# ex:ts=8 sw=4:
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 use v5.36;
 
-package OpenHAP::HAP;
+package Protocol::HAP::Server;
 
-use FuguLib::Log;
-use IO::Socket::INET;
-use JSON::XS;
+use JSON::PP;
 use MIME::Base64 qw(encode_base64);
 use Digest::SHA  qw(sha512);
-use Time::HiRes  qw(time);
-use FuguLib::EventLoop;
-use FuguLib::HTTP;
 
+use Protocol::HAP;
+use Protocol::HAP::HTTP;
+use Protocol::HAP::TLV;
 use Protocol::HAP::Session;
 use Protocol::HAP::Pairing;
-use OpenHAP::Storage;
 use Protocol::HAP::Crypto;
 use Protocol::HAP::Bridge;
 use Protocol::HAP::Characteristic;
 use Protocol::HAP::PIN qw(normalize_pin);
 
-# How much the server reads from a client at a time.
-use constant READ_SIZE => 65536;
+# Protocol::HAP::Server - the sans-IO HAP accessory-server engine.
+#
+# The engine consumes bytes and emits bytes. The host owns sockets,
+# timers, logging, and persistence, injected through the contracts
+# that Protocol/HAP.pod documents. The engine owns everything that is
+# protocol: the read buffer and its bound, decryption, HTTP parsing,
+# endpoint dispatch, the pairing state machines, the accessory
+# database, and event delivery.
 
-# The largest request the server accepts: the header block plus the
+# The largest request the engine accepts: the header block plus the
 # body that Content-Length declares. An unpaired client reaches
 # /pair-setup, so the buffer of an unauthenticated connection needs a
 # bound of its own. A HAP request is a small TLV or a short JSON
@@ -33,6 +53,19 @@ use constant MAX_REQUEST_SIZE => 65536;
 # connection [HAP-HTTP]. It is not an RFC 9110 code, so the codec does
 # not know its reason phrase.
 use constant STATUS_INSUFFICIENT_PRIVILEGES => 470;
+
+# Characteristic types exempt from coalescing (HAP-HTTP.md §14):
+# ProgrammableSwitchEvent (0x73), ButtonEvent (0x126),
+# MotionDetected (0x22), ContactSensorState (0x6A)
+use constant IMMEDIATE_EVENT_TYPES => {
+	'73'  => 1,
+	'126' => 1,
+	'22'  => 1,
+	'6A'  => 1,
+};
+
+# Event coalescing delay in seconds (HAP-HTTP.md §14)
+use constant EVENT_COALESCE_DELAY => 0.250;
 
 # _response(%args):
 #	Build a response with the HAP defaults: the connection stays
@@ -48,65 +81,65 @@ sub _response (%args)
 	$args{status_text} //= 'Connection Authorization Required'
 	    if $status == STATUS_INSUFFICIENT_PRIVILEGES;
 
-	return FuguLib::HTTP::build_response( %args, headers => \%headers );
+	return Protocol::HAP::HTTP::build_response( %args,
+		headers => \%headers );
 }
 
+# $class->new(%args):
+#	name, pin, setup_id, category - the accessory identity.
+#	store, logger, output, after, cancel, on_pairing_changed - the
+#	host contracts of Protocol/HAP.pod. store and output are
+#	required; after and cancel are optional, and without them the
+#	host calls flush_events itself.
 sub new ( $class, %args )
 {
+	my $pin    = normalize_pin( $args{pin} ) // die 'valid pin required';
+	my $store  = $args{store}                // die 'store required';
+	my $output = $args{output}               // die 'output required';
+
 	my $self = bless {
-		port => $args{port}                               // 51827,
-		pin => normalize_pin( $args{pin} // '1995-1018' ) // '19951018',
-		name         => $args{name}         // 'OpenHAP Bridge',
-		storage_path => $args{storage_path} // '/var/db/openhapd',
-		setup_id     => $args{setup_id},    # Optional 4-char setup ID
+		pin      => $pin,
+		name     => $args{name} // 'OpenHAP Bridge',
+		setup_id => $args{setup_id},         # Optional 4-char setup ID
+		category => $args{category} // 2,    # Bridge
+
+		# The host contracts
+		store  => $store,
+		logger => $args{logger} // Protocol::HAP->null_logger,
+		output => $output,
+		after  => $args{after},
+		cancel => $args{cancel},
+		on_pairing_changed => $args{on_pairing_changed},
 
 		bridge  => undef,
-		storage => undef,
 		pairing => undef,
-
-		# Each connection is filed under its session id: the
-		# session and its socket together. A fileno index
-		# resolves reads to the session id. The kernel reuses
-		# descriptors; session ids never repeat.
-		connections     => {},
-		by_fileno       => {},
-		next_session_id => 1,
 
 		accessory_ltsk => undef,
 		accessory_ltpk => undef,
 
-		mqtt_client        => undef,
-		mqtt_tick_interval => 0.1,     # MQTT poll interval in seconds
+		# Session ids come from an instance counter. Two engines
+		# in one process never share one.
+		next_session_id => 1,
 
-		event_subscriptions => {},     # Track event subscriptions
-		event_queue         => {},     # Queued events for coalescing
-		event_flush_timer   => undef,  # The pending flush, if any
+		event_subscriptions => {},       # Track event subscriptions
+		event_queue         => {},       # Queued events for coalescing
+		event_flush_timer   => undef,    # The pending flush, if any
 
-		loop   => $args{loop},         # The caller can supply one
-		server => undef,               # The listening socket
-
-		# For the uptime in a control status. Time::HiRes::time
-		# is imported here, and it gives a float; a whole second
-		# is all an uptime needs.
-		started => int time,
+		json => JSON::PP->new,
 	}, $class;
 
-	$self->_initialize();
+	$self->_initialize;
 
 	return $self;
 }
 
 sub _initialize ($self)
 {
-	# Initialize the storage
-	$self->{storage} =
-	    OpenHAP::Storage->new( db_path => $self->{storage_path} );
-
-	# Load or generate the accessory keys
-	my ( $ltsk, $ltpk ) = $self->{storage}->load_accessory_keys();
+	# Load or generate the accessory identity through the store
+	my ( $ltsk, $ltpk ) = $self->{store}->load_accessory_keys;
 	unless ( $ltsk && $ltpk ) {
 		( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
-		$self->{storage}->save_accessory_keys( $ltsk, $ltpk );
+		$self->{store}->save_accessory_keys( $ltsk, $ltpk );
 	}
 
 	$self->{accessory_ltsk} = $ltsk;
@@ -115,18 +148,16 @@ sub _initialize ($self)
 	# Initialize the pairing handler
 	$self->{pairing} = Protocol::HAP::Pairing->new(
 		pin            => $self->{pin},
-		store          => $self->{storage},
-		logger         => FuguLib::Log->default,
+		store          => $self->{store},
+		logger         => $self->{logger},
 		accessory_ltsk => $self->{accessory_ltsk},
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
 
-	# Initialize the bridge. The model logs through the injected
-	# logger; without this, the debug lines of the data model
-	# disappear into the null logger.
+	# Initialize the bridge
 	$self->{bridge} = Protocol::HAP::Bridge->new(
 		name   => $self->{name},
-		logger => FuguLib::Log->default,
+		logger => $self->{logger},
 	);
 
 	# Deliver device-side changes as EVENT/1.0 notifications.
@@ -136,312 +167,46 @@ sub _initialize ($self)
 		sub ( $aid, $iid ) {
 			$self->_queue_change_event( $aid, $iid );
 		} );
-}
 
-# $self->_queue_change_event($aid, $iid):
-#	Queue an event with the current value of the characteristic
-sub _queue_change_event ( $self, $aid, $iid )
-{
-	my $accessory = $self->{bridge}->get_accessory($aid);
-	return unless $accessory;
-
-	my $char = $accessory->get_characteristic($iid);
-	return unless $char;
-
-	$self->queue_event( $aid, $iid, $char->json_value );
+	# The paired state at construction, so the first flip calls
+	# on_pairing_changed
+	$self->{last_paired_state} = $self->is_paired ? 1 : 0;
 
 	return;
 }
 
-sub add_accessory ( $self, $accessory )
+# --- the connection contract --------------------------------------------
+
+# $self->session_open:
+#	Return a new session. The host files it beside the connection
+#	it belongs to; the engine never sees the descriptor.
+sub session_open ($self)
 {
-	$self->{bridge}->add_bridged_accessory($accessory);
-}
-
-# $self->_mqtt_resubscribe_accessories():
-#	Resubscribe all accessories to their MQTT topics
-sub _mqtt_resubscribe_accessories ($self)
-{
-	my @accessories = $self->{bridge}->get_bridged_accessories();
-	for my $acc (@accessories) {
-		if ( $acc->can('subscribe_mqtt') ) {
-			eval { $acc->subscribe_mqtt(); };
-			FuguLib::Log->default->error(
-				'Failed to resubscribe accessory: %s', $@ )
-			    if $@;
-		}
-	}
-}
-
-# $self->set_mqtt_client($mqtt):
-#	Set the MQTT client for event loop integration
-sub set_mqtt_client ( $self, $mqtt )
-{
-	$self->{mqtt_client} = $mqtt;
-}
-
-# $self->set_mdns($mdns):
-#	Set the mDNS registration handle. The server re-advertises
-#	the TXT record when the pairing state changes
-#	(HAP-mDNS.md §8).
-sub set_mdns ( $self, $mdns )
-{
-	$self->{mdns}              = $mdns;
-	$self->{last_paired_state} = $self->is_paired() ? 1 : 0;
-}
-
-# $self->_refresh_mdns():
-#	Re-advertise the TXT record when the pairing state changes
-sub _refresh_mdns ($self)
-{
-	return unless defined $self->{mdns};
-
-	my $paired = $self->is_paired() ? 1 : 0;
-	return if ( $self->{last_paired_state} // -1 ) == $paired;
-
-	$self->{last_paired_state} = $paired;
-
-	# Never send an update to an unpublished handle. The daemon
-	# can start while mdnsd is down. This code runs on the
-	# pairing path. A write to a dead socket must not be
-	# reachable there.
-	return unless $self->{mdns}->is_published;
-
-	if ( $self->{mdns}->update_txt( txt => $self->get_mdns_txt_string ) ) {
-		FuguLib::Log->default->info(
-			'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
-			$paired ? 0 : 1
-		);
-	}
-	else {
-		FuguLib::Log->default->warning(
-			'mDNS TXT update failed: %s',
-			$self->{mdns}->error // 'unknown'
-		);
-	}
-
-	return;
-}
-
-# The interval between MQTT reconnection attempts, in seconds. A
-# broker that is down stays down for a while, and a daemon that
-# hammers it helps nobody.
-use constant MQTT_RECONNECT_INTERVAL => 30;
-
-# $self->loop:
-#	The event loop of this server. The server makes one on demand,
-#	so a caller that only wants to drive timers by hand does not
-#	have to build one.
-sub loop ($self)
-{
-	$self->{loop} //= FuguLib::EventLoop->new;
-
-	return $self->{loop};
-}
-
-# $self->listen:
-#	Open the HAP listener and register it with the loop. The method
-#	returns the socket. It dies when the port is not available:
-#	a HAP server that cannot listen has no reason to run.
-sub listen ($self)
-{
-	return $self->{server} if $self->{server};
-
-	my $server = IO::Socket::INET->new(
-		LocalPort => $self->{port},
-		Type      => SOCK_STREAM,
-		Reuse     => 1,
-		Listen    => 10,
-	    )
-	    or do {
-		FuguLib::Log->default->error(
-			'Cannot create server socket on port %d: %s',
-			$self->{port}, $! );
-		die "Cannot create server: $!";
-	    };
-
-	$self->{server} = $server;
-	$self->loop->add_fd( $server, read => sub ($) { $self->_accept } );
-
-	FuguLib::Log->default->info( 'OpenHAP server listening on port %d',
-		$self->{port} );
-	FuguLib::Log->default->debug( 'Pairing PIN: %s', $self->{pin} );
-
-	return $server;
-}
-
-# $self->run:
-#	Serve until the loop stops. The method returns when a signal
-#	interrupted the loop or a callback stopped it. Thus the caller
-#	runs its own shutdown, and nothing has to exit from inside a
-#	signal handler.
-sub run ($self)
-{
-	$self->listen;
-	$self->_register_mqtt;
-	$self->loop->run;
-
-	FuguLib::Log->default->info('OpenHAP server stopped');
-
-	return $self;
-}
-
-# $self->stop:
-#	Ask the loop to end after the current pass.
-sub stop ($self)
-{
-	$self->loop->stop;
-
-	return $self;
-}
-
-# $self->shutdown:
-#	Close the listener and every client connection. The caller
-#	calls this after run returns.
-sub shutdown ($self)
-{
-	for my $conn ( values %{ $self->{connections} } ) {
-		my $socket = $conn->{socket};
-		next unless ref $socket;
-
-		$self->loop->remove_fd($socket);
-		$socket->close;
-	}
-	$self->{connections} = {};
-	$self->{by_fileno}   = {};
-
-	if ( $self->{server} ) {
-		$self->loop->remove_fd( $self->{server} );
-		$self->{server}->close;
-		$self->{server} = undef;
-	}
-
-	return $self;
-}
-
-# $self->_register_mqtt:
-#	Put the MQTT client on the loop: a tick on every interval, and
-#	a reconnection attempt on its own slower schedule.
-#
-#	The two are separate timers because they answer to different
-#	clocks. Before this, one poll interval drove both, and the
-#	backoff was an epoch comparison inside the pass.
-sub _register_mqtt ($self)
-{
-	return unless $self->{mqtt_client};
-	return if $self->{mqtt_timers};
-
-	$self->{mqtt_timers} = [
-		$self->loop->every(
-			$self->{mqtt_tick_interval},
-			sub {
-				my $mqtt = $self->{mqtt_client} or return;
-				$mqtt->tick(0) if $mqtt->is_connected;
-			}
-		),
-		$self->loop->every(
-			MQTT_RECONNECT_INTERVAL,
-			sub { $self->_mqtt_retry }
-		),
-	];
-
-	return;
-}
-
-# $self->_mqtt_retry:
-#	One reconnection attempt, if the client is down.
-sub _mqtt_retry ($self)
-{
-	my $mqtt = $self->{mqtt_client} or return;
-	return if $mqtt->is_connected;
-
-	unless ( $mqtt->reconnect ) {
-		FuguLib::Log->default->debug(
-			'MQTT reconnection attempt failed, will retry');
-		return;
-	}
-
-	FuguLib::Log->default->info('Reconnected to MQTT broker');
-	$self->_mqtt_resubscribe_accessories;
-
-	return;
-}
-
-# $self->_accept:
-#	Take one connection and put it on the loop.
-sub _accept ($self)
-{
-	my $client = $self->{server}->accept or return;
-
-	$self->loop->add_fd(
-		$client,
-		read => sub ($fh) {
-			$self->_handle_client($fh);
-		} );
-	$self->_init_session($client);
-
-	return;
-}
-
-sub _init_session ( $self, $socket )
-{
-	FuguLib::Log->default->info( 'Client connected from %s',
-		$socket->peerhost );
-
-	my $session = Protocol::HAP::Session->new(
+	return Protocol::HAP::Session->new(
 		id     => $self->{next_session_id}++,
-		logger => FuguLib::Log->default,
+		logger => $self->{logger},
 	);
-	$self->{connections}{ $session->id } = {
-		session => $session,
-		socket  => $socket,
-	};
-	$self->{by_fileno}{ fileno $socket } = $session->id;
-
-	return $session;
 }
 
-# $self->_handle_client($sock):
-#	Read what arrived and serve every whole request in it.
-#
-#	A stream socket gives a reader whatever arrived, which is not a
-#	request. A request can span two reads, and two requests can
-#	share one. Thus the session keeps a buffer, and
-#	FuguLib::HTTP::message_complete says how much of it is a
-#	message.
-sub _handle_client ( $self, $sock )
+# $self->receive($session, $bytes):
+#	Consume what the host read from the connection: decrypt,
+#	buffer, parse, dispatch, and emit every response through the
+#	output contract. The method returns 1, or undef on a fatal
+#	condition - a failed decryption or an over-limit request. On
+#	undef the host closes the connection.
+sub receive ( $self, $session, $bytes )
 {
-	my $sid     = $self->{by_fileno}{ fileno $sock };
-	my $conn    = defined $sid ? $self->{connections}{$sid} : undef;
-	my $session = $conn        ? $conn->{session}           : undef;
-	return unless $session;
-
-	my $data  = '';
-	my $bytes = $sock->sysread( $data, READ_SIZE );
-
-	if ( !$bytes ) {
-
-		# The connection is closed. Release the pairing lock
-		# if this session holds it. Thus an aborted pair-setup
-		# cannot block pairing until a restart.
-		my $peer = $sock->peerhost // 'unknown';
-		$self->_close_client($sock);
-		FuguLib::Log->default->info( 'Client disconnected from %s',
-			$peer );
-		return;
-	}
-
 	# Decrypt the data if the session is encrypted. Keep a
 	# record of the state. Pair-verify M4 enables encryption
-	# during dispatch. But the server sends the M4 response in
+	# during dispatch. But the engine sends the M4 response in
 	# the clear. Encryption applies only to subsequent traffic.
-	my $was_encrypted = $session->is_encrypted();
+	my $was_encrypted = $session->is_encrypted;
+	my $data          = $bytes;
 	if ($was_encrypted) {
-		$data = $session->decrypt($data);
+		$data = $session->decrypt($bytes);
 		unless ( defined $data ) {
-			FuguLib::Log->default->warning(
-				'Decryption failed for client session');
-			$self->_close_client($sock);
+			$self->{logger}
+			    ->warning('Decryption failed for client session');
 			return;
 		}
 	}
@@ -452,49 +217,52 @@ sub _handle_client ( $self, $sock )
 	# pipelines gets an answer to each one, in order.
 	while ( length $session->{inbuf} ) {
 		my $length =
-		    FuguLib::HTTP::message_complete( $session->{inbuf},
+		    Protocol::HAP::HTTP::message_complete( $session->{inbuf},
 			max_size => MAX_REQUEST_SIZE );
 
 		# Over the limit. An unpaired client reaches
 		# /pair-setup, so the buffer of an unauthenticated
 		# connection needs a bound of its own.
 		unless ( defined $length ) {
-			FuguLib::Log->default->warning(
-				'Request over %d bytes from %s, closing',
-				MAX_REQUEST_SIZE, $sock->peerhost );
-			$self->_close_client($sock);
+			$self->{logger}
+			    ->warning( 'Request over %d bytes, closing',
+				MAX_REQUEST_SIZE );
 			return;
 		}
 		last if $length == 0;    # More bytes are necessary
 
 		my $message = substr $session->{inbuf}, 0, $length, '';
-		$self->_serve_request( $sock, $session, $message,
-			$was_encrypted );
-
-		# The dispatch can have closed the connection
-		return unless exists $self->{connections}{$sid};
+		$self->_serve_request( $session, $message, $was_encrypted );
 	}
+
+	return 1;
+}
+
+# $self->session_close($session):
+#	Release what the session holds: the pairing lock and its event
+#	subscriptions. The host calls this when it closes the
+#	connection.
+sub session_close ( $self, $session )
+{
+	$self->{pairing}->clear_pairing_state($session);
+	$self->_purge_event_subscriptions($session);
 
 	return;
 }
 
-# $self->_serve_request($sock, $session, $message, $was_encrypted):
-#	Dispatch one whole request and write its response.
-sub _serve_request ( $self, $sock, $session, $message, $was_encrypted )
+# $self->_serve_request($session, $message, $was_encrypted):
+#	Dispatch one whole request and emit its response.
+sub _serve_request ( $self, $session, $message, $was_encrypted )
 {
-	my $request = FuguLib::HTTP::parse_request($message);
+	my $request = Protocol::HAP::HTTP::parse_request($message);
 	unless ( defined $request ) {
-		FuguLib::Log->default->warning( 'Malformed request from %s',
-			$sock->peerhost );
+		$self->{logger}->warning('Malformed request');
 		$request =
 		    { method => '', path => '', headers => {}, body => '' };
 	}
 
-	# Log the HTTP request with the client information
-	FuguLib::Log->default->info(
-		'HTTP %s %s from %s', $request->{method},
-		$request->{path},     $sock->peerhost
-	);
+	$self->{logger}
+	    ->info( 'HTTP %s %s', $request->{method}, $request->{path} );
 
 	# Dispatch the request
 	my $response = $self->_dispatch( $request, $session );
@@ -505,36 +273,30 @@ sub _serve_request ( $self, $sock, $session, $message, $was_encrypted )
 		$response = $session->encrypt($response);
 	}
 
-	# Send the response
-	$sock->syswrite($response);
+	$self->{output}->( $session, $response );
 
-	# Re-advertise mDNS if this request changed the pairing state
-	$self->_refresh_mdns;
+	# Tell the host if this request changed the pairing state
+	$self->_notify_pairing_changed;
 
 	return;
 }
 
-# $self->_close_client($sock):
-#	Drop a client and everything the server kept for it.
-sub _close_client ( $self, $sock )
+# $self->_notify_pairing_changed:
+#	Call on_pairing_changed when the paired state flips. The host
+#	re-advertises its mDNS TXT record [HAP-mDNS §8].
+sub _notify_pairing_changed ($self)
 {
-	my $fileno  = fileno $sock;
-	my $sid     = defined $fileno ? $self->{by_fileno}{$fileno} : undef;
-	my $conn    = defined $sid    ? $self->{connections}{$sid}  : undef;
-	my $session = $conn           ? $conn->{session}            : undef;
+	my $paired = $self->is_paired ? 1 : 0;
+	return if ( $self->{last_paired_state} // -1 ) == $paired;
 
-	if ($session) {
-		$self->{pairing}->clear_pairing_state($session);
-		$self->_purge_event_subscriptions($session);
-	}
-
-	$self->loop->remove_fd($sock);
-	delete $self->{by_fileno}{$fileno} if defined $fileno;
-	delete $self->{connections}{$sid}  if defined $sid;
-	$sock->close();
+	$self->{last_paired_state} = $paired;
+	$self->{on_pairing_changed}->($paired)
+	    if $self->{on_pairing_changed};
 
 	return;
 }
+
+# --- endpoint dispatch ----------------------------------------------------
 
 sub _dispatch ( $self, $request, $session )
 {
@@ -556,9 +318,9 @@ sub _dispatch ( $self, $request, $session )
 	}
 
 	# All other endpoints need a verified session
-	unless ( $session->is_verified() ) {
+	unless ( $session->is_verified ) {
 		return _response(
-			status  => 470,    # Connection Authorization Required
+			status  => STATUS_INSUFFICIENT_PRIVILEGES,
 			headers => { 'Content-Type' => 'application/hap+json' },
 		);
 	}
@@ -603,7 +365,7 @@ sub _dispatch ( $self, $request, $session )
 
 sub _handle_pair_setup ( $self, $request, $session )
 {
-	FuguLib::Log->default->debug('Handling pair-setup request');
+	$self->{logger}->debug('Handling pair-setup request');
 	my $response_body =
 	    $self->{pairing}->handle_pair_setup( $request->{body}, $session );
 
@@ -616,7 +378,7 @@ sub _handle_pair_setup ( $self, $request, $session )
 
 sub _handle_pair_verify ( $self, $request, $session )
 {
-	FuguLib::Log->default->debug('Handling pair-verify request');
+	$self->{logger}->debug('Handling pair-verify request');
 	my $response_body =
 	    $self->{pairing}->handle_pair_verify( $request->{body}, $session );
 
@@ -627,9 +389,9 @@ sub _handle_pair_verify ( $self, $request, $session )
 	);
 }
 
-sub _handle_accessories ( $self, $request, $session )
+sub _handle_accessories ( $self, $, $ )
 {
-	my $json = encode_json( $self->{bridge}->to_json() );
+	my $json = $self->{json}->encode( $self->{bridge}->to_json );
 
 	return _response(
 		status  => 200,
@@ -638,12 +400,12 @@ sub _handle_accessories ( $self, $request, $session )
 	);
 }
 
-sub _handle_characteristics_get ( $self, $request, $session )
+sub _handle_characteristics_get ( $self, $request, $ )
 {
 	# Parse the query string: ?id=1.11,1.13&meta=1&perms=1&type=1&ev=1
 	my $query = $request->{path};
 	$query =~ s/^.*\?//;
-	FuguLib::Log->default->debug( 'Reading characteristics: %s', $query );
+	$self->{logger}->debug( 'Reading characteristics: %s', $query );
 
 	my %params;
 	for my $pair ( split /&/, $query ) {
@@ -718,13 +480,14 @@ sub _handle_characteristics_get ( $self, $request, $session )
 
 		# Add the event status if the controller requests it
 		if ($include_ev) {
-			$result->{ev} = $char->events_enabled() ? \1 : \0;
+			$result->{ev} = $char->events_enabled ? \1 : \0;
 		}
 
 		push @characteristics, $result;
 	}
 
-	my $json = encode_json( { characteristics => \@characteristics } );
+	my $json =
+	    $self->{json}->encode( { characteristics => \@characteristics } );
 
 	return _response(
 		status  => $has_errors ? 207 : 200,
@@ -735,8 +498,8 @@ sub _handle_characteristics_get ( $self, $request, $session )
 
 sub _handle_characteristics_put ( $self, $request, $session )
 {
-	FuguLib::Log->default->debug('Writing characteristics');
-	my $data = eval { decode_json( $request->{body} ) };
+	$self->{logger}->debug('Writing characteristics');
+	my $data = eval { $self->{json}->decode( $request->{body} ) };
 	return _response( status => 400 ) unless $data;
 
 	my @results;
@@ -842,7 +605,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 	    unless $has_errors;
 
 	# Return 207 Multi-Status with details if some writes fail
-	my $json = encode_json( { characteristics => \@results } );
+	my $json = $self->{json}->encode( { characteristics => \@results } );
 	return _response(
 		status  => 207,
 		headers => { 'Content-Type' => 'application/hap+json' },
@@ -850,18 +613,18 @@ sub _handle_characteristics_put ( $self, $request, $session )
 	);
 }
 
-sub _handle_identify ( $self, $request, $session )
+sub _handle_identify ( $self, $, $ )
 {
 	# Identify is only for unpaired accessories
-	if ( $self->is_paired() ) {
+	if ( $self->is_paired ) {
 		return _response(
 			status  => 400,
 			headers => { 'Content-Type' => 'application/hap+json' },
-			body    => encode_json( { status => -70401 } ),
+			body => $self->{json}->encode( { status => -70401 } ),
 		);
 	}
 
-	FuguLib::Log->default->info('Identify request received (unpaired)');
+	$self->{logger}->info('Identify request received (unpaired)');
 
 	# Start identification on the bridge
 	my $bridge = $self->{bridge};
@@ -887,7 +650,7 @@ sub _handle_pairings ( $self, $request, $session )
 	my $method_raw = $tlv{ Protocol::HAP::Pairing::kTLVType_Method() };
 	my $method     = defined $method_raw ? unpack( 'C', $method_raw ) : -1;
 
-	FuguLib::Log->default->debug( 'Pairings request method=%d', $method );
+	$self->{logger}->debug( 'Pairings request method=%d', $method );
 
 	# Method values: 3=Add, 4=Remove, 5=List
 	if ( $method == 3 ) {
@@ -914,6 +677,21 @@ sub _handle_pairings ( $self, $request, $session )
 	);
 }
 
+# $self->_pairings_error($code):
+#	One admin-check failure response for the pairings endpoints.
+sub _pairings_error ( $self, $code )
+{
+	my $error = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ),
+		Protocol::HAP::Pairing::kTLVType_Error(), pack( 'C', $code ),
+	);
+	return _response(
+		status  => 200,
+		headers => { 'Content-Type' => 'application/pairing+tlv8' },
+		body    => $error,
+	);
+}
+
 sub _handle_add_pairing ( $self, $tlv, $session )
 {
 	my $identifier =
@@ -923,30 +701,16 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 		$tlv->{ Protocol::HAP::Pairing::kTLVType_Permissions() }
 		    // "\x00" );
 
-	FuguLib::Log->default->debug( 'Add pairing request for: %s',
-		$identifier // 'unknown' );
+	$self->{logger}
+	    ->debug( 'Add pairing request for: %s', $identifier // 'unknown' );
 
 	# Check the admin permissions. Only admins can add pairings.
-	my $pairings           = $self->{storage}->load_pairings();
-	my $current_controller = $session->controller_id();
+	my $pairings           = $self->{store}->load_pairings;
+	my $current_controller = $session->controller_id;
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
-		my $error = Protocol::HAP::TLV::encode(
-			Protocol::HAP::Pairing::kTLVType_State(),
-			pack( 'C', 2 ),
-			Protocol::HAP::Pairing::kTLVType_Error(),
-			pack(
-				'C',
-				Protocol::HAP::Pairing::kTLVError_Authentication(
-				)
-			),
-		);
-		return _response(
-			status  => 200,
-			headers =>
-			    { 'Content-Type' => 'application/pairing+tlv8' },
-			body => $error,
-		);
+		return $self->_pairings_error(
+			Protocol::HAP::Pairing::kTLVError_Authentication() );
 	}
 
 	# An existing identifier with a different LTPK is an error.
@@ -954,26 +718,14 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	# permissions (HAP-Pairing.md §7.4).
 	my $existing = $pairings->{$identifier};
 	if ( $existing && $existing->{ltpk} ne $ltpk ) {
-		my $error = Protocol::HAP::TLV::encode(
-			Protocol::HAP::Pairing::kTLVType_State(),
-			pack( 'C', 2 ),
-			Protocol::HAP::Pairing::kTLVType_Error(),
-			pack(
-				'C', Protocol::HAP::Pairing::kTLVError_Unknown()
-			),
-		);
-		return _response(
-			status  => 200,
-			headers =>
-			    { 'Content-Type' => 'application/pairing+tlv8' },
-			body => $error,
-		);
+		return $self->_pairings_error(
+			Protocol::HAP::Pairing::kTLVError_Unknown() );
 	}
 
 	# Save the pairing
-	$self->{storage}->save_pairing( $identifier, $ltpk, $perms );
-	FuguLib::Log->default->info( 'Added pairing for controller: %s',
-		$identifier );
+	$self->{store}->save_pairing( $identifier, $ltpk, $perms );
+	$self->{logger}
+	    ->info( 'Added pairing for controller: %s', $identifier );
 
 	my $response = Protocol::HAP::TLV::encode(
 		Protocol::HAP::Pairing::kTLVType_State(),
@@ -991,48 +743,34 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	my $identifier =
 	    $tlv->{ Protocol::HAP::Pairing::kTLVType_Identifier() };
 
-	FuguLib::Log->default->debug( 'Remove pairing request for: %s',
+	$self->{logger}->debug( 'Remove pairing request for: %s',
 		$identifier // 'unknown' );
 
 	# Check the admin permissions
-	my $pairings           = $self->{storage}->load_pairings();
-	my $current_controller = $session->controller_id();
+	my $pairings           = $self->{store}->load_pairings;
+	my $current_controller = $session->controller_id;
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
-		my $error = Protocol::HAP::TLV::encode(
-			Protocol::HAP::Pairing::kTLVType_State(),
-			pack( 'C', 2 ),
-			Protocol::HAP::Pairing::kTLVType_Error(),
-			pack(
-				'C',
-				Protocol::HAP::Pairing::kTLVError_Authentication(
-				)
-			),
-		);
-		return _response(
-			status  => 200,
-			headers =>
-			    { 'Content-Type' => 'application/pairing+tlv8' },
-			body => $error,
-		);
+		return $self->_pairings_error(
+			Protocol::HAP::Pairing::kTLVError_Authentication() );
 	}
 
 	# Remove the pairing
-	$self->{storage}->remove_pairing($identifier);
-	FuguLib::Log->default->info( 'Removed pairing for controller: %s',
-		$identifier );
+	$self->{store}->remove_pairing($identifier);
+	$self->{logger}
+	    ->info( 'Removed pairing for controller: %s', $identifier );
 
 	# Check if any admins remain (HAP-Pairing.md §7.2). If no
 	# admin remains, remove all pairings and regenerate the
 	# identity.
-	my $remaining = $self->{storage}->load_pairings();
+	my $remaining = $self->{store}->load_pairings;
 	my $has_admin = grep { $_->{permissions} } values %$remaining;
 	unless ( $has_admin || keys %$remaining == 0 ) {
-		FuguLib::Log->default->info(
+		$self->{logger}->info(
 'Last admin removed - clearing all pairings and regenerating identity'
 		);
-		$self->{storage}->remove_all_pairings();
-		$self->_regenerate_identity();
+		$self->{store}->remove_all_pairings;
+		$self->_regenerate_identity;
 	}
 
 	my $response = Protocol::HAP::TLV::encode(
@@ -1046,37 +784,23 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	);
 }
 
-sub _handle_list_pairings ( $self, $tlv, $session )
+sub _handle_list_pairings ( $self, $, $session )
 {
-	FuguLib::Log->default->debug('List pairings request');
+	$self->{logger}->debug('List pairings request');
 
 	# Check the admin permissions
-	my $pairings           = $self->{storage}->load_pairings();
-	my $current_controller = $session->controller_id();
+	my $pairings           = $self->{store}->load_pairings;
+	my $current_controller = $session->controller_id;
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
-		my $error = Protocol::HAP::TLV::encode(
-			Protocol::HAP::Pairing::kTLVType_State(),
-			pack( 'C', 2 ),
-			Protocol::HAP::Pairing::kTLVType_Error(),
-			pack(
-				'C',
-				Protocol::HAP::Pairing::kTLVError_Authentication(
-				)
-			),
-		);
-		return _response(
-			status  => 200,
-			headers =>
-			    { 'Content-Type' => 'application/pairing+tlv8' },
-			body => $error,
-		);
+		return $self->_pairings_error(
+			Protocol::HAP::Pairing::kTLVError_Authentication() );
 	}
 
 	# Build the response with all pairings. Separate them with
 	# 0xFF.
 	my @response_items =
-	    ( Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ) );
+	    ( Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ), );
 
 	my $first = 1;
 	for my $id ( sort keys %$pairings ) {
@@ -1107,8 +831,8 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 
 sub _handle_prepare ( $self, $request, $session )
 {
-	FuguLib::Log->default->debug('Timed write prepare request');
-	my $data = eval { decode_json( $request->{body} ) };
+	$self->{logger}->debug('Timed write prepare request');
+	my $data = eval { $self->{json}->decode( $request->{body} ) };
 	return _response( status => 400 ) unless $data;
 
 	my $ttl = $data->{ttl};    # Time to live in ms
@@ -1121,24 +845,40 @@ sub _handle_prepare ( $self, $request, $session )
 		return _response(
 			status  => 400,
 			headers => { 'Content-Type' => 'application/hap+json' },
-			body    => encode_json( { status => -70410 } ),
+			body => $self->{json}->encode( { status => -70410 } ),
 		);
 	}
 
 	# Store the timed write context in the session
 	$session->{timed_write} = {
-		ttl       => $ttl,
-		pid       => $pid,
-		aid       => $aid,
-		iid       => $iid,
-		timestamp => time(),
+		ttl => $ttl,
+		pid => $pid,
+		aid => $aid,
+		iid => $iid,
 	};
 
 	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/hap+json' },
-		body    => encode_json( { status => 0 } ),
+		body    => $self->{json}->encode( { status => 0 } ),
 	);
+}
+
+# --- events ---------------------------------------------------------------
+
+# $self->_queue_change_event($aid, $iid):
+#	Queue an event with the current value of the characteristic
+sub _queue_change_event ( $self, $aid, $iid )
+{
+	my $accessory = $self->{bridge}->get_accessory($aid);
+	return unless $accessory;
+
+	my $char = $accessory->get_characteristic($iid);
+	return unless $char;
+
+	$self->queue_event( $aid, $iid, $char->json_value );
+
+	return;
 }
 
 # Event subscription tracking. A subscription is filed twice: under
@@ -1150,8 +890,9 @@ sub _register_event_subscription ( $self, $session, $aid, $iid )
 	my $key = "$aid.$iid";
 	$self->{event_subscriptions}{$key}{ $session->id } = $session;
 	$session->{subscriptions}{$key} = 1;
-	FuguLib::Log->default->debug( 'Registered event subscription for %s',
-		$key );
+	$self->{logger}->debug( 'Registered event subscription for %s', $key );
+
+	return;
 }
 
 sub _unregister_event_subscription ( $self, $session, $aid, $iid )
@@ -1159,8 +900,10 @@ sub _unregister_event_subscription ( $self, $session, $aid, $iid )
 	my $key = "$aid.$iid";
 	delete $self->{event_subscriptions}{$key}{ $session->id };
 	delete $session->{subscriptions}{$key};
-	FuguLib::Log->default->debug( 'Unregistered event subscription for %s',
-		$key );
+	$self->{logger}
+	    ->debug( 'Unregistered event subscription for %s', $key );
+
+	return;
 }
 
 # $self->_purge_event_subscriptions($session):
@@ -1177,19 +920,6 @@ sub _purge_event_subscriptions ( $self, $session )
 
 	return;
 }
-
-# Characteristic types exempt from coalescing (HAP-HTTP.md §14):
-# ProgrammableSwitchEvent (0x73), ButtonEvent (0x126),
-# MotionDetected (0x22), ContactSensorState (0x6A)
-use constant IMMEDIATE_EVENT_TYPES => {
-	'73'  => 1,
-	'126' => 1,
-	'22'  => 1,
-	'6A'  => 1,
-};
-
-# Event coalescing delay in seconds (HAP-HTTP.md §14)
-use constant EVENT_COALESCE_DELAY => 0.250;
 
 # Queue an event for delivery. Coalesce all events except the
 # immediate-delivery characteristic types. The optional
@@ -1219,24 +949,29 @@ sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
 		iid        => $iid,
 		value      => $value,
 		originator => $originator,
-		timestamp  => Time::HiRes::time(),
 	};
 
-	# Schedule one flush for the whole window. A second event
-	# inside the window joins the flush that the first one asked
-	# for, which is what coalescing means.
-	$self->{event_flush_timer} //= $self->loop->after(
-		EVENT_COALESCE_DELAY,
-		sub {
-			$self->{event_flush_timer} = undef;
-			$self->flush_events;
-		} );
+	# Schedule one flush for the whole window through the host's
+	# timer contract. A second event inside the window joins the
+	# flush that the first one asked for, which is what coalescing
+	# means. Without the contract, the host calls flush_events
+	# itself.
+	if ( $self->{after} ) {
+		$self->{event_flush_timer} //= $self->{after}->(
+			EVENT_COALESCE_DELAY,
+			sub {
+				$self->{event_flush_timer} = undef;
+				$self->flush_events;
+			} );
+	}
+
+	return;
 }
 
 # $self->flush_events:
 #	Send every queued event now. The coalesce timer calls this at
-#	the end of the window. A caller that drives the server by hand,
-#	such as a conformance test, calls it directly.
+#	the end of the window. A host without the timer contract calls
+#	it directly.
 sub flush_events ($self)
 {
 	return unless %{ $self->{event_queue} };
@@ -1251,121 +986,65 @@ sub flush_events ($self)
 
 	# A direct call empties the queue, so the pending timer has
 	# nothing left to do
-	$self->loop->cancel( $self->{event_flush_timer} )
-	    if $self->{event_flush_timer};
+	$self->{cancel}->( $self->{event_flush_timer} )
+	    if $self->{cancel} && $self->{event_flush_timer};
 	$self->{event_flush_timer} = undef;
 
 	return;
 }
 
-# Send an EVENT/1.0 notification to the subscribed sessions. Do
-# not send it to the originating session when the caller gives
-# one (HAP-HTTP.md §14).
+# Send an EVENT/1.0 notification to the subscribed sessions, through
+# the output contract. Do not send it to the originating session when
+# the caller gives one (HAP-HTTP.md §14).
 sub send_event ( $self, $aid, $iid, $value, $originator = undef )
 {
 	my $key  = "$aid.$iid";
 	my $subs = $self->{event_subscriptions}{$key} // {};
 
-	my $event_body = encode_json( {
+	my $event_body = $self->{json}->encode( {
 			characteristics =>
 			    [ { aid => $aid, iid => $iid, value => $value } ] }
 	);
-
-	my $event_msg =
-	      "EVENT/1.0 200 OK\r\n"
-	    . "Content-Type: application/hap+json\r\n"
-	    . "Content-Length: "
-	    . length($event_body) . "\r\n" . "\r\n"
-	    . $event_body;
+	my $event_msg = Protocol::HAP::HTTP::build_event($event_body);
 
 	for my $session ( values %$subs ) {
-		next unless $session && $session->is_encrypted();
+		next unless $session && $session->is_encrypted;
 		next if defined $originator && $session == $originator;
 
-		my $encrypted = $session->encrypt($event_msg);
-
-		# The socket lives in the connection map, not in the
-		# session
-		my $conn   = $self->{connections}{ $session->id };
-		my $socket = $conn ? $conn->{socket} : undef;
-		if ( $socket && $socket->connected ) {
-			eval { $socket->syswrite($encrypted) };
-			if ($@) {
-				FuguLib::Log->default->warning(
-					'Failed to send event to session: %s',
-					$@ );
-			}
-		}
+		$self->{output}->( $session, $session->encrypt($event_msg) );
 	}
+
+	return;
 }
+
+# --- identity and discovery -----------------------------------------------
 
 sub is_paired ($self)
 {
-	my $pairings = $self->{storage}->load_pairings();
+	my $pairings = $self->{store}->load_pairings;
 	return scalar( keys %$pairings ) > 0;
 }
 
-# $self->control_status:
-#	What the server can say about itself, for a control client.
-#
-#	Nothing here is a secret. The setup code, the broker password,
-#	the accessory keys and the controller keys all stay in the
-#	daemon. A reply that carried one would put it in the output of
-#	a command that an operator runs in front of other people.
-sub control_status ($self)
+sub add_accessory ( $self, $accessory )
 {
-	my $pairings = $self->{storage}->load_pairings;
+	$self->{bridge}->add_bridged_accessory($accessory);
 
-	# get_bridged_accessories returns a list, and scalar on a list
-	# return gives the last element, not a count
-	my @devices = $self->{bridge}->get_bridged_accessories;
-
-	return {
-		name          => $self->{name},
-		port          => $self->{port},
-		paired        => $self->is_paired ? 1 : 0,
-		pairings      => scalar keys %$pairings,
-		config_number => $self->get_config_number,
-		devices       => scalar @devices,
-		connections   => scalar keys %{ $self->{connections} },
-		mdns          => $self->{mdns}
-		    && $self->{mdns}->is_published ? 'published' : 'absent',
-		mqtt => !$self->{mqtt_client} ? 'none'
-		: $self->{mqtt_client}->is_connected ? 'connected'
-		: 'disconnected',
-		started => $self->{started},
-	};
+	return;
 }
 
-# $self->control_devices:
-#	The accessories on the bridge, for a control client. The
-#	bridge itself is not one of them: it carries no device.
-sub control_devices ($self)
+sub get_bridged_accessories ($self)
 {
-	my @devices;
-	for my $accessory ( $self->{bridge}->get_bridged_accessories ) {
-		push @devices,
-		    {
-			aid    => $accessory->{aid},
-			name   => $accessory->{name},
-			model  => $accessory->{model},
-			serial => $accessory->{serial},
-			class  => ref $accessory,
-			topic  => $accessory->{mqtt_topic},
-		    };
-	}
-
-	return [ sort { $a->{aid} <=> $b->{aid} } @devices ];
+	return $self->{bridge}->get_bridged_accessories;
 }
 
 sub get_config_number ($self)
 {
-	return $self->{storage}->get_config_number();
+	return $self->{store}->get_config_number;
 }
 
-# $self->update_config_number():
+# $self->update_config_number:
 #	Increment c# when the accessory database changed since the
-#	last run (HAP-mDNS.md §3.1). The server calls this after
+#	last run (HAP-mDNS.md §3.1). The host calls this after
 #	device loading. It compares a digest of the accessory
 #	structure against the stored one.
 sub update_config_number ($self)
@@ -1386,18 +1065,18 @@ sub update_config_number ($self)
 	}
 	my $digest = unpack( 'H*', sha512( join( ';', @parts ) ) );
 
-	my $stored = $self->{storage}->get_config_digest;
+	my $stored = $self->{store}->get_config_digest;
 	if ( !defined $stored ) {
 
 		# On the first run, record the digest. c# stays at
 		# its initial value of 1.
-		$self->{storage}->save_config_digest($digest);
+		$self->{store}->save_config_digest($digest);
 	}
 	elsif ( $stored ne $digest ) {
-		$self->{storage}->increment_config_number;
-		$self->{storage}->save_config_digest($digest);
-		FuguLib::Log->default->info(
-			'Accessory database changed, c# is now %d',
+		$self->{store}->increment_config_number;
+		$self->{store}->save_config_digest($digest);
+		$self->{logger}
+		    ->info( 'Accessory database changed, c# is now %d',
 			$self->get_config_number );
 	}
 
@@ -1411,41 +1090,32 @@ sub get_device_id ($self)
 	return join( ':', $id =~ /../g );
 }
 
-sub get_mdns_txt_records ($self)
+# $self->mdns_txt_records:
+#	The TXT records of the advertisement, as a hash reference
+#	[HAP-mDNS §3]. The host formats and publishes them; the wire
+#	format belongs to the host's mDNS responder, not to HAP.
+sub mdns_txt_records ($self)
 {
 	# Note: pv=1, not 1.1. mdnsd uses '.' as the TXT record
 	# delimiter and does not support escaping. HomeKit accepts
 	# pv=1.
 	my $records = {
-		'c#' => $self->get_config_number(),
+		'c#' => $self->get_config_number,
 		'ff' => 0,
-		'id' => $self->get_device_id(),
+		'id' => $self->get_device_id,
 		'md' => $self->{name},
 		'pv' => '1',
 		's#' => 1,
-		'sf' => $self->is_paired() ? 0 : 1,
-		'ci' => 2,
+		'sf' => $self->is_paired ? 0 : 1,
+		'ci' => $self->{category},
 	};
 
 	# Add the setup hash if setup_id is set
 	if ( defined $self->{setup_id} && length( $self->{setup_id} ) == 4 ) {
-		$records->{sh} = $self->_get_setup_hash();
+		$records->{sh} = $self->_get_setup_hash;
 	}
 
 	return $records;
-}
-
-# $self->get_mdns_txt_string():
-#	Return the TXT records in the advertisement format. The
-#	string joins key=value pairs with '.' in sorted key order.
-#	The TXT delimiter of mdnsd makes the order visible on the
-#	wire (MDNS-Control.md §5). Thus the function keeps the
-#	order deterministic.
-sub get_mdns_txt_string ($self)
-{
-	my $records = $self->get_mdns_txt_records;
-
-	return join '.', map { "$_=$records->{$_}" } sort keys %$records;
 }
 
 # _get_setup_hash() - Calculate the setup hash for mDNS
@@ -1454,7 +1124,7 @@ sub get_mdns_txt_string ($self)
 sub _get_setup_hash ($self)
 {
 	my $setup_id  = $self->{setup_id};
-	my $device_id = $self->get_device_id();    # Already uppercase
+	my $device_id = $self->get_device_id;    # Already uppercase
 
 	my $hash      = sha512( $setup_id . $device_id );
 	my $truncated = substr( $hash, 0, 4 );
@@ -1465,20 +1135,20 @@ sub _get_setup_hash ($self)
 }
 
 # _regenerate_identity() - Generate new accessory keys after a
-# factory reset. The server calls this after removal of the
+# factory reset. The engine calls this after removal of the
 # last admin pairing (HAP-Pairing.md §7.2).
 sub _regenerate_identity ($self)
 {
 	my ( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
-	$self->{storage}->save_accessory_keys( $ltsk, $ltpk );
+	$self->{store}->save_accessory_keys( $ltsk, $ltpk );
 	$self->{accessory_ltsk} = $ltsk;
 	$self->{accessory_ltpk} = $ltpk;
 
 	# Reinitialize the pairing handler with the new keys
 	$self->{pairing} = Protocol::HAP::Pairing->new(
 		pin            => $self->{pin},
-		store          => $self->{storage},
-		logger         => FuguLib::Log->default,
+		store          => $self->{store},
+		logger         => $self->{logger},
 		accessory_ltsk => $self->{accessory_ltsk},
 		accessory_ltpk => $self->{accessory_ltpk},
 	);
@@ -1486,7 +1156,7 @@ sub _regenerate_identity ($self)
 	# Reset the authentication attempt counter
 	$self->{pairing}->reset_auth_attempts;
 
-	FuguLib::Log->default->info('Accessory identity regenerated');
+	$self->{logger}->info('Accessory identity regenerated');
 	return;
 }
 

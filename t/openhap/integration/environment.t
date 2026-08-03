@@ -22,8 +22,8 @@ ok(-x '/usr/local/bin/openhapd', 'openhapd binary installed');
 ok(-x '/usr/local/bin/hapctl', 'hapctl binary installed');
 
 # Test 5: OpenHAP modules available
-eval { require OpenHAP::HAP; };
-ok(!$@, 'OpenHAP::HAP module available');
+eval { require OpenHAP::Server; };
+ok(!$@, 'OpenHAP::Server module available');
 
 # Test 6: Configuration file exists
 my $config_file = '/etc/openhapd.conf';

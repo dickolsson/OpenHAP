@@ -32,7 +32,7 @@ and the X25519 pair-verify, and it uses the ChaCha20-Poly1305 session
 framing. It can operate over TCP against a live accessory, or
 in-process through an injected transport.
 
-L<FuguLib::HTTP> builds the requests and parses the responses. The
+L<Protocol::HAP::HTTP> builds the requests and parses the responses. The
 controller thus reads the same wire format that the server writes, and
 no second HTTP parser can drift from the first.
 
@@ -66,7 +66,7 @@ openhap-test-ctrl
 
 C<transport> is a code ref C<($request_bytes) -> $response_bytes>
 that replaces the TCP socket. This permits in-process use against an
-OpenHAP::HAP instance, without sockets. The request bytes and the
+Protocol::HAP::Server engine, without sockets. The request bytes and the
 response bytes are the wire bytes before encryption and after
 encryption.
 
@@ -142,7 +142,7 @@ to the integration VM together with the integration tests.
 
 =head1 SEE ALSO
 
-L<FuguLib::HTTP>, L<OpenHAP::Test::Controller::SRP>,
+L<Protocol::HAP::HTTP>, L<OpenHAP::Test::Controller::SRP>,
 L<OpenHAP::Test::Integration>, F<spec/HAP-Pairing.md>,
 F<spec/HAP-Encryption.md>
 

@@ -96,11 +96,14 @@ four logger methods and drops every message.
 
 =item L<Protocol::HAP::Store::Memory> - the reference store implementation
 
+=item L<Protocol::HAP::HTTP> - the HTTP/1.1 subset codec, EVENT/1.0 builder
+
+=item L<Protocol::HAP::Server> - the sans-IO accessory-server engine
+
 =back
 
 The store contract itself lives in F<Protocol/HAP/Store.pod>. The
-HTTP codec, the server engine, and the controller join the namespace
-in later phases of the extraction.
+controller joins the namespace in the last phase of the extraction.
 
 =head1 SEE ALSO
 

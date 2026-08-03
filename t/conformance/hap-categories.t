@@ -4,44 +4,40 @@
 
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
-use lib "$RealBin/../../lib";
-use lib "$RealBin/../lib";
-use FuguLib::TestLog;
-use File::Temp qw(tempdir);
 
 BEGIN {
-	eval { require Crypt::Ed25519; require JSON::XS; };
+	eval { require Crypt::Ed25519; };
 	if ($@) {
 		plan skip_all => 'Required modules not available';
 	}
 }
 
-use_ok('OpenHAP::HAP');
+use_ok('Protocol::HAP::Server');
+use_ok('Protocol::HAP::Store::Memory');
+
+sub make_engine ()
+{
+	return Protocol::HAP::Server->new(
+		pin    => '123-45-678',
+		name   => 'Category Bridge',
+		store  => Protocol::HAP::Store::Memory->new,
+		output => sub ( $, $ ) { },
+	);
+}
 
 subtest '[HAP-Categories §1] bridge category identifier is 2' => sub {
-	my $hap = OpenHAP::HAP->new(
-		port         => 51827,
-		pin          => '123-45-678',
-		name         => 'Category Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
-	);
+	my $engine = make_engine();
 
-	my $txt = $hap->get_mdns_txt_records;
+	my $txt = $engine->mdns_txt_records;
 	is( $txt->{ci}, 2,
 		'[HAP-Categories §1/Bridge] OpenHAP advertises '
 		    . 'CATEGORY_BRIDGE (2)' );
 };
 
 subtest '[HAP-Categories §3] category advertised in mDNS ci field' => sub {
-	my $hap = OpenHAP::HAP->new(
-		port         => 51828,
-		pin          => '123-45-678',
-		name         => 'Category Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
-	);
+	my $engine = make_engine();
 
-	my $txt = $hap->get_mdns_txt_records;
+	my $txt = $engine->mdns_txt_records;
 	ok( exists $txt->{ci}, 'ci field present in TXT records' );
 	like( $txt->{ci}, qr/^\d+$/, 'ci is a numeric identifier' );
 

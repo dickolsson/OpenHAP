@@ -101,6 +101,17 @@ sub new ( $class, %args )
 	}, $class;
 }
 
+# format_txt(%records):
+#	Format TXT records for mdnsd: key=value pairs in sorted key
+#	order, joined with '.'. The join is mdnsd's format, not the
+#	protocol's: mdnsd uses '.' as the TXT record delimiter and
+#	does not support escaping [MDNS-Control §5]. The sorted order
+#	keeps the wire form deterministic.
+sub format_txt (%records)
+{
+	return join '.', map { "$_=$records{$_}" } sort keys %records;
+}
+
 # $self->connect:
 #	Connect to mdnsd's control socket. The method returns 1, or
 #	undef when the socket is missing or refuses. An mdnsd that

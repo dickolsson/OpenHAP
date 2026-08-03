@@ -22,7 +22,7 @@ package OpenHAP::Test::Controller;
 use IO::Socket::INET;
 use IO::Select;
 use Protocol::HAP::Crypto;
-use FuguLib::HTTP;
+use Protocol::HAP::HTTP;
 use Protocol::HAP::TLV;
 use Protocol::HAP::Pairing;
 use OpenHAP::Test::Controller::SRP;
@@ -162,7 +162,7 @@ sub _round_trip ( $self, $request )
 		    : $raw;
 		last
 		    if defined $plain
-		    && FuguLib::HTTP::message_complete( $plain,
+		    && Protocol::HAP::HTTP::message_complete( $plain,
 			max_size => MAX_MESSAGE );
 	}
 
@@ -228,7 +228,7 @@ sub _decrypt ( $self, $data )
 
 sub _build_request ( $self, $method, $path, $body = undef, $headers = {} )
 {
-	return FuguLib::HTTP::build_request(
+	return Protocol::HAP::HTTP::build_request(
 		method  => $method,
 		path    => $path,
 		body    => $body,
@@ -243,7 +243,7 @@ sub _parse_response ( $self, $raw )
 		return;
 	}
 
-	my $response = FuguLib::HTTP::parse_response($raw);
+	my $response = Protocol::HAP::HTTP::parse_response($raw);
 	unless ( defined $response ) {
 		$self->{last_error} = 'malformed response';
 		return;
@@ -277,7 +277,7 @@ sub request ( $self, $method, $path, $body = undef, $headers = {} )
 	# next_event. For example, an event can arrive back-to-back
 	# with the response.
 	my $length =
-	    FuguLib::HTTP::message_complete( $response,
+	    Protocol::HAP::HTTP::message_complete( $response,
 		max_size => MAX_MESSAGE );
 	if ($length) {
 		$self->{inbuf} .= substr( $response, $length );

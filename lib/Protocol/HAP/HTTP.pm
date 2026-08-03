@@ -17,9 +17,9 @@
 
 use v5.36;
 
-package FuguLib::HTTP;
+package Protocol::HAP::HTTP;
 
-# FuguLib::HTTP - one HTTP/1.1 codec, for both ends of a connection.
+# Protocol::HAP::HTTP - one HTTP/1.1 codec, for both ends of a connection.
 #
 # The module is functions over strings. It opens no socket, holds no
 # connection state, and never logs. A server calls parse_request and
@@ -215,6 +215,22 @@ sub build_response (%args)
 sub status_text ($code)
 {
 	return $STATUS_TEXT{$code} // 'Unknown';
+}
+
+# build_event($body):
+#	Build one EVENT/1.0 notification message [HAP-HTTP §14]. The
+#	message looks like a response, but its protocol name is EVENT,
+#	so a controller can tell an unsolicited notification from the
+#	answer to a request it sent.
+sub build_event ($body)
+{
+	return
+	      "EVENT/1.0 200 OK\r\n"
+	    . "Content-Type: application/hap+json\r\n"
+	    . 'Content-Length: '
+	    . length($body)
+	    . "\r\n\r\n"
+	    . $body;
 }
 
 # _split_message($data):

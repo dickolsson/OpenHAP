@@ -24,7 +24,7 @@ use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
 use FuguLib::Config;
-use FuguLib::HTTP;
+use Protocol::HAP::HTTP;
 use FuguLib::Log;
 use FuguLib::Process;
 
@@ -248,7 +248,7 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 
 	push @{ $self->{sockets} }, $socket;
 
-	print {$socket} FuguLib::HTTP::build_request(
+	print {$socket} Protocol::HAP::HTTP::build_request(
 		method  => $method,
 		path    => $path,
 		body    => $body,
@@ -261,7 +261,7 @@ sub http_request ( $self, $method, $path, $body = undef, $headers = {} )
 	my $response = '';
 	while (1) {
 		last
-		    if FuguLib::HTTP::message_complete( $response,
+		    if Protocol::HAP::HTTP::message_complete( $response,
 			max_size => MAX_RESPONSE );
 
 		my $bytes = $socket->sysread( my $chunk, 65536 );
@@ -276,7 +276,7 @@ sub parse_http_response ($response)
 {
 	return unless defined $response;
 
-	my $parsed = FuguLib::HTTP::parse_response($response) or return;
+	my $parsed = Protocol::HAP::HTTP::parse_response($response) or return;
 
 	return ( $parsed->{status}, $parsed->{headers}, $parsed->{body} );
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Full pair-setup and pair-verify exchanges for spec/HAP-Pairing.md.
-# OpenHAP::Test::Controller connects in-process to an OpenHAP::HAP
+# OpenHAP::Test::Controller connects in-process to a Protocol::HAP::Server
 # instance. The tests do not mock the crypto. The accessory is really
 # paired when these tests end.
 
@@ -11,7 +11,6 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use FuguLib::TestLog;
-use File::Temp qw(tempdir);
 
 BEGIN {
 	eval {
@@ -26,44 +25,37 @@ BEGIN {
 	}
 }
 
-use_ok('OpenHAP::HAP');
-use_ok('FuguLib::HTTP');
-use_ok('Protocol::HAP::Session');
+use_ok('Protocol::HAP::Server');
+use_ok('Protocol::HAP::Store::Memory');
 use_ok('Protocol::HAP::Pairing');
 use_ok('OpenHAP::Test::Controller');
 
 my $PIN = '123-45-678';
 
-# Wire a controller to a fresh OpenHAP::HAP instance through an
-# in-process transport. The transport parses and dispatches requests
-# directly. Each controller connection gets one accessory-side
-# session.
+# Everything the engine writes, keyed by session id: the output
+# contract of the sans-IO engine.
+my %OUT;
+
+# Wire a controller to a fresh Protocol::HAP::Server engine through an
+# in-process transport over the public engine API: session_open,
+# receive, and captured output. Each controller connection gets one
+# accessory-side session.
 sub make_pair ( %controller_args )
 {
-
-	my $hap = OpenHAP::HAP->new(
-		port         => 51827,
-		pin          => $PIN,
-		name         => 'Exchange Bridge',
-		storage_path => tempdir( CLEANUP => 1 ),
+	my $hap = Protocol::HAP::Server->new(
+		pin    => $PIN,
+		name   => 'Exchange Bridge',
+		store  => Protocol::HAP::Store::Memory->new,
+		output => sub ( $session, $bytes ) {
+			$OUT{ $session->id } .= $bytes;
+		},
 	);
-	$hap->{pairing}->reset_auth_attempts;
 
-	# Mirror _handle_client: dispatch just enabled encryption, but
-	# the transport sends the pair-verify M4 response in the clear
-	my $session   = Protocol::HAP::Session->new( id => 9001 );
+	my $session   = $hap->session_open;
 	my $transport = sub ($request_bytes) {
-		my $was_encrypted = $session->is_encrypted;
-		my $plain =
-		    $was_encrypted
-		    ? $session->decrypt($request_bytes)
-		    : $request_bytes;
-		return unless defined $plain;
-		my $request  = FuguLib::HTTP::parse_request($plain);
-		my $response = $hap->_dispatch( $request, $session );
-		return $was_encrypted
-		    ? $session->encrypt($response)
-		    : $response;
+		$OUT{ $session->id } = '';
+		$hap->receive( $session, $request_bytes ) or return;
+		return delete $OUT{ $session->id };
 	};
 
 	my $controller = OpenHAP::Test::Controller->new(
@@ -89,7 +81,7 @@ subtest '[HAP-Pairing §2.2][HAP-Pairing §2.8] full pair-setup M1-M6' =>
 
 	# The accessory is paired now
 	ok( $hap->is_paired, 'accessory is paired after M6' );
-	my $pairings = $hap->{storage}->load_pairings;
+	my $pairings = $hap->{store}->load_pairings;
 	ok( exists $pairings->{'openhap-test-ctrl'},
 		'controller identifier persisted' );
 	is( $pairings->{'openhap-test-ctrl'}{permissions},
@@ -107,7 +99,7 @@ subtest '[HAP-Pairing §2.6][HAP-Pairing §8] wrong PIN rejected' => sub {
 	ok( !$hap->is_paired, 'accessory remains unpaired' );
 	is( $hap->{pairing}->get_failed_attempts,
 		1, 'attempt counter incremented' );
-	is( $hap->{storage}->get_auth_attempts,
+	is( $hap->{store}->get_auth_attempts,
 		1, 'attempt counter persisted' );
 
 };
@@ -117,10 +109,11 @@ subtest '[HAP-Pairing §2.4] already-paired M2 error' => sub {
 	ok( $controller->pair_setup, 'first pairing succeeds' );
 
 	# The accessory refuses a second controller on a fresh connection
-	my $session2   = Protocol::HAP::Session->new( id => 9002 );
+	my $session2   = $hap->session_open;
 	my $transport2 = sub ($request_bytes) {
-		my $request = FuguLib::HTTP::parse_request($request_bytes);
-		return $hap->_dispatch( $request, $session2 );
+		$OUT{ $session2->id } = '';
+		$hap->receive( $session2, $request_bytes ) or return;
+		return delete $OUT{ $session2->id };
 	};
 	my $second = OpenHAP::Test::Controller->new(
 		pin           => $PIN,
@@ -188,7 +181,7 @@ subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
 
 	# Unpair directly through storage. The encrypted session died
 	# when the previous flow regenerated the identity.
-	$hap->{storage}->remove_all_pairings;
+	$hap->{store}->remove_all_pairings;
 	ok( !$hap->is_paired, 'unpaired again' );
 
 	my ( $controller2, $hap2 ) = make_pair();
