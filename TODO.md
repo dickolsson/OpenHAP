@@ -207,11 +207,11 @@ refinements.
 ### Testing
 
 - [x] **Unit tests for core modules**
-  - [x] `OpenHAP::TLV` - TLV8 encoding/decoding
+  - [x] `Protocol::HAP::TLV` - TLV8 encoding/decoding
   - [x] `OpenHAP::HTTP` - HTTP request parsing
   - [x] `OpenHAP::Config` - Configuration file parsing
   - [x] `OpenHAP::Crypto` - Encryption and key generation
-  - [x] `OpenHAP::SRP` - SRP protocol
+  - [x] `Protocol::HAP::SRP` - SRP protocol
   - [x] `OpenHAP::Pairing` - Pairing flows
   - [x] `OpenHAP::Session` - Session encryption
   - [x] `OpenHAP::Storage` - Persistence layer
@@ -222,7 +222,7 @@ refinements.
   - [x] `OpenHAP::MQTT` - MQTT client
   - [x] `OpenHAP::Daemon` - Daemon utilities
   - [x] `OpenHAP::Log` - Logging system
-  - [x] `OpenHAP::PIN` - PIN validation
+  - [x] `Protocol::HAP::PIN` - PIN validation
   - [x] `OpenHAP::DeviceLoader` - Device configuration loading
   - Total: 17 test files in `t/openhap/`
 
@@ -571,6 +571,18 @@ refinements.
   - Current: No formal release process
   - Need: Version tagging, changelog, release notes
   - Files: New `CHANGELOG.md`, version tagging
+
+### Protocol::HAP CPAN release
+
+The `Protocol::HAP` library under `lib/Protocol/` is host-neutral and
+self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
+
+- [ ] PAUSE registration of the `Protocol-HAP` distribution name
+- [ ] A `$VERSION` policy for the modules (none carry one today)
+- [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`,
+      distribution tests
+- [ ] A redistribution-license review of `spec/` before any spec text
+      ships in the distribution
 
 ## Technical Debt
 

@@ -26,7 +26,7 @@ BEGIN {
 
 use_ok('OpenHAP::Test::Controller');
 use_ok('OpenHAP::Test::Controller::SRP');
-use_ok('OpenHAP::TLV');
+use_ok('Protocol::HAP::TLV');
 use_ok('OpenHAP::Pairing');
 
 # Constructor defaults and identity generation
@@ -97,7 +97,7 @@ use_ok('OpenHAP::Pairing');
 # TLV error response: last_error exposes the error code
 {
 	my $transport = sub ($request) {
-		my $body = OpenHAP::TLV::encode(
+		my $body = Protocol::HAP::TLV::encode(
 			OpenHAP::Pairing::kTLVType_State() => pack( 'C', 2 ),
 			OpenHAP::Pairing::kTLVType_Error() => pack(
 				'C', OpenHAP::Pairing::kTLVError_MaxTries()

@@ -8,6 +8,7 @@ Applies when working on files under `t/`.
 | ----------- | ----------------------------- | ---------------------------------------------- | ------------------ |
 | Conformance | `t/conformance/`              | spec requirements, wire formats, KAT           | `make test` (host) |
 | Module      | `t/openhap/` `t/fugulib/`     | Perl API behavior, error paths                 | `make test` (host) |
+| Module      | `t/protocol/`                 | the Protocol::HAP library, dependency boundary | `make test` (host) |
 | Module      | `t/fuguvm/`                   | the OpenBSD VM utility                         | `make test` (host) |
 | Tooling     | `t/scripts/` `t/web/` `t/ci/` | what `scripts/`, `web/` and `.github/` produce | `make test` (host) |
 | Integration | `t/openhap/integration/`      | real daemon, full protocol flow                | `make integration` |

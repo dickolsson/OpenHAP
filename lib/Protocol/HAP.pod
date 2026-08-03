@@ -1,0 +1,95 @@
+=head1 NAME
+
+Protocol::HAP - HomeKit Accessory Protocol library
+
+=head1 SYNOPSIS
+
+    use Protocol::HAP;
+
+    my $logger = Protocol::HAP->null_logger;
+
+=head1 DESCRIPTION
+
+C<Protocol::HAP> is the HomeKit Accessory Protocol as a host-neutral
+library. It holds the complete protocol: the TLV8 codec, the setup-code
+rules, the crypto primitives, SRP-6a, the pairing and session state
+machines, the accessory data model, the sans-IO accessory-server
+engine, and a controller.
+
+The library is self-contained. It uses core Perl plus four declared
+CPAN modules: L<Crypt::Ed25519>, L<Crypt::Curve25519>,
+L<Crypt::KeyDerivation>, and L<Crypt::AuthEnc::ChaCha20Poly1305>. The
+crypto modules load lazily, on first use.
+
+The engine is sans-IO. It consumes bytes and emits bytes. The host owns
+sockets, timers, logging, and persistence. Two documented exceptions
+exist: C<Protocol::HAP::Crypto> reads F</dev/urandom>, and
+C<Protocol::HAP::Controller> is a blocking convenience client that owns
+its socket.
+
+=head1 HOST CONTRACTS
+
+A host injects its environment through five constructor arguments.
+
+=over 4
+
+=item logger
+
+An object with C<debug>, C<info>, C<warning>, and C<error> methods that
+take printf-style arguments. The default is the null logger from this
+module. An object passes its logger to the objects it creates itself.
+
+=item store
+
+An object with the twelve persistence methods that
+F<Protocol/HAP/Store.pod> documents. C<Protocol::HAP::Store::Memory> is
+the reference implementation.
+
+=item output
+
+A code reference C<sub ($session, $bytes)>. The engine sends every
+write through it: responses and EVENT notifications alike.
+
+=item after and cancel
+
+Code references for one-shot timers, used for event coalescing. They
+are optional: without them, the host calls C<flush_events> itself.
+
+=item on_pairing_changed
+
+An optional code reference C<sub ($paired)>. The engine calls it when
+the paired state flips, so the host can re-advertise its mDNS TXT
+record.
+
+=back
+
+=head1 METHODS
+
+=head2 Protocol::HAP->null_logger
+
+This method returns the shared null logger. The null logger answers the
+four logger methods and drops every message.
+
+=head1 MODULES
+
+=over 4
+
+=item L<Protocol::HAP::TLV> - TLV8 codec
+
+=item L<Protocol::HAP::PIN> - setup-code normalization and rules
+
+=item L<Protocol::HAP::Crypto> - randomness and crypto primitives
+
+=item L<Protocol::HAP::SRP> - SRP-6a exchange
+
+=back
+
+The pairing and session state machines, the data model, the HTTP
+codec, the server engine, and the controller join the namespace in
+later phases of the extraction.
+
+=head1 SEE ALSO
+
+F<spec/HAP.md>
+
+=cut

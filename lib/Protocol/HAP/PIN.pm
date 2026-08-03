@@ -17,7 +17,7 @@
 
 use v5.36;
 
-package OpenHAP::PIN;
+package Protocol::HAP::PIN;
 use Exporter qw(import);
 our @EXPORT_OK = qw(normalize_pin validate_pin);
 

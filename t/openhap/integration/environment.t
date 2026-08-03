@@ -47,6 +47,6 @@ ok(-f '/etc/rc.d/openhapd', 'rc.d script installed');
 # reintroduces multi-minute pair-setups under TCG emulation. A
 # missing backend must be a hard, visible failure here, not a
 # slow-but-green run.
-require OpenHAP::SRP;
+require Protocol::HAP::SRP;
 is(Math::BigInt->config->{lib}, 'Math::BigInt::GMP',
    'Math::BigInt uses the GMP backend');

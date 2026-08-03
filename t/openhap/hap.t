@@ -21,7 +21,7 @@ BEGIN {
 
 use_ok('OpenHAP::HAP');
 use_ok('OpenHAP::Storage');
-use_ok('FuguLib::Crypto');
+use_ok('Protocol::HAP::Crypto');
 use_ok('OpenHAP::Pairing');
 
 # Test HAP object creation

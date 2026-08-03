@@ -46,17 +46,16 @@ DEPS			= scripts/deps
 # cannot appear in a make target.  install-man puts it back.
 MAN1			= man/fuguvm/fuguvm.1
 MAN3P			= man/fugulib/CLI.3p man/fugulib/Config.3p \
-			  man/fugulib/Control.3p man/fugulib/Crypto.3p \
-			  man/fugulib/Daemon.3p \
+			  man/fugulib/Control.3p man/fugulib/Daemon.3p \
 			  man/fugulib/EventLoop.3p man/fugulib/File.3p \
 			  man/fugulib/HTTP.3p man/fugulib/Imsg.3p \
 			  man/fugulib/JSONSocket.3p man/fugulib/Log.3p \
 			  man/fugulib/MDNS.3p man/fugulib/MQTT.3p \
 			  man/fugulib/Pidfile.3p man/fugulib/Privdrop.3p \
 			  man/fugulib/Process.3p man/fugulib/Proxy.3p \
-			  man/fugulib/SSH.3p man/fugulib/Sandbox.3p \
-			  man/fugulib/Signal.3p man/fugulib/Store.3p \
-			  man/fugulib/Util.3p
+			  man/fugulib/Random.3p man/fugulib/SSH.3p \
+			  man/fugulib/Sandbox.3p man/fugulib/Signal.3p \
+			  man/fugulib/Store.3p man/fugulib/Util.3p
 MAN5			= man/openhap/openhapd.conf.5
 MAN8			= man/openhap/hapctl.8 man/openhap/openhapd.8
 CATMAN1			= $(MAN1:.1=.cat1)
@@ -133,6 +132,18 @@ install: install-man
 	done
 	# FuguLib's API documentation lives in man3p, not in sidecars
 	install -m 644 lib/FuguLib/*.pm $(DESTDIR)$(LIBDIR)/FuguLib/
+	# The Protocol::HAP library. The Store/ loop accepts zero
+	# matches, because the subdirectory arrives in a later phase
+	install -d $(DESTDIR)$(LIBDIR)/Protocol
+	install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP
+	install -m 644 lib/Protocol/*.pm lib/Protocol/*.pod $(DESTDIR)$(LIBDIR)/Protocol/
+	install -m 644 lib/Protocol/HAP/*.pm $(DESTDIR)$(LIBDIR)/Protocol/HAP/
+	install -m 644 lib/Protocol/HAP/*.pod $(DESTDIR)$(LIBDIR)/Protocol/HAP/
+	for f in lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod; do \
+		[ -e "$$f" ] || continue; \
+		install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store; \
+		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store/; \
+	done
 	# Install rc.d script
 	install -d $(DESTDIR)$(SYSCONFDIR)/rc.d
 	install -m 755 etc/rc.d/openhapd $(DESTDIR)$(SYSCONFDIR)/rc.d/openhapd
@@ -190,6 +201,7 @@ package: clean
 	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Tasmota
 	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test/Controller
 	mkdir -p build/$(PACKAGE)/lib/FuguLib
+	mkdir -p build/$(PACKAGE)/lib/Protocol/HAP
 	mkdir -p build/$(PACKAGE)/etc/rc.d
 	mkdir -p build/$(PACKAGE)/share/openhap/examples
 	mkdir -p build/$(PACKAGE)/man/fugulib
@@ -204,6 +216,15 @@ package: clean
 	cp lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/
 	cp lib/OpenHAP/Test/Controller/*.pm lib/OpenHAP/Test/Controller/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/Controller/
 	cp lib/FuguLib/*.pm build/$(PACKAGE)/lib/FuguLib/
+	cp lib/Protocol/*.pm lib/Protocol/*.pod build/$(PACKAGE)/lib/Protocol/
+	cp lib/Protocol/HAP/*.pm lib/Protocol/HAP/*.pod build/$(PACKAGE)/lib/Protocol/HAP/
+	# The Store/ loop accepts zero matches, because the
+	# subdirectory arrives in a later phase
+	for f in lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod; do \
+		[ -e "$$f" ] || continue; \
+		mkdir -p build/$(PACKAGE)/lib/Protocol/HAP/Store; \
+		cp "$$f" build/$(PACKAGE)/lib/Protocol/HAP/Store/; \
+	done
 	# rc.d script
 	cp etc/rc.d/openhapd build/$(PACKAGE)/etc/rc.d/
 	# Example configuration
@@ -226,6 +247,7 @@ package: clean
 test:
 	prove -l -v t/fuguvm/*.t
 	prove -l -v t/fugulib/*.t
+	prove -l -v t/protocol/*.t
 	prove -l -v t/openhap/*.t
 	prove -l -v t/conformance/*.t
 	prove -l -v t/scripts/*.t
@@ -249,6 +271,7 @@ uninstall:
 	# Remove Perl libraries
 	rm -rf $(DESTDIR)$(LIBDIR)/OpenHAP
 	rm -rf $(DESTDIR)$(LIBDIR)/FuguLib
+	rm -rf $(DESTDIR)$(LIBDIR)/Protocol
 	# Remove man pages
 	for f in $(MAN3P); do \
 		rm -f "$(DESTDIR)$(MANDIR)/man3p/FuguLib::$${f##*/}"; \

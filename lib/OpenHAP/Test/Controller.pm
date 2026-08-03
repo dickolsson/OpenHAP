@@ -21,9 +21,9 @@ package OpenHAP::Test::Controller;
 
 use IO::Socket::INET;
 use IO::Select;
-use FuguLib::Crypto;
+use Protocol::HAP::Crypto;
 use FuguLib::HTTP;
-use OpenHAP::TLV;
+use Protocol::HAP::TLV;
 use OpenHAP::Pairing;
 use OpenHAP::Test::Controller::SRP;
 
@@ -79,7 +79,7 @@ sub new ( $class, %args )
 	}, $class;
 
 	( $self->{ltsk}, $self->{ltpk} ) =
-	    FuguLib::Crypto->ed25519_keypair;
+	    Protocol::HAP::Crypto->ed25519_keypair;
 
 	return $self;
 }
@@ -179,7 +179,7 @@ sub _encrypt ( $self, $data )
 		my $aad   = pack( 'v',      length($chunk) );
 		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
 		my ( $ciphertext, $tag ) =
-		    FuguLib::Crypto->chacha20poly1305_encrypt(
+		    Protocol::HAP::Crypto->chacha20poly1305_encrypt(
 			$self->{encrypt_key},
 			$nonce, $chunk, $aad );
 		$out .= $aad . $ciphertext . $tag;
@@ -216,7 +216,7 @@ sub _decrypt ( $self, $data )
 
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 		my $plain =
-		    FuguLib::Crypto->chacha20poly1305_decrypt(
+		    Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 		return unless defined $plain;
 		$out .= $plain;
@@ -291,7 +291,7 @@ sub request ( $self, $method, $path, $body = undef, $headers = {} )
 
 sub _tlv_request ( $self, $path, %tlv_items )
 {
-	my $body     = OpenHAP::TLV::encode(%tlv_items);
+	my $body     = Protocol::HAP::TLV::encode(%tlv_items);
 	my $response = $self->request( 'POST', $path, $body,
 		{ 'Content-Type' => 'application/pairing+tlv8' } );
 	return unless defined $response;
@@ -301,7 +301,7 @@ sub _tlv_request ( $self, $path, %tlv_items )
 		return;
 	}
 
-	my %tlv   = OpenHAP::TLV::decode( $response->{body} );
+	my %tlv   = Protocol::HAP::TLV::decode( $response->{body} );
 	my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
 	if ( defined $error ) {
 		$self->{last_error} = unpack( 'C', $error );
@@ -358,26 +358,26 @@ sub pair_setup ($self)
 
 	# M5 -> M6
 	my $K           = $srp->session_key;
-	my $encrypt_key = FuguLib::Crypto->hkdf_sha512( $K,
+	my $encrypt_key = Protocol::HAP::Crypto->hkdf_sha512( $K,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
-	my $ios_x = FuguLib::Crypto->hkdf_sha512(
+	my $ios_x = Protocol::HAP::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Controller-Sign-Salt',
 		'Pair-Setup-Controller-Sign-Info', 32
 	);
-	my $signature = FuguLib::Crypto->ed25519_sign(
+	my $signature = Protocol::HAP::Crypto->ed25519_sign(
 		$ios_x . $self->{controller_id} . $self->{ltpk},
 		$self->{ltsk}, $self->{ltpk} );
 
-	my $inner = OpenHAP::TLV::encode(
+	my $inner = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_Identifier() =>
 		    $self->{controller_id},
 		OpenHAP::Pairing::kTLVType_PublicKey() => $self->{ltpk},
 		OpenHAP::Pairing::kTLVType_Signature() => $signature,
 	);
 	my ( $encrypted, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $encrypt_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg05', $inner );
 
 	my $m6 = $self->_tlv_request(
@@ -393,7 +393,7 @@ sub pair_setup ($self)
 	}
 	my $m6_tag = substr( $m6_data, -16, 16, '' );
 	my $m6_plain =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $encrypt_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $encrypt_key,
 		pack('x[4]') . 'PS-Msg06',
 		$m6_data, $m6_tag );
 	unless ( defined $m6_plain ) {
@@ -401,18 +401,18 @@ sub pair_setup ($self)
 		return;
 	}
 
-	my %m6_inner = OpenHAP::TLV::decode($m6_plain);
+	my %m6_inner = Protocol::HAP::TLV::decode($m6_plain);
 	my $acc_id   = $m6_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
 	my $acc_ltpk = $m6_inner{ OpenHAP::Pairing::kTLVType_PublicKey() };
 	my $acc_sig  = $m6_inner{ OpenHAP::Pairing::kTLVType_Signature() };
 
-	my $acc_x = FuguLib::Crypto->hkdf_sha512(
+	my $acc_x = Protocol::HAP::Crypto->hkdf_sha512(
 		$K,
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
 	);
 	unless (
-		FuguLib::Crypto->ed25519_verify(
+		Protocol::HAP::Crypto->ed25519_verify(
 			$acc_sig, $acc_x . $acc_id . $acc_ltpk, $acc_ltpk
 		) )
 	{
@@ -434,7 +434,7 @@ sub pair_verify ($self)
 {
 	$self->{last_error} = undef;
 
-	my ( $secret, $public ) = FuguLib::Crypto->x25519_keypair;
+	my ( $secret, $public ) = Protocol::HAP::Crypto->x25519_keypair;
 
 	# M1 -> M2
 	my $m2 = $self->_tlv_request(
@@ -451,13 +451,13 @@ sub pair_verify ($self)
 	}
 
 	my $shared =
-	    FuguLib::Crypto->x25519_shared_secret( $secret, $acc_public );
-	my $pv_key = FuguLib::Crypto->hkdf_sha512( $shared,
+	    Protocol::HAP::Crypto->x25519_shared_secret( $secret, $acc_public );
+	my $pv_key = Protocol::HAP::Crypto->hkdf_sha512( $shared,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
 	my $m2_tag = substr( $m2_data, -16, 16, '' );
 	my $m2_plain =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $pv_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg02',
 		$m2_data, $m2_tag );
 	unless ( defined $m2_plain ) {
@@ -465,7 +465,7 @@ sub pair_verify ($self)
 		return;
 	}
 
-	my %m2_inner = OpenHAP::TLV::decode($m2_plain);
+	my %m2_inner = Protocol::HAP::TLV::decode($m2_plain);
 	my $acc_id   = $m2_inner{ OpenHAP::Pairing::kTLVType_Identifier() };
 	my $acc_sig  = $m2_inner{ OpenHAP::Pairing::kTLVType_Signature() };
 
@@ -473,7 +473,7 @@ sub pair_verify ($self)
 	# the accessory LTPK
 	if ( defined $self->{accessory_ltpk} ) {
 		unless (
-			FuguLib::Crypto->ed25519_verify(
+			Protocol::HAP::Crypto->ed25519_verify(
 				$acc_sig,
 				$acc_public . $acc_id . $public,
 				$self->{accessory_ltpk} ) )
@@ -484,16 +484,16 @@ sub pair_verify ($self)
 	}
 
 	# M3 -> M4
-	my $signature = FuguLib::Crypto->ed25519_sign(
+	my $signature = Protocol::HAP::Crypto->ed25519_sign(
 		$public . $self->{controller_id} . $acc_public,
 		$self->{ltsk}, $self->{ltpk} );
-	my $inner = OpenHAP::TLV::encode(
+	my $inner = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_Identifier() =>
 		    $self->{controller_id},
 		OpenHAP::Pairing::kTLVType_Signature() => $signature,
 	);
 	my ( $encrypted, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $pv_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $pv_key,
 		pack('x[4]') . 'PV-Msg03', $inner );
 
 	$self->_tlv_request(
@@ -505,10 +505,10 @@ sub pair_verify ($self)
 	# Session keys: the controller writes with the Write key and
 	# reads with the Read key (HAP-Encryption.md §1)
 	$self->{encrypt_key} =
-	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Write-Encryption-Key', 32 );
 	$self->{decrypt_key} =
-	    FuguLib::Crypto->hkdf_sha512( $shared, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	$self->{encrypt_count} = 0;
 	$self->{decrypt_count} = 0;
@@ -555,7 +555,7 @@ sub list_pairings ($self)
 {
 	$self->{last_error} = undef;
 
-	my $body = OpenHAP::TLV::encode(
+	my $body = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method() => pack( 'C', 5 ),
 	);
@@ -573,7 +573,7 @@ sub list_pairings ($self)
 	# Identifier/PublicKey types.
 	my @pairings;
 	for my $entry ( split /\xFF\x00/, $response->{body} ) {
-		my %tlv = OpenHAP::TLV::decode($entry);
+		my %tlv = Protocol::HAP::TLV::decode($entry);
 		my $id  = $tlv{ OpenHAP::Pairing::kTLVType_Identifier() };
 		next unless defined $id;
 
@@ -599,7 +599,7 @@ sub list_pairings ($self)
 
 	# A lone error TLV with no identifiers means the request failed
 	if ( !@pairings ) {
-		my %tlv   = OpenHAP::TLV::decode( $response->{body} );
+		my %tlv   = Protocol::HAP::TLV::decode( $response->{body} );
 		my $error = $tlv{ OpenHAP::Pairing::kTLVType_Error() };
 		if ( defined $error ) {
 			$self->{last_error} = unpack( 'C', $error );
@@ -694,7 +694,7 @@ sub _drain_frames ($self)
 
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 		my $plain =
-		    FuguLib::Crypto->chacha20poly1305_decrypt(
+		    Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 		return unless defined $plain;
 		$out .= $plain;

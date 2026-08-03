@@ -6,7 +6,7 @@ use lib "$RealBin/../lib";
 
 use FuguLib::Config;
 use FuguLib::Control;
-use FuguLib::Crypto;
+use Protocol::HAP::Crypto;
 use FuguLib::Daemon;
 use FuguLib::Log;
 use FuguLib::MDNS;
@@ -241,11 +241,11 @@ if ($control_path) {
 #
 # Step 1: load every module that would otherwise load later.
 #
-# FuguLib::Crypto opens a shared object for each Crypt::* library. The
+# Protocol::HAP::Crypto opens a shared object for each Crypt::* library. The
 # promise set below has no prot_exec, so a load after the pledge kills
 # the process. The warm-up must therefore happen here, and it must not
 # be optional: a daemon that cannot sign cannot pair.
-FuguLib::Crypto->preload;
+Protocol::HAP::Crypto->preload;
 #
 # Net::MQTT::Simple is pure Perl, so this is not about prot_exec. The
 # step resolves the transitive dependencies of the module while @INC

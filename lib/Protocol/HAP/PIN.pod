@@ -1,10 +1,10 @@
 =head1 NAME
 
-OpenHAP::PIN - HomeKit Accessory Protocol PIN checks and normalization
+Protocol::HAP::PIN - HomeKit Accessory Protocol PIN checks and normalization
 
 =head1 SYNOPSIS
 
-    use OpenHAP::PIN qw(normalize_pin validate_pin);
+    use Protocol::HAP::PIN qw(normalize_pin validate_pin);
 
     # Normalize PIN (strip dashes/spaces)
     my $normalized = normalize_pin('9876-5432');  # Returns '98765432'
@@ -72,7 +72,7 @@ The HAP specification rejects these setup codes:
 
 =head1 SEE ALSO
 
-L<OpenHAP::SRP>, L<OpenHAP::Pairing>, L<openhapd.conf(5)>, F<spec/HAP-Pairing.md>
+L<Protocol::HAP::SRP>, L<OpenHAP::Pairing>, L<openhapd.conf(5)>, F<spec/HAP-Pairing.md>
 
 =head1 STANDARDS
 

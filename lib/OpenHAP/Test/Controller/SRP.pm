@@ -25,12 +25,12 @@ package OpenHAP::Test::Controller::SRP;
 # pure-Perl Calc backend.
 use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
-use FuguLib::Crypto;
-use OpenHAP::PIN qw(normalize_pin);
+use Protocol::HAP::Crypto;
+use Protocol::HAP::PIN qw(normalize_pin);
 
 # This module is the SRP-6a client role for tests
 # (HAP-Pairing.md §2.5). It is the controller side of the exchange
-# that OpenHAP::SRP serves. It uses the same 3072-bit RFC 5054
+# that Protocol::HAP::SRP serves. It uses the same 3072-bit RFC 5054
 # group, SHA-512 hash, and 384-byte padding rules as the server.
 
 use constant N_LEN => 384;
@@ -60,7 +60,7 @@ sub new ( $class, %args )
 		username => $args{username} // 'Pair-Setup',
 		password => $password,
 
-		N => _b2i($OpenHAP::SRP::N_3072),
+		N => _b2i($Protocol::HAP::SRP::N_3072),
 		g => Math::BigInt->new(5),
 
 		a  => undef,
@@ -77,7 +77,7 @@ sub new ( $class, %args )
 #	value A = g^a mod N (384 bytes).
 sub compute_public ($self)
 {
-	my $a_bytes = FuguLib::Crypto->random_bytes(32);
+	my $a_bytes = Protocol::HAP::Crypto->random_bytes(32);
 	$self->{a} = _b2i($a_bytes);
 	$self->{A} = $self->{g}->copy->bmodpow( $self->{a}, $self->{N} );
 

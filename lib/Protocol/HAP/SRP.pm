@@ -1,6 +1,6 @@
 use v5.36;
 
-package OpenHAP::SRP;
+package Protocol::HAP::SRP;
 
 # Prefer the GMP backend. The 3072-bit modular exponentiation of
 # SRP is impractically slow in the pure-Perl Calc backend. It
@@ -9,8 +9,8 @@ package OpenHAP::SRP;
 # not installed. Thus the module stays correct everywhere.
 use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
-use FuguLib::Crypto;
-use OpenHAP::PIN qw(normalize_pin);
+use Protocol::HAP::Crypto;
+use Protocol::HAP::PIN qw(normalize_pin);
 
 # SRP-6a implementation for HAP
 # The module uses the 3072-bit group from RFC 5054.
@@ -70,9 +70,9 @@ sub new ( $class, %args )
 
 		# The RFC 5054 3072-bit group
 		N => Math::BigInt->from_hex(
-			unpack( 'H*', $OpenHAP::SRP::N_3072 )
+			unpack( 'H*', $Protocol::HAP::SRP::N_3072 )
 		),
-		g => Math::BigInt->new($OpenHAP::SRP::g),
+		g => Math::BigInt->new($Protocol::HAP::SRP::g),
 
 		# Session state
 		salt => undef,
@@ -91,7 +91,7 @@ sub new ( $class, %args )
 
 sub generate_salt ($self)
 {
-	$self->{salt} = FuguLib::Crypto->random_bytes(16);
+	$self->{salt} = Protocol::HAP::Crypto->random_bytes(16);
 	return $self->{salt};
 }
 
@@ -117,7 +117,7 @@ sub generate_server_public ($self)
 {
 
 	# Generate a random b (256 bits)
-	my $b_bytes = FuguLib::Crypto->random_bytes(32);
+	my $b_bytes = Protocol::HAP::Crypto->random_bytes(32);
 	$self->{b} = Math::BigInt->from_hex( unpack( 'H*', $b_bytes ) );
 
 	# k = H(N | PAD(g))

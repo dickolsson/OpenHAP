@@ -31,7 +31,7 @@ BEGIN {
 use_ok('OpenHAP::HAP');
 use_ok('FuguLib::HTTP');
 use_ok('OpenHAP::Session');
-use_ok('OpenHAP::TLV');
+use_ok('Protocol::HAP::TLV');
 use_ok('OpenHAP::Pairing');
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Heater');
@@ -125,7 +125,7 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 	}
 
 	# Pairing endpoints do not need a verified session
-	my $m1 = OpenHAP::TLV::encode(
+	my $m1 = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
@@ -137,7 +137,7 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 	OpenHAP::Pairing->clear_pairing_state();
 
 	# Pair-verify is also open and answers with TLV
-	my $pv_m1 = OpenHAP::TLV::encode(
+	my $pv_m1 = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),     pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_PublicKey(), 'X' x 32,
 	);
@@ -151,7 +151,7 @@ subtest '[HAP-HTTP §1] endpoints require a verified session' => sub {
 subtest '[HAP-HTTP §2] content types' => sub {
 	my $hap = make_hap();
 
-	my $m1 = OpenHAP::TLV::encode(
+	my $m1 = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 0 ),
 	);
@@ -333,7 +333,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 	$hap->{storage}->save_pairing( 'admin-ctrl', 'A' x 32, 1 );
 	$hap->{storage}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
 
-	my $add = OpenHAP::TLV::encode(
+	my $add = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
 		OpenHAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
@@ -344,7 +344,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 	# Non-admin controller -> 0x02 Authentication
 	my ( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$add, verified_session('user-ctrl') );
-	my %tlv = OpenHAP::TLV::decode($body);
+	my %tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Error() } ),
 		OpenHAP::Pairing::kTLVError_Authentication(),
 		'[HAP-Pairing §7.4] non-admin add rejected with 0x02' );
@@ -352,7 +352,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 	# Admin controller -> success M2
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$add, verified_session('admin-ctrl') );
-	%tlv = OpenHAP::TLV::decode($body);
+	%tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_State() } ),
 		2, 'admin add returns M2' );
 	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
@@ -361,7 +361,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 		'pairing stored' );
 
 	# Same identifier, different LTPK -> 0x01 Unknown
-	my $conflict = OpenHAP::TLV::encode(
+	my $conflict = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
 		OpenHAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
@@ -370,14 +370,14 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$conflict, verified_session('admin-ctrl') );
-	%tlv = OpenHAP::TLV::decode($body);
+	%tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Error() } ),
 		OpenHAP::Pairing::kTLVError_Unknown(),
 		'[HAP-Pairing §7.4] existing identifier with different '
 		    . 'LTPK rejected with 0x01' );
 
 	# Same identifier, same LTPK -> permissions updated, success
-	my $update = OpenHAP::TLV::encode(
+	my $update = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 3 ),
 		OpenHAP::Pairing::kTLVType_Identifier(), 'new-ctrl',
@@ -386,7 +386,7 @@ subtest '[HAP-HTTP §6][HAP-Pairing §7][HAP-Pairing §7.1] add pairing' =>
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$update, verified_session('admin-ctrl') );
-	%tlv = OpenHAP::TLV::decode($body);
+	%tlv = Protocol::HAP::TLV::decode($body);
 	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
 		'matching LTPK updates permissions' );
 	is( $hap->{storage}->load_pairings()->{'new-ctrl'}{permissions},
@@ -399,13 +399,13 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 	$hap->{storage}->save_pairing( 'user-ctrl',  'U' x 32, 0 );
 
 	# List pairings (admin only)
-	my $list = OpenHAP::TLV::encode(
+	my $list = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),  pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(), pack( 'C', 5 ),
 	);
 	my ( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$list, verified_session('user-ctrl') );
-	my %tlv = OpenHAP::TLV::decode($body);
+	my %tlv = Protocol::HAP::TLV::decode($body);
 	is( unpack( 'C', $tlv{ OpenHAP::Pairing::kTLVType_Error() } ),
 		OpenHAP::Pairing::kTLVError_Authentication(),
 		'[HAP-Pairing §7.4] non-admin list rejected with 0x02' );
@@ -418,26 +418,26 @@ subtest '[HAP-Pairing §7.2][HAP-Pairing §7.3] remove and list' => sub {
 		'entries separated by zero-length 0xFF separator' );
 
 	# The removal of a pairing that does not exist returns success
-	my $remove_ghost = OpenHAP::TLV::encode(
+	my $remove_ghost = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
 		OpenHAP::Pairing::kTLVType_Identifier(), 'ghost-ctrl',
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$remove_ghost, verified_session('admin-ctrl') );
-	%tlv = OpenHAP::TLV::decode($body);
+	%tlv = Protocol::HAP::TLV::decode($body);
 	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
 		'removing nonexistent pairing returns success' );
 
 	# The removal of the last admin clears all pairings
-	my $remove_admin = OpenHAP::TLV::encode(
+	my $remove_admin = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),      pack( 'C', 1 ),
 		OpenHAP::Pairing::kTLVType_Method(),     pack( 'C', 4 ),
 		OpenHAP::Pairing::kTLVType_Identifier(), 'admin-ctrl',
 	);
 	( $status, undef, $body ) = dispatch( $hap, 'POST', '/pairings',
 		$remove_admin, verified_session('admin-ctrl') );
-	%tlv = OpenHAP::TLV::decode($body);
+	%tlv = Protocol::HAP::TLV::decode($body);
 	ok( !exists $tlv{ OpenHAP::Pairing::kTLVType_Error() },
 		'removing last admin succeeds' );
 	is( scalar keys %{ $hap->{storage}->load_pairings() },
@@ -541,8 +541,8 @@ sub decrypt_event ( $sock, $counter = 0 )
 	my $frame  = $sock->{written};
 	my $aad    = substr( $frame, 0, 2 );
 	my $length = unpack( 'v', $aad );
-	require FuguLib::Crypto;
-	return FuguLib::Crypto->chacha20poly1305_decrypt(
+	require Protocol::HAP::Crypto;
+	return Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 		$EVENT_KEY,
 		pack( 'x[4]Q<', $counter ),
 		substr( $frame, 2, $length ),

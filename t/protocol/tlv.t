@@ -1,16 +1,13 @@
 #!/usr/bin/env perl
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
-use lib "$RealBin/../lib";
-use FuguLib::TestLog;
 
 # Test TLV encoding/decoding
-use_ok('OpenHAP::TLV');
+use_ok('Protocol::HAP::TLV');
 
 # Test basic encoding with ordered pairs (new interface)
 {
-    my $encoded = OpenHAP::TLV::encode(
+    my $encoded = Protocol::HAP::TLV::encode(
         0x06, pack('C', 1),  # State = 1
         0x00, pack('C', 0),  # Method = 0
     );
@@ -19,7 +16,7 @@ use_ok('OpenHAP::TLV');
     is(length($encoded), 6, 'TLV encoding has correct length');
 
     # Test decoding
-    my %decoded = OpenHAP::TLV::decode($encoded);
+    my %decoded = Protocol::HAP::TLV::decode($encoded);
     is_deeply(\%decoded, {
         0x06 => pack('C', 1),
         0x00 => pack('C', 0),
@@ -30,7 +27,7 @@ use_ok('OpenHAP::TLV');
 {
     # Encode with a specific order: State before PublicKey before
     # Salt. Use values that do not conflict with the type bytes.
-    my $encoded = OpenHAP::TLV::encode(
+    my $encoded = Protocol::HAP::TLV::encode(
         0x06, pack('C', 0xAA),       # State = 0xAA (unique)
         0x03, 'public_key_data',     # PublicKey
         0x02, 'salt_data_here',      # Salt
@@ -53,19 +50,19 @@ use_ok('OpenHAP::TLV');
 # Test with longer values (chunking)
 {
     my $long_value = 'x' x 300;
-    my $encoded_long = OpenHAP::TLV::encode(
+    my $encoded_long = Protocol::HAP::TLV::encode(
         0x01, $long_value,
     );
 
     ok(length($encoded_long) > 300, 'Long value is encoded with chunks');
 
-    my %decoded_long = OpenHAP::TLV::decode($encoded_long);
+    my %decoded_long = Protocol::HAP::TLV::decode($encoded_long);
     is($decoded_long{0x01}, $long_value, 'Long value decoded correctly');
 }
 
 # Test separator encoding (for List Pairings)
 {
-    my $sep = OpenHAP::TLV::encode_separator();
+    my $sep = Protocol::HAP::TLV::encode_separator();
     is(length($sep), 2, 'Separator is 2 bytes');
     my ($type, $len) = unpack('CC', $sep);
     is($type, 0xFF, 'Separator type is 0xFF');
@@ -74,7 +71,7 @@ use_ok('OpenHAP::TLV');
 
 # Test empty value encoding
 {
-    my $encoded = OpenHAP::TLV::encode(
+    my $encoded = Protocol::HAP::TLV::encode(
         0xFF, '',  # Separator (empty value)
     );
     is(length($encoded), 2, 'Empty value encodes to 2 bytes');
@@ -85,7 +82,7 @@ use_ok('OpenHAP::TLV');
 
 # Test multiple items with same type (for List Pairings response)
 {
-    my $encoded = OpenHAP::TLV::encode(
+    my $encoded = Protocol::HAP::TLV::encode(
         0x06, pack('C', 2),     # State
         0x01, 'controller-1',   # Identifier 1
         0x03, 'pubkey-1',       # PublicKey 1
@@ -114,7 +111,7 @@ use_ok('OpenHAP::TLV');
 
 # Test kTLVType_Separator constant
 {
-    is(OpenHAP::TLV::kTLVType_Separator(), 0xFF, 'kTLVType_Separator is 0xFF');
+    is(Protocol::HAP::TLV::kTLVType_Separator(), 0xFF, 'kTLVType_Separator is 0xFF');
 }
 
 done_testing();

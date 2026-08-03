@@ -17,11 +17,9 @@
 
 use v5.36;
 
-package FuguLib::Crypto;
+package Protocol::HAP::Crypto;
 
-use MIME::Base64 ();
-
-# FuguLib::Crypto - randomness and the primitives that a HomeKit-class
+# Protocol::HAP::Crypto - randomness and the primitives that the HAP
 # protocol needs.
 #
 # Every method is a class method. The module keeps no state and never
@@ -29,15 +27,14 @@ use MIME::Base64 ();
 # quiet fallback, because a caller cannot recover from a key that is
 # not a key.
 #
-# random_bytes and random_password use core Perl only. The signature,
-# key-agreement and AEAD groups load their Crypt::* library on first
-# use, so a program that never signs anything never needs them
-# installed.
+# random_bytes uses core Perl only. The signature, key-agreement and
+# AEAD groups load their Crypt::* library on first use, so a program
+# that never signs anything never needs them installed.
+#
+# The read from /dev/urandom is a documented exception to the sans-IO
+# rule of Protocol::HAP: key material must come from the kernel.
 
-use constant {
-	URANDOM_PATH    => '/dev/urandom',
-	PASSWORD_LENGTH => 32,
-};
+use constant URANDOM_PATH => '/dev/urandom';
 
 # Which library each function group needs. The failure message names
 # the module and the group, so an operator knows what to install and
@@ -87,23 +84,6 @@ sub random_bytes ( $class, $length )
 	close $fh;
 
 	return $bytes;
-}
-
-# $class->random_password($length):
-#	Return a random password of exactly $length characters. The
-#	alphabet is URL-safe base64, so the password survives a shell,
-#	a URL and a configuration file with no quoting.
-sub random_password ( $class, $length = PASSWORD_LENGTH )
-{
-	die 'random_password needs a positive length'
-	    unless defined $length && $length > 0;
-
-	# Base64 turns three bytes into four characters. Ask for more
-	# than the password needs, then trim.
-	my $raw     = $class->random_bytes( int( $length * 3 / 4 ) + 3 );
-	my $encoded = MIME::Base64::encode_base64url( $raw, '' );
-
-	return substr( $encoded, 0, $length );
 }
 
 # $class->preload:
@@ -229,7 +209,8 @@ sub _load ($group)
 	my $path   = $module =~ s{::}{/}gr . '.pm';
 
 	eval { require $path; 1 }
-	    or die "FuguLib::Crypto needs $module for $group operations: $@";
+	    or die
+	    "Protocol::HAP::Crypto needs $module for $group operations: $@";
 
 	$loaded{$group} = 1;
 

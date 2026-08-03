@@ -14,10 +14,10 @@ use FuguLib::HTTP;
 use OpenHAP::Session;
 use OpenHAP::Pairing;
 use OpenHAP::Storage;
-use FuguLib::Crypto;
+use Protocol::HAP::Crypto;
 use OpenHAP::Bridge;
 use OpenHAP::Characteristic;
-use OpenHAP::PIN qw(normalize_pin);
+use Protocol::HAP::PIN qw(normalize_pin);
 
 # How much the server reads from a client at a time.
 use constant READ_SIZE => 65536;
@@ -98,7 +98,7 @@ sub _initialize ($self)
 	# Load or generate the accessory keys
 	my ( $ltsk, $ltpk ) = $self->{storage}->load_accessory_keys();
 	unless ( $ltsk && $ltpk ) {
-		( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
+		( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
 		$self->{storage}->save_accessory_keys( $ltsk, $ltpk );
 	}
 
@@ -850,7 +850,7 @@ sub _handle_identify ( $self, $request, $session )
 
 sub _handle_pairings ( $self, $request, $session )
 {
-	my %tlv = OpenHAP::TLV::decode( $request->{body} );
+	my %tlv = Protocol::HAP::TLV::decode( $request->{body} );
 
 	my $method_raw = $tlv{ OpenHAP::Pairing::kTLVType_Method() };
 	my $method     = defined $method_raw ? unpack( 'C', $method_raw ) : -1;
@@ -869,7 +869,7 @@ sub _handle_pairings ( $self, $request, $session )
 	}
 
 	# Unknown method
-	my $error = OpenHAP::TLV::encode(
+	my $error = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 		OpenHAP::Pairing::kTLVType_Error(),
@@ -897,7 +897,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
-		my $error = OpenHAP::TLV::encode(
+		my $error = Protocol::HAP::TLV::encode(
 			OpenHAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
 			OpenHAP::Pairing::kTLVType_Error(),
@@ -917,7 +917,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	# permissions (HAP-Pairing.md §7.4).
 	my $existing = $pairings->{$identifier};
 	if ( $existing && $existing->{ltpk} ne $ltpk ) {
-		my $error = OpenHAP::TLV::encode(
+		my $error = Protocol::HAP::TLV::encode(
 			OpenHAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
 			OpenHAP::Pairing::kTLVType_Error(),
@@ -936,7 +936,7 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	FuguLib::Log->default->info( 'Added pairing for controller: %s',
 		$identifier );
 
-	my $response = OpenHAP::TLV::encode(
+	my $response = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 	);
@@ -959,7 +959,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
-		my $error = OpenHAP::TLV::encode(
+		my $error = Protocol::HAP::TLV::encode(
 			OpenHAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
 			OpenHAP::Pairing::kTLVType_Error(),
@@ -992,7 +992,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 		$self->_regenerate_identity();
 	}
 
-	my $response = OpenHAP::TLV::encode(
+	my $response = Protocol::HAP::TLV::encode(
 		OpenHAP::Pairing::kTLVType_State(),
 		pack( 'C', 2 ),
 	);
@@ -1012,7 +1012,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 	my $current_controller = $session->controller_id();
 	my $current_pairing    = $pairings->{$current_controller};
 	unless ( $current_pairing && $current_pairing->{permissions} ) {
-		my $error = OpenHAP::TLV::encode(
+		my $error = Protocol::HAP::TLV::encode(
 			OpenHAP::Pairing::kTLVType_State(),
 			pack( 'C', 2 ),
 			OpenHAP::Pairing::kTLVType_Error(),
@@ -1050,7 +1050,7 @@ sub _handle_list_pairings ( $self, $tlv, $session )
 		    pack( 'C', $pairing->{permissions} );
 	}
 
-	my $response = OpenHAP::TLV::encode(@response_items);
+	my $response = Protocol::HAP::TLV::encode(@response_items);
 	return _response(
 		status  => 200,
 		headers => { 'Content-Type' => 'application/pairing+tlv8' },
@@ -1417,7 +1417,7 @@ sub _get_setup_hash ($self)
 # last admin pairing (HAP-Pairing.md §7.2).
 sub _regenerate_identity ($self)
 {
-	my ( $ltsk, $ltpk ) = FuguLib::Crypto->ed25519_keypair;
+	my ( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
 	$self->{storage}->save_accessory_keys( $ltsk, $ltpk );
 	$self->{accessory_ltsk} = $ltsk;
 	$self->{accessory_ltpk} = $ltpk;

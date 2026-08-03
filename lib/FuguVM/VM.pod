@@ -23,7 +23,7 @@ Everything that is not QEMU comes from FuguLib. Processes and liveness
 come from L<FuguLib::Process>, which reaps: a QEMU that became a
 zombie reads as stopped, and a caller that is about to start a second
 one needs that answer. Bounded waits come from L<FuguLib::Util>. The
-random root password comes from L<FuguLib::Crypto>. The guest
+random root password comes from L<FuguLib::Random>. The guest
 connection comes from L<FuguLib::SSH>.
 
 =head1 METHODS

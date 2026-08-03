@@ -23,6 +23,6 @@ pair-setup (SRP) flow and the pair-verify (X25519) flow.
 
 =head1 SEE ALSO
 
-L<OpenHAP::SRP>, L<FuguLib::Crypto>, F<spec/HAP-Pairing.md>
+L<Protocol::HAP::SRP>, L<Protocol::HAP::Crypto>, F<spec/HAP-Pairing.md>
 
 =cut

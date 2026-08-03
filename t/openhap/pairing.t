@@ -18,7 +18,7 @@ BEGIN {
 
 use_ok('OpenHAP::Pairing');
 use_ok('OpenHAP::Storage');
-use_ok('FuguLib::Crypto');
+use_ok('Protocol::HAP::Crypto');
 use_ok('OpenHAP::Session');
 
 # Test pairing object creation
@@ -31,7 +31,7 @@ SKIP: {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
     
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -71,7 +71,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -98,7 +98,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -110,8 +110,8 @@ SKIP: {
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
     # Create a TLV with an invalid state (99)
-    require OpenHAP::TLV;
-    my $body = OpenHAP::TLV::encode(
+    require Protocol::HAP::TLV;
+    my $body = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 99),
     );
     
@@ -128,7 +128,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     my $pairing = OpenHAP::Pairing->new(
         pin => '123-45-678',
@@ -140,8 +140,8 @@ SKIP: {
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
     # Create a TLV with an invalid state (99)
-    require OpenHAP::TLV;
-    my $body = OpenHAP::TLV::encode(
+    require Protocol::HAP::TLV;
+    my $body = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 99),
     );
     
@@ -172,7 +172,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     # Reset the global state for a clean test
     OpenHAP::Pairing->clear_pairing_state();
@@ -188,8 +188,8 @@ SKIP: {
     my $session = OpenHAP::Session->new(socket => 'dummy1');
     
     # Create a TLV with an invalid method (99)
-    require OpenHAP::TLV;
-    my $body = OpenHAP::TLV::encode(
+    require Protocol::HAP::TLV;
+    my $body = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 1),
         OpenHAP::Pairing::kTLVType_Method(), pack('C', 99),
     );
@@ -198,7 +198,7 @@ SKIP: {
     ok(defined $response, 'Invalid method returns response');
     
     # Decode the response to check for an error
-    my %resp_tlv = OpenHAP::TLV::decode($response);
+    my %resp_tlv = Protocol::HAP::TLV::decode($response);
     my $error = unpack('C', $resp_tlv{ OpenHAP::Pairing::kTLVType_Error() } // '');
     is($error, OpenHAP::Pairing::kTLVError_Unknown(),
         '[HAP-TLV8 §6] invalid pairing method returns kTLVError_Unknown');
@@ -215,7 +215,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
@@ -233,14 +233,14 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy2');
     
-    require OpenHAP::TLV;
-    my $body = OpenHAP::TLV::encode(
+    require Protocol::HAP::TLV;
+    my $body = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 1),
         OpenHAP::Pairing::kTLVType_Method(), pack('C', 0),  # PairSetup
     );
     
     my $response = $pairing->handle_pair_setup($body, $session);
-    my %resp_tlv = OpenHAP::TLV::decode($response);
+    my %resp_tlv = Protocol::HAP::TLV::decode($response);
     my $error = unpack('C', $resp_tlv{ OpenHAP::Pairing::kTLVType_Error() } // '');
     is($error, OpenHAP::Pairing::kTLVError_Unavailable(),
         '[HAP-Pairing §2.4] already paired returns kTLVError_Unavailable in M2');
@@ -249,13 +249,13 @@ SKIP: {
     # when paired
     OpenHAP::Pairing->clear_pairing_state();
     my $session2 = OpenHAP::Session->new(socket => 'dummy3');
-    my $body_auth = OpenHAP::TLV::encode(
+    my $body_auth = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 1),
         OpenHAP::Pairing::kTLVType_Method(), pack('C', 1),  # PairSetupWithAuth
     );
     
     my $response_auth = $pairing->handle_pair_setup($body_auth, $session2);
-    my %resp_auth = OpenHAP::TLV::decode($response_auth);
+    my %resp_auth = Protocol::HAP::TLV::decode($response_auth);
     my $state = unpack('C', $resp_auth{ OpenHAP::Pairing::kTLVType_State() } // '');
     is($state, 2,
         '[HAP-Pairing §2.3] PairSetupWithAuth allowed when already paired (returns M2)');
@@ -272,7 +272,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
@@ -285,8 +285,8 @@ SKIP: {
         accessory_ltpk => $ltpk,
     );
     
-    require OpenHAP::TLV;
-    my $body = OpenHAP::TLV::encode(
+    require Protocol::HAP::TLV;
+    my $body = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 1),
         OpenHAP::Pairing::kTLVType_Method(), pack('C', 0),
     );
@@ -294,13 +294,13 @@ SKIP: {
     # The first session starts the pairing
     my $session1 = OpenHAP::Session->new(socket => 'dummy4');
     my $response1 = $pairing->handle_pair_setup($body, $session1);
-    my %resp1 = OpenHAP::TLV::decode($response1);
+    my %resp1 = Protocol::HAP::TLV::decode($response1);
     my $state1 = unpack('C', $resp1{ OpenHAP::Pairing::kTLVType_State() } // '');
     
     # The second session tries to start the pairing and must get Busy
     my $session2 = OpenHAP::Session->new(socket => 'dummy5');
     my $response2 = $pairing->handle_pair_setup($body, $session2);
-    my %resp2 = OpenHAP::TLV::decode($response2);
+    my %resp2 = Protocol::HAP::TLV::decode($response2);
     my $error2 = unpack('C', $resp2{ OpenHAP::Pairing::kTLVType_Error() } // '');
     is($error2, OpenHAP::Pairing::kTLVError_Busy(),
         '[HAP-Pairing §2.4] concurrent pairing returns kTLVError_Busy in M2');
@@ -324,7 +324,7 @@ SKIP: {
     
     my $temp_dir = tempdir(CLEANUP => 1);
     my $storage = OpenHAP::Storage->new(db_path => $temp_dir);
-    my ($ltsk, $ltpk) = FuguLib::Crypto->ed25519_keypair;
+    my ($ltsk, $ltpk) = Protocol::HAP::Crypto->ed25519_keypair;
     
     # Reset the global state
     OpenHAP::Pairing->clear_pairing_state();
@@ -339,14 +339,14 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy6');
     
-    require OpenHAP::TLV;
-    my $body = OpenHAP::TLV::encode(
+    require Protocol::HAP::TLV;
+    my $body = Protocol::HAP::TLV::encode(
         OpenHAP::Pairing::kTLVType_State(), pack('C', 1),
         OpenHAP::Pairing::kTLVType_Method(), pack('C', 0),
     );
     
     my $response = $pairing->handle_pair_setup($body, $session);
-    my %resp = OpenHAP::TLV::decode($response);
+    my %resp = Protocol::HAP::TLV::decode($response);
     
     ok(defined $resp{ OpenHAP::Pairing::kTLVType_PublicKey() }, 'M2 contains PublicKey');
     

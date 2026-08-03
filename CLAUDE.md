@@ -29,7 +29,7 @@ The repo contains three Perl namespaces with distinct concerns:
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/{fuguvm,fugulib,openhap,conformance,scripts,web}/*.t
+make test           # prove -l -v t/{fuguvm,fugulib,protocol,openhap,conformance,scripts,web}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check
@@ -48,15 +48,18 @@ make integration    # provision OpenBSD VM and run integration tests
 
 - `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `fuguvm` (OpenBSD VM
   CLI)
-- `lib/OpenHAP/` — protocol (`HAP.pm`, `HTTP.pm`, `TLV.pm`), crypto
-  (`Crypto.pm`, `SRP.pm`, `Pairing.pm`, `Session.pm`), data model
-  (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`), config
-  (`Config.pm`, `Storage.pm`), integration (`MQTT.pm`, `MDNS.pm`,
-  `DeviceLoader.pm`), devices (`Tasmota/*.pm`)
-- `t/openhap/`, `t/fugulib/`, `t/fuguvm/` — unit tests; `t/conformance/` —
-  spec-cited conformance tests; `t/scripts/`, `t/web/` — tooling tests, named
-  after what they drive (see `t/CLAUDE.md`); `t/openhap/integration/` —
-  integration tests, run inside the OpenBSD VM
+- `lib/Protocol/` — the `Protocol::HAP` library: codecs (`TLV.pm`), setup-code
+  rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`); it is self-contained and
+  never uses FuguLib, FuguVM, or OpenHAP (`t/protocol/boundary.t` enforces
+  this)
+- `lib/OpenHAP/` — protocol engine (`HAP.pm`, `Pairing.pm`, `Session.pm`),
+  data model (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`),
+  persistence (`Storage.pm`), device integration (`DeviceLoader.pm`,
+  `Tasmota/*.pm`), test drivers (`Test/*.pm`)
+- `t/openhap/`, `t/fugulib/`, `t/protocol/`, `t/fuguvm/` — unit tests;
+  `t/conformance/` — spec-cited conformance tests; `t/scripts/`, `t/web/` —
+  tooling tests, named after what they drive (see `t/CLAUDE.md`);
+  `t/openhap/integration/` — integration tests, run inside the OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/fugulib/` — `<Module>.3p`, one per `lib/FuguLib/`
   module, installed as `FuguLib::<Module>.3p`; `man/fuguvm/` — `fuguvm.1`

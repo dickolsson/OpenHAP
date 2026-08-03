@@ -27,6 +27,6 @@ close the connection.
 
 =head1 SEE ALSO
 
-L<FuguLib::Crypto>, F<spec/HAP-Encryption.md>
+L<Protocol::HAP::Crypto>, F<spec/HAP-Encryption.md>
 
 =cut

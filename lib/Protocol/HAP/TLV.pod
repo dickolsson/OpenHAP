@@ -1,19 +1,19 @@
 =head1 NAME
 
-OpenHAP::TLV - TLV8 encoder and decoder for the HAP protocol
+Protocol::HAP::TLV - TLV8 encoder and decoder for the HAP protocol
 
 =head1 SYNOPSIS
 
-    use OpenHAP::TLV;
+    use Protocol::HAP::TLV;
 
     # Encode
-    my $encoded = OpenHAP::TLV::encode(
+    my $encoded = Protocol::HAP::TLV::encode(
         0x06 => pack('C', 1),  # State
         0x00 => pack('C', 0),  # Method
     );
 
     # Decode
-    my %decoded = OpenHAP::TLV::decode($encoded);
+    my %decoded = Protocol::HAP::TLV::decode($encoded);
 
 =head1 DESCRIPTION
 

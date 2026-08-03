@@ -3,7 +3,7 @@ use v5.36;
 package OpenHAP::Session;
 
 use FuguLib::Log;
-use FuguLib::Crypto;
+use Protocol::HAP::Crypto;
 
 # Every session gets a number of its own, for the whole life of the
 # process. The server files a session under it, so dropping a
@@ -83,7 +83,7 @@ sub encrypt ( $self, $data )
 		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
 
 		my ( $ciphertext, $tag ) =
-		    FuguLib::Crypto->chacha20poly1305_encrypt(
+		    Protocol::HAP::Crypto->chacha20poly1305_encrypt(
 			$self->{encrypt_key},
 			$nonce, $chunk, $aad );
 
@@ -127,7 +127,7 @@ sub decrypt ( $self, $data )
 		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
 
 		my $plaintext =
-		    FuguLib::Crypto->chacha20poly1305_decrypt(
+		    Protocol::HAP::Crypto->chacha20poly1305_decrypt(
 			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
 
 		return unless defined $plaintext;

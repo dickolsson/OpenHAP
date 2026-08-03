@@ -15,7 +15,7 @@ BEGIN {
 }
 
 use_ok('OpenHAP::Session');
-use_ok('FuguLib::Crypto');
+use_ok('Protocol::HAP::Crypto');
 
 # Test session creation
 {
@@ -30,8 +30,8 @@ use_ok('FuguLib::Crypto');
 {
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
-    my $encrypt_key = FuguLib::Crypto->random_bytes(32);
-    my $decrypt_key = FuguLib::Crypto->random_bytes(32);
+    my $encrypt_key = Protocol::HAP::Crypto->random_bytes(32);
+    my $decrypt_key = Protocol::HAP::Crypto->random_bytes(32);
     
     $session->set_encryption($encrypt_key, $decrypt_key);
     
@@ -57,7 +57,7 @@ SKIP: {
     
     my $session = OpenHAP::Session->new(socket => 'dummy');
     
-    my $key = FuguLib::Crypto->random_bytes(32);
+    my $key = Protocol::HAP::Crypto->random_bytes(32);
     $session->set_encryption($key, $key);
     
     my $plaintext = "Test message";
@@ -83,7 +83,7 @@ SKIP: {
     skip 'ChaCha20Poly1305 not available', 2 if $@;
     
     my $session = OpenHAP::Session->new(socket => 'dummy');
-    my $key = FuguLib::Crypto->random_bytes(32);
+    my $key = Protocol::HAP::Crypto->random_bytes(32);
     $session->set_encryption($key, $key);
     
     # Data larger than chunk size (1024 bytes)

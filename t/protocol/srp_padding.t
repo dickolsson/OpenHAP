@@ -1,9 +1,6 @@
 #!/usr/bin/env perl
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
-use lib "$RealBin/../lib";
-use FuguLib::TestLog;
 
 BEGIN {
     eval {
@@ -15,8 +12,8 @@ BEGIN {
     }
 }
 
-use_ok('OpenHAP::SRP');
-use_ok('FuguLib::Crypto');
+use_ok('Protocol::HAP::SRP');
+use_ok('Protocol::HAP::Crypto');
 
 # Test that the module pads A and B to N_len (384 bytes) when it
 # computes u, M1, and M2. This padding is critical for SRP-6a
@@ -28,7 +25,7 @@ use_ok('FuguLib::Crypto');
 
 # Test padding of A and B in u computation
 {
-    my $srp = OpenHAP::SRP->new(password => '123-45-678');
+    my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
     my $salt = $srp->generate_salt();
     $srp->compute_verifier($salt, '123-45-678');
     my $B = $srp->generate_server_public();
@@ -37,14 +34,14 @@ use_ok('FuguLib::Crypto');
     # bytes. For example, a small value such as 256 (0x100) is 2
     # bytes without padding.
     my $A_small = Math::BigInt->new(256);
-    my $A_bytes_unpadded = OpenHAP::SRP::_bigint_to_bytes($A_small);
+    my $A_bytes_unpadded = Protocol::HAP::SRP::_bigint_to_bytes($A_small);
 
     # Without padding, the value is 2 bytes
     ok(length($A_bytes_unpadded) < 384,
         'Small A is less than 384 bytes without padding');
 
     # With padding, the value must be 384 bytes
-    my $A_bytes_padded = OpenHAP::SRP::_bigint_to_bytes($A_small, 384);
+    my $A_bytes_padded = Protocol::HAP::SRP::_bigint_to_bytes($A_small, 384);
     is(length($A_bytes_padded), 384,
         '[HAP-Pairing §2.5] small A is left-padded to 384 bytes');
 
@@ -55,7 +52,7 @@ use_ok('FuguLib::Crypto');
 
 # Test that compute_session_key uses padded A and B for u
 {
-    my $srp = OpenHAP::SRP->new(password => '123-45-678');
+    my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
     my $salt = $srp->generate_salt();
     $srp->compute_verifier($salt, '123-45-678');
     $srp->generate_server_public();
@@ -63,8 +60,8 @@ use_ok('FuguLib::Crypto');
     # Create two different encodings of the same A value. One
     # encoding is minimal. The other one has padding to 384 bytes.
     my $A_val = Math::BigInt->new(12345);
-    my $A_bytes_unpadded = OpenHAP::SRP::_bigint_to_bytes($A_val);
-    my $A_bytes_padded = OpenHAP::SRP::_bigint_to_bytes($A_val, 384);
+    my $A_bytes_unpadded = Protocol::HAP::SRP::_bigint_to_bytes($A_val);
+    my $A_bytes_padded = Protocol::HAP::SRP::_bigint_to_bytes($A_val, 384);
     
     isnt(length($A_bytes_unpadded), length($A_bytes_padded),
         'Padded and unpadded A have different lengths');
@@ -74,7 +71,7 @@ use_ok('FuguLib::Crypto');
     my $K1 = $srp->compute_session_key($A_bytes_unpadded);
 
     # Use a fresh SRP instance for the second test
-    my $srp2 = OpenHAP::SRP->new(password => '123-45-678');
+    my $srp2 = Protocol::HAP::SRP->new(password => '123-45-678');
     $srp2->generate_salt();
     $srp2->compute_verifier($salt, '123-45-678');
     # Copy the same b and B to keep the server state identical
@@ -95,7 +92,7 @@ use_ok('FuguLib::Crypto');
 {
     # Set up SRP with known parameters
     my $password = '123-45-678';
-    my $srp = OpenHAP::SRP->new(password => $password);
+    my $srp = Protocol::HAP::SRP->new(password => $password);
     
     # Generate a known salt. For reproducibility, use a fixed value
     # in a real test.
@@ -106,7 +103,7 @@ use_ok('FuguLib::Crypto');
     # Create a valid client public key A. It must be non-zero mod N.
     # For the test, use a small valid value.
     my $A_int = Math::BigInt->new(2)->bmodpow(Math::BigInt->new(256), $srp->{N});
-    my $A_bytes = OpenHAP::SRP::_bigint_to_bytes($A_int, 384);
+    my $A_bytes = Protocol::HAP::SRP::_bigint_to_bytes($A_int, 384);
     
     # Compute the session key. This internally computes
     # u = H(PAD(A) | PAD(B)).
@@ -132,7 +129,7 @@ use_ok('FuguLib::Crypto');
 # pairing in 256, and both sides would then hash different bytes for
 # u. Thus SRP owns the encoding, beside N_LEN.
 subtest '[HAP-Pairing §2.4] the M2 public key is padded to N' => sub {
-	my $srp = OpenHAP::SRP->new( password => '123-45-678' );
+	my $srp = Protocol::HAP::SRP->new( password => '123-45-678' );
 	my $salt = $srp->generate_salt();
 	$srp->compute_verifier( $salt, '123-45-678' );
 	$srp->generate_server_public();
@@ -151,10 +148,10 @@ subtest '[HAP-Pairing §2.4] the M2 public key is padded to N' => sub {
 
 	# The bytes are the same ones that u is computed over
 	is( unpack( 'H*', $short ),
-		unpack( 'H*', OpenHAP::SRP::_bigint_to_bytes( $srp->{B}, 384 ) ),
+		unpack( 'H*', Protocol::HAP::SRP::_bigint_to_bytes( $srp->{B}, 384 ) ),
 		'the wire encoding matches the hashed encoding' );
 
-	my $fresh = OpenHAP::SRP->new( password => '123-45-678' );
+	my $fresh = Protocol::HAP::SRP->new( password => '123-45-678' );
 	is( $fresh->server_public_bytes,
 		undef, 'no key before generate_server_public' );
 };
@@ -162,7 +159,7 @@ subtest '[HAP-Pairing §2.4] the M2 public key is padded to N' => sub {
 # Test that the N_len constant matches the padding expectation
 {
     # N is 3072 bits = 384 bytes
-    my $N_len = length($OpenHAP::SRP::N_3072);
+    my $N_len = length($Protocol::HAP::SRP::N_3072);
     is($N_len, 384,
         '[HAP-Pairing §2.2] N_3072 group prime is 384 bytes (3072 bits)');
 }

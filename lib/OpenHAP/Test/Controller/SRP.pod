@@ -18,7 +18,7 @@ OpenHAP::Test::Controller::SRP - SRP-6a client role for tests
 =head1 DESCRIPTION
 
 This module is the client (controller) role of the SRP-6a exchange
-that L<OpenHAP::SRP> serves. It uses the same parameters as the
+that L<Protocol::HAP::SRP> serves. It uses the same parameters as the
 server:
 
 =over 4
@@ -68,6 +68,6 @@ available after C<compute_proof>.
 
 =head1 SEE ALSO
 
-L<OpenHAP::Test::Controller>, L<OpenHAP::SRP>, F<spec/HAP-Pairing.md>
+L<OpenHAP::Test::Controller>, L<Protocol::HAP::SRP>, F<spec/HAP-Pairing.md>
 
 =cut

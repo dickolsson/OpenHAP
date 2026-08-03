@@ -1,6 +1,6 @@
 use v5.36;
 
-package OpenHAP::TLV;
+package Protocol::HAP::TLV;
 
 # TLV8 encoding and decoding for the HomeKit Accessory Protocol
 # The format is Type-Length-Value with 8-bit type and length

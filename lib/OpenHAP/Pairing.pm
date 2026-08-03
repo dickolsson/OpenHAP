@@ -3,12 +3,12 @@ use v5.36;
 package OpenHAP::Pairing;
 
 use FuguLib::Log;
-use OpenHAP::TLV;
-use OpenHAP::SRP;
-use FuguLib::Crypto;
+use Protocol::HAP::TLV;
+use Protocol::HAP::SRP;
+use Protocol::HAP::Crypto;
 
-use OpenHAP::PIN qw(normalize_pin);
-use Digest::SHA  qw(sha512);
+use Protocol::HAP::PIN qw(normalize_pin);
+use Digest::SHA        qw(sha512);
 
 # TLV Types for pairing
 use constant {
@@ -121,7 +121,7 @@ sub _get_accessory_pairing_id ($self)
 sub handle_pair_setup ( $self, $body, $session )
 {
 
-	my %request = OpenHAP::TLV::decode($body);
+	my %request = Protocol::HAP::TLV::decode($body);
 
 	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
@@ -189,7 +189,7 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	$pairing_session_id  = $session;
 
 	# Initialize SRP
-	my $srp  = OpenHAP::SRP->new( password => $self->{pin} );
+	my $srp  = Protocol::HAP::SRP->new( password => $self->{pin} );
 	my $salt = $srp->generate_salt();
 	$srp->compute_verifier( $salt, $self->{pin} );
 	$srp->generate_server_public();
@@ -199,7 +199,8 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 
 	# M2: Send the salt and the public key. The key goes out padded
 	# to the length of N, which is what both sides hash.
-	my $response = OpenHAP::TLV::encode( kTLVType_State, pack( 'C', 2 ),
+	my $response =
+	    Protocol::HAP::TLV::encode( kTLVType_State, pack( 'C', 2 ),
 		kTLVType_PublicKey, $srp->server_public_bytes,
 		kTLVType_Salt,      $salt, );
 
@@ -247,7 +248,8 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	FuguLib::Log->default->debug('Pair-setup M3 verified, sending M4');
 
 	# M4: Send the proof
-	my $response = OpenHAP::TLV::encode( kTLVType_State, pack( 'C', 4 ),
+	my $response =
+	    Protocol::HAP::TLV::encode( kTLVType_State, pack( 'C', 4 ),
 		kTLVType_Proof, $M2, );
 
 	return $response;
@@ -263,27 +265,27 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 
 	# Derive the encryption key from the SRP session key
 	my $session_key = $srp->get_session_key();
-	my $encrypt_key = FuguLib::Crypto->hkdf_sha512( $session_key,
+	my $encrypt_key = Protocol::HAP::Crypto->hkdf_sha512( $session_key,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
 	# Decrypt the data
 	my $nonce    = pack('x[4]') . 'PS-Msg05';
 	my $auth_tag = substr( $encrypted_data, -16, 16, '' );
 	my $decrypted =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $encrypt_key, $nonce,
-		$encrypted_data, $auth_tag );
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $encrypt_key,
+		$nonce, $encrypted_data, $auth_tag );
 
 	return $self->_error_response( kTLVError_Authentication, 6 )
 	    unless defined $decrypted;
 
 	# Parse the decrypted TLV
-	my %inner                 = OpenHAP::TLV::decode($decrypted);
+	my %inner                 = Protocol::HAP::TLV::decode($decrypted);
 	my $ios_device_pairing_id = $inner{ kTLVType_Identifier() };
 	my $ios_device_ltpk       = $inner{ kTLVType_PublicKey() };
 	my $ios_device_signature  = $inner{ kTLVType_Signature() };
 
 	# Verify the signature
-	my $ios_device_x = FuguLib::Crypto->hkdf_sha512(
+	my $ios_device_x = Protocol::HAP::Crypto->hkdf_sha512(
 		$session_key,
 		'Pair-Setup-Controller-Sign-Salt',
 		'Pair-Setup-Controller-Sign-Info', 32
@@ -292,7 +294,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	    $ios_device_x . $ios_device_pairing_id . $ios_device_ltpk;
 
 	unless (
-		FuguLib::Crypto->ed25519_verify(
+		Protocol::HAP::Crypto->ed25519_verify(
 			$ios_device_signature, $ios_device_info,
 			$ios_device_ltpk
 		) )
@@ -314,7 +316,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	$pairing_session_id  = undef;
 
 	# Generate the accessory signature
-	my $accessory_x = FuguLib::Crypto->hkdf_sha512(
+	my $accessory_x = Protocol::HAP::Crypto->hkdf_sha512(
 		$session_key,
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
@@ -322,13 +324,13 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
 	my $accessory_info =
 	    $accessory_x . $accessory_pairing_id . $self->{accessory_ltpk};
-	my $accessory_signature = FuguLib::Crypto->ed25519_sign(
+	my $accessory_signature = Protocol::HAP::Crypto->ed25519_sign(
 		$accessory_info,
 		$self->{accessory_ltsk},
 		$self->{accessory_ltpk} );
 
 	# Build the response TLV
-	my $response_tlv = OpenHAP::TLV::encode(
+	my $response_tlv = Protocol::HAP::TLV::encode(
 		kTLVType_Identifier, $accessory_pairing_id,
 		kTLVType_PublicKey,  $self->{accessory_ltpk},
 		kTLVType_Signature,  $accessory_signature,
@@ -337,11 +339,11 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	# Encrypt the response
 	my $response_nonce = pack('x[4]') . 'PS-Msg06';
 	my ( $response_encrypted, $response_tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $encrypt_key,
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $encrypt_key,
 		$response_nonce, $response_tlv );
 
 	# M6: Send the encrypted data
-	my $response = OpenHAP::TLV::encode(
+	my $response = Protocol::HAP::TLV::encode(
 		kTLVType_State,         pack( 'C', 6 ),
 		kTLVType_EncryptedData, $response_encrypted . $response_tag,
 	);
@@ -352,7 +354,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 sub handle_pair_verify ( $self, $body, $session )
 {
 
-	my %request = OpenHAP::TLV::decode($body);
+	my %request = Protocol::HAP::TLV::decode($body);
 
 	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
 	unless ( defined $request{ kTLVType_State() } ) {
@@ -383,11 +385,11 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 
 	# Generate the accessory ephemeral keypair
 	my ( $accessory_secret, $accessory_public ) =
-	    FuguLib::Crypto->x25519_keypair;
+	    Protocol::HAP::Crypto->x25519_keypair;
 
 	# Compute the shared secret
 	my $shared_secret =
-	    FuguLib::Crypto->x25519_shared_secret( $accessory_secret,
+	    Protocol::HAP::Crypto->x25519_shared_secret( $accessory_secret,
 		$ios_public_key );
 
 	# Store the state for the next step
@@ -400,28 +402,28 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
 	my $accessory_info =
 	    $accessory_public . $accessory_pairing_id . $ios_public_key;
-	my $accessory_signature = FuguLib::Crypto->ed25519_sign(
+	my $accessory_signature = Protocol::HAP::Crypto->ed25519_sign(
 		$accessory_info,
 		$self->{accessory_ltsk},
 		$self->{accessory_ltpk} );
 
 	# Build the sub-TLV
-	my $sub_tlv = OpenHAP::TLV::encode(
+	my $sub_tlv = Protocol::HAP::TLV::encode(
 		kTLVType_Identifier, $accessory_pairing_id,
 		kTLVType_Signature,  $accessory_signature,
 	);
 
 	# Derive the session key and encrypt
-	my $session_key = FuguLib::Crypto->hkdf_sha512( $shared_secret,
+	my $session_key = Protocol::HAP::Crypto->hkdf_sha512( $shared_secret,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
 	my $nonce = pack('x[4]') . 'PV-Msg02';
 	my ( $encrypted, $tag ) =
-	    FuguLib::Crypto->chacha20poly1305_encrypt( $session_key, $nonce,
-		$sub_tlv );
+	    Protocol::HAP::Crypto->chacha20poly1305_encrypt( $session_key,
+		$nonce, $sub_tlv );
 
 	# M2: Send the public key and the encrypted data
-	my $response = OpenHAP::TLV::encode(
+	my $response = Protocol::HAP::TLV::encode(
 		kTLVType_State,         pack( 'C', 2 ),
 		kTLVType_PublicKey,     $accessory_public,
 		kTLVType_EncryptedData, $encrypted . $tag,
@@ -444,21 +446,21 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	    unless defined $shared_secret;
 
 	# Derive the session key
-	my $session_key = FuguLib::Crypto->hkdf_sha512( $shared_secret,
+	my $session_key = Protocol::HAP::Crypto->hkdf_sha512( $shared_secret,
 		'Pair-Verify-Encrypt-Salt', 'Pair-Verify-Encrypt-Info', 32 );
 
 	# Decrypt
 	my $nonce    = pack('x[4]') . 'PV-Msg03';
 	my $auth_tag = substr( $encrypted_data, -16, 16, '' );
 	my $decrypted =
-	    FuguLib::Crypto->chacha20poly1305_decrypt( $session_key, $nonce,
-		$encrypted_data, $auth_tag );
+	    Protocol::HAP::Crypto->chacha20poly1305_decrypt( $session_key,
+		$nonce, $encrypted_data, $auth_tag );
 
 	return $self->_error_response( kTLVError_Authentication, 4 )
 	    unless defined $decrypted;
 
 	# Parse the inner TLV
-	my %inner          = OpenHAP::TLV::decode($decrypted);
+	my %inner          = Protocol::HAP::TLV::decode($decrypted);
 	my $ios_pairing_id = $inner{ kTLVType_Identifier() };
 	my $ios_signature  = $inner{ kTLVType_Signature() };
 
@@ -472,7 +474,7 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	# Verify the signature
 	my $ios_info = $ios_public_key . $ios_pairing_id . $accessory_public;
 	unless (
-		FuguLib::Crypto->ed25519_verify(
+		Protocol::HAP::Crypto->ed25519_verify(
 			$ios_signature, $ios_info, $pairing->{ltpk} ) )
 	{
 		return $self->_error_response( kTLVError_Authentication, 4 );
@@ -485,10 +487,10 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 	# - Control-Write-Encryption-Key: the controller writes,
 	#   the accessory decrypts
 	my $encrypt_key =
-	    FuguLib::Crypto->hkdf_sha512( $shared_secret, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared_secret, 'Control-Salt',
 		'Control-Read-Encryption-Key', 32 );
 	my $decrypt_key =
-	    FuguLib::Crypto->hkdf_sha512( $shared_secret, 'Control-Salt',
+	    Protocol::HAP::Crypto->hkdf_sha512( $shared_secret, 'Control-Salt',
 		'Control-Write-Encryption-Key', 32 );
 
 	# Set up the encrypted session
@@ -498,7 +500,8 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 		'Pair-verify M3 verified successfully, session encrypted');
 
 	# M4: Success
-	my $response = OpenHAP::TLV::encode( kTLVType_State, pack( 'C', 4 ), );
+	my $response =
+	    Protocol::HAP::TLV::encode( kTLVType_State, pack( 'C', 4 ), );
 
 	return $response;
 }
@@ -506,7 +509,7 @@ sub _pair_verify_m3_m4 ( $self, $request, $session )
 sub _error_response ( $self, $error_code, $state )
 {
 
-	return OpenHAP::TLV::encode(
+	return Protocol::HAP::TLV::encode(
 		kTLVType_State, pack( 'C', $state ),
 		kTLVType_Error, pack( 'C', $error_code ),
 	);
