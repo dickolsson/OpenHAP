@@ -1,9 +1,8 @@
 # Phase 3 — FuguVM becomes App::FuguVM
 
-This phase moves the VM utility into `App::`, and renames the two modules that
-name a mechanism instead of a feature. The command is still `fuguvm`, the
-configuration file is still `.fuguvmrc`, and the data files stay under
-`share/fuguvm/`.
+This phase moves the VM utility into `App::`, and renames the four modules whose
+names mislead. The command is still `fuguvm`, the configuration file is still
+`.fuguvmrc`, and the data files stay under `share/fuguvm/`.
 
 The phase depends on phase 2. Both phases edit the same regex in
 `t/web/site.t:203` and in `t/protocol/boundary.t:73`, and the phase-2 state must
@@ -49,7 +48,23 @@ keep the `FuguVM` alternative in each. Phase 3 removes it.
 - Rewrite the sidecar abstract:
   `App::FuguVM::Console - drive the serial console of a guest`.
 
-### 3.4 Move and retarget the tests
+### 3.4 FuguVM::Image and ImageCache become Miniroot and DiskCache
+
+- `git mv lib/App/FuguVM/Image.pm lib/App/FuguVM/Miniroot.pm` and
+  `git mv lib/App/FuguVM/ImageCache.pm lib/App/FuguVM/DiskCache.pm`, each with
+  its `.pod`.
+- Both modules cache, and neither name says what. `Image` downloads the OpenBSD
+  miniroot install media and stores it in the proxy cache. `ImageCache` keeps
+  the compacted qcow2 disk that the installer produced. `ImageCache` even loads
+  `Image`, so the pair reads as a cache of the module above it. It is not.
+- The constants stay: `BASE_NAME`, `META_NAME`, and `INSTALLED_DIR` name files
+  on disk, not modules.
+- Users: `App::FuguVM::CLI` for both, and `DiskCache` for `Miniroot` and
+  `Console`.
+- `git mv t/fuguvm/image.t t/fuguvm/miniroot.t` and
+  `git mv t/fuguvm/imagecache.t t/fuguvm/diskcache.t`.
+
+### 3.5 Move and retarget the tests
 
 - `git mv t/fuguvm/vm.t t/fuguvm/guest.t`. The tier directory keeps its name: it
   is named after the product, and the product is still FuguVM.
@@ -57,15 +72,16 @@ keep the `FuguVM` alternative in each. Phase 3 removes it.
   `eval { require FuguVM::VM; 1 } or plan skip_all => ...`. A stale guard turns
   this rename into a skipped file, not a failing one. Make the load a hard
   failure, or retarget the guard and confirm the file still runs.
-- Retarget the imports in the other nine files under `t/fuguvm/`.
+- Retarget the imports in the other seven files under `t/fuguvm/`.
 - `t/protocol/boundary.t:73` is `^(?:Fugu|FuguVM|App)\b` after phase 2. Drop the
   `FuguVM` alternative, because `App` now covers it.
 - Add the retired names to `t/scripts/namespaces.t`: `FuguVM::`, `FuguVM::VM`,
-  `FuguVM::Expect`, and the path form `lib/FuguVM/`.
+  `FuguVM::Expect`, `FuguVM::Image`, `FuguVM::ImageCache`, and the path form
+  `lib/FuguVM/`.
 - `t/scripts/conventions.t` compiles every script under `scripts/`. Nothing
   there loads a `FuguVM::` module today. Confirm that rather than assume it.
 
-### 3.5 Build and CI
+### 3.6 Build and CI
 
 - `Makefile`: FuguVM is a development tool. The `install` and `package` targets
   do not name `lib/FuguVM/` or `bin/fuguvm`, and they must not gain them. Only
@@ -75,7 +91,7 @@ keep the `FuguVM` alternative in each. Phase 3 removes it.
 - `scripts/vm-provision` and `scripts/vm-up` name the command `fuguvm` and the
   `.fuguvmrc` file, not a module. Confirm this rather than assume it.
 
-### 3.6 Update the website and the documentation
+### 3.7 Update the website and the documentation
 
 - `web/mkindex.sh:151` is
   `emit_group 'FuguVM modules' vm-modules lib/FuguVM/ '' "$@"`. The prefix stops
@@ -93,9 +109,10 @@ keep the `FuguVM` alternative in each. Phase 3 removes it.
 
 ## Deliverables
 
-- `lib/App/FuguVM/` with 11 modules, including `Guest.pm` and `Console.pm`, each
-  with a `.pod` sidecar.
-- `t/fuguvm/guest.t`, and nine retargeted test files.
+- `lib/App/FuguVM/` with 11 modules, including `Guest.pm`, `Console.pm`,
+  `Miniroot.pm`, and `DiskCache.pm`, each with a `.pod` sidecar.
+- `t/fuguvm/guest.t`, `t/fuguvm/miniroot.t`, `t/fuguvm/diskcache.t`, and seven
+  retargeted test files.
 - Updated `bin/fuguvm`, `web/mkindex.sh`, `t/web/site.t`,
   `t/protocol/boundary.t`, `t/scripts/namespaces.t`,
   `.github/workflows/integration.yml`, and root `CLAUDE.md`.

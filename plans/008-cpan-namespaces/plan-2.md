@@ -1,6 +1,6 @@
 # Phase 2 — OpenHAP becomes App::OpenHAP
 
-This phase moves the daemon into `App::`, and gives three modules a name that
+This phase moves the daemon into `App::`, and gives four modules a name that
 says what they do. The product is still called OpenHAP, and the daemon is still
 `openhapd`.
 
@@ -13,8 +13,8 @@ The phase depends on phase 1. Phase 3 depends on this one.
 - `mkdir lib/App`, then `git mv lib/OpenHAP lib/App/OpenHAP`. Rename the package
   statement in each module, and the `=head1 NAME` line of each `.pod` sidecar.
 - Rewrite every `use`, `require`, and fully qualified call.
-- `App::OpenHAP::Tasmota::*` and `App::OpenHAP::Test::Integration` keep their
-  leaf names.
+- `App::OpenHAP::Test::Integration` and the four device classes keep their leaf
+  names. `Tasmota::Base` does not: task 2.5 renames it.
 
 ### 2.2 OpenHAP::Server becomes App::OpenHAP::Host
 
@@ -44,18 +44,27 @@ The phase depends on phase 1. Phase 3 depends on this one.
   holds the configured devices.
 - Users: `bin/openhapd`, `bin/hapctl`, and `t/openhap/device-loading.t`.
 
-### 2.5 Write the two missing sidecars
+### 2.5 OpenHAP::Tasmota::Base becomes App::OpenHAP::Tasmota::Device
 
-- `lib/App/OpenHAP/Tasmota/Base.pod` and `Lightbulb.pod` do not exist. The
+- `git mv lib/App/OpenHAP/Tasmota/Base.pm lib/App/OpenHAP/Tasmota/Device.pm`.
+- `Base` names a role in the code, as `Loader` did. The class is a Tasmota
+  device that is also a `Protocol::HAP::Accessory`: it owns the MQTT
+  subscription, the availability state, and the power helpers.
+- Users: the four device classes that inherit from it, `App::OpenHAP::Devices`,
+  and `t/openhap/tasmota.t`.
+
+### 2.6 Write the two missing sidecars
+
+- `Tasmota/Device.pod` and `Tasmota/Lightbulb.pod` do not exist. The
   documentation rule in the root `CLAUDE.md` requires a sidecar for every module
   outside `lib/Fugu/`.
-- `Base.pod` documents the constructor arguments, the MQTT topic contract, and
+- `Device.pod` documents the constructor arguments, the MQTT topic contract, and
   the methods that a subclass overrides. `Lightbulb.pod` documents the
   capability flags and the brightness and color characteristics.
 - The two new sidecars change the sidecar count that `t/web/site.t` asserts at
-  line 206. Task 2.9 handles the regex on the other side of that assertion.
+  line 206. Task 2.10 handles the regex on the other side of that assertion.
 
-### 2.6 Retarget the callers
+### 2.7 Retarget the callers
 
 - `bin/openhapd`: the `use OpenHAP::DeviceLoader` and `use OpenHAP::Server`
   lines, and the `Storage` constructor call.
@@ -69,7 +78,7 @@ The phase depends on phase 1. Phase 3 depends on this one.
   sandbox. Change the probe to `"$script_lib/App/OpenHAP"`.
 - `bin/hapctl`: one import line.
 
-### 2.7 Move and retarget the tests
+### 2.8 Move and retarget the tests
 
 - `git mv t/openhap/server.t t/openhap/host.t` and
   `git mv t/openhap/storage.t t/openhap/store-file.t`. The tier directory keeps
@@ -89,11 +98,11 @@ The phase depends on phase 1. Phase 3 depends on this one.
     enforced, and no acceptance grep can see it: the literal text is `OpenHAP)`,
     with no trailing colons.
 - Add the retired names to `t/scripts/namespaces.t`: `OpenHAP::`,
-  `OpenHAP::Server`, `OpenHAP::Storage`, `OpenHAP::DeviceLoader`, and the path
-  form `lib/OpenHAP/`.
+  `OpenHAP::Server`, `OpenHAP::Storage`, `OpenHAP::DeviceLoader`,
+  `OpenHAP::Tasmota::Base`, and the path form `lib/OpenHAP/`.
 - `t/CLAUDE.md`: the `OpenHAP::TestMock::MQTT` example.
 
-### 2.8 Build, install, and CI
+### 2.9 Build, install, and CI
 
 - `Makefile`: `install`, `package`, and `uninstall` name `$(LIBDIR)/OpenHAP`,
   `/OpenHAP/Tasmota`, and `/OpenHAP/Test`. Each gains the `App/` level, and
@@ -113,7 +122,7 @@ The phase depends on phase 1. Phase 3 depends on this one.
 - `.github/workflows/integration.yml`: `lib/OpenHAP/**.pm` becomes
   `lib/App/OpenHAP/**.pm`, in the push list and the pull-request list.
 
-### 2.9 Update the website and the manuals
+### 2.10 Update the website and the manuals
 
 - `web/mkindex.sh:149` is
   `emit_group 'OpenHAP modules' modules lib/OpenHAP/ '' "$@"`. The prefix stops
@@ -131,7 +140,7 @@ The phase depends on phase 1. Phase 3 depends on this one.
   `Devices` sets that field to the package name, so the daemon's output changes
   with the rename. Update the manual.
 
-### 2.10 Update the project documentation
+### 2.11 Update the project documentation
 
 - Root `CLAUDE.md`: the namespace list, and the `lib/OpenHAP/` row in Layout.
 - `TODO.md` holds 18 references in the path form `lib/OpenHAP/...`. A grep for
@@ -141,7 +150,8 @@ The phase depends on phase 1. Phase 3 depends on this one.
 ## Deliverables
 
 - `lib/App/OpenHAP/` with `Host.pm`, `Devices.pm`, `Store/File.pm`,
-  `Tasmota/*.pm`, and `Test/Integration.pm`, each with a `.pod` sidecar.
+  `Tasmota/Device.pm`, the four device classes, and `Test/Integration.pm`, each
+  with a `.pod` sidecar.
 - `t/openhap/host.t`, `t/openhap/store-file.t`, and
   `t/lib/App/OpenHAP/TestMock/MQTT.pm`.
 - Updated `Makefile`, `scripts/integration`, `scripts/vm-provision`,

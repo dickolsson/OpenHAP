@@ -11,11 +11,15 @@ claims for one project fail that test. Two other faults come with them.
 the same empty work as `API` or `Interface`. `OpenHAP` and `FuguVM` are
 applications, and PAUSE puts applications under `App::`.
 
-Some module names describe a mechanism instead of a feature. `FuguVM::Expect`
-names a CPAN dependency. `FuguVM::VM` repeats its parent. `OpenHAP::Server`
-collides with `Protocol::HAP::Server`. `OpenHAP::Storage`,
-`Protocol::HAP::Store`, and `FuguLib::Store` use three words for one idea.
-`FuguLib::Util` hides three unrelated functions behind a general noun.
+Nine module names are wrong in four ways. Some name a mechanism instead of a
+feature: `FuguVM::Expect` names a CPAN dependency, `OpenHAP::DeviceLoader` and
+`OpenHAP::Tasmota::Base` name a role in the code. Some claim more than they
+hold: `FuguLib::MDNS` implements no mDNS, and only controls `mdnsd(8)`. Some
+collide or mislead: `FuguVM::VM` repeats its parent, `OpenHAP::Server` collides
+with `Protocol::HAP::Server`, and `FuguVM::Image` and `FuguVM::ImageCache` are
+two caches of two different artefacts. Some are simply stale or empty:
+`Protocol::HAP::PIN` uses a word the specification replaced with "setup code",
+and `FuguLib::Util` hides three unrelated functions behind a general noun.
 
 `FuguLib::Imsg` mixes two jobs. It encodes and decodes the imsg(3) frame, and it
 also owns a socket. The codec is reusable; the socket is not.
@@ -32,8 +36,9 @@ The project has no users. A clean break is possible.
 2. The repository claims exactly one top-level name, `Fugu`. It is a nexus of 21
    modules, so the guidance permits it. `App::` and `Protocol::` are shared
    namespaces that the project joins.
-3. No module name repeats its parent, and no module name describes a dependency
-   instead of a feature.
+3. No module name repeats its parent, describes a dependency instead of a
+   feature, claims a capability the module does not hold, or uses a word the
+   specification has replaced.
 4. `Protocol::Imsg` is a sans-IO codec. `Fugu::Imsg` owns the socket and uses
    the codec.
 5. Behavior does not change, with one exception: `hapctl` prints a device class,
@@ -48,14 +53,11 @@ changes with the packages.
 
 - No CPAN release. No `$VERSION`, no `Makefile.PL`, no distribution main
   modules, and no `no_index` metadata. `TODO.md` records that work.
-- No move of `Fugu::MQTT`, `Fugu::MDNS`, `Fugu::SSH`, or `Fugu::Proxy` into
-  `Net::` or `HTTP::`. `TODO.md` records the question. `Fugu::MDNS` needs a
-  second question first: it publishes through `mdnsd(8)`, so the name promises a
-  protocol implementation that the module does not hold.
-- No rename of `Protocol::HAP::PIN` to `SetupCode`. The pod already gives the
-  specification word, and the rename would churn the conformance suite.
 - No new features and no API changes, except the two that a rename forces: the
   split of `FuguLib::Util` and the split of `FuguLib::Imsg`.
+
+No naming question is out of scope. This is the naming effort, so every name in
+the tree is decided here, and none is recorded for later.
 
 ## Accepted trade-offs
 
@@ -72,13 +74,12 @@ knowingly.
    protocols. `OpenBSD::` is the honest alternative and it is unusable: OpenBSD
    base perl owns that namespace with `OpenBSD::Pledge`, `OpenBSD::Unveil`, and
    the `pkg_add` tree. `Protocol::Imsg` states the limit in its first paragraph.
-3. **`Store` still names three things**: a JSON state file (`Fugu::Store`), a
-   persistence contract (`Protocol::HAP::Store`), and an implementation of that
-   contract (`App::OpenHAP::Store::File`). The last cannot move into
-   `Protocol::HAP::Store::File`, because it uses `Fugu::File` and the layering
-   rules forbid that direction. Goal 3 does not claim unique leaf names:
-   `Proxy`, `Config`, and `CLI` also repeat, each as a subclass of the `Fugu::`
-   module with the same leaf name.
+3. **`App::OpenHAP::Store::File` sits far from the contract it implements.**
+   Someone who takes `Protocol::HAP` to CPAN and wants file persistence will
+   look for `Protocol::HAP::Store::File`. It cannot live there: it uses
+   `Fugu::File`, and the layering rules forbid that direction. Goal 3 does not
+   claim unique leaf names either. `Proxy`, `Config`, and `CLI` each repeat,
+   every time as a subclass of the `Fugu::` module with the same leaf name.
 
 ## The clean-break rule
 
@@ -122,15 +123,42 @@ live one, and `grep -r` reads the generated pages in `build/` and `web/build/`.
 | `OpenHAP::DeviceLoader`      | `App::OpenHAP::Devices`          | It holds the devices. `Loader` names the mechanism.         |
 | `FuguVM::VM`                 | `App::FuguVM::Guest`             | The name must not repeat the parent.                        |
 | `FuguVM::Expect`             | `App::FuguVM::Console`           | It drives the serial console. `Expect` is the dependency.   |
+| `OpenHAP::Tasmota::Base`     | `App::OpenHAP::Tasmota::Device`  | `Base` names a mechanism, as `Loader` did.                  |
+| `FuguVM::Image`              | `App::FuguVM::Miniroot`          | It downloads and caches the install media.                  |
+| `FuguVM::ImageCache`         | `App::FuguVM::DiskCache`         | It caches installed qcow2 disks, not the media above.       |
 | `FuguLib::Util`              | `Fugu::Timeout`                  | `bounded` and `wait_until` are one idea.                    |
 | `FuguLib::Util::format_size` | `App::FuguVM::CLI::_format_size` | The command-line interface is its only caller.              |
+| `FuguLib::Store`             | `Fugu::StateFile`                | Its own abstract calls it a JSON state file.                |
+| `FuguLib::MDNS`              | `Fugu::Mdnsd`                    | It controls `mdnsd(8)`. It does not implement mDNS.         |
 | `FuguLib::Imsg`              | `Fugu::Imsg` + `Protocol::Imsg`  | The codec and the socket separate.                          |
+| `Protocol::HAP::PIN`         | `Protocol::HAP::SetupCode`       | The specification says "setup code" [HAP-Pairing §2].       |
 
-`Console`, not `Installer`: the module has two public verbs, `run_install` and
-`run_script`, and `fuguvm expect <script>` is a documented subcommand that calls
-the second one. `Installer` would name half the module.
+Three of these need a word. `Console`, not `Installer`, because the module has
+two public verbs and `fuguvm expect <script>` is a documented subcommand that
+calls `run_script`. `Miniroot` and `DiskCache`, because both modules cache and
+neither name says what: one fetches the install media, the other keeps the disk
+the installer produced, and `ImageCache` loads `Image`, so the pair reads as a
+cache of the thing above it. `Mdnsd`, because the module sends `IMSG_CTL_*` over
+the control socket and no mDNS packet ever leaves it — the same fault as
+`Expect`, and a worse one, because `Expect` named a dependency while `MDNS`
+claims a capability.
 
-Every other module keeps its leaf name.
+### Names that stay, and why
+
+These were open questions. They are decided.
+
+- `Fugu::MQTT` and `Fugu::SSH` stay out of `Net::`. Neither implements a
+  protocol. The first adapts `Net::MQTT::Simple` to a `select` loop and owns the
+  reconnect policy; the second drives `ssh(1)`. Host policy belongs in the host
+  nexus, and the `Net::` rule governs a top-level claim, which this is not.
+- `Fugu::Proxy` stays. It is a caching HTTP proxy, so the name is honest.
+- `Fugu::File` stays. Eleven functions is a lot, but they are one domain: files
+  and paths. That is what separates it from `Util`.
+- `Fugu::Config`, `Fugu::CLI`, `Fugu::Control`, `Fugu::JSONSocket`, and
+  `Fugu::EventLoop` stay. Each is accurate inside the nexus.
+- Every other `Protocol::HAP::` name stays. `TLV`, `SRP`, `Pairing`, `Session`,
+  `Accessory`, `Service`, `Characteristic`, and `Bridge` are the specification's
+  own words, and it calls `Server` the accessory server.
 
 ## Layering
 
@@ -192,7 +220,7 @@ graph TD
     H --> SF[App::OpenHAP::Store::File] -. store contract .-> PS
     H --> FH[Fugu: EventLoop Log MQTT MDNS Timeout]
     D --> TAS[App::OpenHAP::Tasmota::*]
-    FM[Fugu::MDNS] --> FI[Fugu::Imsg] --> PI[Protocol::Imsg]
+    FM[Fugu::Mdnsd] --> FI[Fugu::Imsg] --> PI[Protocol::Imsg]
     FC[Fugu::Control] --> FI
     FC --> PI
 ```
@@ -228,12 +256,14 @@ distribution on the machine, and `App/` would be worse.
 
 1. `FuguLib::` becomes `Fugu::`. Names only, plus the two gates that later
    phases depend on: `t/scripts/namespaces.t` and the CI compile step.
-2. `OpenHAP::` becomes `App::OpenHAP::`, with `Host`, `Store::File`, and
-   `Devices`.
-3. `FuguVM::` becomes `App::FuguVM::`, with `Guest` and `Console`.
+2. `OpenHAP::` becomes `App::OpenHAP::`, with `Host`, `Store::File`, `Devices`,
+   and `Tasmota::Device`.
+3. `FuguVM::` becomes `App::FuguVM::`, with `Guest`, `Console`, `Miniroot`, and
+   `DiskCache`.
 4. `Protocol::Imsg` splits out of `Fugu::Imsg`.
-5. `Fugu::Util` splits into `Fugu::Timeout`; the documentation and website pass;
-   `TODO.md` records the release work.
+5. The leaf renames that no namespace move forces: `Fugu::Timeout`,
+   `Fugu::StateFile`, `Fugu::Mdnsd`, and `Protocol::HAP::SetupCode`. Then the
+   documentation and website pass.
 
 The order follows the dependency direction, from the base to the products. Phase
 3 depends on phase 2, because both edit the same regex in `t/web/site.t` and in
