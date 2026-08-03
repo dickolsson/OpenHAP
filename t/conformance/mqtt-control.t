@@ -8,7 +8,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Heater');

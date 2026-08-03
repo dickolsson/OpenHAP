@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # The guest-agent command set. The transport belongs to
-# FuguLib::JSONSocket and is proven in t/fugulib/jsonsocket.t.
+# Fugu::JSONSocket and is proven in t/fugu/jsonsocket.t.
 
 use v5.36;
 use Test::More;

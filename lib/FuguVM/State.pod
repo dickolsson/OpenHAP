@@ -25,8 +25,8 @@ Each VM has a directory under the state directory:
     <state_dir>/<vm>/proxy.pid     the proxy child
     <state_dir>/<vm>/disk.qcow2    the working disk
 
-The JSON blob rides on L<FuguLib::Store>. The two process IDs ride on
-L<FuguLib::Pidfile>, which takes its lock before it truncates and
+The JSON blob rides on L<Fugu::Store>. The two process IDs ride on
+L<Fugu::Pidfile>, which takes its lock before it truncates and
 reaps a zombie before it answers "running". A QEMU that became a
 zombie therefore reads as stopped, which is what a caller that is
 about to start a second one needs to know.
@@ -56,7 +56,7 @@ empty state and does not stop the program that would rewrite it.
 
 =head2 store, state_dir, vm_state_dir, vm_name, data
 
-C<store> returns the L<FuguLib::Store>. L<FuguVM::VM> gives it to the
+C<store> returns the L<Fugu::Store>. L<FuguVM::VM> gives it to the
 proxy, which keeps its port there.
 
 C<state_dir> returns the directory that holds every VM's state, and
@@ -65,7 +65,7 @@ state hash reference for a caller that changes several keys at once.
 
 =head2 vm_pidfile, proxy_pidfile
 
-Return the L<FuguLib::Pidfile> objects. QEMU writes the first itself,
+Return the L<Fugu::Pidfile> objects. QEMU writes the first itself,
 through its C<-pidfile> option; the proxy supervisor owns the second.
 
 =head2 set_vm_pid, get_vm_pid, clear_vm_pid, is_vm_running
@@ -107,7 +107,7 @@ crashed or was killed, and the disk may need a check.
 
 =head1 SEE ALSO
 
-L<FuguLib::Pidfile>, L<FuguLib::Store>, L<FuguVM::VM>
+L<Fugu::Pidfile>, L<Fugu::Store>, L<FuguVM::VM>
 
 =head1 AUTHOR
 

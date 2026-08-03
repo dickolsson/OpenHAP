@@ -19,15 +19,15 @@ use v5.36;
 
 package FuguVM::State;
 
-use FuguLib::File;
-use FuguLib::Log;
-use FuguLib::Pidfile;
-use FuguLib::Store;
+use Fugu::File;
+use Fugu::Log;
+use Fugu::Pidfile;
+use Fugu::Store;
 
 # FuguVM::State - what FuguVM remembers about one VM between runs.
 #
-# The JSON blob rides on FuguLib::Store. The two process IDs ride on
-# FuguLib::Pidfile, which locks before it truncates and reaps a zombie
+# The JSON blob rides on Fugu::Store. The two process IDs ride on
+# Fugu::Pidfile, which locks before it truncates and reaps a zombie
 # before it answers "running".
 #
 # The module is persistence only. It starts nothing and stops nothing:
@@ -39,8 +39,8 @@ sub new ( $class, $state_dir, $vm_name, %opts )
 	# The name becomes a directory under the state directory. A
 	# name with a separator in it would put that directory
 	# somewhere else.
-	unless ( FuguLib::File->valid_name($vm_name) ) {
-		FuguLib::Log->default->error( 'Not a usable VM name: %s',
+	unless ( Fugu::File->valid_name($vm_name) ) {
+		Fugu::Log->default->error( 'Not a usable VM name: %s',
 			$vm_name // '(none)' );
 		return;
 	}
@@ -52,17 +52,16 @@ sub new ( $class, $state_dir, $vm_name, %opts )
 		vm_name      => $vm_name,
 		vm_state_dir => $vm_state_dir,
 		disk_path    => "$vm_state_dir/disk.qcow2",
-		vm_pid       =>
-		    FuguLib::Pidfile->new( path => "$vm_state_dir/vm.pid" ),
+		vm_pid => Fugu::Pidfile->new( path => "$vm_state_dir/vm.pid" ),
 		proxy_pid =>
-		    FuguLib::Pidfile->new( path => "$vm_state_dir/proxy.pid" ),
-		store => FuguLib::Store->new(
+		    Fugu::Pidfile->new( path => "$vm_state_dir/proxy.pid" ),
+		store => Fugu::Store->new(
 			path => "$vm_state_dir/status",
 			mode => 0600,
 		),
 	}, $class;
 
-	FuguLib::File->ensure_dir($vm_state_dir) or return;
+	Fugu::File->ensure_dir($vm_state_dir) or return;
 	$self->load;
 
 	return $self;
@@ -116,7 +115,7 @@ sub proxy_pidfile ($self)
 sub set_vm_pid ( $self, $pid )
 {
 	$self->{vm_pid}->write_pid($pid) or do {
-		FuguLib::Log->default->warning( '%s', $self->{vm_pid}->error );
+		Fugu::Log->default->warning( '%s', $self->{vm_pid}->error );
 		return;
 	};
 
@@ -146,8 +145,7 @@ sub is_vm_running ($self)
 sub set_proxy_pid ( $self, $pid )
 {
 	$self->{proxy_pid}->write_pid($pid) or do {
-		FuguLib::Log->default->warning( '%s',
-			$self->{proxy_pid}->error );
+		Fugu::Log->default->warning( '%s', $self->{proxy_pid}->error );
 		return;
 	};
 

@@ -7,7 +7,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 use File::Temp qw(tempdir);
 use Digest::SHA qw(sha512);
 use MIME::Base64 qw(encode_base64);
@@ -21,7 +21,7 @@ BEGIN {
 
 use_ok('Protocol::HAP::Server');
 use_ok('Protocol::HAP::Store::Memory');
-use_ok('FuguLib::MDNS');
+use_ok('Fugu::MDNS');
 
 sub make_hap (%extra)
 {
@@ -39,7 +39,7 @@ subtest '[HAP-mDNS §1] service type is hap over tcp' => sub {
 	# openhapd publishes app 'hap' over proto 'tcp'. mdnsd itself
 	# prepends the underscores to form _hap._tcp.local. The mdns
 	# integration test asserts the browse of _hap._tcp.
-	my $mdns = FuguLib::MDNS->new;
+	my $mdns = Fugu::MDNS->new;
 	ok( !defined $mdns->publish_service(
 			name  => 'mDNS Bridge',
 			app   => 'hap',
@@ -111,7 +111,7 @@ subtest '[HAP-mDNS §10] bridge advertises a single service' => sub {
 	# separately. openhapd formats exactly one TXT string for that
 	# one service.
 	my $hap = make_hap();
-	my $txt = FuguLib::MDNS::format_txt( %{ $hap->mdns_txt_records } );
+	my $txt = Fugu::MDNS::format_txt( %{ $hap->mdns_txt_records } );
 	ok( length($txt), 'single TXT string for the bridge' );
 	like( $txt, qr/(?:^|\.)ci=2(?:\.|$)/,
 		'advertised category is Bridge for all bridged accessories'
@@ -196,7 +196,7 @@ subtest '[HAP-mDNS §4] service instance name' => sub {
 
 	# The display name is the instance name that openhapd publishes.
 	# It goes into the name field of the advertised service.
-	my $mdns = FuguLib::MDNS->new;
+	my $mdns = Fugu::MDNS->new;
 	$mdns->{service} = {
 		name  => $hap->{name},
 		app   => 'hap',
@@ -212,7 +212,7 @@ subtest '[HAP-mDNS §6] port' => sub {
 
 	# The advertised port is the port that openhapd listens on. It
 	# goes into the port field of the service structure.
-	my $mdns = FuguLib::MDNS->new;
+	my $mdns = Fugu::MDNS->new;
 	$mdns->{service} = {
 		name  => 'x',
 		app   => 'hap',

@@ -88,7 +88,7 @@ manual_section()
 
 # emit_entry <path> <namespace>
 #	The './' matters.  A page has a name such as
-#	FuguLib::Daemon.3p.html, and a relative URL whose first segment
+#	Fugu::Daemon.3p.html, and a relative URL whose first segment
 #	holds a colon reads as a scheme.
 emit_entry()
 {
@@ -145,7 +145,7 @@ EOF
 
 emit_group 'OpenHAP' openhap man/openhap/ '' "$@"
 emit_group 'FuguVM' fuguvm man/fuguvm/ '' "$@"
-emit_group 'FuguLib' fugulib man/fugulib/ 'FuguLib::' "$@"
+emit_group 'Fugu' fugu man/fugu/ 'Fugu::' "$@"
 emit_group 'OpenHAP modules' modules lib/OpenHAP/ '' "$@"
 emit_group 'Protocol::HAP modules' protocol-modules lib/Protocol/ '' "$@"
 emit_group 'FuguVM modules' vm-modules lib/FuguVM/ '' "$@"

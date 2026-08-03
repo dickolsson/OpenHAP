@@ -19,12 +19,12 @@ vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
 echo "==> Copying test files..."
 cd "${PROJECT_ROOT}"
 TARBALL="/tmp/tests-$$.tar.gz"
-# The tarball also carries t/fugulib/sandbox.t. Its enforcement
+# The tarball also carries t/fugu/sandbox.t. Its enforcement
 # subtests are OpenBSD-only: a pledge violation aborts, unveil hides
 # the filesystem, and required paths are fatal. They skip on the Linux
 # hosts that `make check` runs on. Thus this guest run is the one
 # place where CI executes them.
-tar czf "${TARBALL}" t/openhap/integration/ t/fugulib/sandbox.t \
+tar czf "${TARBALL}" t/openhap/integration/ t/fugu/sandbox.t \
     t/lib/ lib/OpenHAP/Test/
 vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/tests.tar.gz"
 rm -f "${TARBALL}"
@@ -64,9 +64,9 @@ export OPENHAP_INTEGRATION_TEST=1
 # pair-setup/pair-verify do not give up before the daemon responds.
 export OPENHAP_TEST_TIMEOUT="${OPENHAP_TEST_TIMEOUT:-60}"
 
-# Run tests in order: environment first, then the FuguLib sandbox
+# Run tests in order: environment first, then the Fugu sandbox
 # enforcement subtests (see the tarball note above), then the rest
-TESTS="t/openhap/integration/environment.t t/fugulib/sandbox.t"
+TESTS="t/openhap/integration/environment.t t/fugu/sandbox.t"
 for test in t/openhap/integration/*.t; do
 	[ "$test" = "t/openhap/integration/environment.t" ] && continue
 	TESTS="$TESTS $test"

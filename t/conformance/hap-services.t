@@ -12,7 +12,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
 use_ok('Protocol::HAP::Service');
 use_ok('Protocol::HAP::Characteristic');

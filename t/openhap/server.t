@@ -8,7 +8,7 @@ use v5.36;
 use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 use File::Temp qw(tempdir);
 
 BEGIN {
@@ -23,7 +23,7 @@ BEGIN {
 
 use_ok('OpenHAP::Server');
 use_ok('OpenHAP::Storage');
-use_ok('FuguLib::MDNS');
+use_ok('Fugu::MDNS');
 
 # Test host creation: the engine is built over OpenHAP::Storage and
 # the host contracts

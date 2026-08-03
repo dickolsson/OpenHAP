@@ -19,14 +19,14 @@ use v5.36;
 
 package FuguVM::Config;
 
-use FuguLib::Config;
-use FuguLib::File;
-use FuguLib::Log;
+use Fugu::Config;
+use Fugu::File;
+use Fugu::Log;
 
-# FuguVM::Config - the VM defaults over FuguLib::Config.
+# FuguVM::Config - the VM defaults over Fugu::Config.
 #
 # The grammar, the tilde expansion and the yes/no spellings come from
-# FuguLib::Config. This file holds only what is true of FuguVM: the
+# Fugu::Config. This file holds only what is true of FuguVM: the
 # defaults for a machine, the merge of the global and the project
 # file, and the switch that turns the installed-image cache off.
 
@@ -57,7 +57,7 @@ sub new ( $class, $project_root )
 #	Walk up to the directory that holds .fuguvmrc.
 sub find_project_root ($class)
 {
-	return FuguLib::Config->find_project_root(PROJECT_CONFIG);
+	return Fugu::Config->find_project_root(PROJECT_CONFIG);
 }
 
 sub _load_configs ($self)
@@ -79,11 +79,11 @@ sub _load_configs ($self)
 #	than half of them.
 sub _parse ( $self, $path )
 {
-	return FuguLib::Config->new( file => $path ) unless -f $path;
+	return Fugu::Config->new( file => $path ) unless -f $path;
 
-	my $config = FuguLib::Config->new( file => $path );
+	my $config = Fugu::Config->new( file => $path );
 	unless ( $config->load ) {
-		FuguLib::Log->default->error( '%s', $config->error );
+		Fugu::Log->default->error( '%s', $config->error );
 	}
 
 	return $config;
@@ -152,7 +152,7 @@ sub cache_dir ($self)
 {
 	my $dir = $self->_setting('cache_dir') // '~/.cache/fuguvm';
 
-	return FuguLib::File->expand_tilde($dir);
+	return Fugu::File->expand_tilde($dir);
 }
 
 # $self->image_cache:
@@ -176,7 +176,7 @@ sub _bool ( $self, $value, $default )
 	my $parser = $self->{project};
 	my $result = $parser->parse_bool( $value, $default );
 
-	FuguLib::Log->default->warning( '%s', $parser->error )
+	Fugu::Log->default->warning( '%s', $parser->error )
 	    if defined $parser->error;
 
 	return $result;

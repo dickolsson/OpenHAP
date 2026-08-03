@@ -2,7 +2,7 @@ use v5.36;
 
 package OpenHAP::Tasmota::Thermostat;
 
-use FuguLib::Log;
+use Fugu::Log;
 require OpenHAP::Tasmota::Base;
 our @ISA = qw(OpenHAP::Tasmota::Base);
 use Protocol::HAP::Service;
@@ -120,7 +120,7 @@ sub subscribe_mqtt ($self)
 
 	return unless $self->{mqtt_client}->is_connected();
 
-	FuguLib::Log->default->debug(
+	Fugu::Log->default->debug(
 		'Thermostat %s subscribing to additional MQTT topics',
 		$self->{name} );
 
@@ -132,7 +132,7 @@ sub subscribe_mqtt ($self)
 			my $new_state = ( $payload eq 'ON' ) ? 1 : 0;
 			if ( $self->{heating_state} != $new_state ) {
 				$self->{heating_state} = $new_state;
-				FuguLib::Log->default->debug(
+				Fugu::Log->default->debug(
 					'Thermostat %s heating state: %s',
 					$self->{name}, $payload );
 				$self->notify_change(11);
@@ -170,8 +170,7 @@ sub _on_power_update ( $self, $state )
 {
 	if ( $self->{heating_state} != $state ) {
 		$self->{heating_state} = $state;
-		FuguLib::Log->default->debug(
-			'Thermostat %s heating updated: %s',
+		Fugu::Log->default->debug( 'Thermostat %s heating updated: %s',
 			$self->{name}, $state ? 'ON' : 'OFF' );
 		$self->notify_change(11);
 	}
@@ -197,8 +196,7 @@ sub _handle_status8 ( $self, $payload )
 	};
 
 	if ($@) {
-		FuguLib::Log->default->error(
-			'Error parsing STATUS8 for %s: %s',
+		Fugu::Log->default->error( 'Error parsing STATUS8 for %s: %s',
 			$self->{name}, $@ );
 	}
 }
@@ -219,8 +217,7 @@ sub _handle_status10 ( $self, $payload )
 	};
 
 	if ($@) {
-		FuguLib::Log->default->error(
-			'Error parsing STATUS10 for %s: %s',
+		Fugu::Log->default->error( 'Error parsing STATUS10 for %s: %s',
 			$self->{name}, $@ );
 	}
 }
@@ -236,7 +233,7 @@ sub _extract_temperature ( $self, $data )
 		# Convert the value to Celsius if necessary (H4)
 		$temp = $self->convert_temperature($temp);
 
-		FuguLib::Log->default->debug(
+		Fugu::Log->default->debug(
 			'Thermostat %s temperature updated: %.1f°C',
 			$self->{name}, $temp );
 		$self->{current_temp} = $temp;
@@ -286,7 +283,7 @@ sub _find_temperature ( $self, $data )
 
 sub _set_target_temp ( $self, $temp )
 {
-	FuguLib::Log->default->debug(
+	Fugu::Log->default->debug(
 		'Thermostat %s target temperature set to %.1f°C',
 		$self->{name}, $temp );
 	$self->{target_temp} = $temp;
@@ -295,7 +292,7 @@ sub _set_target_temp ( $self, $temp )
 
 sub _set_target_state ( $self, $state )
 {
-	FuguLib::Log->default->debug(
+	Fugu::Log->default->debug(
 		'Thermostat %s target heating state set to %d',
 		$self->{name}, $state );
 	$self->{target_heating_state} = $state;

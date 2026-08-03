@@ -19,7 +19,7 @@ use v5.36;
 
 package OpenHAP::DeviceLoader;
 
-use FuguLib::Log;
+use Fugu::Log;
 
 # OpenHAP::DeviceLoader - turn the device blocks of the configuration
 # into accessories on the bridge.
@@ -120,7 +120,7 @@ sub new ($class)
 sub load_devices ( $self, $config, $hap, $mqtt )
 {
 	my @devices = $self->devices($config);
-	FuguLib::Log->default->debug( 'Loading %d device(s) from configuration',
+	Fugu::Log->default->debug( 'Loading %d device(s) from configuration',
 		scalar @devices );
 
 	my $loaded_count   = 0;
@@ -135,13 +135,13 @@ sub load_devices ( $self, $config, $hap, $mqtt )
 		push @{ $self->{devices} }, $accessory;
 		$loaded_count++;
 
-		FuguLib::Log->default->info(
+		Fugu::Log->default->info(
 			'Added %s: %s (AID=%d)',
 			$self->_device_type_name($device),
 			$device->{name}, $accessory->{aid} );
 	}
 
-	FuguLib::Log->default->info( 'Loaded %d device(s), %d skipped',
+	Fugu::Log->default->info( 'Loaded %d device(s), %d skipped',
 		$loaded_count, scalar(@devices) - $loaded_count );
 
 	return $loaded_count;
@@ -162,13 +162,13 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 	my $dev_type    = $device->{type}    // 'unknown';
 	my $dev_subtype = $device->{subtype} // 'unknown';
 
-	FuguLib::Log->default->debug(
+	Fugu::Log->default->debug(
 		'Processing device: type=%s, subtype=%s, name=%s',
 		$dev_type, $dev_subtype, $device->{name} // '<unnamed>' );
 
 	# Validate the device type
 	unless ( $self->_is_supported_device( $dev_type, $dev_subtype ) ) {
-		FuguLib::Log->default->debug(
+		Fugu::Log->default->debug(
 			'Skipping unsupported device type: %s/%s',
 			$dev_type, $dev_subtype );
 		return;
@@ -185,7 +185,7 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 			$dev_subtype );
 	};
 	if ($@) {
-		FuguLib::Log->default->error(
+		Fugu::Log->default->error(
 			'Failed to create %s "%s": %s',
 			$self->_device_type_name($device),
 			$device->{name}, $@
@@ -198,7 +198,7 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 		$self->_subscribe_mqtt( $accessory, $device );
 	}
 	else {
-		FuguLib::Log->default->debug(
+		Fugu::Log->default->debug(
 			'MQTT not connected, deferring subscription for "%s"',
 			$device->{name} );
 	}
@@ -214,7 +214,7 @@ sub _is_supported_device ( $self, $type, $subtype )
 }
 
 # $class->devices($config):
-#	Return the device blocks of a FuguLib::Config as records with
+#	Return the device blocks of a Fugu::Config as records with
 #	type, subtype, id and the settings of the block.
 sub devices ( $, $config )
 {
@@ -239,20 +239,20 @@ sub devices ( $, $config )
 sub _validate_device ( $self, $device )
 {
 	unless ( defined $device->{name} && $device->{name} ne '' ) {
-		FuguLib::Log->default->error(
+		Fugu::Log->default->error(
 			'Device missing required field: name');
 		return;
 	}
 
 	unless ( defined $device->{topic} && $device->{topic} ne '' ) {
-		FuguLib::Log->default->error(
+		Fugu::Log->default->error(
 			'Device "%s" missing required field: topic',
 			$device->{name} );
 		return;
 	}
 
 	unless ( defined $device->{id} && $device->{id} ne '' ) {
-		FuguLib::Log->default->warning(
+		Fugu::Log->default->warning(
 			'Device "%s" missing id field, using topic as serial',
 			$device->{name} );
 		$device->{id} = $device->{topic};
@@ -285,7 +285,7 @@ sub _instantiate_device ( $self, $device, $mqtt, $type, $subtype )
 		# passes it on to every service and characteristic it
 		# builds, so the write and subscription debug lines keep
 		# reaching the daemon log.
-		logger => FuguLib::Log->default,
+		logger => Fugu::Log->default,
 	);
 	%args = ( %args, $entry->{args}->($device) ) if $entry->{args};
 
@@ -298,12 +298,12 @@ sub _subscribe_mqtt ( $self, $accessory, $device )
 {
 	eval { $accessory->subscribe_mqtt(); };
 	if ($@) {
-		FuguLib::Log->default->error(
+		Fugu::Log->default->error(
 			'Failed to subscribe MQTT for "%s": %s',
 			$device->{name}, $@ );
 	}
 	else {
-		FuguLib::Log->default->info( 'Subscribed to MQTT topic: %s',
+		Fugu::Log->default->info( 'Subscribed to MQTT topic: %s',
 			$device->{topic} );
 	}
 }

@@ -21,11 +21,11 @@ package FuguVM::CLI;
 
 use File::Basename;
 
-use FuguLib::CLI;
-use FuguLib::File;
-use FuguLib::Log;
-use FuguLib::SSH;
-use FuguLib::Util;
+use Fugu::CLI;
+use Fugu::File;
+use Fugu::Log;
+use Fugu::SSH;
+use Fugu::Util;
 use FuguVM::Config;
 use FuguVM::Disk;
 use FuguVM::Expect;
@@ -35,15 +35,15 @@ use FuguVM::Proxy;
 use FuguVM::State;
 use FuguVM::VM;
 
-# The generic exit codes come from FuguLib::CLI. Only the codes that
+# The generic exit codes come from Fugu::CLI. Only the codes that
 # mean something to a VM are defined here, and FuguVM::VM uses them
 # from here rather than defining the same numbers again.
 use constant {
-	EXIT_SUCCESS      => FuguLib::CLI::EXIT_SUCCESS,
-	EXIT_ERROR        => FuguLib::CLI::EXIT_ERROR,
-	EXIT_INVALID_ARGS => FuguLib::CLI::EXIT_INVALID_ARGS,
-	EXIT_CONFIG_ERROR => FuguLib::CLI::EXIT_CONFIG_ERROR,
-	EXIT_TIMEOUT      => FuguLib::CLI::EXIT_TIMEOUT,
+	EXIT_SUCCESS      => Fugu::CLI::EXIT_SUCCESS,
+	EXIT_ERROR        => Fugu::CLI::EXIT_ERROR,
+	EXIT_INVALID_ARGS => Fugu::CLI::EXIT_INVALID_ARGS,
+	EXIT_CONFIG_ERROR => Fugu::CLI::EXIT_CONFIG_ERROR,
+	EXIT_TIMEOUT      => Fugu::CLI::EXIT_TIMEOUT,
 
 	EXIT_VM_NOT_FOUND    => 4,
 	EXIT_VM_RUNNING      => 5,
@@ -59,7 +59,7 @@ use constant {
 };
 
 # The subcommands. Each entry names the method that runs it, whether
-# it needs a loaded project, and its own options. FuguLib::CLI parses
+# it needs a loaded project, and its own options. Fugu::CLI parses
 # and dispatches; nothing here repeats a Getopt::Long block.
 my %COMMANDS = (
 	up => {
@@ -143,8 +143,8 @@ my %COMMANDS = (
 sub new ( $class, %opts )
 {
 	my $mode =
-	    $opts{quiet} ? FuguLib::Log::MODE_QUIET : FuguLib::Log::MODE_STDERR;
-	my $log = FuguLib::Log->new(
+	    $opts{quiet} ? Fugu::Log::MODE_QUIET : Fugu::Log::MODE_STDERR;
+	my $log = Fugu::Log->new(
 		mode  => $mode,
 		level => 'info',
 		ident => 'fuguvm',
@@ -165,7 +165,7 @@ sub run ( $class, @argv )
 {
 	# The object exists before the parse, because each command body
 	# is a method on it. _prepare fills in what the global options
-	# decided, once FuguLib::CLI has read them.
+	# decided, once Fugu::CLI has read them.
 	my $self = $class->new;
 
 	my %commands;
@@ -185,7 +185,7 @@ sub run ( $class, @argv )
 		};
 	}
 
-	my $cli = FuguLib::CLI->new(
+	my $cli = Fugu::CLI->new(
 		name     => 'fuguvm',
 		usage    => '[--vm <name>] <command> [options]',
 		log      => $self->{log},
@@ -223,8 +223,8 @@ sub _prepare ( $self, $cli, $entry )
 
 	if ( $cli->option('quiet') ) {
 		$self->{quiet} = 1;
-		$self->{log}   = FuguLib::Log->new(
-			mode  => FuguLib::Log::MODE_QUIET,
+		$self->{log}   = Fugu::Log->new(
+			mode  => Fugu::Log::MODE_QUIET,
 			ident => 'fuguvm',
 		);
 	}
@@ -337,7 +337,7 @@ sub cmd_ssh ( $self, $cli, @args )
 	# over IPv4: QEMU forwards the guest SSH port on 127.0.0.1 only.
 	# On dual-stack hosts, for example CI runners, 'localhost'
 	# resolves to ::1 first.
-	my $ssh = FuguLib::SSH->new(
+	my $ssh = Fugu::SSH->new(
 		host => '127.0.0.1',
 		port => $vm->ssh_port,
 		user => 'root',
@@ -496,7 +496,7 @@ sub _cache_list ( $self, $cache )
 			sprintf(
 				'  - %s  %s  %s  snapshots: %d%s',
 				$entry->{key},
-				FuguLib::Util::format_size( $entry->{size} ),
+				Fugu::Util::format_size( $entry->{size} ),
 				$created,
 				scalar @{ $entry->{snapshots} },
 				$marker
@@ -534,13 +534,13 @@ sub _proxy_list ($self)
 		$bytes{ $version // '-' } += $file->{size};
 	}
 
-	$self->{log}->info( sprintf 'Proxy downloads (%s):',
-		FuguLib::Util::format_size( $cache->size ) );
+	$self->{log}->info(
+		sprintf 'Proxy downloads (%s):',
+		Fugu::Util::format_size( $cache->size ) );
 
 	for my $version ( sort keys %bytes ) {
 		$self->{log}->info( sprintf '  - OpenBSD %s  %s',
-			$version,
-			FuguLib::Util::format_size( $bytes{$version} ) );
+			$version, Fugu::Util::format_size( $bytes{$version} ) );
 	}
 
 	return EXIT_SUCCESS;
@@ -633,7 +633,7 @@ sub _proxy_clear ( $self, $stale )
 		}
 		$self->{log}->info(
 			sprintf 'Removed %s of proxy downloads',
-			FuguLib::Util::format_size($size) );
+			Fugu::Util::format_size($size) );
 
 		return EXIT_SUCCESS;
 	}
@@ -646,7 +646,7 @@ sub _proxy_clear ( $self, $stale )
 	for my $entry (@$removed) {
 		$self->{log}->info(
 			sprintf 'Removed %s of downloads for OpenBSD %s',
-			FuguLib::Util::format_size( $entry->{size} ),
+			Fugu::Util::format_size( $entry->{size} ),
 			$entry->{version} );
 	}
 	$self->{log}->info('No proxy downloads removed') if !@$removed;
@@ -881,7 +881,7 @@ sub _snapshot_list ( $self, $cli, $cache, @args )
 		$self->{log}->info(
 			sprintf( '  - %s  %s  %s',
 				$snapshot->{name},
-				FuguLib::Util::format_size( $snapshot->{size} ),
+				Fugu::Util::format_size( $snapshot->{size} ),
 				$created ) );
 	}
 
@@ -1021,13 +1021,13 @@ sub cmd_init ( $self, $cli, @args )
 	}
 
 	for my $dir ( "$fuguvm_dir/vms", "$fuguvm_dir/state" ) {
-		FuguLib::File->ensure_dir($dir) or return EXIT_ERROR;
+		Fugu::File->ensure_dir($dir) or return EXIT_ERROR;
 	}
 
 	# Create the project configuration. state_dir must agree with
 	# the directory created above. Thus it derives from the same
 	# constant.
-	FuguLib::File->write( $config_file, <<"EOF" );
+	Fugu::File->write( $config_file, <<"EOF" );
 # FuguVM project configuration
 
 cache_dir = ~/.cache/fuguvm
@@ -1036,7 +1036,7 @@ default_vm = default
 EOF
 
 	# Create the default VM config
-	FuguLib::File->write( "$fuguvm_dir/vms/default.conf", <<"EOF" );
+	Fugu::File->write( "$fuguvm_dir/vms/default.conf", <<"EOF" );
 # Default OpenBSD VM
 
 name = openbsd-default
@@ -1049,7 +1049,7 @@ console_port = 4444
 EOF
 
 	# Create the .gitignore file
-	FuguLib::File->write( "$fuguvm_dir/.gitignore", <<'EOF' );
+	Fugu::File->write( "$fuguvm_dir/.gitignore", <<'EOF' );
 state/
 *.log
 EOF

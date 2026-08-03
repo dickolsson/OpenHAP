@@ -12,7 +12,7 @@ FuguVM::CLI - the subcommands of fuguvm
 
 The module holds the subcommand bodies of L<fuguvm(1)>. The dispatch,
 the option parsing, the usage and the generic exit codes come from
-L<FuguLib::CLI>.
+L<Fugu::CLI>.
 
 Each subcommand declares its own options in one table beside its body,
 so no command repeats a C<Getopt::Long> block. C<_prepare> applies the
@@ -26,7 +26,7 @@ about.
 
 =head1 EXIT CODES
 
-The generic codes come from L<FuguLib::CLI>: 0 success, 1 error, 2
+The generic codes come from L<Fugu::CLI>: 0 success, 1 error, 2
 invalid arguments, 3 configuration error, 7 timeout.
 
 These are the codes that mean something to a VM:
@@ -56,7 +56,7 @@ F<bin/fuguvm>.
 
 =head1 SEE ALSO
 
-L<FuguLib::CLI>, L<FuguVM::Config>, L<FuguVM::VM>, L<fuguvm(1)>
+L<Fugu::CLI>, L<FuguVM::Config>, L<FuguVM::VM>, L<fuguvm(1)>
 
 =head1 AUTHOR
 

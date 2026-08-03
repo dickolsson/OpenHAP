@@ -11,7 +11,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use Config;
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
 BEGIN {
 	eval {

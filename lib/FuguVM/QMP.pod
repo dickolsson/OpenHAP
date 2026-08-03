@@ -19,7 +19,7 @@ FuguVM::QMP - the QEMU Machine Protocol command set
 
 QEMU serves a machine-protocol socket that answers questions about the
 guest and takes lifecycle commands. The transport is
-L<FuguLib::JSONSocket>: one JSON object for each line, with a
+L<Fugu::JSONSocket>: one JSON object for each line, with a
 wall-clock deadline on every read. This module holds only the command
 set.
 
@@ -67,7 +67,7 @@ stop a VM that is up.
 
 =head1 SEE ALSO
 
-L<FuguLib::JSONSocket>, L<FuguVM::QGA>, L<FuguVM::VM>
+L<Fugu::JSONSocket>, L<FuguVM::QGA>, L<FuguVM::VM>
 
 =head1 AUTHOR
 

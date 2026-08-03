@@ -7,7 +7,7 @@ Applies when working on files under `t/`.
 | Tier        | Location                      | Verifies                                       | Runs via           |
 | ----------- | ----------------------------- | ---------------------------------------------- | ------------------ |
 | Conformance | `t/conformance/`              | spec requirements, wire formats, KAT           | `make test` (host) |
-| Module      | `t/openhap/` `t/fugulib/`     | Perl API behavior, error paths                 | `make test` (host) |
+| Module      | `t/openhap/` `t/fugu/`        | Perl API behavior, error paths                 | `make test` (host) |
 | Module      | `t/protocol/`                 | the Protocol::HAP library, dependency boundary | `make test` (host) |
 | Module      | `t/fuguvm/`                   | the OpenBSD VM utility                         | `make test` (host) |
 | Tooling     | `t/scripts/` `t/web/` `t/ci/` | what `scripts/`, `web/` and `.github/` produce | `make test` (host) |
@@ -18,7 +18,7 @@ on missing dependencies) and need no citations. Integration tests follow the
 stricter rules in `t/openhap/integration/CLAUDE.md` (never skip, no log
 parsing).
 
-One module test crosses tiers: `scripts/integration` ships `t/fugulib/sandbox.t`
+One module test crosses tiers: `scripts/integration` ships `t/fugu/sandbox.t`
 into the VM and proves it with the integration files, because its enforcement
 subtests (pledge aborts, unveil hides the filesystem) are OpenBSD-only and would
 otherwise never run in CI — `make check` runs on Linux, where they skip.

@@ -17,7 +17,7 @@ FuguVM::Disk - the qcow2 disk of a virtual machine
 =head1 DESCRIPTION
 
 The module wraps L<qemu-img(1)>. Every invocation goes through
-L<FuguLib::Process>, which runs a list and never a shell, so no path
+L<Fugu::Process>, which runs a list and never a shell, so no path
 needs quoting.
 
 A disk lives at F<E<lt>state_dirE<gt>/E<lt>nameE<gt>/disk.qcow2>.
@@ -66,7 +66,7 @@ C<ok> or C<corrupted>. C<repair> runs the repair pass and returns 1 or
 
 =head1 SEE ALSO
 
-L<qemu-img(1)>, L<FuguLib::Process>, L<FuguVM::ImageCache>,
+L<qemu-img(1)>, L<Fugu::Process>, L<FuguVM::ImageCache>,
 L<FuguVM::VM>
 
 =head1 AUTHOR

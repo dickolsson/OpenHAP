@@ -27,8 +27,8 @@ counter through restarts.
 
 =head1 FILES
 
-The counters ride on a L<FuguLib::Store>. Every file goes through
-L<FuguLib::File>, which sets the mode at the open, and thus never
+The counters ride on a L<Fugu::Store>. Every file goes through
+L<Fugu::File>, which sets the mode at the open, and thus never
 leaves a secret world-readable.
 
 =over 4
@@ -60,6 +60,6 @@ C<c#> go backwards drops the accessory.
 
 =head1 SEE ALSO
 
-L<FuguLib::File>, L<FuguLib::Store>, F<spec/HAP-Pairing.md>
+L<Fugu::File>, L<Fugu::Store>, F<spec/HAP-Pairing.md>
 
 =cut

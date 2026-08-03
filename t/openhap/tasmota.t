@@ -9,8 +9,8 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-use FuguLib::TestLog;
+use Fugu::Log;
+use Fugu::TestLog;
 
 use_ok('OpenHAP::TestMock::MQTT');
 use_ok('OpenHAP::Tasmota::Base');
@@ -170,7 +170,7 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 # would disappear into the null logger.
 subtest 'a driver passes its logger to its characteristics' => sub {
 	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $logger = FuguLib::Log->new( mode => FuguLib::Log::MODE_QUIET );
+	my $logger = Fugu::Log->new( mode => Fugu::Log::MODE_QUIET );
 	my $heater = OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Logger Test',

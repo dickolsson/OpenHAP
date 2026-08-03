@@ -28,7 +28,7 @@ timers, the MQTT client, and the mDNS advertisement.
 
 The host builds the engine over C<OpenHAP::Storage>, the process
 default logger, an output contract that writes through the connection
-map, the one-shot timers of L<FuguLib::EventLoop>, and an
+map, the one-shot timers of L<Fugu::EventLoop>, and an
 C<on_pairing_changed> hook that re-advertises the mDNS TXT record.
 
 Each connection is filed under its session id: the session and its
@@ -60,7 +60,7 @@ a fresh TXT record when the engine reports a pairing change.
 =head2 mdns_txt_string()
 
 The TXT records of the engine in the format that mdnsd publishes,
-through C<FuguLib::MDNS::format_txt>.
+through C<Fugu::MDNS::format_txt>.
 
 =head2 add_accessory($accessory), is_paired(), update_config_number()
 

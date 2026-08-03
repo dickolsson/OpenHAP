@@ -19,15 +19,15 @@ use v5.36;
 
 package FuguVM::Expect;
 
-use FuguLib::File;
-use FuguLib::Log;
-use FuguLib::Process;
+use Fugu::File;
+use Fugu::Log;
+use Fugu::Process;
 
 # FuguVM::Expect - drive the OpenBSD installer over the serial console.
 #
 # The installer asks questions that no protocol answers, so an
 # expect(1) script types them. The scripts ship under
-# share/fuguvm/expect, and FuguLib::File resolves them against the
+# share/fuguvm/expect, and Fugu::File resolves them against the
 # install root.
 
 # Where the shipped scripts live, relative to the root of the tree.
@@ -52,7 +52,7 @@ sub new ( $class, %args )
 #	script the same way run_install does.
 sub script_path ( $self, $script_name )
 {
-	return FuguLib::File->share_path( SCRIPT_DIR . "/$script_name" );
+	return Fugu::File->share_path( SCRIPT_DIR . "/$script_name" );
 }
 
 # $self->run_script($script, @args):
@@ -62,13 +62,13 @@ sub run_script ( $self, $script, @args )
 {
 	my $path = -f $script ? $script : $self->script_path($script);
 	unless ( defined $path && -f $path ) {
-		FuguLib::Log->default->error( 'Expect script not found: %s',
+		Fugu::Log->default->error( 'Expect script not found: %s',
 			$script );
 		return 0;
 	}
 	unless ( -x $path ) {
-		FuguLib::Log->default->error(
-			'Expect script not executable: %s', $path );
+		Fugu::Log->default->error( 'Expect script not executable: %s',
+			$path );
 		return 0;
 	}
 
@@ -81,7 +81,7 @@ sub run_install ( $self, $config )
 {
 	my $script = $self->script_path('install.exp');
 	unless ( defined $script ) {
-		FuguLib::Log->default->error('Install script not found');
+		Fugu::Log->default->error('Install script not found');
 		return 0;
 	}
 
@@ -104,14 +104,14 @@ sub _expect ( $self, $script, @args )
 {
 	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
 
-	my $result = FuguLib::Process->run(
+	my $result = Fugu::Process->run(
 		cmd =>
 		    [ 'expect', $script, $self->{host}, $self->{port}, @args ],
 		passthrough => 1,
 	);
 
 	unless ( $result->{success} ) {
-		FuguLib::Log->default->error( 'expect %s failed: %s',
+		Fugu::Log->default->error( 'expect %s failed: %s',
 			$script,
 			$result->{error} // "exit $result->{exit_code}" );
 	}

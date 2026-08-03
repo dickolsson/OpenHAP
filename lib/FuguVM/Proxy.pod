@@ -1,6 +1,6 @@
 =head1 NAME
 
-FuguVM::Proxy - the OpenBSD mirror policy over FuguLib::Proxy
+FuguVM::Proxy - the OpenBSD mirror policy over Fugu::Proxy
 
 =head1 SYNOPSIS
 
@@ -23,7 +23,7 @@ An OpenBSD installation downloads a miniroot image and a full set of
 file sets. A second installation downloads them again. This proxy
 keeps them, thus a repeated install reads from the disk.
 
-L<FuguLib::Proxy> holds the serve loop, the cache and the metadata.
+L<Fugu::Proxy> holds the serve loop, the cache and the metadata.
 This file holds only what is true of an OpenBSD mirror and of a QEMU
 guest.
 
@@ -33,7 +33,7 @@ adds the mirror patterns and the version-scoped prune.
 
 =head1 METHODS
 
-Every method of L<FuguLib::Proxy> and L<FuguLib::Proxy::Cache> applies.
+Every method of L<Fugu::Proxy> and L<Fugu::Proxy::Cache> applies.
 These are the additions.
 
 =head2 run_child
@@ -94,7 +94,7 @@ the upstream is fixed.
 
 =head1 SEE ALSO
 
-L<FuguLib::Proxy>, L<FuguVM::Image>, L<FuguVM::VM>
+L<Fugu::Proxy>, L<FuguVM::Image>, L<FuguVM::VM>
 
 =head1 AUTHOR
 

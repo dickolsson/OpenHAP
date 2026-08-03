@@ -19,12 +19,12 @@ use v5.36;
 
 package FuguVM::Proxy;
 
-use FuguLib::Log;
-use FuguLib::Proxy;
+use Fugu::Log;
+use Fugu::Proxy;
 
-our @ISA = ('FuguLib::Proxy');
+our @ISA = ('Fugu::Proxy');
 
-# FuguVM::Proxy - the OpenBSD mirror policy over FuguLib::Proxy.
+# FuguVM::Proxy - the OpenBSD mirror policy over Fugu::Proxy.
 #
 # The generic proxy holds the serve loop, the cache and the metadata.
 # This file holds only what is true of an OpenBSD mirror and of a QEMU
@@ -42,11 +42,11 @@ use constant HOST_GATEWAY => '10.0.2.2';
 #	cache, warms the metadata, and serves until a SIGTERM.
 sub run_child ( $class, $port, $cache_dir )
 {
-	my $log = FuguLib::Log->new( mode => 'stderr', level => 'debug' );
+	my $log = Fugu::Log->new( mode => 'stderr', level => 'debug' );
 
 	my $self = bless {
 		cache => FuguVM::Proxy::Cache->new($cache_dir),
-		meta  => FuguLib::Proxy::Meta->new,
+		meta  => Fugu::Proxy::Meta->new,
 		log   => $log,
 	}, $class;
 
@@ -72,10 +72,10 @@ sub guest_url ($self)
 
 package FuguVM::Proxy::Cache;
 
-use FuguLib::Log;
-use FuguLib::Proxy;
+use Fugu::Log;
+use Fugu::Proxy;
 
-our @ISA = ('FuguLib::Proxy::Cache');
+our @ISA = ('Fugu::Proxy::Cache');
 
 # FuguVM::Proxy::Cache - which parts of an OpenBSD mirror to keep.
 #
@@ -170,8 +170,8 @@ sub prune ( $self, @keep )
 			File::Path::remove_tree( $dir,
 				{ error => \my $errors } );
 			if ( $errors && @$errors ) {
-				FuguLib::Log->default->warning(
-					'Cannot remove %s', $dir );
+				Fugu::Log->default->warning( 'Cannot remove %s',
+					$dir );
 				next;
 			}
 

@@ -1,0 +1,137 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::Imsg 3p
+.Os
+.Sh NAME
+.Nm Fugu::Imsg
+.Nd imsg framing over a connected stream socket
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Imsg;
+
+my $imsg = Fugu::Imsg->new(fh => $socket);
+
+$imsg->send(type => 8, data => $payload)
+    or warn "send failed: $!";
+
+my $msg = $imsg->recv(timeout => 10)
+    or warn "no reply";
+say $msg->{type};
+
+$imsg->close;
+.Ed
+.Sh DESCRIPTION
+.Nm
+frames messages in the same format as the base-system
+.Xr imsg_init 3
+facility.
+Each message has a fixed native-endian header and then a payload.
+The header holds the type, the length, the peer id, and the sender
+pid.
+The module does only serialisation over a stream socket that is
+already connected.
+The module never opens, names, or closes a socket, and it never logs.
+Callers decide what a failure means.
+.Pp
+This page does not repeat the wire format:
+the field layout, the length semantics, the size bounds, and the
+message boundary rules.
+The protocol reference
+.Pa spec/MDNS-Imsg.md
+in the OpenHAP repository gives the full specification, and this
+implementation follows it.
+That document is a curated reference, not an installed manual.
+.Ss new
+.Fn new "fh => $fh"
+creates a framing object over the connected socket
+.Fa $fh .
+The handle is necessary.
+A call without the handle is a programming error, and
+.Fn new
+dies.
+.Ss send
+.Fn send "type => $type" "data => $bytes" "peerid => $n"
+frames and writes one message.
+.Fa data
+defaults to the empty string.
+.Fa peerid
+defaults to 0.
+.Pp
+The module treats
+.Fa peerid
+as opaque.
+A request and response protocol puts its correlation value there and
+reads it back from
+.Fn recv .
+The method returns 1 on success.
+On failure, the method returns
+.Dv undef
+and sets
+.Va $! .
+This occurs when the payload is larger than the protocol bound
+.Pq Er EMSGSIZE ,
+when the connection failed earlier
+.Pq Er EPIPE ,
+or when a write error occurs.
+If the peer closed the socket, the method reports
+.Er EPIPE .
+The module suppresses
+.Dv SIGPIPE
+during the write.
+The method refuses a payload that is too large, and it never
+truncates the payload.
+.Ss recv
+.Fn recv "timeout => $seconds"
+returns one whole message as a hash reference with
+.Va type ,
+.Va peerid ,
+.Va pid
+and
+.Va data
+keys.
+Short reads accumulate across calls.
+If several messages arrive in one read, the method returns them one
+for each call.
+The method returns
+.Dv undef
+on a timeout, on a clean end-of-file, or on an unrecoverable framing
+error
+.Pq Er EBADMSG .
+After a framing error, the connection is dead, and every later call
+returns
+.Dv undef .
+Without a
+.Fa timeout
+the call blocks until a message or an end-of-file arrives.
+.Ss close
+.Fn close
+closes the socket and marks the connection dead.
+The method is idempotent and returns 1.
+A caller that owns the socket closes it here, and never by reaching
+into the object.
+.Ss is_dead
+.Fn is_dead
+reports if the connection can no longer carry a message.
+A
+.Fn close ,
+an end-of-file, a write error, or a framing error all lead here.
+.Sh SEE ALSO
+.Xr imsg_init 3 ,
+.Xr Fugu::MDNS 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io

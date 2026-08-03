@@ -2,7 +2,7 @@
 # ex:ts=8 sw=4:
 # The QMP command set. The transport - the deadline on a read, the
 # buffered remainder, the reassembly of a split line - belongs to
-# FuguLib::JSONSocket and is proven in t/fugulib/jsonsocket.t.
+# Fugu::JSONSocket and is proven in t/fugu/jsonsocket.t.
 
 use v5.36;
 use Test::More;

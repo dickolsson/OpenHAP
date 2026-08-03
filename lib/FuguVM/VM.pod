@@ -19,12 +19,12 @@ FuguVM::VM - the lifecycle of one OpenBSD virtual machine
 The module runs QEMU for an OpenBSD guest, installs the system on the
 first run, and stops it again without corrupting its disk.
 
-Everything that is not QEMU comes from FuguLib. Processes and liveness
-come from L<FuguLib::Process>, which reaps: a QEMU that became a
+Everything that is not QEMU comes from Fugu. Processes and liveness
+come from L<Fugu::Process>, which reaps: a QEMU that became a
 zombie reads as stopped, and a caller that is about to start a second
-one needs that answer. Bounded waits come from L<FuguLib::Util>. The
-random root password comes from L<FuguLib::Random>. The guest
-connection comes from L<FuguLib::SSH>.
+one needs that answer. Bounded waits come from L<Fugu::Util>. The
+random root password comes from L<Fugu::Random>. The guest
+connection comes from L<Fugu::SSH>.
 
 =head1 METHODS
 
@@ -69,7 +69,7 @@ leaves a filesystem that the next boot has to repair.
 
 =head1 SEE ALSO
 
-L<FuguLib::Process>, L<FuguLib::SSH>, L<FuguLib::Util>,
+L<Fugu::Process>, L<Fugu::SSH>, L<Fugu::Util>,
 L<FuguVM::Disk>, L<FuguVM::ImageCache>, L<FuguVM::QGA>,
 L<FuguVM::QMP>, L<FuguVM::State>, L<fuguvm(1)>
 

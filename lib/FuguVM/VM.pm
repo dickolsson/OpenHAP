@@ -36,10 +36,10 @@ use FuguVM::Proxy;
 use FuguVM::QMP;
 use FuguVM::QGA;
 
-use FuguLib::Random;
-use FuguLib::Process;
-use FuguLib::SSH;
-use FuguLib::Util;
+use Fugu::Random;
+use Fugu::Process;
+use Fugu::SSH;
+use Fugu::Util;
 
 use constant {
 	EXIT_SUCCESS        => 0,
@@ -206,7 +206,7 @@ sub up ($self)
 		my $install_proxy_url = $proxy_vm_url // 'none';
 
 		# Generate a strong random password for this installation
-		my $root_password = FuguLib::Random->random_password(32);
+		my $root_password = Fugu::Random->random_password(32);
 		$state->set_root_password($root_password);
 		$log->info("Generated secure root password");
 
@@ -670,7 +670,7 @@ sub wait_ssh ( $self, $timeout = 120, $sig = undef )
 	my $config = $self->{config};
 
 	# The connection uses the SSH agent for authentication
-	my $ssh = FuguLib::SSH->new(
+	my $ssh = Fugu::SSH->new(
 		host => '127.0.0.1',
 		port => $config->{ssh_port},
 		user => 'root',
@@ -687,7 +687,7 @@ sub _wait_ssh_password ( $self, $password, $timeout = 120 )
 {
 	my $config = $self->{config};
 
-	my $ssh = FuguLib::SSH->new(
+	my $ssh = Fugu::SSH->new(
 		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
@@ -778,7 +778,7 @@ sub _install_ssh_key ( $self, $password )
 	}
 
 	# Connect with the password
-	my $ssh = FuguLib::SSH->new(
+	my $ssh = Fugu::SSH->new(
 		host     => '127.0.0.1',
 		port     => $config->{ssh_port},
 		user     => 'root',
@@ -827,9 +827,9 @@ sub _graceful_shutdown ($self)
 	# below runs the orderly shutdown of the guest, which syncs. A
 	# force stop is the ultimate fallback.
 	$self->_bounded(
-		FuguLib::SSH::DEFAULT_TIMEOUT() + 5,
+		Fugu::SSH::DEFAULT_TIMEOUT() + 5,
 		sub {
-			my $ssh = FuguLib::SSH->new(
+			my $ssh = Fugu::SSH->new(
 				host => '127.0.0.1',
 				port => $config->{ssh_port},
 				user => 'root',
@@ -863,10 +863,10 @@ sub _graceful_shutdown ($self)
 # $self->_bounded($seconds, $code):
 #	Run $code under a hard wall-clock deadline, so a blocked guest
 #	interaction cannot stall the caller. The guard itself is
-#	FuguLib::Util; this wrapper adds the log line.
+#	Fugu::Util; this wrapper adds the log line.
 sub _bounded ( $self, $seconds, $code )
 {
-	my $result = FuguLib::Util::bounded( $seconds, $code );
+	my $result = Fugu::Util::bounded( $seconds, $code );
 	return $result if defined $result;
 
 	$self->{log}->warning("Guest did not respond within ${seconds}s");
@@ -935,7 +935,7 @@ sub _force_stop ($self)
 {
 	my $pid = $self->{state}->get_vm_pid;
 	return 1 if !defined $pid;
-	return FuguLib::Process->terminate( $pid, grace_period => 5 );
+	return Fugu::Process->terminate( $pid, grace_period => 5 );
 }
 
 # QGA methods
@@ -982,9 +982,9 @@ sub _is_running ($self)
 	my $pid = $self->{state}->get_vm_pid;
 	return 0 if !defined $pid;
 
-	# A QEMU that became a zombie is not running. FuguLib::Process
+	# A QEMU that became a zombie is not running. Fugu::Process
 	# reaps it and says so; a bare kill(0) would call it alive.
-	return 0 if !FuguLib::Process->is_alive($pid);
+	return 0 if !Fugu::Process->is_alive($pid);
 
 	# Check through QMP when possible. QMP is more reliable.
 	my $qmp = $self->_qmp_connect;
@@ -1006,7 +1006,7 @@ sub _wait_exit ( $self, $timeout )
 	my $pid = $self->{state}->get_vm_pid;
 	return 1 if !defined $pid;
 
-	return FuguLib::Process->wait_exit( $pid, $timeout );
+	return Fugu::Process->wait_exit( $pid, $timeout );
 }
 
 # QEMU startup
@@ -1073,9 +1073,9 @@ sub _start_qemu ( $self, $boot_image = undef )
 	# No graphics display (headless)
 	push @cmd, '-display', 'none';
 
-	# Use FuguLib::Process to spawn QEMU
+	# Use Fugu::Process to spawn QEMU
 	my $log_file = $state->vm_state_dir . '/qemu.log';
-	my $result   = FuguLib::Process->spawn_command(
+	my $result   = Fugu::Process->spawn_command(
 		cmd         => \@cmd,
 		daemonize   => 1,
 		stdout      => $log_file,
@@ -1092,7 +1092,7 @@ sub _start_qemu ( $self, $boot_image = undef )
 		if ( defined $state->get_vm_pid ) {
 			my $qemu_pid = $state->get_vm_pid;
 			if ( defined $qemu_pid
-				&& FuguLib::Process->is_alive($qemu_pid) )
+				&& Fugu::Process->is_alive($qemu_pid) )
 			{
 				$pid = $qemu_pid;
 				last;
@@ -1101,10 +1101,10 @@ sub _start_qemu ( $self, $boot_image = undef )
 		usleep(100_000);    # 0.1 seconds
 	}
 
-	# Fallback: use the forked PID from FuguLib::Process
+	# Fallback: use the forked PID from Fugu::Process
 	unless ( defined $pid ) {
 		my $forked = $result->{pid};
-		if ( FuguLib::Process->is_alive($forked) ) {
+		if ( Fugu::Process->is_alive($forked) ) {
 			$state->set_vm_pid($forked);
 			$state->mark_running;
 			$pid = $forked;
@@ -1141,7 +1141,7 @@ sub _wait_console_ready ( $self, $port, $timeout )
 {
 	require IO::Socket::INET;
 
-	my $ready = FuguLib::Util::wait_until(
+	my $ready = Fugu::Util::wait_until(
 		$timeout, 0.2,
 		sub {
 			my $sock = IO::Socket::INET->new(
@@ -1159,7 +1159,7 @@ sub _wait_console_ready ( $self, $port, $timeout )
 			my $qemu_pid = $self->{state}->get_vm_pid;
 			return 'gone'
 			    if defined $qemu_pid
-			    && !FuguLib::Process->is_alive($qemu_pid);
+			    && !Fugu::Process->is_alive($qemu_pid);
 
 			return;
 		} );

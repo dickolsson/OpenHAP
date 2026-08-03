@@ -29,8 +29,8 @@ package FuguVM::ImageCache;
 use Digest::SHA ();
 use File::Basename;
 use File::Path qw(remove_tree);
-use FuguLib::File;
-use FuguLib::Log;
+use Fugu::File;
+use Fugu::Log;
 use FuguVM::Expect;
 use FuguVM::Image;
 
@@ -49,7 +49,7 @@ use constant {
 sub new ( $class, $cache_dir )
 {
 	my $self =
-	    bless { cache_dir => FuguLib::File->expand_tilde($cache_dir), },
+	    bless { cache_dir => Fugu::File->expand_tilde($cache_dir), },
 	    $class;
 
 	return $self;
@@ -103,7 +103,7 @@ sub key ( $self, $vm_config )
 		return;
 	}
 
-	my $installer = FuguLib::File->read($script);
+	my $installer = Fugu::File->read($script);
 	return if !defined $installer;
 
 	my $generation_file = $self->_generation_file;
@@ -112,7 +112,7 @@ sub key ( $self, $vm_config )
 		return;
 	}
 
-	my $generation = FuguLib::File->read($generation_file);
+	my $generation = Fugu::File->read($generation_file);
 	return if !defined $generation;
 
 	# Hash the file contents separately. Thus the joined record
@@ -144,7 +144,7 @@ sub lookup ( $self, $key )
 	my $base = "$dir/" . BASE_NAME;
 	return if !-f $base;
 
-	my $meta = FuguLib::File->read_json( "$dir/" . META_NAME );
+	my $meta = Fugu::File->read_json( "$dir/" . META_NAME );
 	return if !defined $meta;
 
 	return {
@@ -176,23 +176,23 @@ sub store ( $self, $key, $disk_path, $meta = {} )
 		return;
 	}
 
-	FuguLib::File->ensure_dir( $self->installed_dir ) or return;
+	Fugu::File->ensure_dir( $self->installed_dir ) or return;
 
 	my $target = $self->entry_dir($key);
 	if ( -e "$target/" . BASE_NAME ) {
-		FuguLib::Log->default->warning(
+		Fugu::Log->default->warning(
 			'Image cache entry already exists: %s', $key );
 		return;
 	}
 
-	my $built = FuguLib::File->atomic_dir(
+	my $built = Fugu::File->atomic_dir(
 		$target,
 		sub ($tmp) {
 			my $base = "$tmp/" . BASE_NAME;
 			return 0 if !_convert( $disk_path, $base );
 
 			chmod 0400, $base or do {
-				FuguLib::Log->default->warning(
+				Fugu::Log->default->warning(
 					'Cannot set permissions on %s: %s',
 					$base, $! );
 				return 0;
@@ -206,7 +206,7 @@ sub store ( $self, $key, $disk_path, $meta = {} )
 
 			# The record carries the guest root password, so
 			# the file gets its mode before its content
-			return FuguLib::File->write_json( "$tmp/" . META_NAME,
+			return Fugu::File->write_json( "$tmp/" . META_NAME,
 				\%record, mode => 0600 ) ? 1 : 0;
 		} );
 	return if !defined $built;
@@ -282,7 +282,7 @@ sub snapshot_path ( $self, $key, $name )
 #	dot-files of the cache.
 sub valid_snapshot_name ( $, $name )
 {
-	return 0 if !FuguLib::File->valid_name($name);
+	return 0 if !Fugu::File->valid_name($name);
 	return 0 if length($name) > MAX_SNAPSHOT_NAME;
 	return 0 if $name !~ /^[A-Za-z0-9][\w.-]*$/;
 
@@ -324,7 +324,7 @@ sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
 	}
 
 	my $dir = $self->snapshot_dir($key);
-	FuguLib::File->ensure_dir($dir) or return;
+	Fugu::File->ensure_dir($dir) or return;
 
 	my $target   = $self->snapshot_path( $key, $name );
 	my $tmp_disk = "$target." . TEMP_PREFIX . $$;
@@ -352,7 +352,7 @@ sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
 		root_password => $entry->{meta}{root_password},
 		created_at    => time,
 	);
-	if ( !FuguLib::File->write_json( $tmp_meta, \%record, mode => 0600 ) ) {
+	if ( !Fugu::File->write_json( $tmp_meta, \%record, mode => 0600 ) ) {
 		unlink $tmp_disk, $tmp_meta;
 		return;
 	}
@@ -389,8 +389,7 @@ sub snapshot_lookup ( $self, $key, $name )
 	return if !-f $path;
 
 	my $meta =
-	    FuguLib::File->read_json(
-		$self->snapshot_dir($key) . "/$name.json" );
+	    Fugu::File->read_json( $self->snapshot_dir($key) . "/$name.json" );
 	return if !defined $meta;
 
 	my $base = $self->base_path($key);
@@ -492,7 +491,7 @@ sub remove ( $self, $key )
 #	count of removed trees.
 sub sweep_temp ($self)
 {
-	return FuguLib::File->sweep_temp( $self->installed_dir );
+	return Fugu::File->sweep_temp( $self->installed_dir );
 }
 
 # _convert($source, $target, $backing, $backing_format):
@@ -529,7 +528,7 @@ sub _install_script ($)
 #	install.exp hash cannot see.
 sub _generation_file ($)
 {
-	return FuguLib::File->share_path( 'share/fuguvm/' . GENERATION_FILE );
+	return Fugu::File->share_path( 'share/fuguvm/' . GENERATION_FILE );
 }
 
 sub _sanitize ($value)

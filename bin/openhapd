@@ -4,16 +4,16 @@ use Getopt::Long;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 
-use FuguLib::Config;
-use FuguLib::Control;
+use Fugu::Config;
+use Fugu::Control;
 use Protocol::HAP::Crypto;
-use FuguLib::Daemon;
-use FuguLib::Log;
-use FuguLib::MDNS;
-use FuguLib::MQTT;
-use FuguLib::Privdrop;
-use FuguLib::Sandbox;
-use FuguLib::Signal;
+use Fugu::Daemon;
+use Fugu::Log;
+use Fugu::MDNS;
+use Fugu::MQTT;
+use Fugu::Privdrop;
+use Fugu::Sandbox;
+use Fugu::Signal;
 use OpenHAP::DeviceLoader;
 use OpenHAP::Server;
 use Protocol::HAP::PIN qw(normalize_pin);
@@ -35,7 +35,7 @@ GetOptions(
 # Load the configuration. A missing file is normal on a fresh
 # install; a file that exists but does not parse is not, and the
 # daemon must not run on defaults that the operator did not choose.
-my $config = FuguLib::Config->new( file => $config_file );
+my $config = Fugu::Config->new( file => $config_file );
 if ( -f $config_file && !$config->load ) {
 	print STDERR $config->error . "\n";
 	exit 1;
@@ -66,9 +66,9 @@ if ($check_config) {
 # rc.d read, so it stays root-owned: the dropped daemon must not be
 # able to rewrite it. Nothing removes it at exit, because an unlink in
 # root-owned /var/run needs a directory permission that the daemon
-# gives up. FuguLib::Pidfile->is_stale covers the leftover.
+# gives up. Fugu::Pidfile->is_stale covers the leftover.
 if ( !$foreground ) {
-	FuguLib::Daemon->daemonize(
+	Fugu::Daemon->daemonize(
 		logfile => '/var/log/openhapd.log',
 		pidfile => '/var/run/openhapd.pid',
 	);
@@ -81,13 +81,13 @@ my $log_mode     = $foreground ? 'stderr' : 'syslog';
 
 # Create the logger and make it the process default. Library code
 # that gets no logger of its own reports through it.
-my $log = FuguLib::Log->new(
+my $log = Fugu::Log->new(
 	mode     => $log_mode,
 	ident    => 'openhapd',
 	level    => $verbose ? 'debug' : $log_level,
 	facility => $log_facility,
 );
-FuguLib::Log->set_default($log);
+Fugu::Log->set_default($log);
 
 $log->info('OpenHAP daemon initializing');
 
@@ -122,7 +122,7 @@ my $mqtt_port = $config->get( 'mqtt_port', 1883 );
 my $mqtt_user = $config->get('mqtt_user');
 my $mqtt_pass = $config->get('mqtt_pass');
 
-my $mqtt = FuguLib::MQTT->new(
+my $mqtt = Fugu::MQTT->new(
 	host     => $mqtt_host,
 	port     => $mqtt_port,
 	username => $mqtt_user,
@@ -150,7 +150,7 @@ $hap->update_config_number();
 # Create the mDNS handle. The connect and publish steps happen after
 # the privilege drop. The HAP server advertises the TXT record again
 # on pairing changes.
-my $mdns = FuguLib::MDNS->new;
+my $mdns = Fugu::MDNS->new;
 $hap->set_mdns($mdns);
 
 # Drop privileges before the daemon talks to mdnsd. Then the daemon
@@ -160,7 +160,7 @@ if ( $> == 0 ) {
 
 	# Make sure that _openhap owns db_path before the privilege
 	# drop. Then pairings and device state stay writable.
-	FuguLib::Privdrop->prepare_statedir(
+	Fugu::Privdrop->prepare_statedir(
 		path    => $db_path,
 		user    => '_openhap',
 		mode    => 0700,
@@ -172,7 +172,7 @@ if ( $> == 0 ) {
 	# boot, and the dropped daemon cannot create a directory
 	# there. Mode 0700 is the outer boundary. The socket mode
 	# alone would let any user reach the bind point.
-	FuguLib::Privdrop->prepare_statedir(
+	Fugu::Privdrop->prepare_statedir(
 		path    => $control_dir,
 		user    => '_openhap',
 		mode    => 0700,
@@ -181,7 +181,7 @@ if ( $> == 0 ) {
 
 	# Keep root's supplementary groups. On OpenBSD that is how the
 	# daemon reaches the mdnsd control socket after the drop.
-	FuguLib::Privdrop->drop_privileges(
+	Fugu::Privdrop->drop_privileges(
 		user        => '_openhap',
 		keep_groups => 1,
 	);
@@ -225,7 +225,7 @@ else {
 # of other people.
 my $control;
 if ($control_path) {
-	$control = FuguLib::Control->new( path => $control_path, log => $log );
+	$control = Fugu::Control->new( path => $control_path, log => $log );
 	$control->register( status  => sub ($) { $hap->control_status } );
 	$control->register( devices => sub ($) { $hap->control_devices } );
 
@@ -241,7 +241,7 @@ if ($control_path) {
 	}
 }
 
-# Restrict the process for good. FuguLib::Sandbox is a no-op off
+# Restrict the process for good. Fugu::Sandbox is a no-op off
 # OpenBSD. Four steps follow, and their order is load-bearing. All of
 # them come after the privilege drop. unveil only removes
 # reachability. Thus an unveil done as _openhap keeps the root-only
@@ -281,13 +281,13 @@ eval { require Net::MQTT::Simple; 1 };
 #
 # Storage's make_path already created $db_path through HAP->new. Thus
 # a $db_path that is still missing is a hard failure, and correctly so.
-FuguLib::Sandbox->unveil(
+Fugu::Sandbox->unveil(
 	paths   => [ unveil_paths() ],
 	on_skip => sub ($path) {
 		$log->debug( 'unveil: optional %s absent, skipped', $path );
 	},
 );
-FuguLib::Sandbox->unveil_lock;
+Fugu::Sandbox->unveil_lock;
 
 # Step 4: apply one promise set once, before the daemon reads any
 # network input:
@@ -308,9 +308,9 @@ FuguLib::Sandbox->unveil_lock;
 # proc, exec and prot_exec are deliberately absent. The daemon spawns
 # nothing, and step 1 loaded every shared object before this line.
 my $promises = 'stdio rpath wpath cpath fattr flock inet dns unix';
-FuguLib::Sandbox->pledge( promises => $promises );
+Fugu::Sandbox->pledge( promises => $promises );
 $log->info( 'Pledged: %s', $promises )
-    if FuguLib::Sandbox->is_supported;
+    if Fugu::Sandbox->is_supported;
 
 if ( !$hap->is_paired() ) {
 	$log->notice( 'Not paired - use Home app with PIN: %s', $hap_pin );
@@ -321,7 +321,7 @@ if ( !$hap->is_paired() ) {
 # shutdown happens below, in the daemon, where an operator can read
 # it. Before this, the handler called exit itself, so the daemon died
 # inside a signal handler with its connections open.
-my $sig = FuguLib::Signal->new;
+my $sig = Fugu::Signal->new;
 $sig->setup_interrupt_flag( 'INT', 'TERM' );
 $hap->loop->signal($sig);
 
@@ -330,7 +330,7 @@ $hap->loop->signal($sig);
 # daemon now reopens the log and keeps serving. A separate manager
 # holds the flag, because the loop ends on the flag of the manager
 # above.
-my $hup = FuguLib::Signal->new;
+my $hup = Fugu::Signal->new;
 $hup->setup_interrupt_flag('HUP');
 $hap->loop->every(
 	1,
@@ -365,13 +365,13 @@ sub unveil_paths()
 
 	# Unveil the perl library tree read-only for the lazy require
 	# on the MQTT reconnect path. The set comes from
-	# FuguLib::Sandbox, which reads %Config and not the live @INC.
+	# Fugu::Sandbox, which reads %Config and not the live @INC.
 	# Two reasons: this script prepends $RealBin/../lib, which on
 	# an installed layout is /usr/local/lib and holds every
-	# third-party library on the system; and FuguLib::MQTT unshifts
+	# third-party library on the system; and Fugu::MQTT unshifts
 	# a directory onto @INC at connect time, so a derived set would
 	# depend on whether the startup connect has run.
-	my @perl_dirs = FuguLib::Sandbox->perl_lib_dirs;
+	my @perl_dirs = Fugu::Sandbox->perl_lib_dirs;
 
 	# Add the checkout's own lib directory, but only when it really
 	# is a checkout. The installed layout must not pick up
@@ -396,7 +396,7 @@ sub unveil_paths()
 
 	# The resolver files, the service tables, the time zone and the
 	# random device are the same for every daemon
-	push @paths, FuguLib::Sandbox->system_paths;
+	push @paths, Fugu::Sandbox->system_paths;
 
 	return @paths;
 }

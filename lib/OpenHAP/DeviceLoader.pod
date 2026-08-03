@@ -5,15 +5,15 @@ OpenHAP::DeviceLoader - loader for the devices in the configuration
 =head1 SYNOPSIS
 
     use OpenHAP::DeviceLoader;
-    use FuguLib::Config;
-    use FuguLib::MQTT;
+    use Fugu::Config;
+    use Fugu::MQTT;
     use OpenHAP::Server;
 
-    my $config = FuguLib::Config->new(file => '/etc/openhapd.conf');
+    my $config = Fugu::Config->new(file => '/etc/openhapd.conf');
     $config->load();
 
     my $hap = OpenHAP::Server->new(...);
-    my $mqtt = FuguLib::MQTT->new(...);
+    my $mqtt = Fugu::MQTT->new(...);
 
     my $loader = OpenHAP::DeviceLoader->new();
     my $count = $loader->load_devices($config, $hap, $mqtt);
@@ -25,7 +25,7 @@ OpenHAP::DeviceLoader - loader for the devices in the configuration
 
 =head1 DESCRIPTION
 
-This module reads the device blocks from a L<FuguLib::Config> and
+This module reads the device blocks from a L<Fugu::Config> and
 does a check of each block. It instantiates the device class that
 matches, and it registers each device with the HAP bridge.
 
@@ -83,7 +83,7 @@ loaded correctly.
 
     my @devices = OpenHAP::DeviceLoader->devices($config)
 
-This class method returns the device blocks of a L<FuguLib::Config> as
+This class method returns the device blocks of a L<Fugu::Config> as
 plain records. Each record holds the settings of the block, plus the
 C<type>, C<subtype> and C<id> from the block arguments.
 
@@ -137,7 +137,7 @@ daemon. The loader logs that device and skips it.
 
 =head1 SEE ALSO
 
-L<FuguLib::Config>, L<FuguLib::MQTT>, L<OpenHAP::Server>,
+L<Fugu::Config>, L<Fugu::MQTT>, L<OpenHAP::Server>,
 L<OpenHAP::Tasmota::Thermostat>
 
 =head1 AUTHOR

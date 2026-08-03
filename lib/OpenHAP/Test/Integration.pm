@@ -23,10 +23,10 @@ use Exporter 'import';
 use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
-use FuguLib::Config;
+use Fugu::Config;
 use Protocol::HAP::HTTP;
-use FuguLib::Log;
-use FuguLib::Process;
+use Fugu::Log;
+use Fugu::Process;
 
 our @EXPORT_OK = qw(
     setup teardown
@@ -88,8 +88,8 @@ sub setup ($self)
 	# code in this process, and that code reports through the
 	# process default logger. The default writes to standard error,
 	# which is the TAP stream. Install a quiet one.
-	FuguLib::Log->set_default(
-		FuguLib::Log->new(
+	Fugu::Log->set_default(
+		Fugu::Log->new(
 			mode  => 'quiet',
 			ident => 'openhap-integration'
 		) );
@@ -405,7 +405,7 @@ sub _warn_mdnsd_diagnostics ( $self, $reason )
 #	output, so a check does not print to the TAP stream.
 sub _rcctl (@args)
 {
-	return FuguLib::Process->run( cmd => [ 'rcctl', @args ] )->{success};
+	return Fugu::Process->run( cmd => [ 'rcctl', @args ] )->{success};
 }
 
 # _capture(@cmd):
@@ -413,7 +413,7 @@ sub _rcctl (@args)
 #	command that will not start returns the empty string.
 sub _capture (@cmd)
 {
-	my $result = FuguLib::Process->run( cmd => \@cmd );
+	my $result = Fugu::Process->run( cmd => \@cmd );
 
 	return ( $result->{stdout} // '' ) . ( $result->{stderr} // '' );
 }
@@ -510,8 +510,7 @@ sub _verify_system ($self)
 
 	# Check that the system user exists
 	return
-	    unless FuguLib::Process->run( cmd => [ 'id', '_openhap' ] )
-	    ->{success};
+	    unless Fugu::Process->run( cmd => [ 'id', '_openhap' ] )->{success};
 
 	# Check that the data directory exists
 	return unless -d '/var/db/openhapd';
@@ -525,7 +524,7 @@ sub _verify_system ($self)
 #	with itself while it disagreed with openhapd.
 sub _parse_config ($self)
 {
-	my $config = FuguLib::Config->new( file => $self->{config_file} );
+	my $config = Fugu::Config->new( file => $self->{config_file} );
 	$config->load or return;
 
 	my %settings = map { $_ => $config->get($_) } $config->setting_names;

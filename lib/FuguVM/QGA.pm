@@ -19,13 +19,13 @@ use v5.36;
 
 package FuguVM::QGA;
 
-use FuguLib::JSONSocket;
-use FuguLib::Util;
+use Fugu::JSONSocket;
+use Fugu::Util;
 use JSON::PP ();
 
 # FuguVM::QGA - the QEMU Guest Agent command set.
 #
-# The transport is FuguLib::JSONSocket. This file holds only what is
+# The transport is Fugu::JSONSocket. This file holds only what is
 # true of the guest agent: it sends no greeting, and its commands are
 # the filesystem operations that a clean shutdown needs.
 
@@ -37,7 +37,7 @@ use constant {
 sub new ( $class, $socket_path )
 {
 	return bless {
-		socket => FuguLib::JSONSocket->new(
+		socket => Fugu::JSONSocket->new(
 			path    => $socket_path,
 			timeout => READ_TIMEOUT,
 		),
@@ -104,7 +104,7 @@ sub sync ($self)
 
 	# Wait for the command to finish. A guest that never answers
 	# must not hold the caller for ever.
-	my $exit = FuguLib::Util::wait_until(
+	my $exit = Fugu::Util::wait_until(
 		EXEC_TIMEOUT,
 		0.1,
 		sub {

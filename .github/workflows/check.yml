@@ -84,7 +84,10 @@ jobs:
       - name: Check lint
         run: make lint
 
+      # find -exec ... \; does not propagate the exit status, so a
+      # module that fails to compile prints an error and the step
+      # passes. xargs does propagate it.
       - name: Check Perl syntax
         run: |
-          find lib -name "*.pm" -exec perl -I lib -cw {} \;
-          find bin -type f -exec perl -I lib -cw {} \;
+          find lib -name "*.pm" -print0 | xargs -0 -n1 perl -I lib -cw
+          find bin -type f -print0 | xargs -0 -n1 perl -I lib -cw

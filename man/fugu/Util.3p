@@ -1,0 +1,172 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::Util 3p
+.Os
+.Sh NAME
+.Nm Fugu::Util
+.Nd deadlines, polls and readable sizes
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Util;
+
+my $result = Fugu::Util::bounded(10, sub { $client->connect });
+
+Fugu::Util::wait_until(60, 0.5, sub { -S $socket })
+    or die "the daemon never came up\en";
+
+printf "%s of cache\en", Fugu::Util::format_size($bytes);
+.Ed
+.Sh DESCRIPTION
+.Nm
+holds three small helpers that otherwise get a copy in every
+subsystem: a wall-clock guard, a bounded poll, and a byte count that a
+person can read.
+.Pp
+The three are plain functions, not methods.
+They keep no state and they never log.
+.Ss bounded
+.Fn bounded "$seconds" "$code"
+runs
+.Fa $code
+under a hard wall-clock deadline.
+A blocked call inside
+.Fa $code
+cannot stall the caller for longer than
+.Fa $seconds .
+.Pp
+The guard is an
+.Xr alarm 3 ,
+so it interrupts a blocking system call that a poll loop cannot reach.
+That is why it exists next to
+.Fn wait_until ,
+which cannot do that.
+.Pp
+A die inside
+.Fa $code
+propagates, with the alarm already cleared.
+Thus a real failure keeps its own message and is not reported as a
+timeout.
+.Ss wait_until
+.Fn wait_until "$timeout" "$interval" "$code"
+calls
+.Fa $code
+until it returns true, or until
+.Fa $timeout
+seconds pass.
+.Fa $interval
+is the pause between calls; its default is a quarter of a second.
+.Pp
+.Fa $code
+runs at least once, even with a timeout of 0.
+A caller that asks
+.Dq is it ready
+always gets an answer about now.
+.Pp
+The loop also stops when a signal arrives, through
+.Xr Fugu::Signal 3p .
+A poll loop must not outlive the interrupt that told the program to
+stop.
+.Ss format_size
+.Fn format_size "$bytes"
+returns the byte count in the shortest unit that keeps it under 1024.
+The units are B, K, M, G and T.
+A count below 1024 has no decimal; the others have one.
+.Pp
+A count of
+.Dv undef
+reads as a question mark.
+A size that nobody could measure is not a size of zero.
+.Sh RETURN VALUES
+.Fn bounded
+returns what
+.Fa $code
+returned.
+It returns
+.Dv undef
+when the deadline elapsed.
+.Pp
+.Fn wait_until
+returns the first true value that
+.Fa $code
+gave.
+It returns
+.Dv undef
+on the timeout, and
+.Dv undef
+when a signal arrived.
+.Pp
+.Fn format_size
+returns a short string.
+.Sh EXAMPLES
+This example bounds a guest interaction that can block for ever:
+.Bd -literal -offset indent
+my $out = Fugu::Util::bounded(15, sub {
+    return $ssh->run_command('sync; sync; sync');
+});
+warn "the guest did not answer\en" unless defined $out;
+.Ed
+.Pp
+This example waits for a port to open, and stops early on a
+.Dv SIGINT :
+.Bd -literal -offset indent
+Fugu::Util::wait_until(120, 1, sub {
+    IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => $port);
+}) or die "port $port never opened\en";
+.Ed
+.Sh ERRORS
+.Fn bounded
+lets a die from
+.Fa $code
+through unchanged.
+It has no error of its own: a deadline is a return value, not an
+exception.
+.Pp
+.Fn wait_until
+and
+.Fn format_size
+do not die.
+.Sh SEE ALSO
+.Xr alarm 3 ,
+.Xr Fugu::Process 3p ,
+.Xr Fugu::Signal 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+.Fn bounded
+uses
+.Xr alarm 3 ,
+which is process-global and has one pending deadline.
+A nested
+.Fn bounded
+replaces the outer deadline and does not restore it.
+Do not nest the two.
+.Pp
+An alarm interrupts a system call in progress.
+A caller whose
+.Fa $code
+writes to a file can therefore leave a partial write behind.
+Bound a read, a connect or a wait, and not a write that must be whole.
+.Pp
+.Fn wait_until
+cannot interrupt a
+.Fa $code
+that blocks.
+The timeout bounds the loop, not one call inside it.
+Use
+.Fn bounded
+for that.

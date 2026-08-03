@@ -1,6 +1,6 @@
 =head1 NAME
 
-FuguVM::Config - the VM defaults over FuguLib::Config
+FuguVM::Config - the VM defaults over Fugu::Config
 
 =head1 SYNOPSIS
 
@@ -33,7 +33,7 @@ directory and one in the project root. The project file wins.
     }
 
 The grammar, the tilde expansion and the yes/no spellings come from
-L<FuguLib::Config>. This module holds only what is true of FuguVM: the
+L<Fugu::Config>. This module holds only what is true of FuguVM: the
 defaults for a machine, the merge of the two files, and the switch
 that turns the installed-image cache off.
 
@@ -94,7 +94,7 @@ the opposite.
 
 =head1 SEE ALSO
 
-L<FuguLib::Config>, L<FuguVM::CLI>, L<FuguVM::VM>, L<fuguvm(1)>
+L<Fugu::Config>, L<FuguVM::CLI>, L<FuguVM::VM>, L<fuguvm(1)>
 
 =head1 AUTHOR
 

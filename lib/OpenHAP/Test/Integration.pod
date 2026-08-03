@@ -150,7 +150,7 @@ The method parses an HTTP response.
 
     my $value = $env->get_config_value($key);
 
-The method gets a configuration value. L<FuguLib::Config> reads the
+The method gets a configuration value. L<Fugu::Config> reads the
 installed F</etc/openhapd.conf>, thus the tests see the file as the
 daemon sees it.
 
@@ -223,7 +223,7 @@ The method gets the MQTT client connection.
 
 =head1 SEE ALSO
 
-L<FuguLib::Config>, L<Protocol::HAP::HTTP>, L<Protocol::HAP::Controller>
+L<Fugu::Config>, L<Protocol::HAP::HTTP>, L<Protocol::HAP::Controller>
 
 =head1 AUTHOR
 

@@ -5,7 +5,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
 # Test device loading through OpenHAP::DeviceLoader with a mock config,
 # a mock MQTT client, and a recording HAP stand-in.
@@ -14,7 +14,7 @@ use_ok('OpenHAP::DeviceLoader');
 
 package MockConfig;
 
-# A stand-in for FuguLib::Config that answers blocks('device') with
+# A stand-in for Fugu::Config that answers blocks('device') with
 # the records the test declares. Each record arrives as a block, so
 # the loader reads it exactly as it reads a parsed file.
 sub new ( $class, @devices )

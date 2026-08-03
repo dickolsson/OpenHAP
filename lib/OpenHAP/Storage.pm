@@ -4,14 +4,14 @@ package OpenHAP::Storage;
 
 use Carp  qw(croak);
 use Fcntl qw(:flock);
-use FuguLib::File;
-use FuguLib::Log;
-use FuguLib::Store;
+use Fugu::File;
+use Fugu::Log;
+use Fugu::Store;
 
 # OpenHAP::Storage - what a paired accessory keeps on disk.
 #
-# The counters ride on FuguLib::Store, and every file goes through
-# FuguLib::File, which sets the mode at the open. This module keeps
+# The counters ride on Fugu::Store, and every file goes through
+# Fugu::File, which sets the mode at the open. This module keeps
 # what is HAP: the long-term key files, the pairings format, and the
 # rule that every pairing change bumps the configuration number.
 #
@@ -27,14 +27,14 @@ sub new ( $class, %args )
 {
 	my $db_path = $args{db_path} // '/var/db/openhapd';
 
-	FuguLib::File->ensure_dir( $db_path, mode => 0700 );
+	Fugu::File->ensure_dir( $db_path, mode => 0700 );
 
 	my $self = bless {
 		db_path             => $db_path,
 		pairings_file       => "$db_path/pairings.db",
 		accessory_ltsk_file => "$db_path/accessory_ltsk",
 		accessory_ltpk_file => "$db_path/accessory_ltpk",
-		store               => FuguLib::Store->new(
+		store               => Fugu::Store->new(
 			path => "$db_path/state.json",
 			mode => 0600,
 		),
@@ -64,7 +64,7 @@ sub _migrate ($self)
 		next unless -f $path;
 		next if $self->{store}->exists($key);
 
-		my $value = FuguLib::File->read($path);
+		my $value = Fugu::File->read($path);
 		next unless defined $value;
 		chomp $value;
 
@@ -81,30 +81,27 @@ sub load_accessory_keys ($self)
 	if (       -f $self->{accessory_ltsk_file}
 		&& -f $self->{accessory_ltpk_file} )
 	{
-		FuguLib::Log->default->debug(
+		Fugu::Log->default->debug(
 			'Loading accessory keys from storage');
-		my $ltsk = FuguLib::File->read( $self->{accessory_ltsk_file} );
-		my $ltpk = FuguLib::File->read( $self->{accessory_ltpk_file} );
+		my $ltsk = Fugu::File->read( $self->{accessory_ltsk_file} );
+		my $ltpk = Fugu::File->read( $self->{accessory_ltpk_file} );
 		return ( $ltsk, $ltpk );
 	}
 
-	FuguLib::Log->default->debug('No existing accessory keys found');
+	Fugu::Log->default->debug('No existing accessory keys found');
 	return ();
 }
 
 sub save_accessory_keys ( $self, $ltsk, $ltpk )
 {
-	FuguLib::Log->default->debug(
-		'Generating and saving new accessory keys');
+	Fugu::Log->default->debug('Generating and saving new accessory keys');
 
 	# The secret key gets its mode at the open, before it holds a
 	# byte. A chmod after the write leaves a window in which the
 	# identity of the accessory is world-readable.
-	FuguLib::File->write( $self->{accessory_ltsk_file},
-		$ltsk, mode => 0600 )
+	Fugu::File->write( $self->{accessory_ltsk_file}, $ltsk, mode => 0600 )
 	    or croak 'Cannot store the accessory secret key';
-	FuguLib::File->write( $self->{accessory_ltpk_file},
-		$ltpk, mode => 0644 )
+	Fugu::File->write( $self->{accessory_ltpk_file}, $ltpk, mode => 0644 )
 	    or croak 'Cannot store the accessory public key';
 
 	return;
@@ -114,17 +111,15 @@ sub load_pairings ($self)
 {
 	return {} unless -f $self->{pairings_file};
 
-	FuguLib::Log->default->debug('Loading pairings from storage');
+	Fugu::Log->default->debug('Loading pairings from storage');
 	my %pairings;
 	open my $fh, '<', $self->{pairings_file} or do {
-		FuguLib::Log->default->error(
-			'Cannot open pairings file %s: %s',
+		Fugu::Log->default->error( 'Cannot open pairings file %s: %s',
 			$self->{pairings_file}, $! );
 		die "Cannot open pairings file: $!";
 	};
 	flock( $fh, LOCK_SH ) or do {
-		FuguLib::Log->default->error(
-			'Cannot lock pairings file %s: %s',
+		Fugu::Log->default->error( 'Cannot lock pairings file %s: %s',
 			$self->{pairings_file}, $! );
 		die "Cannot lock pairings file: $!";
 	};
@@ -151,7 +146,7 @@ sub load_pairings ($self)
 
 sub save_pairing ( $self, $controller_id, $ltpk, $permissions = 1 )
 {
-	FuguLib::Log->default->debug( 'Saving pairing for controller: %s',
+	Fugu::Log->default->debug( 'Saving pairing for controller: %s',
 		$controller_id );
 	my $pairings = $self->load_pairings;
 	$pairings->{$controller_id} = {
@@ -167,7 +162,7 @@ sub save_pairing ( $self, $controller_id, $ltpk, $permissions = 1 )
 
 sub remove_pairing ( $self, $controller_id )
 {
-	FuguLib::Log->default->debug( 'Removing pairing for controller: %s',
+	Fugu::Log->default->debug( 'Removing pairing for controller: %s',
 		$controller_id );
 	my $pairings = $self->load_pairings;
 	delete $pairings->{$controller_id};
@@ -183,7 +178,7 @@ sub remove_pairing ( $self, $controller_id )
 # admin pairing (HAP-Pairing.md §7.2).
 sub remove_all_pairings ($self)
 {
-	FuguLib::Log->default->debug('Removing all pairings');
+	Fugu::Log->default->debug('Removing all pairings');
 	$self->_save_pairings( {} );
 	$self->increment_config_number();
 
@@ -205,7 +200,7 @@ sub _save_pairings ( $self, $pairings )
 
 	# The file is 0600 from its first byte. A pairing record names
 	# every controller that may reach the accessory.
-	FuguLib::File->write( $self->{pairings_file}, $text, mode => 0600 )
+	Fugu::File->write( $self->{pairings_file}, $text, mode => 0600 )
 	    or croak 'Cannot write the pairings file';
 
 	return;

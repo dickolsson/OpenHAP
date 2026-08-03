@@ -8,20 +8,20 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use_ok('FuguLib::Imsg');
+use_ok('Fugu::Imsg');
 
-# pair(): a FuguLib::Imsg endpoint and the raw peer handle. Thus
+# pair(): a Fugu::Imsg endpoint and the raw peer handle. Thus
 # tests can capture and inject wire bytes.
 sub pair ()
 {
 	socketpair( my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
 	    or die "socketpair: $!";
 	binmode $_ for $a, $b;
-	return ( FuguLib::Imsg->new( fh => $a ), $b );
+	return ( Fugu::Imsg->new( fh => $a ), $b );
 }
 
 subtest '[MDNS-Imsg §1] header is four uint32 fields in order' => sub {
-	my $hdr = FuguLib::Imsg::_encode_header( 0x11223344, 0x55667788,
+	my $hdr = Fugu::Imsg::_encode_header( 0x11223344, 0x55667788,
 		0x99aabbcc, 0xddeeff00 );
 
 	is( length($hdr), 16, 'IMSG_HEADER_SIZE is 16' );

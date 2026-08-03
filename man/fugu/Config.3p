@@ -1,0 +1,243 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::Config 3p
+.Os
+.Sh NAME
+.Nm Fugu::Config
+.Nd the OpenBSD-style configuration grammar
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Config;
+
+my $config = Fugu::Config->new(file => '/etc/mydaemon.conf');
+$config->load or die $config->error . "\en";
+
+my $port = $config->get('port', 8080);
+
+for my $device ($config->blocks('device')) {
+    say $device->{settings}{name};
+}
+
+my $vm = $config->block('vm', 'default');
+.Ed
+.Sh DESCRIPTION
+.Nm
+parses the configuration grammar that
+.Ox
+daemons use.
+A file holds top-level settings and blocks:
+.Bd -literal -offset indent
+log_level debug
+hap_port = 51827
+
+device tasmota thermostat bedroom {
+	name = "Bedroom Thermostat"
+	topic = tasmota_AABBCC
+}
+.Ed
+.Pp
+Both
+.Ql key value
+and
+.Ql key = value
+parse.
+A double-quoted value loses its quotes.
+A
+.Ql #
+starts a comment that runs to the end of the line.
+.Pp
+A block header is a type, then one or more arguments, then an opening
+brace.
+Blocks nest one level; a block inside a block is an error.
+.Pp
+The parser keeps the blocks of each type in file order, and also
+addresses each one by its name, which is the last argument of the
+header.
+Thus a caller that wants an ordered list of accessories and a caller
+that wants the machine called
+.Dq default
+read the same parse.
+.Pp
+A malformed line is an error with a file and a line number.
+The module never skips a line it did not understand.
+A typo that a parser ignores is a setting that silently does not
+apply, and the operator finds out from the behavior of the daemon
+weeks later.
+.Ss new
+.Fn new "%args"
+creates a parser for one file.
+The method does not read the file.
+Call
+.Fn load .
+.Pp
+This is the argument:
+.Bl -tag -width "fileXX"
+.It Fa file
+The configuration file.
+This argument is necessary.
+.El
+.Ss load
+.Fn load
+reads and parses the file.
+A second call starts over, so a setting that the file no longer holds
+is gone.
+.Pp
+An unreadable file is an error.
+A caller for whom an absent file is normal tests for the file first.
+A daemon that silently runs on defaults after a typo in a path is
+worse than one that refuses to start.
+.Ss file
+.Fn file
+returns the path that this object parses.
+.Ss error
+.Fn error
+returns the most recent failure, with its file and line.
+.Ss get
+.Fn get "$key" "$default"
+returns a top-level setting, or the default.
+.Ss setting_names
+.Fn setting_names
+returns the names of the top-level settings, sorted.
+.Ss bool
+.Fn bool "$key" "$default"
+returns a top-level setting as a switch.
+.Pp
+The accepted spellings are
+.Cm yes ,
+.Cm true ,
+.Cm on
+and
+.Cm 1 ,
+and their opposites
+.Cm no ,
+.Cm false ,
+.Cm off
+and
+.Cm 0 .
+The comparison ignores case.
+.Pp
+Any other value returns the default and records an error.
+Thus a caller that checks gets told, and a caller that does not still
+gets a defined answer instead of the opposite of what the file said.
+.Ss parse_bool
+.Fn parse_bool "$value" "$default"
+applies the same switch grammar to a value that the caller already
+holds.
+A setting inside a block comes through here.
+.Ss blocks
+.Fn blocks "$type"
+returns every block of the type, in file order.
+.Pp
+Each entry is a hash reference with these keys:
+.Bl -tag -width "settingsXX"
+.It Va type
+The block type.
+.It Va args
+The header arguments, in order, as an array reference.
+.It Va name
+The last header argument.
+.It Va settings
+The settings inside the block, as a hash reference.
+.El
+.Ss block
+.Fn block "$type" "$name"
+returns the block of the type whose name matches, or
+.Dv undef .
+When two blocks share a name, the last one in the file wins, as an
+assignment does.
+.Ss block_types
+.Fn block_types
+returns the block types that the file used, sorted.
+.Ss find_project_root
+.Fn find_project_root "$marker"
+walks up from the working directory to the first directory that holds
+.Fa $marker .
+The method returns that directory, or
+.Dv undef
+when the walk reaches the root without a match.
+.Sh RETURN VALUES
+.Fn load
+returns the object on success.
+It returns
+.Dv undef
+when the file does not open or holds a line that the grammar does not
+accept, with the reason in
+.Fn error .
+.Pp
+.Fn get ,
+.Fn file
+and
+.Fn error
+return a string or
+.Dv undef .
+.Fn bool
+and
+.Fn parse_bool
+return 1 or 0.
+.Fn blocks ,
+.Fn setting_names
+and
+.Fn block_types
+return a list.
+.Fn block
+returns a hash reference or
+.Dv undef .
+.Sh EXAMPLES
+This example loads a file that may not exist yet:
+.Bd -literal -offset indent
+my $config = Fugu::Config->new(file => $path);
+if (-f $path) {
+    $config->load or die $config->error . "\en";
+}
+
+my $port = $config->get('port', 8080);
+.Ed
+.Sh ERRORS
+.Fn new
+dies when
+.Fa file
+is absent or empty, and
+.Fn find_project_root
+dies without a marker.
+Both are programming errors.
+.Pp
+No other method dies.
+.Fn load
+reports every parse failure through its return value and
+.Fn error .
+.Sh SEE ALSO
+.Xr Fugu::File 3p ,
+.Xr Fugu::Store 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+The grammar has no escape for the comment character.
+A value cannot hold a
+.Ql # ,
+even inside quotes.
+.Pp
+Every value is a string.
+The module does not convert a number, and
+.Ql 0
+as a string is true in Perl.
+Use
+.Fn bool
+for a switch.
+.Pp
+A key with no value is not a setting, and the parser rejects the line.
+The grammar has no flag form.

@@ -41,7 +41,7 @@ my @SITE = qw(
     install.html
     manuals.html
     fuguvm.html
-    fugulib.html
+    fugu.html
     404.html
 );
 
@@ -53,7 +53,7 @@ my @NAV = (
 	'install.html',
 	'manuals.html',
 	'fuguvm.html',
-	'fugulib.html',
+	'fugu.html',
 	'https://github.com/dickolsson/openhap',
 );
 
@@ -65,10 +65,10 @@ for my $src ( sort glob("$ROOT/man/*/*") ) {
 	next unless $src =~ m{/man/([^/]+)/([^/]+)\.(1|3p|5|8)$};
 	my ( $dir, $stem, $section ) = ( $1, $2, $3 );
 
-	# FuguLib pages are module manuals: the source drops the namespace
+	# Fugu pages are module manuals: the source drops the namespace
 	# because make cannot have a colon in a target. The page keeps the
 	# namespace.
-	my $name = $dir eq 'fugulib' ? "FuguLib::$stem" : $stem;
+	my $name = $dir eq 'fugu' ? "Fugu::$stem" : $stem;
 	$MANUAL{$src} = "$name.$section.html";
 }
 
@@ -195,7 +195,7 @@ for my $page (@PAGES) {
 }
 
 # The module reference covers every sidecar and nothing else.  The
-# FuguLib documentation is in mdoc. Thus the test does not count FuguLib
+# Fugu documentation is in mdoc. Thus the test does not count Fugu
 # pages here.
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
@@ -219,10 +219,10 @@ for my $page (@PAGES) {
 		'.Xr rc 8 leaves for man.openbsd.org' );
 
 	# Sibling module manuals cross-link. This only works because the
-	# staging directory holds them under their FuguLib:: names.
-	my $daemon = slurp("$OUT/FuguLib::Daemon.3p.html");
-	like( $daemon, qr{<a class="Xr" href="\./FuguLib::Pidfile\.3p\.html">},
-		'.Xr FuguLib::Pidfile 3p links to the local page' );
+	# staging directory holds them under their Fugu:: names.
+	my $daemon = slurp("$OUT/Fugu::Daemon.3p.html");
+	like( $daemon, qr{<a class="Xr" href="\./Fugu::Pidfile\.3p\.html">},
+		'.Xr Fugu::Pidfile 3p links to the local page' );
 
 	# A browser reads a relative URL whose first segment holds a colon
 	# as a scheme. Thus links to module manuals must keep their './'.

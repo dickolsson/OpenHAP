@@ -14,7 +14,7 @@
 # or unveil call from bin/openhapd, the corresponding syscall is
 # absent from the trace.
 #
-# The forked children of t/fugulib/sandbox.t prove the enforcement
+# The forked children of t/fugu/sandbox.t prove the enforcement
 # semantics: a violation aborts, and a path outside the view is
 # unreachable. No operator-supplied read path exists to probe
 # enforcement through the running daemon itself. Thus this file

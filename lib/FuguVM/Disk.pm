@@ -20,9 +20,9 @@ use v5.36;
 package FuguVM::Disk;
 
 use File::Basename;
-use FuguLib::File;
-use FuguLib::Log;
-use FuguLib::Process;
+use Fugu::File;
+use Fugu::Log;
+use Fugu::Process;
 use JSON::PP ();
 
 sub new ( $class, $state_dir )
@@ -50,7 +50,7 @@ sub create (
 {
 	my $path = $self->path($name);
 
-	FuguLib::File->ensure_dir( dirname($path) ) or return;
+	Fugu::File->ensure_dir( dirname($path) ) or return;
 
 	return $path if -f $path;    # Already exists
 
@@ -65,11 +65,10 @@ sub create (
 
 	# The capture also swallows the verbose "Formatting..." line of
 	# qemu-img, which no caller wants to see
-	my $result = FuguLib::Process->run( cmd => \@cmd );
+	my $result = Fugu::Process->run( cmd => \@cmd );
 
 	unless ( $result->{success} ) {
-		FuguLib::Log->default->error(
-			'Failed to create disk image %s: %s',
+		Fugu::Log->default->error( 'Failed to create disk image %s: %s',
 			$path,
 			$result->{stderr} || $result->{error} || 'unknown' );
 		return;
@@ -116,7 +115,7 @@ sub info ( $self, $name )
 
 	# The inspection asks for shared access with -U, so it also
 	# works against the disk of a running VM
-	my $result = FuguLib::Process->run(
+	my $result = Fugu::Process->run(
 		cmd => [ 'qemu-img', 'info', '-U', '--output=json', $path ] );
 	return if !$result->{success};
 
@@ -155,7 +154,7 @@ sub check ( $self, $name )
 	return if !-f $path;
 
 	my $result =
-	    FuguLib::Process->run( cmd => [ 'qemu-img', 'check', $path ] );
+	    Fugu::Process->run( cmd => [ 'qemu-img', 'check', $path ] );
 	my $output = $result->{stdout} . $result->{stderr};
 
 	return {
@@ -173,7 +172,7 @@ sub repair ( $self, $name )
 	return 0 if !-f $path;
 
 	# Run qemu-img check with the repair option
-	my $result = FuguLib::Process->run(
+	my $result = Fugu::Process->run(
 		cmd => [ 'qemu-img', 'check', '-r', 'all', $path ] );
 
 	return $result->{success} ? 1 : 0;

@@ -19,11 +19,11 @@ use v5.36;
 
 package FuguVM::QMP;
 
-use FuguLib::JSONSocket;
+use Fugu::JSONSocket;
 
 # FuguVM::QMP - the QEMU Machine Protocol command set.
 #
-# The transport is FuguLib::JSONSocket. This file holds only what is
+# The transport is Fugu::JSONSocket. This file holds only what is
 # true of QMP: the greeting, the capabilities handshake, and the four
 # commands that FuguVM uses to manage a VM's lifecycle.
 
@@ -32,7 +32,7 @@ use constant READ_TIMEOUT => 10;
 sub new ( $class, $socket_path )
 {
 	return bless {
-		socket => FuguLib::JSONSocket->new(
+		socket => Fugu::JSONSocket->new(
 			path     => $socket_path,
 			timeout  => READ_TIMEOUT,
 			greeting => 1,

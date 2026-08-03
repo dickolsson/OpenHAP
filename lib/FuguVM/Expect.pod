@@ -20,7 +20,7 @@ FuguVM::Expect - drive the OpenBSD installer over the serial console
 
 The OpenBSD installer asks questions that no protocol answers, so an
 L<expect(1)> script types them. The scripts ship under
-F<share/fuguvm/expect>, and L<FuguLib::File> resolves them against the
+F<share/fuguvm/expect>, and L<Fugu::File> resolves them against the
 install root.
 
 The run is a passthrough: the child writes straight to the terminal of
@@ -62,7 +62,7 @@ name of a shipped script.
 
 =head1 SEE ALSO
 
-L<expect(1)>, L<FuguLib::File>, L<FuguLib::Process>, L<FuguVM::VM>
+L<expect(1)>, L<Fugu::File>, L<Fugu::Process>, L<FuguVM::VM>
 
 =head1 AUTHOR
 

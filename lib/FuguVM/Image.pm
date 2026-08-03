@@ -19,9 +19,9 @@ use v5.36;
 
 package FuguVM::Image;
 
-use FuguLib::File;
-use FuguLib::Log;
-use FuguLib::Process;
+use Fugu::File;
+use Fugu::Log;
+use Fugu::Process;
 
 # FuguVM::Image - Download and cache OpenBSD miniroot images
 #
@@ -39,7 +39,7 @@ use constant {
 sub new ( $class, $cache_dir, $proxy = undef )
 {
 	my $self = bless {
-		cache_dir => FuguLib::File->expand_tilde($cache_dir),
+		cache_dir => Fugu::File->expand_tilde($cache_dir),
 		proxy     => $proxy,
 	}, $class;
 
@@ -78,7 +78,7 @@ sub ensure ( $self, $version )
 #	"no download" and would not fail.
 sub _ftp_script ()
 {
-	return FuguLib::File->share_path('scripts/ftp');
+	return Fugu::File->share_path('scripts/ftp');
 }
 
 # $self->download($version):
@@ -109,12 +109,12 @@ sub download ( $self, $version )
 	# Download to the temp file. The helper writes its progress as
 	# it goes, and a download of a hundred megabytes is a wait that
 	# an operator wants to see.
-	my $result = FuguLib::Process->run(
+	my $result = Fugu::Process->run(
 		cmd         => [ $ftp, $tmp_path, $url ],
 		passthrough => 1,
 	);
 	unless ( $result->{success} ) {
-		FuguLib::Log->default->error( 'Download failed: %s',
+		Fugu::Log->default->error( 'Download failed: %s',
 			$result->{error} // "exit $result->{exit_code}" );
 		return;
 	}

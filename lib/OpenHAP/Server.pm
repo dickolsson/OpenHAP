@@ -22,9 +22,9 @@ package OpenHAP::Server;
 use IO::Socket::INET;
 use Time::HiRes qw(time);
 
-use FuguLib::EventLoop;
-use FuguLib::Log;
-use FuguLib::MDNS;
+use Fugu::EventLoop;
+use Fugu::Log;
+use Fugu::MDNS;
 use OpenHAP::Storage;
 use Protocol::HAP::Server;
 
@@ -85,7 +85,7 @@ sub new ( $class, %args )
 		pin      => $args{pin},
 		setup_id => $args{setup_id},
 		store    => $self->{storage},
-		logger   => FuguLib::Log->default,
+		logger   => Fugu::Log->default,
 		output   => sub ( $session, $bytes ) {
 			$self->_write( $session, $bytes );
 		},
@@ -134,8 +134,7 @@ sub update_config_number ($self)
 #	publishes.
 sub mdns_txt_string ($self)
 {
-	return FuguLib::MDNS::format_txt(
-		%{ $self->{engine}->mdns_txt_records } );
+	return Fugu::MDNS::format_txt( %{ $self->{engine}->mdns_txt_records } );
 }
 
 # --- the connection plumbing ----------------------------------------------
@@ -146,7 +145,7 @@ sub mdns_txt_string ($self)
 #	have to build one.
 sub loop ($self)
 {
-	$self->{loop} //= FuguLib::EventLoop->new;
+	$self->{loop} //= Fugu::EventLoop->new;
 
 	return $self->{loop};
 }
@@ -166,7 +165,7 @@ sub listen ($self)
 		Listen    => 10,
 	    )
 	    or do {
-		FuguLib::Log->default->error(
+		Fugu::Log->default->error(
 			'Cannot create server socket on port %d: %s',
 			$self->{port}, $! );
 		die "Cannot create server: $!";
@@ -175,7 +174,7 @@ sub listen ($self)
 	$self->{server} = $server;
 	$self->loop->add_fd( $server, read => sub ($) { $self->_accept } );
 
-	FuguLib::Log->default->info( 'OpenHAP server listening on port %d',
+	Fugu::Log->default->info( 'OpenHAP server listening on port %d',
 		$self->{port} );
 
 	return $server;
@@ -192,7 +191,7 @@ sub run ($self)
 	$self->_register_mqtt;
 	$self->loop->run;
 
-	FuguLib::Log->default->info('OpenHAP server stopped');
+	Fugu::Log->default->info('OpenHAP server stopped');
 
 	return $self;
 }
@@ -236,7 +235,7 @@ sub _accept ($self)
 {
 	my $client = $self->{server}->accept or return;
 
-	FuguLib::Log->default->info( 'Client connected from %s',
+	Fugu::Log->default->info( 'Client connected from %s',
 		$client->peerhost );
 
 	my $session = $self->{engine}->session_open;
@@ -277,7 +276,7 @@ sub _handle_client ( $self, $sock )
 		# restart.
 		my $peer = $sock->peerhost // 'unknown';
 		$self->_close_client($sock);
-		FuguLib::Log->default->info( 'Client disconnected from %s',
+		Fugu::Log->default->info( 'Client disconnected from %s',
 			$peer );
 		return;
 	}
@@ -300,8 +299,8 @@ sub _write ( $self, $session, $bytes )
 
 	eval { $socket->syswrite($bytes) };
 	if ($@) {
-		FuguLib::Log->default->warning(
-			'Failed to write to session: %s', $@ );
+		Fugu::Log->default->warning( 'Failed to write to session: %s',
+			$@ );
 	}
 
 	return;
@@ -374,12 +373,12 @@ sub _mqtt_retry ($self)
 	return if $mqtt->is_connected;
 
 	unless ( $mqtt->reconnect ) {
-		FuguLib::Log->default->debug(
+		Fugu::Log->default->debug(
 			'MQTT reconnection attempt failed, will retry');
 		return;
 	}
 
-	FuguLib::Log->default->info('Reconnected to MQTT broker');
+	Fugu::Log->default->info('Reconnected to MQTT broker');
 	$self->_mqtt_resubscribe_accessories;
 
 	return;
@@ -392,7 +391,7 @@ sub _mqtt_resubscribe_accessories ($self)
 	for my $acc ( $self->{engine}->get_bridged_accessories ) {
 		if ( $acc->can('subscribe_mqtt') ) {
 			eval { $acc->subscribe_mqtt; };
-			FuguLib::Log->default->error(
+			Fugu::Log->default->error(
 				'Failed to resubscribe accessory: %s', $@ )
 			    if $@;
 		}
@@ -428,13 +427,13 @@ sub _refresh_mdns ( $self, $paired )
 	return unless $self->{mdns}->is_published;
 
 	if ( $self->{mdns}->update_txt( txt => $self->mdns_txt_string ) ) {
-		FuguLib::Log->default->info(
+		Fugu::Log->default->info(
 			'Pairing state changed, re-advertised mDNS TXT (sf=%d)',
 			$paired ? 0 : 1
 		);
 	}
 	else {
-		FuguLib::Log->default->warning(
+		Fugu::Log->default->warning(
 			'mDNS TXT update failed: %s',
 			$self->{mdns}->error // 'unknown'
 		);

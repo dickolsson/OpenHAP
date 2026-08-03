@@ -16,7 +16,7 @@ FuguVM::QGA - the QEMU Guest Agent command set
 
 The guest agent runs inside the VM and answers over a socket that QEMU
 serves. FuguVM uses it for the filesystem operations that a clean
-shutdown needs. The transport is L<FuguLib::JSONSocket>; this module
+shutdown needs. The transport is L<Fugu::JSONSocket>; this module
 holds only the command set.
 
 The agent sends no greeting, so there is nothing to read before the
@@ -65,7 +65,7 @@ method reports success as soon as the request is away.
 
 =head1 SEE ALSO
 
-L<FuguLib::JSONSocket>, L<FuguVM::QMP>, L<FuguVM::VM>
+L<Fugu::JSONSocket>, L<FuguVM::QMP>, L<FuguVM::VM>
 
 =head1 AUTHOR
 
