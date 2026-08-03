@@ -15,8 +15,7 @@ use FuguLib::Store;
 # what is HAP: the long-term key files, the pairings format, and the
 # rule that every pairing change bumps the configuration number.
 #
-# The on-disk layout does not change with the module underneath it. A
-# paired installation keeps working:
+# The layout on disk is:
 #
 #	<db_path>/accessory_ltsk	mode 0600
 #	<db_path>/accessory_ltpk	mode 0644
@@ -40,38 +39,6 @@ sub new ( $class, %args )
 		),
 	}, $class;
 	$self->{store}->load;
-	$self->_migrate;
-
-	return $self;
-}
-
-# $self->_migrate:
-#	Read the counters that an older installation kept in one file
-#	each, and fold them into the state store. A daemon that was
-#	paired before this change must keep its configuration number:
-#	a controller that sees c# go backwards drops the accessory.
-sub _migrate ($self)
-{
-	my %legacy = (
-		config_number => 'config_number',
-		config_digest => 'config_digest',
-		auth_attempts => 'auth_attempts',
-	);
-
-	my $migrated = 0;
-	for my $key ( sort keys %legacy ) {
-		my $path = "$self->{db_path}/$legacy{$key}";
-		next unless -f $path;
-		next if $self->{store}->exists($key);
-
-		my $value = FuguLib::File->read($path);
-		next unless defined $value;
-		chomp $value;
-
-		$self->{store}->data->{$key} = $value;
-		$migrated++;
-	}
-	$self->{store}->save if $migrated;
 
 	return $self;
 }
