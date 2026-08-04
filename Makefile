@@ -43,7 +43,7 @@ DEPS			= scripts/deps
 
 # Man pages.  Fugu sources drop the Fugu:: prefix because a colon
 # cannot appear in a make target.  install-man puts it back.
-MAN1			= man/fuguvm/fuguvm.1
+MAN1			= man/fuguvm/fuguvm.1 man/fuguweb/fuguweb.1
 # The list is in LC_ALL=C order, which is the order fuguweb sorts a
 # manuals group by.  Thus the make list and the site index agree.
 MAN3P			= man/fugu/CLI.3p man/fugu/Config.3p \

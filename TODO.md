@@ -600,6 +600,24 @@ and `App-FuguVM`.
       the honest alternative and it is unusable, because OpenBSD base perl owns
       that namespace.
 
+### App::FuguWeb CPAN release
+
+Plan 009 built `App::FuguWeb` as a tool that any Perl project can install and
+configure. Only the release work is left, and it is the same list as above plus
+one item of its own.
+
+- [ ] **The base stylesheet does not survive an installation.**
+      `Fugu::File->share_path` looks two levels above `lib/Fugu/File.pm` and
+      then in the working directory. That finds `share/fuguweb/style.css` in a
+      checkout, which is where `fuguweb` runs today. It does not find it under
+      the `File::ShareDir` path of an installed distribution. A release either
+      uses `File::ShareDir`, or documents that a project must set the
+      `stylesheet` setting. The setting exists, so no project is blocked.
+- [ ] `App-FuguWeb` joins the distribution list above: a main module for PAUSE,
+      a `$VERSION`, PAUSE registration, and distribution tooling.
+- [ ] `no_index` metadata for `App::FuguWeb::Config::Group`, which lives inside
+      `lib/App/FuguWeb/Config.pm`.
+
 ## Technical Debt
 
 ### Known Shortcuts/Limitations

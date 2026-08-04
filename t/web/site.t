@@ -1,6 +1,14 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Tests for the static website that 'make web' produces
+# The OpenHAP website that 'make web' produces.
+#
+# The generic half of this file moved into App::FuguWeb::Check, which
+# every project that uses the tool gets. What is left is what is true
+# of this site and of no other: which sources must reach a page, and
+# which cross-references must resolve where.
+#
+# The file drives subprocesses and loads no module from lib/, as the
+# tooling tier requires.
 
 use v5.36;
 use Test::More;
@@ -35,27 +43,38 @@ my $OUT           = tempdir( CLEANUP => 1 );
 my $build_log     = `cd $ROOT && make web WEBOUT=$OUT 2>&1`;
 is( $? >> 8, 0, 'make web exits 0' ) or diag $build_log;
 
-# Hand-written pages
-my @SITE = qw(
-    index.html
-    install.html
-    manuals.html
-    fuguvm.html
-    fugu.html
-    404.html
-);
+# Every generic assertion is in the tool. A site that fails one of them
+# fails here, with the tool's own message.
+my $check_log = `cd $ROOT && bin/fuguweb check --out $OUT 2>&1`;
+is( $? >> 8, 0, 'fuguweb check exits 0' ) or diag $check_log;
 
-my @ASSETS = qw(style.css robots.txt CNAME);
+# The build writes nothing outside WEBOUT. The default output directory
+# must not appear as a side effect of a build somewhere else.
+SKIP: {
+	skip 'web/build predates this test', 1 if $default_build;
+	ok( !-e "$ROOT/web/build",
+		'build honours WEBOUT and writes nowhere else' );
+}
 
-# Every page carries the same navigation
-my @NAV = (
-	'index.html',
-	'install.html',
-	'manuals.html',
-	'fuguvm.html',
-	'fugu.html',
-	'https://github.com/dickolsson/openhap',
-);
+# The namespaces that a manuals group declares, read from .fuguwebrc as
+# text. Plan 008 had to edit a hard-coded rule here for one directory;
+# nobody should edit it again.
+my %NAMESPACE;
+{
+	my $rc  = slurp("$ROOT/.fuguwebrc");
+	my $dir = '';
+	for my $line ( split /\n/, $rc ) {
+		$line =~ s/#.*//;
+		$dir = '' if $line =~ /^\s*\}/;
+		$dir = ''         if $line =~ /^\s*manuals\b/;
+		$dir = $1         if $line =~ m{^\s*dir\s*=?\s*man/(\S+)};
+		$NAMESPACE{$dir} = $1
+		    if length $dir
+		    && $line =~ /^\s*namespace\s*=?\s*"?([^"\s]+)"?/;
+	}
+
+	ok( $NAMESPACE{fugu}, '.fuguwebrc declares the Fugu namespace' );
+}
 
 # Manual sources in the tree, and the page each one must produce.  The test
 # discovers the list rather than writes it down. Thus a manual that is
@@ -65,10 +84,7 @@ for my $src ( sort glob("$ROOT/man/*/*") ) {
 	next unless $src =~ m{/man/([^/]+)/([^/]+)\.(1|3p|5|8)$};
 	my ( $dir, $stem, $section ) = ( $1, $2, $3 );
 
-	# Fugu pages are module manuals: the source drops the namespace
-	# because make cannot have a colon in a target. The page keeps the
-	# namespace.
-	my $name = $dir eq 'fugu' ? "Fugu::$stem" : $stem;
+	my $name = ( $NAMESPACE{$dir} // '' ) . $stem;
 	$MANUAL{$src} = "$name.$section.html";
 }
 
@@ -94,66 +110,10 @@ File::Find::find(
 	"$ROOT/lib"
 );
 
-ok( scalar keys %POD, 'POD sidecars found under lib/App/OpenHAP' );
+ok( scalar keys %POD, 'POD sidecars found under lib/' );
 
-my @PAGES = ( @SITE, sort values %MANUAL, sort values %POD );
-
-for my $file ( @PAGES, @ASSETS ) {
+for my $file ( sort( values %MANUAL ), sort( values %POD ) ) {
 	ok( -s "$OUT/$file", "$file exists and is not empty" );
-}
-
-# The build writes nothing outside WEBOUT. The default output directory
-# must not appear as a side effect of a build somewhere else.
-SKIP: {
-	skip 'web/build predates this test', 1 if $default_build;
-	ok( !-e "$ROOT/web/build",
-		'build honours WEBOUT and writes nowhere else' );
-}
-
-# The mdoc staging directory is a build detail, not content
-ok( !-e "$OUT/.man", 'the .man staging directory is removed' );
-
-for my $page (@PAGES) {
-	my $html = slurp("$OUT/$page");
-
-	unlike( $html, qr/\@TITLE\@/, "$page has no unsubstituted \@TITLE\@" );
-
-	my ($title) = $html =~ m{<title>([^<]*)</title>};
-	ok( defined $title && length $title, "$page has a title" );
-
-	# mkpage.sh substitutes the title with sed. Thus sed would mangle,
-	# not escape, a title that contains a slash, an ampersand or a
-	# newline.  Assert that no title contains these characters.
-	unlike( $title // '', qr{[/&\n]}, "$page title is sed-safe" );
-
-	for my $link (@NAV) {
-		like( $html, qr/href="\Q$link\E"/, "$page links to $link" );
-	}
-
-	# Nothing may be root-absolute: the host serves the site from a
-	# project path. There a leading slash leaves the site entirely.
-	my @refs = $html =~ m{(?:href|src)="([^"]+)"}g;
-	my @rooted = grep { m{^/} } @refs;
-	is( scalar @rooted, 0, "$page has no root-absolute reference" )
-	    or diag "offenders: @rooted";
-
-	# Every relative reference must resolve to a file that the build
-	# made. Every fragment must resolve to an id that exists on the
-	# target page.
-	for my $ref (@refs) {
-		unlike( $ref, qr{^file:}i, "$page: $ref is not a file: URL" );
-		next if $ref =~ m{^[a-z]+:};    # absolute: http, https, mailto
-
-		my ( $path, $fragment ) = split /#/, $ref, 2;
-		$path = $page unless length $path;
-
-		ok( -e "$OUT/$path", "$page: $ref resolves inside the site" )
-		    or next;
-		next unless defined $fragment && length $fragment;
-
-		like( slurp("$OUT/$path"), qr/\bid="\Q$fragment\E"/,
-			"$page: $ref points at an existing anchor" );
-	}
 }
 
 # The build renders install.html from INSTALL.md, not from retyped text
@@ -223,83 +183,6 @@ for my $page (@PAGES) {
 	my $daemon = slurp("$OUT/Fugu::Daemon.3p.html");
 	like( $daemon, qr{<a class="Xr" href="\./Fugu::Pidfile\.3p\.html">},
 		'.Xr Fugu::Pidfile 3p links to the local page' );
-
-	# A browser reads a relative URL whose first segment holds a colon
-	# as a scheme. Thus links to module manuals must keep their './'.
-	for my $page (@PAGES) {
-		my @hrefs = slurp("$OUT/$page") =~ m{href="([^"]+)"}g;
-		my @bad   = grep {
-			/^[A-Za-z][A-Za-z0-9.+-]*:/
-			    && !m{^(?:https?|mailto):}
-		} @hrefs;
-		is( scalar @bad, 0, "$page: no link reads as a URL scheme" )
-		    or diag "offenders: @bad";
-	}
-
-	# No cross-reference may dangle either way
-	for my $page ( sort values %MANUAL ) {
-		my @xrefs = slurp("$OUT/$page")
-		    =~ m{<a class="Xr" href="([^"]+)"}g;
-		for my $xref (@xrefs) {
-			next if $xref =~ m{^https://man\.openbsd\.org/};
-			ok( -e "$OUT/$xref",
-				"$page: local .Xr $xref resolves" );
-		}
-	}
-}
-
-# Every page must be reachable through links from the front page.
-# 404.html is the exception: the host serves it for unknown paths.
-{
-	my %seen  = ( 'index.html' => 1 );
-	my @queue = ('index.html');
-
-	while ( my $page = shift @queue ) {
-		next unless $page =~ /\.html$/;
-
-		my $html = slurp("$OUT/$page");
-		for my $ref ( $html =~ m{(?:href|src)="([^"]+)"}g ) {
-			next if $ref =~ m{^[a-z]+:};
-
-			my ($path) = split /#/, $ref, 2;
-			next unless length $path;
-			$path =~ s{^\./}{};
-
-			next if $seen{$path}++;
-			push @queue, $path;
-		}
-	}
-
-	for my $page ( grep { $_ ne '404.html' } @PAGES ) {
-		ok( $seen{$page}, "$page is reachable from index.html" );
-	}
-}
-
-# The output directory holds the site and nothing else: no staging
-# directory, no editor backups, no stray sources
-{
-	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
-	my @entries = grep { $_ ne '.' && $_ ne '..' } readdir $dh;
-	closedir $dh;
-
-	my %expected   = map  { $_ => 1 } @PAGES, @ASSETS;
-	my @unexpected = grep { !$expected{$_} } sort @entries;
-
-	is( scalar @unexpected, 0, 'output holds only the site' )
-	    or diag "unexpected: @unexpected";
-}
-
-# The test collects and reports external links. It never fetches them.
-# The build and its tests touch no network.
-{
-	my %external;
-	for my $page (@PAGES) {
-		for my $ref ( slurp("$OUT/$page") =~ m{href="([^"]+)"}g ) {
-			$external{$ref} = 1 if $ref =~ m{^https?://};
-		}
-	}
-	note("external link: $_") for sort keys %external;
-	ok( scalar keys %external, 'the site links outward at all' );
 }
 
 # The site is a pure function of the repository

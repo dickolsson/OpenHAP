@@ -232,28 +232,14 @@ sub _copy_stylesheet ($self)
 }
 
 # $self->_copy_assets:
-#	Copy every asset of the source directory. An asset is any file
-#	there that the build does not render: not a body fragment, not
-#	Markdown, and not a dot file. Thus robots.txt and CNAME need no
-#	entry in the description, and a CLAUDE.md beside them is not
-#	published.
+#	Copy every asset of the source directory. The description
+#	decides which files those are, so the build and the checks read
+#	the same list.
 sub _copy_assets ($self)
 {
 	my $dir = $self->{config}->source_path;
-	return 1 unless -d $dir;
 
-	opendir my $dh, $dir or do {
-		$self->{log}->error( 'Cannot read %s: %s', $dir, $! );
-		return;
-	};
-	my @names = sort grep { !/^\./ } readdir $dh;
-	closedir $dh;
-
-	for my $name (@names) {
-		next if $name =~ /\.body\.html$/;
-		next if $name =~ /\.md$/;
-		next unless -f "$dir/$name";
-
+	for my $name ( $self->{config}->assets ) {
 		my $bytes = Fugu::File->read("$dir/$name");
 		return unless defined $bytes;
 

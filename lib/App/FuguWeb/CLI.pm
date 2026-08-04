@@ -20,6 +20,7 @@ use v5.36;
 package App::FuguWeb::CLI;
 
 use App::FuguWeb;
+use App::FuguWeb::Check;
 use App::FuguWeb::Config;
 use App::FuguWeb::Index;
 use App::FuguWeb::Page;
@@ -72,6 +73,15 @@ my %COMMANDS = (
 		usage   => '[--out <dir>]',
 		options => { 'out=s' => 'the output directory' },
 		method  => 'cmd_clean',
+	},
+	check => {
+		summary => 'Check a built site',
+		usage   => '[--out <dir>] [--verbose]',
+		options => {
+			'out=s'     => 'the output directory',
+			'verbose|v' => 'also note every external link',
+		},
+		method => 'cmd_check',
 	},
 	init => {
 		summary => 'Write a starter .fuguwebrc',
@@ -257,6 +267,32 @@ sub cmd_build ( $self, $cli, @args )
 sub cmd_clean ( $self, $cli, @args )
 {
 	return $self->_site($cli)->clean ? EXIT_SUCCESS : EXIT_ERROR;
+}
+
+# Check a built site
+sub cmd_check ( $self, $cli, @args )
+{
+	my $check = App::FuguWeb::Check->new(
+		config => $self->{config},
+		out    => $cli->option('out') // (
+			$self->{config}->root . '/' . $self->{config}->out_dir
+		),
+	);
+
+	my @problems = $check->run;
+
+	# The checks touch no network, so an external link is a note
+	# and never a problem.
+	if ( $cli->option('verbose') ) {
+		$self->{log}->info( 'external link: %s', $_ )
+		    for $check->external;
+	}
+
+	return EXIT_SUCCESS unless @problems;
+
+	$self->{log}->error( '%s', $_ ) for @problems;
+
+	return EXIT_CHECK_FAILED;
 }
 
 # Write a starter description into a directory that holds none

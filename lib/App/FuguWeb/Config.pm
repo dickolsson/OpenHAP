@@ -162,6 +162,32 @@ sub pages ($self)
 	return @{ $self->{page} };
 }
 
+# $self->assets:
+#	The names of the files in the source directory that the build
+#	copies as they stand, sorted. An asset is any file there that
+#	the build does not render: not a body fragment, not Markdown,
+#	and not a dot file.
+#
+#	Thus robots.txt and CNAME need no entry in the description, and
+#	a CLAUDE.md beside them is not published. Markdown in the
+#	source directory is either a page source, which a page block
+#	names and lowdown renders, or notes for the maintainers.
+#	Neither belongs in the output as it stands.
+#
+#	The build and the checks read the same list, so the two can
+#	never disagree about what the site holds.
+sub assets ($self)
+{
+	my $dir = $self->source_path;
+	return () unless -d $dir;
+
+	opendir my $dh, $dir or return ();
+	my @names = sort grep { !/^\./ } readdir $dh;
+	closedir $dh;
+
+	return grep { !/\.body\.html$/ && !/\.md$/ && -f "$dir/$_" } @names;
+}
+
 # $self->groups:
 #	The manual groups, in file order. Each entry is an
 #	App::FuguWeb::Config::Group.

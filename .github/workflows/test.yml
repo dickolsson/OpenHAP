@@ -19,6 +19,11 @@ on:
       - "t/lib/**.pm"
       # The other half of the spec-coverage cross-check
       - "spec/*.md"
+      # t/web/site.t builds the whole site as a subprocess, so it
+      # reads the description of the site and the data that the
+      # builder ships.
+      - ".fuguwebrc"
+      - "share/**"
       # The suite runs scripts as subprocesses: spec-coverage, deps and
       # deps-key against fixtures, and scripts.t over the directory as
       # a whole. Thus the workflow must see all of scripts/. A glob is
@@ -39,6 +44,8 @@ on:
       - "t/**.t"
       - "t/lib/**.pm"
       - "spec/*.md"
+      - ".fuguwebrc"
+      - "share/**"
       - "scripts/*"
       - "Makefile"
       - "cpanfile"

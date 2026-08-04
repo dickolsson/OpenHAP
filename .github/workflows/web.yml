@@ -8,13 +8,17 @@ on:
   push:
     branches: [main]
     paths:
-      # The hand-written pages, the shared chrome, the assets, and the
-      # two renderers
+      # The hand-written pages and the assets
       - "web/*.html"
       - "web/*.css"
-      - "web/*.sh"
       - "web/CNAME"
       - "web/robots.txt"
+      # The tool that builds the site, and the file that describes it
+      - "lib/App/FuguWeb/**"
+      - "bin/fuguweb"
+      - ".fuguwebrc"
+      - "share/fuguweb/**"
+      - "t/fuguweb/**"
       # The files that the build renders into pages
       - "man/**.1"
       - "man/**.3p"
@@ -31,9 +35,13 @@ on:
     paths:
       - "web/*.html"
       - "web/*.css"
-      - "web/*.sh"
       - "web/CNAME"
       - "web/robots.txt"
+      - "lib/App/FuguWeb/**"
+      - "bin/fuguweb"
+      - ".fuguwebrc"
+      - "share/fuguweb/**"
+      - "t/fuguweb/**"
       - "man/**.1"
       - "man/**.3p"
       - "man/**.5"
@@ -71,7 +79,9 @@ jobs:
         run: make web
 
       - name: Check the site
-        run: prove -l t/web/site.t
+        run: |
+          bin/fuguweb check --out web/build
+          prove -l t/web/site.t
 
       - name: Upload the site
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'

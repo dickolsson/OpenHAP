@@ -91,10 +91,10 @@ sub project ()
 .Sh DESCRIPTION
 Words.
 MDOC
-		'lib/Thing/Store.pod' => <<'POD',
+		'lib/Thing/Depot.pod' => <<'POD',
 =head1 NAME
 
-Thing::Store - the persistence contract
+Thing::Depot - the persistence contract
 
 =head1 DESCRIPTION
 
@@ -141,7 +141,7 @@ subtest 'the build makes the site and nothing else' => sub {
 	# stylesheet, and the assets.
 	my @expected = qw(
 	    index.html readme.html manuals.html
-	    tool.1.html Thing::Store.3p.html
+	    tool.1.html Thing::Depot.3p.html
 	    style.css robots.txt extra.css
 	);
 	ok( -s "$OUT/$_", "$_ exists and is not empty" ) for @expected;
@@ -171,15 +171,15 @@ subtest 'each source reaches its page' => sub {
 	close $fh;
 	like( $index, qr{href="\./tool\.1\.html"}, 'the index lists the page' );
 	like( $index, qr/a tool/, 'with the description of its source' );
-	like( $index, qr{href="\./Thing::Store\.3p\.html"},
+	like( $index, qr{href="\./Thing::Depot\.3p\.html"},
 		'and the sidecar' );
 
-	open $fh, '<', "$OUT/Thing::Store.3p.html" or die "Cannot read: $!";
+	open $fh, '<', "$OUT/Thing::Depot.3p.html" or die "Cannot read: $!";
 	my $module = do { local $/; <$fh> };
 	close $fh;
 	like( $module, qr/the persistence contract/,
 		'pod2man and mandoc rendered the sidecar' );
-	like( $module, qr{<title>Thing::Store\(3p\) },
+	like( $module, qr{<title>Thing::Depot\(3p\) },
 		'and the chrome carries the title' );
 };
 

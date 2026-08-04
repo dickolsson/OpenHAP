@@ -117,7 +117,7 @@ RC
 	like( $html, qr/&amp; B<\/title>/, 'the site name is escaped' );
 	like( $html, qr/>&lt;Home&gt;<\/a>/, 'a navigation label is escaped' );
 
-	# The chrome that mkpage.sh replaced substituted the title with
+	# The shell chrome that this replaced substituted the title with
 	# sed. A slash ended the substitution and an ampersand meant
 	# "the whole match", so neither could ever reach a page.
 	$html = $page->document( 'openhapd.conf(5) / 8', '' );
