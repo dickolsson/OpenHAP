@@ -143,6 +143,29 @@ The number of seconds to wait before the method stops the child.
 The default is no limit.
 .It Fa stdin
 A string to feed to the child on its standard input.
+.It Fa cwd
+A directory to run the child in.
+The child calls
+.Xr chdir 2
+after the fork and before the
+.Xr execve 2 ,
+so the working directory of the caller does not change.
+A
+.Xr chdir 2
+in the caller would change the meaning of every other relative path in
+the program,
+and a second call that ran at the same time would race it.
+.Pp
+A directory that the child cannot enter is a startup failure with the
+reason in
+.Va error ,
+not a silent run in the wrong place.
+.It Fa passthrough
+Let the child write straight to the caller's terminal.
+.Va stdout
+and
+.Va stderr
+then come back empty.
 .El
 .Pp
 The method reads standard output and standard error at the same time.

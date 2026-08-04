@@ -39,6 +39,15 @@ Suppress informational output.
 
 =back
 
+=head1 SUBCOMMANDS
+
+C<build> and C<clean> take C<--out> I<dir>, which overrides the
+C<out_dir> setting. C<init> writes a starter description and is the one
+command that runs without one.
+
+C<page> and C<index> exist because a project may want one page out of the
+set. C<build> calls the same code.
+
 =head1 EXIT CODES
 
 The first five come from L<Fugu::CLI> and mean the same in every Fugu

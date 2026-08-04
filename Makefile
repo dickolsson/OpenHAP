@@ -20,10 +20,9 @@ GITHUB_OWNER	?= dickolsson
 GITHUB_REPO		?= openhap
 GITHUB_RELEASE	= https://github.com/$(GITHUB_OWNER)/$(GITHUB_REPO)/releases/download/$(TAG)/$(TARBALL)
 
-# Build tools
-LOWDOWN			?= lowdown
+# Build tools.  mandoc renders the cat pages of the man target;
+# fuguweb runs its own renderers and needs no variable here.
 MANDOC			?= mandoc
-POD2MAN			?= pod2man
 PERLTIDY		= perl -MPerl::Tidy -e 'Perl::Tidy::perltidy()'
 # Pin the version so that local runs and CI agree on formatting
 PRETTIER		= npx prettier@3.9.6
@@ -65,24 +64,10 @@ CATMAN3P		= $(MAN3P:.3p=.cat3p)
 CATMAN5			= $(MAN5:.5=.cat5)
 CATMAN8			= $(MAN8:.8=.cat8)
 
-# Website
+# Website.  .fuguwebrc describes it, and fuguweb builds it.  WEBOUT
+# stays because t/web/site.t and .github/workflows/web.yml both set it.
 WEBOUT			?= web/build
-WEBMAN			= $(WEBOUT)/.man
 FUGUWEB			?= bin/fuguweb
-# The Makefile finds the .pod sidecars and never lists them.  Otherwise
-# a sidecar without its own Makefile line would never reach the site.
-# An exclusion list would be one more thing to keep true.  LC_ALL=C
-# makes sure the order of the pages does not depend on the builder's
-# locale.
-FINDPOD			= find lib -name '*.pod' | LC_ALL=C sort
-# mandoc resolves .Xr against the working directory.  A page named %N.%S
-# there becomes a local link.  Anything else goes to man.openbsd.org.
-# The './' matters.  A module page is Fugu::Daemon.3p.html.  The
-# browser reads a relative URL whose first segment holds a colon as a
-# scheme instead.
-# -I os= pins the footer so the site does not vary with the build host.
-MANHTML			= -Thtml -I os=OpenBSD \
-			  -O fragment,man='./%N.%S.html;https://man.openbsd.org/%N.%S'
 
 all: deps check
 
@@ -300,65 +285,7 @@ vm-up:
 	@./scripts/vm-up
 
 web:
-	@command -v $(LOWDOWN) >/dev/null 2>&1 || \
-	    { echo "$(LOWDOWN) not found; run 'make deps-develop'" >&2; exit 1; }
-	@command -v $(MANDOC) >/dev/null 2>&1 || \
-	    { echo "$(MANDOC) not found; run 'make deps-develop'" >&2; exit 1; }
-	@command -v $(POD2MAN) >/dev/null 2>&1 || \
-	    { echo "$(POD2MAN) not found; it ships with Perl" >&2; exit 1; }
-	# A malformed page must fail the build, not render badly
-	$(MANDOC) -Tlint -W warning $(MAN1) $(MAN3P) $(MAN5) $(MAN8)
-	# Put every mdoc source in one directory.  Then mandoc can tell a
-	# local cross-reference from one that belongs on man.openbsd.org.
-	# Stage the Fugu pages under the name that .Xr refers to them by.
-	mkdir -p $(WEBMAN)
-	cp $(MAN1) $(MAN5) $(MAN8) $(WEBMAN)/
-	for f in $(MAN3P); do \
-		cp "$$f" "$(WEBMAN)/Fugu::$${f##*/}"; \
-	done
-	cp web/style.css $(WEBOUT)/style.css
-	cp web/robots.txt $(WEBOUT)/robots.txt
-	# The custom domain is a repository setting.  The deploy artifact
-	# carries it too.  Thus a rebuild can never drop it
-	cp web/CNAME $(WEBOUT)/CNAME
-	$(FUGUWEB) page 'HomeKit Accessory Protocol for OpenBSD' \
-	    < web/index.body.html > $(WEBOUT)/index.html
-	$(FUGUWEB) page 'Not found' < web/404.body.html > $(WEBOUT)/404.html
-	$(LOWDOWN) -Thtml INSTALL.md | \
-	    $(FUGUWEB) page 'Install' > $(WEBOUT)/install.html
-	$(FUGUWEB) index | \
-	    $(FUGUWEB) page 'Manuals' > $(WEBOUT)/manuals.html
-	$(FUGUWEB) page 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
-	$(FUGUWEB) page 'Fugu' < web/fugu.body.html > $(WEBOUT)/fugu.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.8 ) | \
-	    $(FUGUWEB) page 'openhapd(8)' > $(WEBOUT)/openhapd.8.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) hapctl.8 ) | \
-	    $(FUGUWEB) page 'hapctl(8)' > $(WEBOUT)/hapctl.8.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.conf.5 ) | \
-	    $(FUGUWEB) page 'openhapd.conf(5)' > $(WEBOUT)/openhapd.conf.5.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) fuguvm.1 ) | \
-	    $(FUGUWEB) page 'fuguvm(1)' > $(WEBOUT)/fuguvm.1.html
-	for f in $(MAN3P); do \
-		n="Fugu::$${f##*/}"; n="$${n%.3p}"; \
-		( cd $(WEBMAN) && $(MANDOC) $(MANHTML) "$$n.3p" ) | \
-		    $(FUGUWEB) page "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
-	done
-	# One page per .pod sidecar.  The recipe gives --name, --center
-	# and --release so the chrome matches the mdoc pages.  The date
-	# comes from the checkout, not from file mtimes.  git does not
-	# preserve mtimes.
-	d=`git log -1 --format=%cs 2>/dev/null || date +%F`; \
-	$(FINDPOD) | while read -r p; do \
-		n="$${p#lib/}"; n="$${n%.pod}"; \
-		n=`echo "$$n" | sed 's|/|::|g'`; \
-		$(POD2MAN) --section=3p --name="$$n" --date="$$d" \
-		    --center='Perl Library Manual' --release='OpenBSD' \
-		    "$$p" | \
-		    $(MANDOC) $(MANHTML) | \
-		    $(FUGUWEB) page "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
-	done
-	# Staging is a build detail and never part of the published tree
-	rm -rf $(WEBMAN)
+	@$(FUGUWEB) build --out $(WEBOUT)
 
 web-clean:
-	rm -rf $(WEBOUT)
+	@$(FUGUWEB) clean --out $(WEBOUT)

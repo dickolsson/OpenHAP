@@ -5,6 +5,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 
+use Cwd        ();
 use File::Temp qw(tempdir);
 
 use_ok('Fugu::Process');
@@ -296,5 +297,39 @@ use_ok('Fugu::Process');
 	is( length( $r->{stdout} ), 400 * 41, 'stdout arrived whole' );
 	is( length( $r->{stderr} ), 400 * 2,  'stderr arrived whole' );
 }
+
+# Test 20: the cwd option moves the child and nothing else. mandoc
+# resolves a cross-reference against its working directory, so a
+# caller needs a child that starts somewhere else.
+subtest 'run starts the child in the named directory' => sub {
+	my $dir = tempdir( CLEANUP => 1 );
+	mkdir "$dir/inside" or die "Cannot create the directory: $!";
+
+	open my $fh, '>', "$dir/inside/marker" or die "Cannot write: $!";
+	close $fh;
+
+	my $before = Cwd::getcwd();
+
+	my $r = Fugu::Process->run(
+		cmd     => [ 'ls' ],
+		cwd     => "$dir/inside",
+		timeout => 30,
+	);
+	ok( $r->{success}, 'the child runs' );
+	like( $r->{stdout}, qr/^marker$/m, 'and lists that directory' );
+
+	is( Cwd::getcwd(), $before, 'the caller did not move' );
+
+	# A directory that does not exist must not become a silent run
+	# in the directory the caller happened to be in.
+	$r = Fugu::Process->run(
+		cmd     => [ 'ls' ],
+		cwd     => "$dir/absent",
+		timeout => 30,
+	);
+	ok( !$r->{success}, 'an absent directory fails the run' );
+	like( $r->{error}, qr/Cannot chdir to \Q$dir\E\/absent/,
+		'and the message names it' );
+};
 
 done_testing();

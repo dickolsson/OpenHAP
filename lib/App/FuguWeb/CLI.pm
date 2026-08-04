@@ -23,6 +23,8 @@ use App::FuguWeb;
 use App::FuguWeb::Config;
 use App::FuguWeb::Index;
 use App::FuguWeb::Page;
+use App::FuguWeb::Site;
+use Fugu::File;
 use Fugu::CLI;
 use Fugu::Log;
 
@@ -59,7 +61,58 @@ my %COMMANDS = (
 		summary => 'Write the body of the manual index',
 		method  => 'cmd_index',
 	},
+	build => {
+		summary => 'Render the whole site',
+		usage   => '[--out <dir>]',
+		options => { 'out=s' => 'the output directory' },
+		method  => 'cmd_build',
+	},
+	clean => {
+		summary => 'Remove the output directory',
+		usage   => '[--out <dir>]',
+		options => { 'out=s' => 'the output directory' },
+		method  => 'cmd_clean',
+	},
+	init => {
+		summary => 'Write a starter .fuguwebrc',
+		usage   => '[dir]',
+		method  => 'cmd_init',
+		offline => 1,
+	},
 );
+
+# The description that 'fuguweb init' writes. A new project gets a
+# file that builds, not a file that it has to repair first.
+my $STARTER = <<'RC';
+# The website, built by fuguweb(1).
+
+site       = Example
+out_dir    = web/build
+source_dir = web
+entry      = index.html
+
+nav "index.html" {
+	label = Home
+}
+
+page "index.html" {
+	title = Home
+	body  = index.body.html
+}
+
+page "manuals.html" {
+	title = Manuals
+	index = yes
+}
+
+# A manuals block globs its directory for the mdoc sources. A modules
+# block finds the POD sidecars below its own. Never name a directory
+# that holds more than one namespace.
+#manuals "Manuals" {
+#	dir    = man
+#	anchor = manuals
+#}
+RC
 
 sub new ( $class, %opts )
 {
@@ -114,8 +167,9 @@ sub run ( $class, @argv )
 		},
 		epilogue => <<'EOF',
 Examples:
-  fuguweb page 'Install' < install.html
-  fuguweb index | fuguweb page 'Manuals'
+  fuguweb init
+  fuguweb build --out web/build
+  fuguweb clean
 EOF
 	);
 
@@ -179,6 +233,64 @@ sub cmd_index ( $self, $cli, @args )
 	print $index->body;
 
 	return EXIT_SUCCESS;
+}
+
+# Render the whole site
+sub cmd_build ( $self, $cli, @args )
+{
+	my $site = $self->_site($cli);
+
+	my $missing = $site->missing_tool;
+	if ( defined $missing ) {
+		$self->{log}->error(
+			"%s not found; the build needs it. Run"
+			    . " 'make deps-develop'",
+			$missing
+		);
+		return EXIT_TOOL_MISSING;
+	}
+
+	return $site->build ? EXIT_SUCCESS : EXIT_RENDER_FAILED;
+}
+
+# Remove the output directory
+sub cmd_clean ( $self, $cli, @args )
+{
+	return $self->_site($cli)->clean ? EXIT_SUCCESS : EXIT_ERROR;
+}
+
+# Write a starter description into a directory that holds none
+sub cmd_init ( $self, $cli, @args )
+{
+	my $dir  = shift(@args) // '.';
+	my $path = "$dir/" . App::FuguWeb::CONFIG_FILE;
+
+	unless ( -d $dir ) {
+		$self->{log}->error( 'Not a directory: %s', $dir );
+		return EXIT_ERROR;
+	}
+	if ( -e $path ) {
+		$self->{log}->error( 'Already exists: %s', $path );
+		return EXIT_ERROR;
+	}
+
+	Fugu::File->write( $path, $STARTER ) or return EXIT_ERROR;
+	$self->{log}->info( 'Wrote %s', $path );
+
+	return EXIT_SUCCESS;
+}
+
+# $self->_site($cli):
+#	The site over the loaded description, with --out applied.
+sub _site ( $self, $cli )
+{
+	my $out = $cli->option('out');
+
+	return App::FuguWeb::Site->new(
+		config => $self->{config},
+		log    => $self->{log},
+		defined $out ? ( out => $out ) : (),
+	);
 }
 
 1;
