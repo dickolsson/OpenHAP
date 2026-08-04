@@ -53,11 +53,6 @@ pairing failures, mode 0600.
 
 =back
 
-An older installation kept each counter in a file of its own. C<new>
-reads those files once and folds them into F<state.json>. A paired
-accessory thus keeps its configuration number: a controller that sees
-C<c#> go backwards drops the accessory.
-
 =head1 SEE ALSO
 
 L<FuguLib::File>, L<FuguLib::Store>, F<spec/HAP-Pairing.md>
