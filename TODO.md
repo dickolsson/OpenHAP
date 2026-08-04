@@ -50,7 +50,7 @@ refinements.
     if mdnsd restarts, discovery is gone until openhapd restarts. Parity with
     the old mdnsctl behaviour - a known limitation, now recorded
   - Need: detect the closed socket in the event loop and republish
-  - File: `lib/OpenHAP/Server.pm`, `bin/openhapd`
+  - File: `lib/App/OpenHAP/Host.pm`, `bin/openhapd`
 
 - [ ] **Implement mdnsd browse, resolve and lookup**
   - Current: `spec/MDNS-Control.md` §11 specifies all three message shapes, but
@@ -79,7 +79,7 @@ refinements.
   - Current: Default PIN '1995-1018' in code (configurable via config file)
   - Need: Generate cryptographically random PIN on first run if not configured
   - Should: Display PIN on console, save to secure file
-  - File: `lib/OpenHAP/Storage.pm`, `bin/openhapd`
+  - File: `lib/Protocol/HAP/Store/File.pm`, `bin/openhapd`
   - Note: PIN validation implemented in `lib/Protocol/HAP/PIN.pm`
 
 - [ ] **Input validation**
@@ -101,7 +101,7 @@ refinements.
   - Features: Topic wildcards (+/#), callback dispatch, reconnection support
   - Integration: HAP server polls MQTT in select loop with 100ms timeout
   - Reconnection: Automatic reconnection every 30 seconds with resubscription
-  - Files: `lib/Fugu/MQTT.pm`, `lib/OpenHAP/Server.pm`
+  - Files: `lib/Fugu/MQTT.pm`, `lib/App/OpenHAP/Host.pm`
 
 - [x] **Proper daemon mode**
   - Implemented: Fork to background, setsid, redirect I/O to
@@ -110,7 +110,7 @@ refinements.
   - Includes: Connection timeout for MQTT to prevent blocking on startup
   - Includes: Automatic MQTT reconnection every 30 seconds if connection lost
   - File: `bin/openhapd`, `lib/Fugu/Daemon.pm`, `lib/Fugu/MQTT.pm`,
-    `lib/OpenHAP/Server.pm`
+    `lib/App/OpenHAP/Host.pm`
 
 - [x] **Signal handling**
   - Implemented: `Fugu::Signal` handlers for graceful shutdown on SIGTERM,
@@ -157,9 +157,9 @@ refinements.
 ### Device Support
 
 - [x] **Tasmota device types implemented**
-  - [x] Temperature/humidity sensors (`lib/OpenHAP/Tasmota/Sensor.pm`)
-  - [x] Heater/switch devices (`lib/OpenHAP/Tasmota/Heater.pm`)
-  - [x] Thermostat devices (`lib/OpenHAP/Tasmota/Thermostat.pm`)
+  - [x] Temperature/humidity sensors (`lib/App/OpenHAP/Tasmota/Sensor.pm`)
+  - [x] Heater/switch devices (`lib/App/OpenHAP/Tasmota/Heater.pm`)
+  - [x] Thermostat devices (`lib/App/OpenHAP/Tasmota/Thermostat.pm`)
 
 - [ ] **Additional Tasmota device types**
   - [ ] Light bulbs with brightness control
@@ -168,12 +168,12 @@ refinements.
   - [ ] Garage door opener
   - [ ] Motion sensors
   - [ ] Door/window contact sensors
-  - Files: New files in `lib/OpenHAP/Tasmota/`
+  - Files: New files in `lib/App/OpenHAP/Tasmota/`
 
 - [ ] **Generic MQTT device support**
   - Current: Only Tasmota-specific protocol
   - Need: Configurable topic/payload patterns
-  - File: New `lib/OpenHAP/MQTT/Device.pm`
+  - File: New `lib/App/OpenHAP/MQTT/Device.pm`
 
 - [ ] **Device discovery**
   - Current: Manual configuration only
@@ -208,7 +208,7 @@ refinements.
   - [x] `Protocol::HAP::SRP` - SRP protocol
   - [x] `Protocol::HAP::Pairing` - Pairing flows
   - [x] `Protocol::HAP::Session` - Session encryption
-  - [x] `OpenHAP::Storage` - Persistence layer
+  - [x] `Protocol::HAP::Store::File` - Persistence layer
   - [x] `Protocol::HAP::Accessory` - Accessory management
   - [x] `Protocol::HAP::Bridge` - Bridge functionality
   - [x] `Protocol::HAP::Characteristic` - Characteristic handling
@@ -217,7 +217,7 @@ refinements.
   - [x] `Fugu::Daemon` - Daemon utilities
   - [x] `Fugu::Log` - Logging system
   - [x] `Protocol::HAP::PIN` - PIN validation
-  - [x] `OpenHAP::DeviceLoader` - Device configuration loading
+  - [x] `App::OpenHAP::Devices` - Device configuration loading
   - The module tests live in `t/protocol/`, `t/openhap/`, and `t/fugu/`
 
 - [ ] **Integration test infrastructure**
@@ -495,28 +495,28 @@ refinements.
   - Current: Manual config file editing
   - Need: Simple web interface for configuration
   - Framework: Mojolicious::Lite or Dancer2
-  - Files: New `lib/OpenHAP/Web/` directory
+  - Files: New `lib/App/OpenHAP/Web/` directory
 
 - [ ] **Device grouping/scenes**
   - Current: No scene support
   - Need: Create scenes that control multiple devices
-  - File: New `lib/OpenHAP/Scene.pm`
+  - File: New `lib/App/OpenHAP/Scene.pm`
 
 - [ ] **Automation rules**
   - Current: No automation
   - Need: Simple if-then rules (temp > 20 -> turn off heater)
-  - File: New `lib/OpenHAP/Automation.pm`
+  - File: New `lib/App/OpenHAP/Automation.pm`
 
 - [x] **Status monitoring endpoint**
   - Implemented: the control socket answers status and devices from process
     state; `hapctl status` and `hapctl devices` read it
-  - File: `bin/hapctl`, `lib/OpenHAP/Server.pm`, `lib/Fugu/Control.pm`
+  - File: `bin/hapctl`, `lib/App/OpenHAP/Host.pm`, `lib/Fugu/Control.pm`
 
 - [ ] **Metrics/statistics**
   - Current: No metrics collected
   - Need: Track pairing attempts, requests, errors, latency
   - Export: Prometheus format or JSON
-  - File: New `lib/OpenHAP/Metrics.pm`
+  - File: New `lib/App/OpenHAP/Metrics.pm`
 
 ### OpenBSD Integration
 
@@ -594,7 +594,7 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
   - Impact: May fail on unusual requests
 
 - [ ] **Session management**
-  - Location: `lib/OpenHAP/Server.pm` (the connection map)
+  - Location: `lib/App/OpenHAP/Host.pm` (the connection map)
   - Issue: No session timeout, unlimited sessions in memory
   - Need: Session timeout and cleanup
   - Impact: Memory leak potential
@@ -606,7 +606,7 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
   - Impact: Hard to debug encryption issues
 
 - [ ] **Storage file locking**
-  - Location: `lib/OpenHAP/Storage.pm:48-76`
+  - Location: `lib/Protocol/HAP/Store/File.pm:48-76`
   - Issue: flock used but no timeout handling
   - Need: Timeout and lock failure handling
   - Impact: Potential deadlock
@@ -645,7 +645,7 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
   - Current: Automatic reconnection implemented every 30 seconds
   - Status: Basic reconnection works, resubscribes to all topics
   - Enhancement: Could add exponential backoff for failed reconnects
-  - File: `lib/Fugu/MQTT.pm`, `lib/OpenHAP/Server.pm`
+  - File: `lib/Fugu/MQTT.pm`, `lib/App/OpenHAP/Host.pm`
 
 - [ ] **File system full conditions**
   - Current: No space checking before writing
@@ -707,7 +707,7 @@ implementation is minimal with basic commands. Future enhancements planned:
 - [ ] **Monitoring hooks** - Export metrics for Prometheus/Nagios
 - [ ] **Syslog correlation** - Cross-reference log entries by timestamp
 
-Files: `bin/hapctl`, `lib/Fugu/Daemon.pm`, `lib/OpenHAP/Storage.pm`
+Files: `bin/hapctl`, `lib/Fugu/Daemon.pm`, `lib/Protocol/HAP/Store/File.pm`
 
 ## Future Enhancements
 

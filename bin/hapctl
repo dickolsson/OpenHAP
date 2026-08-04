@@ -8,7 +8,7 @@ use Fugu::Config;
 use Fugu::Control;
 use Fugu::Log;
 use Fugu::Pidfile;
-use OpenHAP::DeviceLoader;
+use App::OpenHAP::Devices;
 
 # hapctl - the control tool of openhapd.
 #
@@ -74,7 +74,7 @@ sub cmd_check ( $cli, @ )
 	my $config = load_config($cli)
 	    or return Fugu::CLI::EXIT_CONFIG_ERROR;
 
-	my @devices = OpenHAP::DeviceLoader->devices($config);
+	my @devices = App::OpenHAP::Devices->devices($config);
 	printf "Configuration file %s is valid\n", $file;
 	printf "  Configured devices: %d\n",       scalar @devices;
 
@@ -193,7 +193,7 @@ sub print_configured_devices ($cli)
 	my $config = load_config($cli)
 	    or return Fugu::CLI::EXIT_CONFIG_ERROR;
 
-	my @devices = OpenHAP::DeviceLoader->devices($config);
+	my @devices = App::OpenHAP::Devices->devices($config);
 	unless (@devices) {
 		print "No devices configured\n";
 		return Fugu::CLI::EXIT_SUCCESS;

@@ -17,11 +17,11 @@
 
 use v5.36;
 
-package OpenHAP::DeviceLoader;
+package App::OpenHAP::Devices;
 
 use Fugu::Log;
 
-# OpenHAP::DeviceLoader - turn the device blocks of the configuration
+# App::OpenHAP::Devices - turn the device blocks of the configuration
 # into accessories on the bridge.
 #
 # One table describes every device type. Each entry says what the type
@@ -41,7 +41,7 @@ use Fugu::Log;
 my %DEVICE = (
 	'tasmota/thermostat' => {
 		name  => 'thermostat',
-		class => 'OpenHAP::Tasmota::Thermostat',
+		class => 'App::OpenHAP::Tasmota::Thermostat',
 		args  => sub ($device) {
 			return (
 				sensor_type  => $device->{sensor_type},
@@ -51,15 +51,15 @@ my %DEVICE = (
 	},
 	'tasmota/heater' => {
 		name  => 'switch',
-		class => 'OpenHAP::Tasmota::Heater',
+		class => 'App::OpenHAP::Tasmota::Heater',
 	},
 	'tasmota/switch' => {
 		name  => 'switch',
-		class => 'OpenHAP::Tasmota::Heater',
+		class => 'App::OpenHAP::Tasmota::Heater',
 	},
 	'tasmota/sensor' => {
 		name  => 'sensor',
-		class => 'OpenHAP::Tasmota::Sensor',
+		class => 'App::OpenHAP::Tasmota::Sensor',
 		args  => sub ($device) {
 			return (
 				sensor_type  => $device->{sensor_type},
@@ -70,36 +70,46 @@ my %DEVICE = (
 	},
 	'tasmota/lightbulb' => {
 		name  => 'lightbulb',
-		class => 'OpenHAP::Tasmota::Lightbulb',
+		class => 'App::OpenHAP::Tasmota::Lightbulb',
 		args  => sub ($) {
-			return ( capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() );
+			return (
+				capabilities =>
+				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
+				    ) );
 		},
 	},
 	'tasmota/dimmer' => {
 		name  => 'dimmer',
-		class => 'OpenHAP::Tasmota::Lightbulb',
+		class => 'App::OpenHAP::Tasmota::Lightbulb',
 		args  => sub ($) {
-			return ( capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() );
+			return (
+				capabilities =>
+				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
+				    ) );
 		},
 	},
 	'tasmota/rgblight' => {
 		name  => 'rgb light',
-		class => 'OpenHAP::Tasmota::Lightbulb',
+		class => 'App::OpenHAP::Tasmota::Lightbulb',
 		args  => sub ($) {
-			return ( capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() |
-				    OpenHAP::Tasmota::Lightbulb::CAP_COLOR() );
+			return (
+				capabilities =>
+				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
+				    ) |
+				    App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR(
+				    ) );
 		},
 	},
 	'tasmota/ctlight' => {
 		name  => 'ct light',
-		class => 'OpenHAP::Tasmota::Lightbulb',
+		class => 'App::OpenHAP::Tasmota::Lightbulb',
 		args  => sub ($) {
-			return ( capabilities =>
-				    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() |
-				    OpenHAP::Tasmota::Lightbulb::CAP_CT() );
+			return (
+				capabilities =>
+				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
+				    ) |
+				    App::OpenHAP::Tasmota::Lightbulb::CAP_CT()
+			);
 		},
 	},
 );

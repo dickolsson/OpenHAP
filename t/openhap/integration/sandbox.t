@@ -31,10 +31,10 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 my $config_file = '/etc/openhapd.conf';

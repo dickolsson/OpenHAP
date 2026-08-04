@@ -28,11 +28,45 @@ my $ROOT = "$RealBin/../..";
 
 # Every name that a phase of plans/008 retired. Each entry holds the
 # name for the message and the pattern that finds it.
+#
+# A pattern for a namespace uses a lookbehind, so that the live name
+# that contains it passes. A pattern for a leaf name has none: a leaf
+# under the live namespace, such as App::OpenHAP::Server, is a shim as
+# much as the original was.
+#
+# A pattern for a path anchors on lib/, and thus on the source tree.
+# scripts/vm-provision purges the retired install paths on the guest
+# before make install, so it names one on purpose: a warm disk that
+# keeps the old modules in @INC would supply the shim that the rename
+# removed.
 my @RETIRED = (
 
 	# Phase 1: the FuguLib collection became Fugu. The pattern
-	# ignores case, so it covers the man/fugulib/ path form too.
+	# ignores case, so it covers the man/fugulib/ path form too. No
+	# live spelling contains it, so the gate needs no lookbehind and
+	# no anchor, and it therefore also covers an install path.
 	{ name => 'FuguLib', pattern => qr/fugulib/i },
+
+	# Phase 2: the OpenHAP host moved under App::, and four modules
+	# took a name that says what they do.
+	{ name => 'OpenHAP::',  pattern => qr/(?<!App::)OpenHAP::/ },
+	{ name => 'lib/OpenHAP', pattern => qr{lib/OpenHAP\b} },
+	{
+		name    => 'OpenHAP::Server',
+		pattern => qr{OpenHAP(?:::|/)Server\b},
+	},
+	{
+		name    => 'OpenHAP::Storage',
+		pattern => qr{OpenHAP(?:::|/)Storage\b},
+	},
+	{
+		name    => 'OpenHAP::DeviceLoader',
+		pattern => qr{OpenHAP(?:::|/)DeviceLoader\b},
+	},
+	{
+		name    => 'OpenHAP::Tasmota::Base',
+		pattern => qr{OpenHAP(?:::|/)Tasmota(?:::|/)Base\b},
+	},
 );
 
 # plans/001 to plans/008 record what was true when they were written.

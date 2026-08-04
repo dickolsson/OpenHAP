@@ -7,11 +7,11 @@ use Test::More tests => 12;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 $env->ensure_unpaired or die "Cannot reset pairing state\n";
 
@@ -71,7 +71,7 @@ ok($mdns_output =~ /hap.*tcp/i,
 
 # Test 9: The port that the daemon advertises matches the configuration
 my $hap_port = $env->get_config_value('hap_port')
-    // OpenHAP::Test::Integration::DEFAULT_HAP_PORT;
+    // App::OpenHAP::Test::Integration::DEFAULT_HAP_PORT;
 my $lookup_output =
     `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
 if ($lookup_output =~ /(\d{4,5})/) {

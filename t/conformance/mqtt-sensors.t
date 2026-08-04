@@ -10,13 +10,13 @@ use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
 use Fugu::TestLog;
 
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Sensor');
-use_ok('OpenHAP::Tasmota::Base');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Sensor');
+use_ok('App::OpenHAP::Tasmota::Device');
 
 sub make_sensor ( $mqtt, %extra )
 {
-	my $sensor = OpenHAP::Tasmota::Sensor->new(
+	my $sensor = App::OpenHAP::Tasmota::Sensor->new(
 		aid         => 2,
 		name        => 'Sensor',
 		mqtt_topic  => 'sensor',
@@ -28,7 +28,7 @@ sub make_sensor ( $mqtt, %extra )
 }
 
 subtest '[MQTT-Sensors §1] SENSOR message structure' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $sensor = make_sensor($mqtt);
 
 	ok( ( grep { $_ eq 'tele/sensor/SENSOR' }
@@ -43,7 +43,7 @@ subtest '[MQTT-Sensors §1] SENSOR message structure' => sub {
 };
 
 subtest '[MQTT-Sensors §2] common sensor types' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $sensor = make_sensor($mqtt);
 
 	$mqtt->simulate_message( 'tele/sensor/SENSOR',
@@ -52,7 +52,7 @@ subtest '[MQTT-Sensors §2] common sensor types' => sub {
 		'[MQTT-Sensors §2/DS18B20] type auto-detected' );
 
 	my $dht = make_sensor(
-		OpenHAP::TestMock::MQTT->new,
+		App::OpenHAP::TestMock::MQTT->new,
 		aid          => 3,
 		name         => 'DHT',
 		has_humidity => 1,
@@ -65,7 +65,7 @@ subtest '[MQTT-Sensors §2] common sensor types' => sub {
 };
 
 subtest '[MQTT-Sensors §3] temperature sensors' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $sensor = make_sensor($mqtt);
 
 	# The sensor passes TempUnit C readings through
@@ -80,7 +80,7 @@ subtest '[MQTT-Sensors §3] temperature sensors' => sub {
 		'TempUnit F converted to Celsius (77F = 25C)' );
 
 	# The conversion helper converts the boundary case correctly
-	my $base = OpenHAP::Tasmota::Base->new(
+	my $base = App::OpenHAP::Tasmota::Device->new(
 		aid         => 9,
 		name        => 'Conv',
 		mqtt_topic  => 'conv',
@@ -91,7 +91,7 @@ subtest '[MQTT-Sensors §3] temperature sensors' => sub {
 
 	# Multiple sensors report under indexed keys
 	my $indexed = make_sensor(
-		OpenHAP::TestMock::MQTT->new,
+		App::OpenHAP::TestMock::MQTT->new,
 		aid          => 4,
 		name         => 'Indexed',
 		sensor_type  => 'DS18B20',
@@ -111,7 +111,7 @@ subtest '[MQTT-Sensors §3] temperature sensors' => sub {
 };
 
 subtest '[MQTT-Sensors §4] humidity sensors' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $sensor = make_sensor( $mqtt, has_humidity => 1 );
 
 	$mqtt->simulate_message( 'tele/sensor/SENSOR',
@@ -122,8 +122,8 @@ subtest '[MQTT-Sensors §4] humidity sensors' => sub {
 };
 
 subtest '[MQTT-Sensors §5][MQTT-Sensors §5.1] TelePeriod forces telemetry' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
-	my $base = OpenHAP::Tasmota::Base->new(
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
+	my $base = App::OpenHAP::Tasmota::Device->new(
 		aid         => 2,
 		name        => 'Tele',
 		mqtt_topic  => 'device',

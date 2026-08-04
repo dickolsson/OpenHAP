@@ -18,12 +18,12 @@ use Fugu::Control;
 use Fugu::Imsg;
 use IO::Socket::UNIX;
 use JSON::PP ();
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use POSIX       ();
 use Socket      qw(SOCK_STREAM);
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 my $socket = $env->get_config_value('control')

@@ -1,12 +1,12 @@
 =head1 NAME
 
-OpenHAP::Tasmota::Thermostat - Tasmota thermostat HAP accessory
+App::OpenHAP::Tasmota::Thermostat - Tasmota thermostat HAP accessory
 
 =head1 SYNOPSIS
 
-    use OpenHAP::Tasmota::Thermostat;
+    use App::OpenHAP::Tasmota::Thermostat;
 
-    my $thermostat = OpenHAP::Tasmota::Thermostat->new(
+    my $thermostat = App::OpenHAP::Tasmota::Thermostat->new(
         aid => 2,
         name => 'Bedroom Thermostat',
         mqtt_topic => 'tasmota_AABBCC',

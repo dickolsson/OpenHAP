@@ -20,8 +20,8 @@ The repo contains four Perl namespaces with distinct concerns:
 - `Protocol::` (`lib/Protocol/`) — the host-neutral HAP protocol library:
   codecs, crypto, pairing, the data model, the sans-IO server engine, and a
   controller; self-contained, headed for CPAN
-- `OpenHAP::` (`lib/OpenHAP/`) — the reference host: the daemon plumbing,
-  persistence, MQTT device integration, and OpenBSD policy
+- `App::OpenHAP::` (`lib/App/OpenHAP/`) — the reference host: the daemon
+  plumbing, MQTT device integration, and OpenBSD policy
 - `Fugu::` (`lib/Fugu/`) — generic OpenBSD-style daemon utilities (daemonize,
   privilege drop, signals, logging, process, state, pledge/unveil, imsg framing,
   mdnsd publishing)
@@ -54,14 +54,13 @@ make integration    # provision OpenBSD VM and run integration tests
   CLI)
 - `lib/Protocol/` — the `Protocol::HAP` library: codecs (`TLV.pm`, `HTTP.pm`),
   setup-code rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`), pairing and
-  sessions (`Pairing.pm`, `Session.pm`, `Store.pod`, `Store/Memory.pm`), data
-  model (`Accessory.pm`, `Service.pm`, `Characteristic.pm`, `Bridge.pm`), the
-  sans-IO engine (`Server.pm`), and the blocking client (`Controller.pm`); it is
-  self-contained and never uses Fugu, FuguVM, or OpenHAP
-  (`t/protocol/boundary.t` enforces this)
-- `lib/OpenHAP/` — the host (`Server.pm`), persistence (`Storage.pm`), device
-  integration (`DeviceLoader.pm`, `Tasmota/*.pm`), the integration-test driver
-  (`Test/Integration.pm`)
+  sessions (`Pairing.pm`, `Session.pm`, `Store.pod`, `Store/Memory.pm`,
+  `Store/File.pm`), data model (`Accessory.pm`, `Service.pm`,
+  `Characteristic.pm`, `Bridge.pm`), the sans-IO engine (`Server.pm`), and the
+  blocking client (`Controller.pm`); it is self-contained and never uses
+  `Fugu::` or `App::` (`t/protocol/boundary.t` enforces this)
+- `lib/App/OpenHAP/` — the host (`Host.pm`), device integration (`Devices.pm`,
+  `Tasmota/*.pm`), the integration-test driver (`Test/Integration.pm`)
 - `t/openhap/`, `t/fugu/`, `t/protocol/`, `t/fuguvm/` — unit tests;
   `t/conformance/` — spec-cited conformance tests; `t/scripts/`, `t/web/`,
   `t/ci/` — tooling tests, named after what they drive (see `t/CLAUDE.md`);

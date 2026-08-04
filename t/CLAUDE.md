@@ -45,8 +45,8 @@ One `.t` per normative spec topic file, named after the lowercased stem
   crypto known-answer vectors live under the algorithm sections.
 - Host-side, `Test::More` + `subtest`, `skip_all` on missing CPAN dependencies.
 - Data tables and vectors live inline — no network, no external checkouts.
-- Shared mocks live in `t/lib/` (e.g. `OpenHAP::TestMock::MQTT`), loaded with
-  `use lib "$RealBin/../lib"`.
+- Shared mocks live in `t/lib/` (e.g. `App::OpenHAP::TestMock::MQTT`), loaded
+  with `use lib "$RealBin/../lib"`.
 - The index files (`HAP.md`, `MQTT.md`) and `IMPLEMENTATIONS.md` get no test
   file; their few normative facts are covered by topic files.
 

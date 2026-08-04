@@ -17,7 +17,7 @@
 
 use v5.36;
 
-package OpenHAP::Tasmota::Base;
+package App::OpenHAP::Tasmota::Device;
 
 use Fugu::Log;
 require Protocol::HAP::Accessory;

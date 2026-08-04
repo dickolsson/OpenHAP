@@ -17,7 +17,7 @@
 
 use v5.36;
 
-package OpenHAP::Test::Integration;
+package App::OpenHAP::Test::Integration;
 
 use Exporter 'import';
 use IO::Socket::INET;

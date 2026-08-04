@@ -17,11 +17,11 @@
 
 use v5.36;
 
-package OpenHAP::Tasmota::Lightbulb;
+package App::OpenHAP::Tasmota::Lightbulb;
 
 use Fugu::Log;
-require OpenHAP::Tasmota::Base;
-our @ISA = qw(OpenHAP::Tasmota::Base);
+require App::OpenHAP::Tasmota::Device;
+our @ISA = qw(App::OpenHAP::Tasmota::Device);
 use Protocol::HAP::Service;
 use Protocol::HAP::Characteristic;
 

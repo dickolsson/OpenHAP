@@ -1,12 +1,12 @@
 =head1 NAME
 
-OpenHAP::Tasmota::Heater - Tasmota heater/switch HAP accessory
+App::OpenHAP::Tasmota::Heater - Tasmota heater/switch HAP accessory
 
 =head1 SYNOPSIS
 
-    use OpenHAP::Tasmota::Heater;
+    use App::OpenHAP::Tasmota::Heater;
 
-    my $heater = OpenHAP::Tasmota::Heater->new(
+    my $heater = App::OpenHAP::Tasmota::Heater->new(
         aid => 2,
         name => 'Living Room Heater',
         mqtt_topic => 'tasmota_AABBCC',

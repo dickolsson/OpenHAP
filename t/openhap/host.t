@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Unit tests for OpenHAP::Server: the host wiring around the sans-IO
+# Unit tests for App::OpenHAP::Host: the host wiring around the sans-IO
 # Protocol::HAP::Server engine. The engine's own behavior is covered
 # in t/protocol/server.t.
 
@@ -21,7 +21,7 @@ BEGIN {
     }
 }
 
-use_ok('OpenHAP::Server');
+use_ok('App::OpenHAP::Host');
 use_ok('Protocol::HAP::Store::File');
 use_ok('Fugu::MDNS');
 
@@ -29,7 +29,7 @@ use_ok('Fugu::MDNS');
 # Protocol::HAP::Store::File and the host contracts
 {
     my $temp_dir = tempdir(CLEANUP => 1);
-    my $server = OpenHAP::Server->new(
+    my $server = App::OpenHAP::Host->new(
         port         => 51827,
         pin          => '123-45-678',
         name         => 'Test Bridge',
@@ -37,7 +37,7 @@ use_ok('Fugu::MDNS');
     );
 
     ok(defined $server, 'server object created');
-    isa_ok($server, 'OpenHAP::Server');
+    isa_ok($server, 'App::OpenHAP::Host');
     ok(defined $server->{storage}, 'storage initialized');
     isa_ok($server->engine, 'Protocol::HAP::Server');
     ok(!$server->is_paired, 'not paired initially');
@@ -56,12 +56,12 @@ use_ok('Fugu::MDNS');
         storage_path => $temp_dir,
     );
 
-    my $server = OpenHAP::Server->new(%args);
+    my $server = App::OpenHAP::Host->new(%args);
     is($server->update_config_number, 1,
         '[HAP-mDNS §3.1] first run keeps c# at 1');
 
     # Restart with the same database: the c# does not change
-    my $server2 = OpenHAP::Server->new(%args);
+    my $server2 = App::OpenHAP::Host->new(%args);
     is($server2->update_config_number, 1,
         '[HAP-mDNS §8] c# persisted across restart');
 }
@@ -71,7 +71,7 @@ use_ok('Fugu::MDNS');
 # Thus the order must be deterministic ([HAP-mDNS §2]).
 {
     my $temp_dir = tempdir(CLEANUP => 1);
-    my $server = OpenHAP::Server->new(
+    my $server = App::OpenHAP::Host->new(
         port         => 51836,
         pin          => '123-45-678',
         storage_path => $temp_dir,
@@ -113,7 +113,7 @@ use_ok('Fugu::MDNS');
     package main;
 
     my $temp_dir = tempdir(CLEANUP => 1);
-    my $server = OpenHAP::Server->new(
+    my $server = App::OpenHAP::Host->new(
         port         => 51835,
         pin          => '123-45-678',
         storage_path => $temp_dir,
@@ -149,7 +149,7 @@ use_ok('Fugu::MDNS');
 # control_status composes engine introspection with host state
 {
     my $temp_dir = tempdir(CLEANUP => 1);
-    my $server = OpenHAP::Server->new(
+    my $server = App::OpenHAP::Host->new(
         port         => 51837,
         pin          => '123-45-678',
         name         => 'Status Bridge',

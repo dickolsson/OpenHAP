@@ -7,7 +7,7 @@ use Test::More tests => 11;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 
 # Test 1: Environment variable set
 ok($ENV{OPENHAP_INTEGRATION_TEST}, 'OPENHAP_INTEGRATION_TEST is set');
@@ -22,8 +22,8 @@ ok(-x '/usr/local/bin/openhapd', 'openhapd binary installed');
 ok(-x '/usr/local/bin/hapctl', 'hapctl binary installed');
 
 # Test 5: OpenHAP modules available
-eval { require OpenHAP::Server; };
-ok(!$@, 'OpenHAP::Server module available');
+eval { require App::OpenHAP::Host; };
+ok(!$@, 'App::OpenHAP::Host module available');
 
 # Test 6: Configuration file exists
 my $config_file = '/etc/openhapd.conf';

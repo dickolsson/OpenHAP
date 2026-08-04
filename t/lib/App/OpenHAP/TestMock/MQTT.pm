@@ -22,7 +22,7 @@ use v5.36;
 # messages to the matching subscription callbacks. The match
 # includes the + and # wildcard patterns.
 
-package OpenHAP::TestMock::MQTT;
+package App::OpenHAP::TestMock::MQTT;
 
 sub new ($class)
 {

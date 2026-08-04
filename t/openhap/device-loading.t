@@ -7,10 +7,10 @@ use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use Fugu::TestLog;
 
-# Test device loading through OpenHAP::DeviceLoader with a mock config,
+# Test device loading through App::OpenHAP::Devices with a mock config,
 # a mock MQTT client, and a recording HAP stand-in.
 
-use_ok('OpenHAP::DeviceLoader');
+use_ok('App::OpenHAP::Devices');
 
 package MockConfig;
 
@@ -87,14 +87,14 @@ package main;
 	} );
 	my $mqtt   = MockMQTT->new;
 	my $hap    = MockHAP->new;
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count = $loader->load_devices( $config, $hap, $mqtt );
 	is( $count, 1, 'One device loaded' );
 
 	my @loaded = $loader->get_devices;
 	is( scalar @loaded, 1, 'Loader tracks loaded device' );
-	isa_ok( $loaded[0], 'OpenHAP::Tasmota::Thermostat' );
+	isa_ok( $loaded[0], 'App::OpenHAP::Tasmota::Thermostat' );
 	is( $loaded[0]{aid}, 2, 'First device gets AID 2 (bridge is AID 1)' );
 	is( scalar @{ $hap->{accessories} }, 1, 'Accessory added to bridge' );
 	ok( scalar keys %{ $mqtt->{subscriptions} } > 0,
@@ -109,7 +109,7 @@ package main;
 		topic   => 'test/topic',
 		id      => 'TEST001',
 	} );
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count =
 	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
@@ -124,7 +124,7 @@ package main;
 		name    => 'Test Device',
 		id      => 'TEST001',
 	} );
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count =
 	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
@@ -139,7 +139,7 @@ package main;
 		name    => 'Test Heater',
 		topic   => 'test_heater',
 	} );
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count =
 	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
@@ -158,7 +158,7 @@ package main;
 		topic   => 'test/topic',
 		id      => 'TEST001',
 	} );
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count =
 	    $loader->load_devices( $config, MockHAP->new, MockMQTT->new );
@@ -176,7 +176,7 @@ package main;
 		id      => 'SENS01',
 	} );
 	my $mqtt   = MockMQTT->new( connected => 0 );
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count = $loader->load_devices( $config, MockHAP->new, $mqtt );
 	is( $count, 1, 'Device loads while MQTT disconnected' );
@@ -211,14 +211,14 @@ package main;
 		},
 	);
 	my $hap    = MockHAP->new;
-	my $loader = OpenHAP::DeviceLoader->new;
+	my $loader = App::OpenHAP::Devices->new;
 
 	my $count = $loader->load_devices( $config, $hap, MockMQTT->new );
 	is( $count, 2, 'Two of three devices loaded' );
 
 	my @loaded = $loader->get_devices;
-	isa_ok( $loaded[0], 'OpenHAP::Tasmota::Lightbulb' );
-	isa_ok( $loaded[1], 'OpenHAP::Tasmota::Sensor' );
+	isa_ok( $loaded[0], 'App::OpenHAP::Tasmota::Lightbulb' );
+	isa_ok( $loaded[1], 'App::OpenHAP::Tasmota::Sensor' );
 	is( $loaded[0]{aid}, 2, 'First device AID 2' );
 	is( $loaded[1]{aid}, 3,
 		'Second device AID 3 (skipped device consumes no AID)' );

@@ -192,15 +192,15 @@ subtest '[HAP-Pairing §2.4] re-pair after remove' => sub {
 
 # The one socket-based flow of the conformance suite. Every other
 # exchange runs sans-IO; this one covers the blocking client itself
-# and the OpenHAP::Server host plumbing, over a real TCP connection.
+# and the App::OpenHAP::Host host plumbing, over a real TCP connection.
 subtest '[HAP-Pairing §2.2][HAP-Pairing §3] socket transport against a '
     . 'listening host' => sub {
 	plan skip_all => 'fork not available on this platform'
 	    unless $Config::Config{d_fork};
-	require OpenHAP::Server;
+	require App::OpenHAP::Host;
 	require File::Temp;
 
-	my $server = OpenHAP::Server->new(
+	my $server = App::OpenHAP::Host->new(
 		port         => 0,    # the kernel picks a free port
 		pin          => $PIN,
 		name         => 'Socket Bridge',

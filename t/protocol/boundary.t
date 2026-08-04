@@ -3,8 +3,8 @@
 # The dependency rules of the Protocol::HAP library.
 #
 # Protocol::HAP is self-contained: core Perl plus the declared Crypt::*
-# modules, and nothing else. It never uses Fugu, FuguVM, or OpenHAP.
-# Fugu never uses Protocol::HAP or OpenHAP. The test parses the use
+# modules, and nothing else. It never uses Fugu, FuguVM, or App.
+# Fugu never uses Protocol::HAP or App. The test parses the use
 # and require lines and fails on a line that breaks a rule.
 
 use v5.36;
@@ -58,7 +58,7 @@ sub imports_in ($file)
 }
 
 # Direction one: Protocol::HAP uses core Perl, the declared list, and
-# itself. A Fugu, FuguVM, or OpenHAP import is a boundary violation.
+# itself. A Fugu, FuguVM, or App import is a boundary violation.
 # So is an undeclared CPAN module.
 subtest 'Protocol::HAP is self-contained' => sub {
 	my @files = perl_files("$ROOT/lib/Protocol");
@@ -70,7 +70,7 @@ subtest 'Protocol::HAP is self-contained' => sub {
 		for my $import ( imports_in($file) ) {
 			my ( $line, $module ) = @$import;
 
-			if ( $module =~ /^(?:Fugu|FuguVM|OpenHAP)\b/ ) {
+			if ( $module =~ /^(?:Fugu|FuguVM|App)\b/ ) {
 				push @violations,
 				    "$name:$line uses $module";
 				next;
@@ -88,9 +88,9 @@ subtest 'Protocol::HAP is self-contained' => sub {
 	    or diag( join "\n", @violations );
 };
 
-# Direction two: Fugu stays generic. A Protocol::HAP or OpenHAP
-# import would invert the dependency.
-subtest 'Fugu never uses Protocol::HAP or OpenHAP' => sub {
+# Direction two: Fugu stays generic. A Protocol::HAP or App import
+# would invert the dependency.
+subtest 'Fugu never uses Protocol::HAP or App' => sub {
 	my @files = perl_files("$ROOT/lib/Fugu");
 	ok( @files, 'found modules under lib/Fugu/' );
 
@@ -101,7 +101,7 @@ subtest 'Fugu never uses Protocol::HAP or OpenHAP' => sub {
 			my ( $line, $module ) = @$import;
 			next
 			    unless $module
-			    =~ /^(?:Protocol::HAP|OpenHAP)\b/;
+			    =~ /^(?:Protocol::HAP|App)\b/;
 			push @violations, "$name:$line uses $module";
 		}
 	}

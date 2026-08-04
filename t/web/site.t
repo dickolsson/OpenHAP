@@ -94,7 +94,7 @@ File::Find::find(
 	"$ROOT/lib"
 );
 
-ok( scalar keys %POD, 'POD sidecars found under lib/OpenHAP' );
+ok( scalar keys %POD, 'POD sidecars found under lib/App/OpenHAP' );
 
 my @PAGES = ( @SITE, sort values %MANUAL, sort values %POD );
 
@@ -200,7 +200,7 @@ for my $page (@PAGES) {
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
 	my @module_pages =
-	    grep { /^(?:OpenHAP|FuguVM|Protocol)::.*\.3p\.html$/ } readdir $dh;
+	    grep { /^(?:App|FuguVM|Protocol)::.*\.3p\.html$/ } readdir $dh;
 	closedir $dh;
 
 	is( scalar @module_pages, scalar keys %POD,

@@ -110,20 +110,22 @@ install: install-man
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 bin/openhapd $(DESTDIR)$(BINDIR)/openhapd
 	install -m 755 bin/hapctl $(DESTDIR)$(BINDIR)/hapctl
-	# Install Perl libraries
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Test
+	# Install Perl libraries.  App/ is a shared parent: other
+	# distributions live there too, so it is created, never removed
+	install -d $(DESTDIR)$(LIBDIR)/App
+	install -d $(DESTDIR)$(LIBDIR)/App/OpenHAP
+	install -d $(DESTDIR)$(LIBDIR)/App/OpenHAP/Tasmota
+	install -d $(DESTDIR)$(LIBDIR)/App/OpenHAP/Test
 	install -d $(DESTDIR)$(LIBDIR)/Fugu
-	install -m 644 lib/OpenHAP/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/
-	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
-	install -m 644 lib/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
-	install -m 644 lib/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
+	install -m 644 lib/App/OpenHAP/*.pm $(DESTDIR)$(LIBDIR)/App/OpenHAP/
+	install -m 644 lib/App/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/App/OpenHAP/
+	install -m 644 lib/App/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/App/OpenHAP/Tasmota/
+	install -m 644 lib/App/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/App/OpenHAP/Tasmota/
 	# The glob loops accept zero, one, or many matches without stderr
 	# noise, because the test helper modules are not always present
-	for f in lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod; do \
+	for f in lib/App/OpenHAP/Test/*.pm lib/App/OpenHAP/Test/*.pod; do \
 		[ -e "$$f" ] || continue; \
-		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/; \
+		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/App/OpenHAP/Test/; \
 	done
 	# Fugu's API documentation lives in man3p, not in sidecars
 	install -m 644 lib/Fugu/*.pm $(DESTDIR)$(LIBDIR)/Fugu/
@@ -190,8 +192,8 @@ spec-coverage:
 
 package: clean
 	mkdir -p build/$(PACKAGE)/bin
-	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Tasmota
-	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test
+	mkdir -p build/$(PACKAGE)/lib/App/OpenHAP/Tasmota
+	mkdir -p build/$(PACKAGE)/lib/App/OpenHAP/Test
 	mkdir -p build/$(PACKAGE)/lib/Fugu
 	mkdir -p build/$(PACKAGE)/lib/Protocol/HAP
 	mkdir -p build/$(PACKAGE)/etc/rc.d
@@ -203,9 +205,9 @@ package: clean
 	# Binaries
 	cp bin/openhapd bin/hapctl build/$(PACKAGE)/bin/
 	# Perl libraries
-	cp lib/OpenHAP/*.pm lib/OpenHAP/*.pod build/$(PACKAGE)/lib/OpenHAP/
-	cp lib/OpenHAP/Tasmota/*.pm lib/OpenHAP/Tasmota/*.pod build/$(PACKAGE)/lib/OpenHAP/Tasmota/
-	cp lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/
+	cp lib/App/OpenHAP/*.pm lib/App/OpenHAP/*.pod build/$(PACKAGE)/lib/App/OpenHAP/
+	cp lib/App/OpenHAP/Tasmota/*.pm lib/App/OpenHAP/Tasmota/*.pod build/$(PACKAGE)/lib/App/OpenHAP/Tasmota/
+	cp lib/App/OpenHAP/Test/*.pm lib/App/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/App/OpenHAP/Test/
 	cp lib/Fugu/*.pm build/$(PACKAGE)/lib/Fugu/
 	cp lib/Protocol/*.pm lib/Protocol/*.pod build/$(PACKAGE)/lib/Protocol/
 	cp lib/Protocol/HAP/*.pm lib/Protocol/HAP/*.pod build/$(PACKAGE)/lib/Protocol/HAP/
@@ -255,10 +257,17 @@ uninstall:
 	# Remove binaries
 	rm -f $(DESTDIR)$(BINDIR)/openhapd
 	rm -f $(DESTDIR)$(BINDIR)/hapctl
-	# Remove Perl libraries
-	rm -rf $(DESTDIR)$(LIBDIR)/OpenHAP
+	# Remove Perl libraries.  App/ and Protocol/ are shared parents:
+	# App::cpanminus and any other Protocol:: distribution live
+	# beside ours.  Remove what this project owns, then rmdir the
+	# parent, which fails harmlessly when it still holds something
+	rm -rf $(DESTDIR)$(LIBDIR)/App/OpenHAP
 	rm -rf $(DESTDIR)$(LIBDIR)/Fugu
-	rm -rf $(DESTDIR)$(LIBDIR)/Protocol
+	rm -rf $(DESTDIR)$(LIBDIR)/Protocol/HAP
+	rm -f $(DESTDIR)$(LIBDIR)/Protocol/HAP.pm
+	rm -f $(DESTDIR)$(LIBDIR)/Protocol/HAP.pod
+	-rmdir $(DESTDIR)$(LIBDIR)/App 2>/dev/null
+	-rmdir $(DESTDIR)$(LIBDIR)/Protocol 2>/dev/null
 	# Remove man pages
 	for f in $(MAN3P); do \
 		rm -f "$(DESTDIR)$(MANDIR)/man3p/Fugu::$${f##*/}"; \

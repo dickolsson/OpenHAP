@@ -8,10 +8,10 @@ use Test::More tests => 18;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use Protocol::HAP::Pairing;
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 $env->ensure_unpaired or die "Cannot reset pairing state\n";
 
@@ -26,7 +26,7 @@ my $response = $env->http_request('POST', '/pair-setup',
 	"\x06\x01\x01\x00\x01\x00",
 	{'Content-Type' => 'application/pairing+tlv8'});
 my ($status, undef, $body) =
-	OpenHAP::Test::Integration::parse_http_response($response);
+	App::OpenHAP::Test::Integration::parse_http_response($response);
 is($status, 200, 'pair-setup M1 accepted');
 my $hex = unpack('H*', $body);
 unlike($hex, qr/03..0130783078/,

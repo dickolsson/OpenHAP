@@ -1,27 +1,27 @@
 =head1 NAME
 
-OpenHAP::DeviceLoader - loader for the devices in the configuration
+App::OpenHAP::Devices - the configured devices of the bridge
 
 =head1 SYNOPSIS
 
-    use OpenHAP::DeviceLoader;
+    use App::OpenHAP::Devices;
     use Fugu::Config;
     use Fugu::MQTT;
-    use OpenHAP::Server;
+    use App::OpenHAP::Host;
 
     my $config = Fugu::Config->new(file => '/etc/openhapd.conf');
     $config->load();
 
-    my $hap = OpenHAP::Server->new(...);
+    my $hap = App::OpenHAP::Host->new(...);
     my $mqtt = Fugu::MQTT->new(...);
 
-    my $loader = OpenHAP::DeviceLoader->new();
-    my $count = $loader->load_devices($config, $hap, $mqtt);
+    my $devices = App::OpenHAP::Devices->new();
+    my $count = $devices->load_devices($config, $hap, $mqtt);
 
     print "Loaded $count devices\n";
 
     # The blocks alone, with no bridge and no MQTT client
-    my @devices = OpenHAP::DeviceLoader->devices($config);
+    my @devices = App::OpenHAP::Devices->devices($config);
 
 =head1 DESCRIPTION
 
@@ -37,15 +37,15 @@ needs. To add a type, add one entry.
 
 =head2 new
 
-    my $loader = OpenHAP::DeviceLoader->new()
+    my $devices = App::OpenHAP::Devices->new()
 
-This method creates a new device loader instance. The loader keeps an
-internal counter that assigns the Accessory IDs (AIDs). The counter
-starts at 2, because AID 1 is reserved for the bridge itself.
+This method creates a new device collection. It keeps an internal
+counter that assigns the Accessory IDs (AIDs). The counter starts at 2,
+because AID 1 is reserved for the bridge itself.
 
 =head2 load_devices
 
-    my $count = $loader->load_devices($config, $hap, $mqtt)
+    my $count = $devices->load_devices($config, $hap, $mqtt)
 
 This method loads all devices from the configuration and adds them to
 the HAP bridge. It returns the number of devices that loaded
@@ -74,14 +74,14 @@ other devices.
 
 =head2 get_devices
 
-    my @devices = $loader->get_devices()
+    my @devices = $devices->get_devices()
 
 This method returns a list of all device accessory objects that
 loaded correctly.
 
 =head2 devices
 
-    my @devices = OpenHAP::DeviceLoader->devices($config)
+    my @devices = App::OpenHAP::Devices->devices($config)
 
 This class method returns the device blocks of a L<Fugu::Config> as
 plain records. Each record holds the settings of the block, plus the
@@ -109,8 +109,8 @@ Each device configuration must have these fields:
 
 =back
 
-The loader skips a device that does not have all the necessary
-fields. It logs an error for that device.
+The module skips a device that does not have all the necessary fields.
+It logs an error for that device.
 
 =head1 SUPPORTED DEVICES
 
@@ -118,14 +118,14 @@ The only device type is C<tasmota>. These are its subtypes:
 
 =over 4
 
-=item * B<thermostat> - L<OpenHAP::Tasmota::Thermostat>
+=item * B<thermostat> - L<App::OpenHAP::Tasmota::Thermostat>
 
-=item * B<heater>, B<switch> - L<OpenHAP::Tasmota::Heater>
+=item * B<heater>, B<switch> - L<App::OpenHAP::Tasmota::Heater>
 
-=item * B<sensor> - L<OpenHAP::Tasmota::Sensor>
+=item * B<sensor> - L<App::OpenHAP::Tasmota::Sensor>
 
 =item * B<lightbulb>, B<dimmer>, B<rgblight>, B<ctlight> -
-L<OpenHAP::Tasmota::Lightbulb>
+L<App::OpenHAP::Tasmota::Lightbulb>
 
 =back
 
@@ -133,12 +133,12 @@ L<OpenHAP::Tasmota::Lightbulb>
 
 The device instantiation and the MQTT subscription run inside
 C<eval>. Thus one misconfigured device does not stop the start of the
-daemon. The loader logs that device and skips it.
+daemon. The module logs that device and skips it.
 
 =head1 SEE ALSO
 
-L<Fugu::Config>, L<Fugu::MQTT>, L<OpenHAP::Server>,
-L<OpenHAP::Tasmota::Thermostat>
+L<Fugu::Config>, L<Fugu::MQTT>, L<App::OpenHAP::Host>,
+L<App::OpenHAP::Tasmota::Thermostat>
 
 =head1 AUTHOR
 

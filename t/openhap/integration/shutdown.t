@@ -18,10 +18,10 @@ use lib "$RealBin/../../../lib";
 
 use Fugu::Pidfile;
 use IO::Socket::INET;
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 my $pidfile  = Fugu::Pidfile->new( path => '/var/run/openhapd.pid' );

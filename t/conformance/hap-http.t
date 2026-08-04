@@ -31,8 +31,8 @@ use_ok('Protocol::HAP::HTTP');
 use_ok('Protocol::HAP::Crypto');
 use_ok('Protocol::HAP::TLV');
 use_ok('Protocol::HAP::Pairing');
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Heater');
 
 my $json = JSON::PP->new;
 
@@ -51,8 +51,8 @@ sub make_hap ()
 			$OUT{ $session->id } .= $bytes;
 		},
 	);
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Test Heater',
 		mqtt_topic  => 'heater',
@@ -678,8 +678,8 @@ subtest '[HAP-HTTP §14] device-side change delivers event with device aid'
 			$OUT{ $session->id } .= $bytes;
 		},
 	);
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Test Heater',
 		mqtt_topic  => 'heater',

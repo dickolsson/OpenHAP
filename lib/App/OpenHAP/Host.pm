@@ -17,7 +17,7 @@
 
 use v5.36;
 
-package OpenHAP::Server;
+package App::OpenHAP::Host;
 
 use IO::Socket::INET;
 use Time::HiRes qw(time);
@@ -28,7 +28,7 @@ use Fugu::MDNS;
 use Protocol::HAP::Server;
 use Protocol::HAP::Store::File;
 
-# OpenHAP::Server - the host of the Protocol::HAP engine.
+# App::OpenHAP::Host - the host of the Protocol::HAP engine.
 #
 # The engine owns the protocol; this module owns everything the
 # operating system hands out: the listening socket, per-connection

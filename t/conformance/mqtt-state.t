@@ -10,13 +10,13 @@ use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
 use Fugu::TestLog;
 
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Heater');
-use_ok('OpenHAP::Tasmota::Lightbulb');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::Tasmota::Lightbulb');
 
 sub make_heater ($mqtt)
 {
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Heater',
 		mqtt_topic  => 'device',
@@ -28,21 +28,21 @@ sub make_heater ($mqtt)
 
 sub make_light ($mqtt)
 {
-	my $light = OpenHAP::Tasmota::Lightbulb->new(
+	my $light = App::OpenHAP::Tasmota::Lightbulb->new(
 		aid          => 2,
 		name         => 'Light',
 		mqtt_topic   => 'light',
 		mqtt_client  => $mqtt,
-		capabilities => OpenHAP::Tasmota::Lightbulb::CAP_DIMMER()
-		    | OpenHAP::Tasmota::Lightbulb::CAP_COLOR()
-		    | OpenHAP::Tasmota::Lightbulb::CAP_CT(),
+		capabilities => App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER()
+		    | App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR()
+		    | App::OpenHAP::Tasmota::Lightbulb::CAP_CT(),
 	);
 	$light->subscribe_mqtt;
 	return $light;
 }
 
 subtest '[MQTT-State §1] immediate state on stat/' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
 	ok( ( grep { $_ eq 'stat/device/RESULT' }
@@ -58,7 +58,7 @@ subtest '[MQTT-State §1] immediate state on stat/' => sub {
 };
 
 subtest '[MQTT-State §2] periodic telemetry on tele/' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
 	ok( ( grep { $_ eq 'tele/device/STATE' }
@@ -67,7 +67,7 @@ subtest '[MQTT-State §2] periodic telemetry on tele/' => sub {
 };
 
 subtest '[MQTT-State §3] STATE message structure' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
 	# STATE carries POWER plus device fields
@@ -86,7 +86,7 @@ subtest '[MQTT-State §3] STATE message structure' => sub {
 };
 
 subtest '[MQTT-State §4] RESULT message structure' => sub {
-	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $mqtt  = App::OpenHAP::TestMock::MQTT->new;
 	my $light = make_light($mqtt);
 
 	$mqtt->simulate_message( 'stat/light/RESULT', '{"POWER":"ON"}' );
@@ -105,7 +105,7 @@ subtest '[MQTT-State §4] RESULT message structure' => sub {
 	is( $light->{ct}, 250, 'RESULT CT parsed' );
 
 	# Indexed POWER key for multi-relay devices
-	my $relay2 = OpenHAP::Tasmota::Heater->new(
+	my $relay2 = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 3,
 		name        => 'Relay 2',
 		mqtt_topic  => 'device',
@@ -118,7 +118,7 @@ subtest '[MQTT-State §4] RESULT message structure' => sub {
 };
 
 subtest '[MQTT-State §5][MQTT-State §5.1] status command reconciliation' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
 	# Status 11 responses reconcile the device state
@@ -129,7 +129,7 @@ subtest '[MQTT-State §5][MQTT-State §5.1] status command reconciliation' => su
 };
 
 subtest '[MQTT-State §5.2] reconnection strategy' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
 	# On LWT Online, the subscriptions exist. The accessory queries

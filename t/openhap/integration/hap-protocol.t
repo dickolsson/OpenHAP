@@ -7,9 +7,9 @@ use Test::More tests => 27;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 # Test 1: The HAP server is reachable over HTTP
@@ -18,7 +18,7 @@ ok(defined $response && $response =~ /^HTTP\/1\.[01]/, 'server reachable');
 
 # Test 2: /accessories endpoint responds
 $response = $env->http_request('GET', '/accessories');
-my ($status) = OpenHAP::Test::Integration::parse_http_response($response);
+my ($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status, '/accessories endpoint responds');
 
 # Test 3: /accessories returns proper status (470 or 200)
@@ -32,7 +32,7 @@ ok($has_content_type || $status == 470,
 
 # Test 5: /characteristics GET endpoint responds
 $response = $env->http_request('GET', '/characteristics?id=1.10');
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 470 || $status == 200 || $status == 404),
    '/characteristics GET responds');
 
@@ -40,7 +40,7 @@ ok(defined $status && ($status == 470 || $status == 200 || $status == 404),
 $response = $env->http_request('PUT', '/characteristics',
 	'{"characteristics":[]}',
 	{'Content-Type' => 'application/hap+json'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 470 || $status == 204 || $status == 400),
    '/characteristics PUT responds');
 
@@ -66,7 +66,7 @@ ok($has_content_type, '/pair-verify uses application/pairing+tlv8');
 
 # Test 11: Invalid endpoint returns 404 or 470
 $response = $env->http_request('GET', '/invalid-endpoint-123');
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok($status == 404 || $status == 470, 'invalid endpoint returns 404 or 470');
 
 # Test 12: Server uses HTTP/1.x protocol
@@ -122,14 +122,14 @@ ok($resp1 =~ /HTTP/ && $resp2 =~ /HTTP/,
 # Test 16: /identify endpoint responds to POST
 $response = $env->http_request('POST', '/identify', '',
 	{'Content-Type' => 'application/hap+json'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 204 || $status == 470 || $status == 400),
    '/identify endpoint responds');
 
 # Test 17: /pairings endpoint responds to POST (requires authentication)
 $response = $env->http_request('POST', '/pairings', "\x00\x01\x01",
 	{'Content-Type' => 'application/pairing+tlv8'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 470 || $status == 200 || $status == 400),
    '/pairings endpoint responds');
 
@@ -137,7 +137,7 @@ ok(defined $status && ($status == 470 || $status == 200 || $status == 400),
 $response = $env->http_request('PUT', '/prepare',
 	'{"ttl":5000,"pid":1}',
 	{'Content-Type' => 'application/hap+json'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 200 || $status == 470 || $status == 400),
    '/prepare endpoint responds');
 
@@ -148,13 +148,13 @@ ok($has_keepalive, 'response includes Connection: keep-alive header');
 
 # Test 20: Server answers GET /characteristics with meta/perms/type/ev params
 $response = $env->http_request('GET', '/characteristics?id=1.10&meta=1&perms=1&type=1&ev=1');
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 200 || $status == 470 || $status == 404 || $status == 207),
    '/characteristics GET with meta/perms/type/ev responds');
 
 # Test 21: Server returns proper error for invalid characteristic id format
 $response = $env->http_request('GET', '/characteristics?id=invalid');
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 400 || $status == 422 || $status == 470),
    '/characteristics GET with invalid id returns error');
 
@@ -162,7 +162,7 @@ ok(defined $status && ($status == 400 || $status == 422 || $status == 470),
 $response = $env->http_request('PUT', '/characteristics',
 	'{"characteristics":[{"aid":999,"iid":999,"value":true}]}',
 	{'Content-Type' => 'application/hap+json'});
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 207 || $status == 470 || $status == 204 || $status == 400),
    '/characteristics PUT with invalid data returns appropriate status');
 
@@ -199,7 +199,7 @@ ok($error_content_type || $response =~ /470/,
 
 # Test 27: Server responds to HEAD requests
 $response = $env->http_request('HEAD', '/accessories');
-($status) = OpenHAP::Test::Integration::parse_http_response($response);
+($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
 ok(defined $status && ($status == 200 || $status == 405 || $status == 470),
    'server handles HEAD requests');
 

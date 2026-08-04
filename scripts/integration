@@ -25,7 +25,7 @@ TARBALL="/tmp/tests-$$.tar.gz"
 # hosts that `make check` runs on. Thus this guest run is the one
 # place where CI executes them.
 tar czf "${TARBALL}" t/openhap/integration/ t/fugu/sandbox.t \
-    t/lib/ lib/OpenHAP/Test/
+    t/lib/ lib/App/OpenHAP/Test/
 vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/tests.tar.gz"
 rm -f "${TARBALL}"
 
@@ -40,8 +40,10 @@ set -e
 cd /tmp && tar xzf tests.tar.gz
 
 # Refresh the shipped test helper modules (Test::Controller and the
-# shared mocks in t/lib) over the installed copies
-cp -R lib/OpenHAP/Test /usr/local/libdata/perl5/site_perl/OpenHAP/
+# shared mocks in t/lib) over the installed copies. The mkdir covers a
+# guest whose install predates the App/ level.
+mkdir -p /usr/local/libdata/perl5/site_perl/App/OpenHAP
+cp -R lib/App/OpenHAP/Test /usr/local/libdata/perl5/site_perl/App/OpenHAP/
 
 # Clean up any orphaned daemon from previous test runs, gracefully:
 # TERM first, KILL only stragglers. A clean exit closes the mdnsd

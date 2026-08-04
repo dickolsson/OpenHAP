@@ -10,15 +10,15 @@ use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
 use Fugu::TestLog;
 
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Heater');
-use_ok('OpenHAP::Tasmota::Thermostat');
-use_ok('OpenHAP::Tasmota::Sensor');
-use_ok('OpenHAP::Tasmota::Lightbulb');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::Tasmota::Thermostat');
+use_ok('App::OpenHAP::Tasmota::Sensor');
+use_ok('App::OpenHAP::Tasmota::Lightbulb');
 
 sub make_heater ( $mqtt, %extra )
 {
-	return OpenHAP::Tasmota::Heater->new(
+	return App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Heater',
 		mqtt_topic  => 'device',
@@ -29,7 +29,7 @@ sub make_heater ( $mqtt, %extra )
 
 sub make_light ( $mqtt, $capabilities )
 {
-	return OpenHAP::Tasmota::Lightbulb->new(
+	return App::OpenHAP::Tasmota::Lightbulb->new(
 		aid          => 2,
 		name         => 'Light',
 		mqtt_topic   => 'light',
@@ -38,9 +38,9 @@ sub make_light ( $mqtt, $capabilities )
 	);
 }
 
-my $CAP_DIMMER = OpenHAP::Tasmota::Lightbulb::CAP_DIMMER();
-my $CAP_COLOR  = OpenHAP::Tasmota::Lightbulb::CAP_COLOR();
-my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
+my $CAP_DIMMER = App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER();
+my $CAP_COLOR  = App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR();
+my $CAP_CT     = App::OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 sub last_published ($mqtt)
 {
@@ -49,7 +49,7 @@ sub last_published ($mqtt)
 }
 
 subtest '[MQTT-Control §1] power control payloads' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
 	my $heater = make_heater($mqtt);
 
 	$mqtt->clear_published;
@@ -79,7 +79,7 @@ subtest '[MQTT-Control §1] power control payloads' => sub {
 };
 
 subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 
 	my $plain = make_heater($mqtt);
 	is( $plain->_get_power_key,   'POWER', 'single relay uses POWER' );
@@ -97,7 +97,7 @@ subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
 		'SetOption26 uses POWER1 even for a single relay' );
 
 	# FullTopic composes with the relay index
-	my $custom = OpenHAP::Tasmota::Base->new(
+	my $custom = App::OpenHAP::Tasmota::Device->new(
 		aid         => 5,
 		name        => 'Custom',
 		mqtt_topic  => 'device',
@@ -110,7 +110,7 @@ subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
 };
 
 subtest '[MQTT-Control §2] dimmer control' => sub {
-	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $mqtt  = App::OpenHAP::TestMock::MQTT->new;
 	my $light = make_light( $mqtt, $CAP_DIMMER );
 	$light->subscribe_mqtt;
 
@@ -142,7 +142,7 @@ subtest '[MQTT-Control §2] dimmer control' => sub {
 };
 
 subtest '[MQTT-Control §3][MQTT-Control §3.1] HSBColor control' => sub {
-	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $mqtt  = App::OpenHAP::TestMock::MQTT->new;
 	my $light = make_light( $mqtt, $CAP_DIMMER | $CAP_COLOR );
 	$light->subscribe_mqtt;
 
@@ -167,7 +167,7 @@ subtest '[MQTT-Control §3][MQTT-Control §3.1] HSBColor control' => sub {
 };
 
 subtest '[MQTT-Control §3.2] Color RGB formats' => sub {
-	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $mqtt  = App::OpenHAP::TestMock::MQTT->new;
 	my $light = make_light( $mqtt, $CAP_COLOR );
 	$light->subscribe_mqtt;
 
@@ -193,7 +193,7 @@ subtest '[MQTT-Control §3.2] Color RGB formats' => sub {
 };
 
 subtest '[MQTT-Control §4] color temperature range' => sub {
-	my $mqtt  = OpenHAP::TestMock::MQTT->new;
+	my $mqtt  = App::OpenHAP::TestMock::MQTT->new;
 	my $light = make_light( $mqtt, $CAP_CT );
 	$light->subscribe_mqtt;
 
@@ -214,10 +214,10 @@ subtest '[MQTT-Control §4] color temperature range' => sub {
 };
 
 subtest '[MQTT-Control §5] status queries' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 
 	# Thermostats query sensor information (Status 10) on subscribe
-	my $thermostat = OpenHAP::Tasmota::Thermostat->new(
+	my $thermostat = App::OpenHAP::Tasmota::Thermostat->new(
 		aid         => 2,
 		name        => 'Thermostat',
 		mqtt_topic  => 'thermostat',
@@ -240,7 +240,7 @@ subtest '[MQTT-Control §5] status queries' => sub {
 		'STATUS8 response updates temperature' );
 
 	# The sensor parses STATUS10 responses
-	my $sensor = OpenHAP::Tasmota::Sensor->new(
+	my $sensor = App::OpenHAP::Tasmota::Sensor->new(
 		aid         => 3,
 		name        => 'Sensor',
 		mqtt_topic  => 'sensor',

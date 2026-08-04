@@ -1,12 +1,12 @@
 =head1 NAME
 
-OpenHAP::Tasmota::Sensor - Tasmota temperature-sensor HAP accessory
+App::OpenHAP::Tasmota::Sensor - Tasmota temperature-sensor HAP accessory
 
 =head1 SYNOPSIS
 
-    use OpenHAP::Tasmota::Sensor;
+    use App::OpenHAP::Tasmota::Sensor;
 
-    my $sensor = OpenHAP::Tasmota::Sensor->new(
+    my $sensor = App::OpenHAP::Tasmota::Sensor->new(
         aid => 3,
         name => 'Kitchen Temperature',
         mqtt_topic => 'tasmota_112233',

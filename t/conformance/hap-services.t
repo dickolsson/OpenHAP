@@ -17,11 +17,11 @@ use Fugu::TestLog;
 use_ok('Protocol::HAP::Service');
 use_ok('Protocol::HAP::Characteristic');
 use_ok('Protocol::HAP::Bridge');
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Heater');
-use_ok('OpenHAP::Tasmota::Sensor');
-use_ok('OpenHAP::Tasmota::Thermostat');
-use_ok('OpenHAP::Tasmota::Lightbulb');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::Tasmota::Sensor');
+use_ok('App::OpenHAP::Tasmota::Thermostat');
+use_ok('App::OpenHAP::Tasmota::Lightbulb');
 
 # [HAP-Services §6] UUID table rows for every service that OpenHAP
 # defines
@@ -81,10 +81,10 @@ sub find_service ( $accessory, $short_type )
 
 subtest '[HAP-Services §3] AccessoryInformation on every accessory' =>
     sub {
-	my $mqtt        = OpenHAP::TestMock::MQTT->new;
+	my $mqtt        = App::OpenHAP::TestMock::MQTT->new;
 	my @accessories = (
 		Protocol::HAP::Bridge->new( name => 'Bridge' ),
-		OpenHAP::Tasmota::Heater->new(
+		App::OpenHAP::Tasmota::Heater->new(
 			aid         => 2,
 			name        => 'Heater',
 			mqtt_topic  => 'h',
@@ -127,8 +127,8 @@ subtest '[HAP-Services §3] ProtocolInformation on the bridge only' => sub {
 	    $protocol->get_characteristic_by_type('Version');
 	is( $version->get_value, '1.1.0', 'Version reports HAP 1.1.0' );
 
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Heater',
 		mqtt_topic  => 'h',
@@ -139,10 +139,10 @@ subtest '[HAP-Services §3] ProtocolInformation on the bridge only' => sub {
 };
 
 subtest '[HAP-Services §4] required characteristics per service' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 
 	# [HAP-Services §4/Switch] required: On
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Heater',
 		mqtt_topic  => 'h',
@@ -154,7 +154,7 @@ subtest '[HAP-Services §4] required characteristics per service' => sub {
 		'[HAP-Services §4/Switch] required characteristic On' );
 
 	# [HAP-Services §4/TemperatureSensor] required: CurrentTemperature
-	my $sensor = OpenHAP::Tasmota::Sensor->new(
+	my $sensor = App::OpenHAP::Tasmota::Sensor->new(
 		aid         => 3,
 		name        => 'Sensor',
 		mqtt_topic  => 's',
@@ -166,7 +166,7 @@ subtest '[HAP-Services §4] required characteristics per service' => sub {
 		'[HAP-Services §4/TemperatureSensor] CurrentTemperature' );
 
 	# [HAP-Services §4/HumiditySensor] required: CurrentRelativeHumidity
-	my $humidity_sensor = OpenHAP::Tasmota::Sensor->new(
+	my $humidity_sensor = App::OpenHAP::Tasmota::Sensor->new(
 		aid          => 4,
 		name         => 'Humidity',
 		mqtt_topic   => 'hs',
@@ -179,7 +179,7 @@ subtest '[HAP-Services §4] required characteristics per service' => sub {
 		'[HAP-Services §4/HumiditySensor] CurrentRelativeHumidity' );
 
 	# [HAP-Services §4/Thermostat] five required characteristics
-	my $thermostat_dev = OpenHAP::Tasmota::Thermostat->new(
+	my $thermostat_dev = App::OpenHAP::Tasmota::Thermostat->new(
 		aid         => 5,
 		name        => 'Thermostat',
 		mqtt_topic  => 't',
@@ -202,12 +202,12 @@ subtest '[HAP-Services §4] required characteristics per service' => sub {
 	}
 
 	# [HAP-Services §4/LightBulb] required: On
-	my $light_dev = OpenHAP::Tasmota::Lightbulb->new(
+	my $light_dev = App::OpenHAP::Tasmota::Lightbulb->new(
 		aid          => 6,
 		name         => 'Light',
 		mqtt_topic   => 'l',
 		mqtt_client  => $mqtt,
-		capabilities => OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(),
+		capabilities => App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(),
 	);
 	my $light = find_service( $light_dev, '43' );
 	ok( $light, 'Lightbulb exposes a LightBulb service' );

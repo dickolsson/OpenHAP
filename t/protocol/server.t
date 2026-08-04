@@ -133,15 +133,15 @@ sub make_engine (%extra)
 		'[HAP-mDNS §8] c# persisted across a rebuilt engine' );
 
 	# Rebuild with an added accessory: the c# increments
-	require OpenHAP::Tasmota::Heater;
-	require OpenHAP::TestMock::MQTT;
+	require App::OpenHAP::Tasmota::Heater;
+	require App::OpenHAP::TestMock::MQTT;
 	my $engine3 = make_engine( store => $store );
 	$engine3->add_accessory(
-		OpenHAP::Tasmota::Heater->new(
+		App::OpenHAP::Tasmota::Heater->new(
 			aid         => 2,
 			name        => 'New Heater',
 			mqtt_topic  => 'heater',
-			mqtt_client => OpenHAP::TestMock::MQTT->new,
+			mqtt_client => App::OpenHAP::TestMock::MQTT->new,
 		) );
 	is( $engine3->update_config_number, 2,
 		'[HAP-mDNS §3.1] c# increments when a device is added' );

@@ -14,8 +14,8 @@ use Fugu::MQTT;
 use Fugu::Privdrop;
 use Fugu::Sandbox;
 use Fugu::Signal;
-use OpenHAP::DeviceLoader;
-use OpenHAP::Server;
+use App::OpenHAP::Devices;
+use App::OpenHAP::Host;
 use Protocol::HAP::PIN qw(normalize_pin);
 
 # Default configuration
@@ -109,7 +109,7 @@ my $control_dir;
 $control_dir = $control_path =~ s{/[^/]+$}{}r if defined $control_path;
 
 # Create the HAP server: the host of the Protocol::HAP engine
-my $hap = OpenHAP::Server->new(
+my $hap = App::OpenHAP::Host->new(
 	port         => $hap_port,
 	pin          => $hap_pin,
 	name         => $hap_name,
@@ -141,7 +141,7 @@ else {
 }
 
 # Load the devices from the configuration
-my $loader = OpenHAP::DeviceLoader->new();
+my $loader = App::OpenHAP::Devices->new();
 $loader->load_devices( $config, $hap, $mqtt );
 
 # Bump c# if the accessory database changed since the last run
@@ -378,7 +378,7 @@ sub unveil_paths()
 	# is a checkout. The installed layout must not pick up
 	# /usr/local/lib here.
 	my $script_lib = "$RealBin/../lib";
-	push @perl_dirs, $script_lib if -d "$script_lib/OpenHAP";
+	push @perl_dirs, $script_lib if -d "$script_lib/App/OpenHAP";
 
 	my %seen;
 	push @paths, map { [ $_, 'r' ] } grep { !$seen{$_}++ } @perl_dirs;
