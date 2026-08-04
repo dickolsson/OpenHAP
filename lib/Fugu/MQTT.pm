@@ -20,7 +20,7 @@ use v5.36;
 package Fugu::MQTT;
 
 use Fugu::Log;
-use Fugu::Util;
+use Fugu::Timeout;
 
 # Fugu::MQTT - a subscribing MQTT client for a single-threaded
 # daemon.
@@ -68,7 +68,7 @@ sub mqtt_connect ( $self, $timeout = 10 )
 	# The connect can block in the resolver or the handshake, and a
 	# poll loop cannot interrupt either. Thus the guard is an alarm.
 	my $success = eval {
-		Fugu::Util::bounded(
+		Fugu::Timeout::bounded(
 			$timeout,
 			sub {
 

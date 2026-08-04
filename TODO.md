@@ -12,7 +12,7 @@ refinements.
     pledges `stdio rpath wpath cpath fattr flock inet dns unix` after the
     privilege drop and mDNS publish, before any network input. No `proc`, `exec`
     or `prot_exec`: the mdnsctl child was replaced with a native mdnsd control
-    client (`Fugu::MDNS` over `Fugu::Imsg`, spec/MDNS-\*.md)
+    client (`Fugu::Mdnsd` over `Fugu::Imsg`, spec/MDNS-\*.md)
   - Proven by: `t/fugu/sandbox.t` (SIGABRT on violation, asserted from the
     parent) and `t/openhap/integration/sandbox.t` (ktrace shows the syscall with
     the exact promise string)
@@ -56,8 +56,8 @@ refinements.
   - Current: `spec/MDNS-Control.md` §11 specifies all three message shapes, but
     only publish is implemented; `make spec-coverage` shows the uncovered
     sections, which is deliberate rather than an oversight
-  - Need: implement in `Fugu::MDNS` when a consumer appears
-  - File: `lib/Fugu/MDNS.pm`
+  - Need: implement in `Fugu::Mdnsd` when a consumer appears
+  - File: `lib/Fugu/Mdnsd.pm`
 
 - [ ] **Fix rcctl reload: SIGHUP stops the daemon instead of reloading**
   - Current: `etc/rc.d/openhapd` reloads with `pkill -HUP`, but openhapd
@@ -78,9 +78,9 @@ refinements.
 - [ ] **Secure PIN generation**
   - Current: Default PIN '1995-1018' in code (configurable via config file)
   - Need: Generate cryptographically random PIN on first run if not configured
-  - Should: Display PIN on console, save to secure file
+  - Should: Display the setup code on the console, save it to a secure file
   - File: `lib/Protocol/HAP/Store/File.pm`, `bin/openhapd`
-  - Note: PIN validation implemented in `lib/Protocol/HAP/PIN.pm`
+  - Note: setup-code validation implemented in `lib/Protocol/HAP/SetupCode.pm`
 
 - [ ] **Input validation**
   - Current: Limited validation on HTTP requests
@@ -216,7 +216,7 @@ refinements.
   - [x] `Fugu::MQTT` - MQTT client
   - [x] `Fugu::Daemon` - Daemon utilities
   - [x] `Fugu::Log` - Logging system
-  - [x] `Protocol::HAP::PIN` - PIN validation
+  - [x] `Protocol::HAP::SetupCode` - PIN validation
   - [x] `App::OpenHAP::Devices` - Device configuration loading
   - The module tests live in `t/protocol/`, `t/openhap/`, and `t/fugu/`
 
@@ -565,24 +565,40 @@ refinements.
   - Need: Version tagging, changelog, release notes
   - Files: New `CHANGELOG.md`, version tagging
 
-### Protocol:: CPAN release
+### CPAN release
 
-The libraries under `lib/Protocol/` are host-neutral and self-contained. A CPAN
-release of the `Protocol-HAP` or `Protocol-Imsg` distribution needs:
+Plan 008 decided every module name in the tree, so no naming question is left
+here. What a release still needs is below. It applies to any distribution this
+repository could ship: `Protocol-HAP`, `Protocol-Imsg`, `Fugu`, `App-OpenHAP`,
+and `App-FuguVM`.
 
-- [ ] PAUSE registration of the distribution name
-- [ ] A `$VERSION` policy for the modules (none carry one today)
-- [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`,
-      distribution tests
-- [ ] A redistribution-license review of `spec/` before any spec text ships in
-      the distribution
-- [ ] `Protocol::Imsg` frames without descriptor passing. A release either adds
+- [ ] **A `Fugu` distribution would ship with no documentation.** MetaCPAN
+      renders POD, not mdoc, and no `lib/Fugu/` module holds POD: the API
+      documentation is in `man/fugu/*.3p`, which the `Makefile` installs and a
+      distribution would not carry. This is the largest obstacle to releasing
+      the one namespace that the whole effort exists to justify. Either the
+      release ships generated POD, or the documentation rule changes for
+      `Fugu::`.
+- [ ] A distribution main module for `App-OpenHAP`, `App-FuguVM`, and `Fugu`.
+      PAUSE grants indexing permission on that module first, and none exists.
+- [ ] A `$VERSION` policy. No module carries one, and PAUSE does not index a
+      module without a version.
+- [ ] PAUSE registration of each distribution name.
+- [ ] `no_index` metadata for the packages that live inside another file:
+      `Protocol::HAP::Log::Null`, `Protocol::HAP::SRP::Client`,
+      `Fugu::Control::Client`, `Fugu::Proxy::Cache`, `Fugu::Proxy::Meta`, and
+      `App::FuguVM::Proxy::Cache`.
+- [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`, and
+      distribution tests.
+- [ ] A redistribution-license review of `spec/` before any spec text ships in a
+      distribution.
+- [ ] The descriptor-passing subset of `Protocol::Imsg`. A release either adds
       it, which needs `recvmsg` and `sendmsg`, or states the subset in the
-      distribution metadata as plainly as the pod does.
-- [ ] The `Protocol::Imsg` name is a compromise. The header is native-endian, so
-      the format never crosses a host, while `Protocol::` on CPAN holds
-      interoperable protocols. `OpenBSD::` is the honest alternative and it is
-      unusable: OpenBSD base perl owns that namespace.
+      distribution metadata as plainly as the pod does. The name is a compromise
+      as well: the header is native-endian, so the format never crosses a host,
+      while `Protocol::` on CPAN holds interoperable protocols. `OpenBSD::` is
+      the honest alternative and it is unusable, because OpenBSD base perl owns
+      that namespace.
 
 ## Technical Debt
 

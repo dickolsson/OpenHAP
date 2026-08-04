@@ -15,16 +15,16 @@
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
 .Dd $Mdocdate: August 2 2026 $
-.Dt Fugu::MDNS 3p
+.Dt Fugu::Mdnsd 3p
 .Os
 .Sh NAME
-.Nm Fugu::MDNS
-.Nd mDNS service publication through mdnsd
+.Nm Fugu::Mdnsd
+.Nd control mdnsd over its control socket
 .Sh SYNOPSIS
 .Bd -literal
-use Fugu::MDNS;
+use Fugu::Mdnsd;
 
-my $mdns = Fugu::MDNS->new;
+my $mdns = Fugu::Mdnsd->new;
 
 $mdns->publish(
     name  => 'My Bridge',
@@ -47,6 +47,10 @@ The module uses the mdnsd control protocol directly over
 and it starts no
 .Xr mdnsctl 8
 child process.
+It implements no mDNS of its own: every method here is a control
+operation, and no mDNS packet ever leaves the module.
+.Xr mdnsd 8
+sends those.
 The connection is the lifetime of the advertisement.
 mdnsd withdraws the service when the socket closes.
 Thus a daemon keeps the object alive for as long as the daemon must

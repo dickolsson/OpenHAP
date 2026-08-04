@@ -24,7 +24,7 @@ use Time::HiRes qw(time);
 
 use Fugu::EventLoop;
 use Fugu::Log;
-use Fugu::MDNS;
+use Fugu::Mdnsd;
 use Protocol::HAP::Server;
 use Protocol::HAP::Store::File;
 
@@ -136,7 +136,8 @@ sub update_config_number ($self)
 #	publishes.
 sub mdns_txt_string ($self)
 {
-	return Fugu::MDNS::format_txt( %{ $self->{engine}->mdns_txt_records } );
+	return Fugu::Mdnsd::format_txt(
+		%{ $self->{engine}->mdns_txt_records } );
 }
 
 # --- the connection plumbing ----------------------------------------------

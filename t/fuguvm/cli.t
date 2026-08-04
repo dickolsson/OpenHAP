@@ -427,6 +427,25 @@ SKIP: {
 	2, 'an unknown list option returns EXIT_INVALID_ARGS');
 }
 
+# A byte count for a person to read is presentation, so the CLI owns
+# it. The cases came with the function from Fugu::Timeout.
+subtest '_format_size' => sub {
+	my $f = \&App::FuguVM::CLI::_format_size;
+
+	is( $f->(0),       '0B',    'zero' );
+	is( $f->(512),     '512B',  'bytes' );
+	is( $f->(1023),    '1023B', 'just under 1K' );
+	is( $f->(1024),    '1.0K',  'one kilobyte' );
+	is( $f->(1536),    '1.5K',  'one and a half' );
+	is( $f->(1024**2), '1.0M',  'one megabyte' );
+	is( $f->(1024**3), '1.0G',  'one gigabyte' );
+	is( $f->(1024**4), '1.0T',  'one terabyte' );
+	is( $f->(1024**5), '1024.0T',
+		'past the largest unit it keeps counting' );
+	is( $f->(undef), '?',
+		'a size nobody could measure is not a size of zero' );
+};
+
 done_testing();
 
 # A project whose cache_dir points inside the project. Thus the tests

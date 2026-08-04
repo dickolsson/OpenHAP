@@ -76,7 +76,7 @@ four logger methods and drops every message.
 
 =item L<Protocol::HAP::TLV> - TLV8 codec
 
-=item L<Protocol::HAP::PIN> - setup-code normalization and rules
+=item L<Protocol::HAP::SetupCode> - setup-code normalization and rules
 
 =item L<Protocol::HAP::Crypto> - randomness and crypto primitives
 

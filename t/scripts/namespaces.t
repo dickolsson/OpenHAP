@@ -39,6 +39,12 @@ my $ROOT = "$RealBin/../..";
 # before make install, so it names one on purpose: a warm disk that
 # keeps the old modules in @INC would supply the shim that the rename
 # removed.
+#
+# Several patterns also take the bare file name, because prose names a
+# module that way: a Layout row that reads PIN.pm carries no namespace
+# for a pattern to anchor on. Only a distinctive leaf gets that
+# treatment. Server.pm, VM.pm, Base.pm, and Image.pm are ordinary
+# words, and the first of them is a live file.
 my @RETIRED = (
 
 	# Phase 1: the FuguLib collection became Fugu. The pattern
@@ -57,11 +63,13 @@ my @RETIRED = (
 	},
 	{
 		name    => 'OpenHAP::Storage',
-		pattern => qr{OpenHAP(?:::|/)Storage\b},
+		pattern => qr{ OpenHAP (?:::|/) Storage \b
+		    | \b Storage\.(?:pm|pod) }x,
 	},
 	{
 		name    => 'OpenHAP::DeviceLoader',
-		pattern => qr{OpenHAP(?:::|/)DeviceLoader\b},
+		pattern => qr{ OpenHAP (?:::|/) DeviceLoader \b
+		    | \b DeviceLoader\.(?:pm|pod) }x,
 	},
 	{
 		name    => 'OpenHAP::Tasmota::Base',
@@ -75,16 +83,52 @@ my @RETIRED = (
 	{ name => 'FuguVM::VM',  pattern => qr{FuguVM(?:::|/)VM\b} },
 	{
 		name    => 'FuguVM::Expect',
-		pattern => qr{FuguVM(?:::|/)Expect\b},
+		pattern => qr{ FuguVM (?:::|/) Expect \b
+		    | \b Expect\.(?:pm|pod) }x,
 	},
 	{
 		name    => 'FuguVM::ImageCache',
-		pattern => qr{FuguVM(?:::|/)ImageCache\b},
+		pattern => qr{ FuguVM (?:::|/) ImageCache \b
+		    | \b ImageCache\.(?:pm|pod) }x,
 	},
 	{
 		name    => 'FuguVM::Image',
 		pattern => qr{FuguVM(?:::|/)Image\b},
 	},
+
+	# Phase 5: the leaf renames that no namespace move forced. Each
+	# pattern also covers the 3p page and the test file name, which
+	# carry the leaf and not the namespace.
+	{
+		name    => 'Fugu::Util',
+		pattern => qr{ Fugu (?:::|/) Util \b
+		    | \b Util\.(?:pm|3p) }x,
+	},
+	{
+		# Store.pod is live: it is the persistence contract of
+		# Protocol::HAP. Only the module and the 3p page are gone.
+		name    => 'Fugu::Store',
+		pattern => qr{ Fugu (?:::|/) Store \b
+		    | \b Store\.(?:pm|3p) }x,
+	},
+	{
+		name    => 'Fugu::MDNS',
+		pattern => qr{ Fugu (?:::|/) MDNS \b
+		    | \b MDNS\.(?:pm|3p) }x,
+	},
+	{
+		name    => 'Protocol::HAP::PIN',
+		pattern => qr{ Protocol (?:::|/) HAP (?:::|/) PIN \b
+		    | \b PIN\.(?:pm|pod) }x,
+	},
+	{ name => 'normalize_pin', pattern => qr/\bnormalize_pin\b/ },
+	{ name => 'validate_pin',  pattern => qr/\bvalidate_pin\b/ },
+	{ name => 'INVALID_PINS',  pattern => qr/\bINVALID_PINS\b/ },
+
+	# format_size left Fugu:: for its only caller, so the name must
+	# not appear outside App::FuguVM::CLI. The private form is a
+	# different name and does not match.
+	{ name => 'format_size', pattern => qr/(?<!_)\bformat_size\b/ },
 );
 
 # plans/001 to plans/008 record what was true when they were written.

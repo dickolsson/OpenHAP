@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# Unit tests for Fugu::MDNS against a fake mdnsd on a local socket
+# Unit tests for Fugu::Mdnsd against a fake mdnsd on a local socket
 
 use v5.36;
 use Test::More;
@@ -13,13 +13,13 @@ use Socket qw(SOCK_STREAM);
 use Time::HiRes qw(time);
 
 use_ok('Fugu::Imsg');
-use_ok('Fugu::MDNS');
+use_ok('Fugu::Mdnsd');
 
 my $dir = tempdir( CLEANUP => 1 );
 my $n   = 0;
 
 # Group reply types. These values mirror the pinned enum in
-# Fugu::MDNS.
+# Fugu::Mdnsd.
 my %REPLY = (
 	collision  => 12,
 	not_found  => 13,
@@ -109,7 +109,7 @@ my %service = (
 );
 
 subtest 'connect fails cleanly when the socket is missing' => sub {
-	my $mdns = Fugu::MDNS->new( socket_path => "$dir/absent.sock" );
+	my $mdns = Fugu::Mdnsd->new( socket_path => "$dir/absent.sock" );
 	ok( !defined $mdns->connect, 'connect returns undef' );
 	like( $mdns->error, qr/absent\.sock/, 'error names the socket' );
 	ok( !$mdns->is_published, 'not published' );
@@ -126,7 +126,7 @@ subtest 'publish, TXT update over a fresh connection, withdraw' => sub {
 			return $conn_no < 1;    # accept the republish, too
 		} );
 
-	my $mdns = Fugu::MDNS->new( socket_path => $path );
+	my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 	ok( $mdns->connect, 'connected to fake mdnsd' );
 	ok( $mdns->publish_service(%service), 'publish_service succeeds' );
 	ok( $mdns->is_published, 'published after PUBLISHED reply' );
@@ -168,7 +168,7 @@ subtest 'error replies are terminal' => sub {
 				return 0;
 			} );
 
-		my $mdns = Fugu::MDNS->new( socket_path => $path );
+		my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 		ok( $mdns->connect, "connected ($case)" );
 		ok( !defined $mdns->publish_service(%service),
 			"$case reply fails the publish" );
@@ -185,7 +185,7 @@ subtest 'EOF mid-conversation fails the publish, not the process' => sub {
 			return 0;                        # close everything
 		} );
 
-	my $mdns = Fugu::MDNS->new( socket_path => $path );
+	my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 	ok( $mdns->connect, 'connected' );
 	my $lived = eval { !defined $mdns->publish_service(%service) };
 	ok( $lived, 'publish fails without dying on the closed socket' )
@@ -204,7 +204,7 @@ subtest 'reply timeout is bounded and parameterised' => sub {
 			return 0;
 		} );
 
-	my $mdns = Fugu::MDNS->new( socket_path => $path );
+	my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 	ok( $mdns->connect, 'connected' );
 	my $start = time;
 	ok( !defined $mdns->publish_service( %service, timeout => 0.5 ),
@@ -215,7 +215,7 @@ subtest 'reply timeout is bounded and parameterised' => sub {
 };
 
 subtest 'over-length fields are errors, not truncations' => sub {
-	my $mdns = Fugu::MDNS->new;
+	my $mdns = Fugu::Mdnsd->new;
 
 	ok( !defined $mdns->publish_service( %service, name => 'x' x 256 ),
 		'256-byte instance name is rejected' );
@@ -249,7 +249,7 @@ subtest 'republish on a held connection is refused' => sub {
 			return 0;
 		} );
 
-	my $mdns = Fugu::MDNS->new( socket_path => $path );
+	my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 	ok( $mdns->connect,                   'connected' );
 	ok( $mdns->publish_service(%service), 'published once' );
 	ok( !defined $mdns->publish_service(%service),
@@ -262,7 +262,7 @@ subtest 'republish on a held connection is refused' => sub {
 };
 
 subtest 'update_txt is a no-op while unpublished' => sub {
-	my $mdns = Fugu::MDNS->new;
+	my $mdns = Fugu::Mdnsd->new;
 	ok( $mdns->update_txt( txt => 'sf=0' ),
 		'unpublished update_txt returns success' );
 	ok( !$mdns->is_published, 'still unpublished' );
@@ -278,7 +278,7 @@ subtest 'publish connects on demand' => sub {
 			return 0;
 		} );
 
-	my $mdns = Fugu::MDNS->new( socket_path => $path );
+	my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 	ok( !$mdns->is_published, 'not connected yet' );
 	ok( $mdns->publish(%service), 'publish connects and publishes' );
 	ok( $mdns->is_published,      'the service is advertised' );
@@ -288,7 +288,7 @@ subtest 'publish connects on demand' => sub {
 };
 
 subtest 'publish reports a missing mdnsd through error' => sub {
-	my $mdns = Fugu::MDNS->new( socket_path => "$dir/absent2.sock" );
+	my $mdns = Fugu::Mdnsd->new( socket_path => "$dir/absent2.sock" );
 	ok( !defined $mdns->publish(%service), 'publish returns undef' );
 	like( $mdns->error, qr/absent2\.sock/, 'error names the socket' );
 	ok( !$mdns->is_published, 'nothing is advertised' );
@@ -308,7 +308,7 @@ subtest 'the object going away withdraws the service' => sub {
 		} );
 
 	{
-		my $mdns = Fugu::MDNS->new( socket_path => $path );
+		my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 		ok( $mdns->publish(%service), 'published inside the scope' );
 	}
 
@@ -320,11 +320,11 @@ subtest 'the object going away withdraws the service' => sub {
 
 subtest 'format_txt formats TXT records for mdnsd [MDNS-Control §5]' =>
     sub {
-	is( Fugu::MDNS::format_txt( b => 2, a => 1, c => 3 ),
+	is( Fugu::Mdnsd::format_txt( b => 2, a => 1, c => 3 ),
 		'a=1.b=2.c=3',
 		'key=value pairs joined with dots in sorted key order' );
-	is( Fugu::MDNS::format_txt(), '', 'no records give no string' );
-	is( Fugu::MDNS::format_txt( 'c#' => 1, sf => 0 ),
+	is( Fugu::Mdnsd::format_txt(), '', 'no records give no string' );
+	is( Fugu::Mdnsd::format_txt( 'c#' => 1, sf => 0 ),
 		'c#=1.sf=0', 'HAP-style keys pass through unchanged' );
 };
 
@@ -332,10 +332,10 @@ subtest 'new proves the struct template' => sub {
 	# The size is a measured fact about the platform. A template
 	# that no longer encodes it means every publish would send a
 	# malformed record, so new must refuse to build the object.
-	ok( eval { Fugu::MDNS->new; 1 }, 'new accepts the shipped template' )
+	ok( eval { Fugu::Mdnsd->new; 1 }, 'new accepts the shipped template' )
 	    or diag($@);
-	is( length( pack( Fugu::MDNS::SERVICE_TEMPLATE(), '', '', '', 0, 0, 0, '' ) ),
-		Fugu::MDNS::SERVICE_LEN(),
+	is( length( pack( Fugu::Mdnsd::SERVICE_TEMPLATE(), '', '', '', 0, 0, 0, '' ) ),
+		Fugu::Mdnsd::SERVICE_LEN(),
 		'the template encodes the documented size' );
 };
 

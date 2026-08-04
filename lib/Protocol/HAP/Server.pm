@@ -31,7 +31,7 @@ use Protocol::HAP::Pairing;
 use Protocol::HAP::Crypto;
 use Protocol::HAP::Bridge;
 use Protocol::HAP::Characteristic;
-use Protocol::HAP::PIN qw(normalize_pin);
+use Protocol::HAP::SetupCode qw(normalize_setup_code);
 
 # Protocol::HAP::Server - the sans-IO HAP accessory-server engine.
 #
@@ -93,9 +93,10 @@ sub _response (%args)
 #	host calls flush_events itself.
 sub new ( $class, %args )
 {
-	my $pin    = normalize_pin( $args{pin} ) // die 'valid pin required';
-	my $store  = $args{store}                // die 'store required';
-	my $output = $args{output}               // die 'output required';
+	my $pin = normalize_setup_code( $args{pin} )
+	    // die 'valid pin required';
+	my $store  = $args{store}  // die 'store required';
+	my $output = $args{output} // die 'output required';
 
 	my $self = bless {
 		pin      => $pin,

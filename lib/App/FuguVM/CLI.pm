@@ -25,7 +25,7 @@ use Fugu::CLI;
 use Fugu::File;
 use Fugu::Log;
 use Fugu::SSH;
-use Fugu::Util;
+use Fugu::Timeout;
 use App::FuguVM::Config;
 use App::FuguVM::Disk;
 use App::FuguVM::Console;
@@ -496,7 +496,7 @@ sub _cache_list ( $self, $cache )
 			sprintf(
 				'  - %s  %s  %s  snapshots: %d%s',
 				$entry->{key},
-				Fugu::Util::format_size( $entry->{size} ),
+				_format_size( $entry->{size} ),
 				$created,
 				scalar @{ $entry->{snapshots} },
 				$marker
@@ -537,11 +537,11 @@ sub _proxy_list ($self)
 
 	$self->{log}->info(
 		sprintf 'Proxy downloads (%s):',
-		Fugu::Util::format_size( $cache->size ) );
+		_format_size( $cache->size ) );
 
 	for my $version ( sort keys %bytes ) {
 		$self->{log}->info( sprintf '  - OpenBSD %s  %s',
-			$version, Fugu::Util::format_size( $bytes{$version} ) );
+			$version, _format_size( $bytes{$version} ) );
 	}
 
 	return EXIT_SUCCESS;
@@ -633,9 +633,8 @@ sub _proxy_clear ( $self, $stale )
 			$self->{log}->error("Cannot clear proxy downloads");
 			return EXIT_ERROR;
 		}
-		$self->{log}->info(
-			sprintf 'Removed %s of proxy downloads',
-			Fugu::Util::format_size($size) );
+		$self->{log}->info( sprintf 'Removed %s of proxy downloads',
+			_format_size($size) );
 
 		return EXIT_SUCCESS;
 	}
@@ -648,7 +647,7 @@ sub _proxy_clear ( $self, $stale )
 	for my $entry (@$removed) {
 		$self->{log}->info(
 			sprintf 'Removed %s of downloads for OpenBSD %s',
-			Fugu::Util::format_size( $entry->{size} ),
+			_format_size( $entry->{size} ),
 			$entry->{version} );
 	}
 	$self->{log}->info('No proxy downloads removed') if !@$removed;
@@ -883,7 +882,7 @@ sub _snapshot_list ( $self, $cli, $cache, @args )
 		$self->{log}->info(
 			sprintf( '  - %s  %s  %s',
 				$snapshot->{name},
-				Fugu::Util::format_size( $snapshot->{size} ),
+				_format_size( $snapshot->{size} ),
 				$created ) );
 	}
 
@@ -1058,6 +1057,31 @@ EOF
 
 	$self->{log}->info("Initialized FuguVM in $dir");
 	return EXIT_SUCCESS;
+}
+
+# _format_size($bytes):
+#	Return a byte count in the shortest unit that keeps it under
+#	1024. A count of undef reads as a question mark: a size that
+#	nobody could measure is not a size of zero.
+#
+#	The command-line interface is the only caller. A byte count for
+#	a person to read is presentation, so it belongs here.
+sub _format_size ( $bytes = undef )
+{
+	return '?' if !defined $bytes;
+
+	my @units = ( 'B', 'K', 'M', 'G', 'T' );
+	my $size  = $bytes;
+	my $unit  = 0;
+
+	while ( $size >= 1024 && $unit < $#units ) {
+		$size /= 1024;
+		$unit++;
+	}
+
+	return $unit == 0
+	    ? sprintf( '%d%s',   $size, $units[$unit] )
+	    : sprintf( '%.1f%s', $size, $units[$unit] );
 }
 
 1;

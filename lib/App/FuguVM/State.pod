@@ -25,7 +25,7 @@ Each VM has a directory under the state directory:
     <state_dir>/<vm>/proxy.pid     the proxy child
     <state_dir>/<vm>/disk.qcow2    the working disk
 
-The JSON blob rides on L<Fugu::Store>. The two process IDs ride on
+The JSON blob rides on L<Fugu::StateFile>. The two process IDs ride on
 L<Fugu::Pidfile>, which takes its lock before it truncates and
 reaps a zombie before it answers "running". A QEMU that became a
 zombie therefore reads as stopped, which is what a caller that is
@@ -56,7 +56,7 @@ empty state and does not stop the program that would rewrite it.
 
 =head2 store, state_dir, vm_state_dir, vm_name, data
 
-C<store> returns the L<Fugu::Store>. L<App::FuguVM::Guest> gives it to the
+C<store> returns the L<Fugu::StateFile>. L<App::FuguVM::Guest> gives it to the
 proxy, which keeps its port there.
 
 C<state_dir> returns the directory that holds every VM's state, and
@@ -107,7 +107,7 @@ crashed or was killed, and the disk may need a check.
 
 =head1 SEE ALSO
 
-L<Fugu::Pidfile>, L<Fugu::Store>, L<App::FuguVM::Guest>
+L<Fugu::Pidfile>, L<Fugu::StateFile>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

@@ -15,16 +15,16 @@
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
 .Dd $Mdocdate: August 2 2026 $
-.Dt Fugu::Store 3p
+.Dt Fugu::StateFile 3p
 .Os
 .Sh NAME
-.Nm Fugu::Store
+.Nm Fugu::StateFile
 .Nd a small JSON state file
 .Sh SYNOPSIS
 .Bd -literal
-use Fugu::Store;
+use Fugu::StateFile;
 
-my $store = Fugu::Store->new(
+my $store = Fugu::StateFile->new(
     path => '/var/db/myapp/state.json',
     mode => 0600,
 )->load;

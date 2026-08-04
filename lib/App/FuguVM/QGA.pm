@@ -20,7 +20,7 @@ use v5.36;
 package App::FuguVM::QGA;
 
 use Fugu::JSONSocket;
-use Fugu::Util;
+use Fugu::Timeout;
 use JSON::PP ();
 
 # App::FuguVM::QGA - the QEMU Guest Agent command set.
@@ -104,7 +104,7 @@ sub sync ($self)
 
 	# Wait for the command to finish. A guest that never answers
 	# must not hold the caller for ever.
-	my $exit = Fugu::Util::wait_until(
+	my $exit = Fugu::Timeout::wait_until(
 		EXEC_TIMEOUT,
 		0.1,
 		sub {

@@ -23,7 +23,7 @@ BEGIN {
 
 use_ok('App::OpenHAP::Host');
 use_ok('Protocol::HAP::Store::File');
-use_ok('Fugu::MDNS');
+use_ok('Fugu::Mdnsd');
 
 # Test host creation: the engine is built over
 # Protocol::HAP::Store::File and the host contracts

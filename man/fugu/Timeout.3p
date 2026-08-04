@@ -15,29 +15,32 @@
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
 .Dd $Mdocdate: August 2 2026 $
-.Dt Fugu::Util 3p
+.Dt Fugu::Timeout 3p
 .Os
 .Sh NAME
-.Nm Fugu::Util
-.Nd deadlines, polls and readable sizes
+.Nm Fugu::Timeout
+.Nd run something under a time limit
 .Sh SYNOPSIS
 .Bd -literal
-use Fugu::Util;
+use Fugu::Timeout;
 
-my $result = Fugu::Util::bounded(10, sub { $client->connect });
+my $result = Fugu::Timeout::bounded(10, sub { $client->connect });
 
-Fugu::Util::wait_until(60, 0.5, sub { -S $socket })
+Fugu::Timeout::wait_until(60, 0.5, sub { -S $socket })
     or die "the daemon never came up\en";
-
-printf "%s of cache\en", Fugu::Util::format_size($bytes);
 .Ed
 .Sh DESCRIPTION
 .Nm
-holds three small helpers that otherwise get a copy in every
-subsystem: a wall-clock guard, a bounded poll, and a byte count that a
-person can read.
+holds the two ways to run something under a time limit:
+.Fn bounded
+sets an alarm, and
+.Fn wait_until
+polls.
+An alarm interrupts a blocking system call that a poll loop cannot
+reach, and a poll loop leaves a signal handler alone.
+Neither can do the other's job, so both are here.
 .Pp
-The three are plain functions, not methods.
+The two are plain functions, not methods.
 They keep no state and they never log.
 .Ss bounded
 .Fn bounded "$seconds" "$code"
@@ -81,16 +84,6 @@ The loop also stops when a signal arrives, through
 .Xr Fugu::Signal 3p .
 A poll loop must not outlive the interrupt that told the program to
 stop.
-.Ss format_size
-.Fn format_size "$bytes"
-returns the byte count in the shortest unit that keeps it under 1024.
-The units are B, K, M, G and T.
-A count below 1024 has no decimal; the others have one.
-.Pp
-A count of
-.Dv undef
-reads as a question mark.
-A size that nobody could measure is not a size of zero.
 .Sh RETURN VALUES
 .Fn bounded
 returns what
@@ -109,13 +102,10 @@ It returns
 on the timeout, and
 .Dv undef
 when a signal arrived.
-.Pp
-.Fn format_size
-returns a short string.
 .Sh EXAMPLES
 This example bounds a guest interaction that can block for ever:
 .Bd -literal -offset indent
-my $out = Fugu::Util::bounded(15, sub {
+my $out = Fugu::Timeout::bounded(15, sub {
     return $ssh->run_command('sync; sync; sync');
 });
 warn "the guest did not answer\en" unless defined $out;
@@ -124,7 +114,7 @@ warn "the guest did not answer\en" unless defined $out;
 This example waits for a port to open, and stops early on a
 .Dv SIGINT :
 .Bd -literal -offset indent
-Fugu::Util::wait_until(120, 1, sub {
+Fugu::Timeout::wait_until(120, 1, sub {
     IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => $port);
 }) or die "port $port never opened\en";
 .Ed
@@ -137,9 +127,7 @@ It has no error of its own: a deadline is a return value, not an
 exception.
 .Pp
 .Fn wait_until
-and
-.Fn format_size
-do not die.
+does not die.
 .Sh SEE ALSO
 .Xr alarm 3 ,
 .Xr Fugu::Process 3p ,

@@ -17,46 +17,51 @@
 
 use v5.36;
 
-package Protocol::HAP::PIN;
+package Protocol::HAP::SetupCode;
 use Exporter qw(import);
-our @EXPORT_OK = qw(normalize_pin validate_pin);
+our @EXPORT_OK = qw(normalize_setup_code validate_setup_code);
 
-# Invalid PINs per HAP specification
+# Protocol::HAP::SetupCode - the rules of the 8-digit setup code.
+#
+# The specification says "setup code" [HAP-Pairing §2]. The word PIN is
+# the one it replaced, so no name here uses it.
+
+# Invalid setup codes per HAP specification
 # These are sequential or trivial patterns. Do not use them.
-use constant INVALID_PINS => qw(
+use constant INVALID_SETUP_CODES => qw(
     00000000 11111111 22222222 33333333 44444444
     55555555 66666666 77777777 88888888 99999999
     12345678 87654321
 );
 
-# normalize_pin($pin):
-#	Remove dashes and spaces from the PIN for internal use
+# normalize_setup_code($code):
+#	Remove dashes and spaces from the setup code for internal use
 #	Returns: an 8-digit numeric string, or undef if the format
 #	is invalid
-sub normalize_pin ($pin)
+sub normalize_setup_code ($code)
 {
-	return unless defined $pin;
+	return unless defined $code;
 
 	# Remove the dashes and spaces
-	$pin =~ s/[-\s]//g;
+	$code =~ s/[-\s]//g;
 
-	# Make sure the PIN is exactly 8 digits
-	return unless $pin =~ /^\d{8}$/;
+	# Make sure the setup code is exactly 8 digits
+	return unless $code =~ /^\d{8}$/;
 
-	return $pin;
+	return $code;
 }
 
-# validate_pin($pin):
-#	Validate that the PIN meets the HAP requirements
-#	Returns: 1 if the PIN is valid, undef if it is invalid
-sub validate_pin ($pin)
+# validate_setup_code($code):
+#	Validate that the setup code meets the HAP requirements
+#	Returns: 1 if the setup code is valid, undef if it is invalid
+sub validate_setup_code ($code)
 {
-	# Normalize the PIN first
-	my $normalized = normalize_pin($pin);
+	# Normalize the setup code first
+	my $normalized = normalize_setup_code($code);
 	return unless defined $normalized;
 
-	# Check the PIN against the list of invalid PINs
-	my %invalid = map { $_ => 1 } INVALID_PINS;
+	# Check the setup code against the list of invalid codes
+	my %invalid = map { $_ => 1 } INVALID_SETUP_CODES;
 	return if exists $invalid{$normalized};
 
 	return 1;

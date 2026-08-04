@@ -22,7 +22,7 @@ first run, and stops it again without corrupting its disk.
 Everything that is not QEMU comes from Fugu. Processes and liveness
 come from L<Fugu::Process>, which reaps: a QEMU that became a
 zombie reads as stopped, and a caller that is about to start a second
-one needs that answer. Bounded waits come from L<Fugu::Util>. The
+one needs that answer. Bounded waits come from L<Fugu::Timeout>. The
 random root password comes from L<Fugu::Random>. The guest
 connection comes from L<Fugu::SSH>.
 
@@ -69,7 +69,7 @@ leaves a filesystem that the next boot has to repair.
 
 =head1 SEE ALSO
 
-L<Fugu::Process>, L<Fugu::SSH>, L<Fugu::Util>,
+L<Fugu::Process>, L<Fugu::SSH>, L<Fugu::Timeout>,
 L<App::FuguVM::Disk>, L<App::FuguVM::DiskCache>, L<App::FuguVM::QGA>,
 L<App::FuguVM::QMP>, L<App::FuguVM::State>, L<fuguvm(1)>
 

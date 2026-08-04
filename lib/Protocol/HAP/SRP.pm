@@ -10,7 +10,7 @@ package Protocol::HAP::SRP;
 use Math::BigInt try => 'GMP';
 use Digest::SHA qw(sha512);
 use Protocol::HAP::Crypto;
-use Protocol::HAP::PIN qw(normalize_pin);
+use Protocol::HAP::SetupCode qw(normalize_setup_code);
 
 # SRP-6a implementation for HAP
 # The module uses the 3072-bit group from RFC 5054.
@@ -65,8 +65,9 @@ sub new ( $class, %args )
 {
 
 	my $self = bless {
-		username => $args{username}                  // 'Pair-Setup',
-		password => normalize_pin( $args{password} ) // $args{password},
+		username => $args{username} // 'Pair-Setup',
+		password => normalize_setup_code( $args{password} )
+		    // $args{password},
 
 		# The RFC 5054 3072-bit group
 		N => Math::BigInt->from_hex(
@@ -249,8 +250,8 @@ package Protocol::HAP::SRP::Client;
 
 # The imports of the accessory package above do not reach this one:
 # Perl imports into a package, not into a file.
-use Digest::SHA        qw(sha512);
-use Protocol::HAP::PIN qw(normalize_pin);
+use Digest::SHA              qw(sha512);
+use Protocol::HAP::SetupCode qw(normalize_setup_code);
 
 # The controller role of the same exchange (HAP-Pairing.md §2.5). It
 # uses the same 3072-bit RFC 5054 group, SHA-512 hash, and 384-byte
@@ -271,7 +272,8 @@ sub _i2b ( $int, $length = undef )
 
 sub new ( $class, %args )
 {
-	my $password = normalize_pin( $args{password} ) // $args{password};
+	my $password = normalize_setup_code( $args{password} )
+	    // $args{password};
 
 	my $self = bless {
 		username => $args{username} // 'Pair-Setup',

@@ -17,11 +17,11 @@
 
 use v5.36;
 
-package Fugu::Store;
+package Fugu::StateFile;
 
 use Fugu::File;
 
-# Fugu::Store - a small JSON state file with typed accessors.
+# Fugu::StateFile - a small JSON state file with typed accessors.
 #
 # A daemon and its tools keep a handful of facts between runs: a
 # counter, a flag, a timestamp. This module is that file, and nothing
@@ -33,7 +33,7 @@ use Fugu::File;
 # rewrite it. save is atomic, so the file is never the corrupt one
 # that the next load has to tolerate.
 
-# Fugu::Store->new(%args):
+# Fugu::StateFile->new(%args):
 #	path => $file	the state file (required)
 #	mode => $octal	file mode (default 0600)
 #	The constructor does not touch the file. Call load.

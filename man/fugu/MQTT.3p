@@ -89,7 +89,7 @@ The default timeout is 10 seconds.
 A connect can block in the resolver or in the handshake, and no poll
 loop can interrupt either.
 Thus the guard is the alarm of
-.Xr Fugu::Util 3p .
+.Xr Fugu::Timeout 3p .
 A broker that does not answer costs the caller the timeout, not the
 run.
 .Pp
@@ -180,7 +180,7 @@ $loop->every(1, sub {
 .Ed
 .Sh SEE ALSO
 .Xr Fugu::Log 3p ,
-.Xr Fugu::Util 3p ,
+.Xr Fugu::Timeout 3p ,
 .Xr Net::MQTT::Simple 3p
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io

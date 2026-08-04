@@ -12,7 +12,7 @@ use File::Temp qw(tempdir);
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Pidfile;
-use Fugu::Store;
+use Fugu::StateFile;
 
 use_ok('Fugu::Proxy');
 
@@ -205,7 +205,7 @@ subtest 'the supervisor before anything runs' => sub {
 	my $proxy = Fugu::Proxy->new(
 		cache   => cache(),
 		pidfile => Fugu::Pidfile->new( path => "$dir/proxy.pid" ),
-		store   => Fugu::Store->new( path => "$dir/state.json" )->load,
+		store   => Fugu::StateFile->new( path => "$dir/state.json" )->load,
 	);
 
 	ok( defined $proxy,      'the supervisor exists' );
@@ -223,7 +223,7 @@ subtest 'the supervisor before anything runs' => sub {
 	my $narrow = Fugu::Proxy->new(
 		cache   => cache(),
 		pidfile => Fugu::Pidfile->new( path => "$dir/other.pid" ),
-		store   => Fugu::Store->new( path => "$dir/other.json" )->load,
+		store   => Fugu::StateFile->new( path => "$dir/other.json" )->load,
 		ports   => [ 19000, 19010 ],
 	);
 	my $narrow_port = $narrow->_find_free_port;
@@ -233,7 +233,7 @@ subtest 'the supervisor before anything runs' => sub {
 
 subtest 'the supervisor reads its port from the store' => sub {
 	my $dir   = tempdir( CLEANUP => 1 );
-	my $store = Fugu::Store->new( path => "$dir/state.json" )->load;
+	my $store = Fugu::StateFile->new( path => "$dir/state.json" )->load;
 	$store->set( proxy_port => 8099 );
 
 	my $proxy = Fugu::Proxy->new(

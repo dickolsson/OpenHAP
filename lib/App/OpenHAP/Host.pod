@@ -60,7 +60,7 @@ a fresh TXT record when the engine reports a pairing change.
 =head2 mdns_txt_string()
 
 The TXT records of the engine in the format that mdnsd publishes,
-through C<Fugu::MDNS::format_txt>.
+through C<Fugu::Mdnsd::format_txt>.
 
 =head2 add_accessory($accessory), is_paired(), update_config_number()
 

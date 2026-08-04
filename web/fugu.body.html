@@ -61,16 +61,17 @@ warn-and-continue mode.  It also assembles the path inventories that every
 daemon repeats.</dd>
 
 <dt>Fugu::Imsg</dt>
-<dd>The module supplies the base-system imsg framing &mdash; a fixed
-native-endian header and a payload &mdash; over a connected stream socket.
-It reads full messages when the socket returns short counts, and carries
-the peer id that a request and response protocol correlates by.</dd>
+<dd>The module sends and receives base-system imsg messages over a
+connected stream socket.  <code>Protocol::Imsg</code> frames the bytes;
+this module owns the socket.  It reads full messages when the socket
+returns short counts, and carries the peer id that a request and
+response protocol correlates by.</dd>
 
-<dt>Fugu::MDNS</dt>
-<dd>The module publishes services through <code>mdnsd(8)</code> with its
-control protocol directly, not through a <code>mdnsctl</code> child
-process.  The advertisement stays active while the module holds the
-socket, and the destructor withdraws it.</dd>
+<dt>Fugu::Mdnsd</dt>
+<dd>The module controls <code>mdnsd(8)</code> over its control socket.
+It implements no mDNS itself, and it starts no <code>mdnsctl</code>
+child process.  The advertisement stays active while the module holds
+the socket, and the destructor withdraws it.</dd>
 
 <dt>Fugu::File</dt>
 <dd>The module reads and writes files, atomically where that matters, and
@@ -78,10 +79,10 @@ sets the mode at the open so that a secret is never readable before it is
 written.  It also builds a directory tree beside its target and publishes
 it with one rename.</dd>
 
-<dt>Fugu::Util</dt>
-<dd>The module holds a wall-clock guard around a call that can block, a
-bounded poll that stops on an interrupt, and a byte count that a person
-can read.</dd>
+<dt>Fugu::Timeout</dt>
+<dd>The module runs something under a time limit, in the two ways that
+exist: an alarm around a call that can block, and a poll that stops on
+an interrupt.  Neither can do the other's job.</dd>
 
 <dt>Fugu::Random</dt>
 <dd>The module gives random bytes from <code>/dev/urandom</code> and
@@ -94,7 +95,7 @@ It gives the blocks of a type in file order and also addresses each one by
 name.  A line that the grammar does not accept is an error with a file and
 a line number, never a line that the parser quietly skips.</dd>
 
-<dt>Fugu::Store</dt>
+<dt>Fugu::StateFile</dt>
 <dd>The module is a small JSON state file with typed accessors.  It
 survives a corrupt file, and it writes atomically so that it does not
 create one.</dd>

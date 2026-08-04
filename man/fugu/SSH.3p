@@ -111,7 +111,7 @@ polls until the host takes a connection, or until the timeout ends.
 The default timeout is 120 seconds.
 .Pp
 The wait stops early when a signal arrives, through
-.Xr Fugu::Util 3p .
+.Xr Fugu::Timeout 3p .
 A poll loop must not outlive the interrupt that told the program to
 stop.
 .Ss interactive
@@ -153,7 +153,7 @@ No method dies for a connection that fails.
 .Sh SEE ALSO
 .Xr ssh 1 ,
 .Xr Fugu::Process 3p ,
-.Xr Fugu::Util 3p ,
+.Xr Fugu::Timeout 3p ,
 .Xr Net::SSH2 3p
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io

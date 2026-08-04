@@ -17,19 +17,21 @@
 
 use v5.36;
 
-package Fugu::MDNS;
+package Fugu::Mdnsd;
 
 use Fugu::Imsg;
 use IO::Socket::UNIX;
 use Socket      qw(SOCK_STREAM);
 use Time::HiRes qw(time);
 
-# Fugu::MDNS - publish services through OpenBSD's mdnsd(8) over its
-# control socket, natively. There is no mdnsctl(8) child process. The
-# socket is the advertisement's lifetime. Close the socket to withdraw
-# the service. The protocol is per spec/MDNS-Control.md. The module
-# never logs. It returns outcomes and keeps the last failure in
-# ->error for the caller.
+# Fugu::Mdnsd - control OpenBSD's mdnsd(8) over its control socket.
+#
+# The module implements no mDNS. It sends IMSG_CTL_* messages over
+# Fugu::Imsg, and mdnsd(8) sends the packets. There is no mdnsctl(8)
+# child process. The socket is the advertisement's lifetime. Close the
+# socket to withdraw the service. The protocol is per
+# spec/MDNS-Control.md. The module never logs. It returns outcomes and
+# keeps the last failure in ->error for the caller.
 
 # The imsg_type enum ordinals [MDNS-Control §2]. The values are
 # positional in the upstream header. Thus the list pins all of them in
@@ -76,7 +78,7 @@ use constant {
 # mdnsd patches in the interface address.
 use constant SERVICE_TEMPLATE => 'x16 Z64 Z4 Z256 x256 S S S Z256 x2 x4';
 
-# Fugu::MDNS->new(%args):
+# Fugu::Mdnsd->new(%args):
 #	socket_path => $path	control socket (default /var/run/mdnsd.sock)
 #	timeout     => $secs	reply deadline (default 10). PUBLISHED
 #				takes ~4-4.5s [MDNS-Control §6.2].

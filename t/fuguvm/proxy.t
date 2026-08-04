@@ -11,7 +11,7 @@ use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Fugu::Log;
 use Fugu::Pidfile;
-use Fugu::Store;
+use Fugu::StateFile;
 
 use_ok('App::FuguVM::Proxy');
 use_ok('App::FuguVM::State');
@@ -60,7 +60,7 @@ Fugu::Log->set_default( Fugu::Log->new( mode => 'quiet' ) );
 # address gets out of the SLIRP network.
 {
 	my $dir   = tempdir( CLEANUP => 1 );
-	my $store = Fugu::Store->new( path => "$dir/state.json" )->load;
+	my $store = Fugu::StateFile->new( path => "$dir/state.json" )->load;
 
 	my $proxy = App::FuguVM::Proxy->new(
 	    cache   => App::FuguVM::Proxy::Cache->new($dir),

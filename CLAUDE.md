@@ -15,20 +15,28 @@ ChaCha20-Poly1305, HKDF-SHA-512, and TLV8 over encrypted HTTP/1.1, advertised
 via mDNS. OpenBSD is the production platform (pledge(2)/unveil(2), rc.d,
 `_openhap` user); Linux and Darwin are supported for development and CI only.
 
-The repo contains four Perl namespaces with distinct concerns:
+The repo holds five Perl namespaces with distinct concerns. It claims exactly
+one top-level name, `Fugu`; `App::` and `Protocol::` are shared namespaces that
+the project joins.
 
-- `Protocol::` (`lib/Protocol/`) — the host-neutral protocol libraries:
-  `Protocol::HAP` (codecs, crypto, pairing, the data model, the sans-IO server
-  engine, a controller, two stores) and `Protocol::Imsg` (the imsg(3) frame);
-  self-contained, headed for CPAN
+- `Protocol::HAP` (`lib/Protocol/HAP/`) — the host-neutral HAP library: codecs,
+  crypto, pairing, the data model, the server engine, a controller, and two
+  stores; self-contained, headed for CPAN
+- `Protocol::Imsg` (`lib/Protocol/Imsg.pm`) — the imsg(3) frame, as bytes; a
+  codec with no socket in it
 - `App::OpenHAP::` (`lib/App/OpenHAP/`) — the reference host: the daemon
   plumbing, MQTT device integration, and OpenBSD policy
 - `Fugu::` (`lib/Fugu/`) — generic OpenBSD-style daemon utilities (daemonize,
   privilege drop, signals, logging, process, state, pledge/unveil, the imsg
-  transport, mdnsd publishing)
+  transport, mdnsd control)
 - `App::FuguVM::` (`lib/App/FuguVM/`) — installs and manages OpenBSD VMs under
   QEMU, driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this
   repo is its first user, not its purpose
+
+The dependency direction is one way. `Protocol::` uses core Perl and its
+declared CPAN modules, and never `Fugu::` or `App::`. `Fugu::` uses core Perl,
+its optional CPAN libraries, and the `Protocol::` codecs on an allowlist, and
+never `App::`. `App::` uses both.
 
 ## Commands
 
@@ -53,13 +61,15 @@ make integration    # provision OpenBSD VM and run integration tests
 
 - `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `fuguvm` (OpenBSD VM
   CLI)
-- `lib/Protocol/` — the `Protocol::HAP` library: codecs (`TLV.pm`, `HTTP.pm`),
-  setup-code rules (`PIN.pm`), crypto (`Crypto.pm`, `SRP.pm`), pairing and
-  sessions (`Pairing.pm`, `Session.pm`, `Store.pod`, `Store/Memory.pm`,
-  `Store/File.pm`), data model (`Accessory.pm`, `Service.pm`,
-  `Characteristic.pm`, `Bridge.pm`), the sans-IO engine (`Server.pm`), and the
-  blocking client (`Controller.pm`); it is self-contained and never uses
-  `Fugu::` or `App::` (`t/protocol/boundary.t` enforces this)
+- `lib/Protocol/` — two libraries. `Protocol::HAP` holds codecs (`TLV.pm`,
+  `HTTP.pm`), setup-code rules (`SetupCode.pm`), crypto (`Crypto.pm`, `SRP.pm`),
+  pairing and sessions (`Pairing.pm`, `Session.pm`, `Store.pod`,
+  `Store/Memory.pm`, `Store/File.pm`), the data model (`Accessory.pm`,
+  `Service.pm`, `Characteristic.pm`, `Bridge.pm`), the sans-IO engine
+  (`Server.pm`), and the blocking client (`Controller.pm`). `Protocol::Imsg` is
+  the imsg(3) frame. Do not call the tier sans-IO: `Server.pm` and
+  `Protocol::Imsg` are, and `Controller.pm` and `Store/File.pm` are not
+  (`t/protocol/boundary.t` enforces the dependency rule instead)
 - `lib/App/OpenHAP/` — the host (`Host.pm`), device integration (`Devices.pm`,
   `Tasmota/*.pm`), the integration-test driver (`Test/Integration.pm`)
 - `t/openhap/`, `t/fugu/`, `t/protocol/`, `t/fuguvm/` — unit tests;

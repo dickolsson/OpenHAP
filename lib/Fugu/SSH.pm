@@ -21,7 +21,7 @@ package Fugu::SSH;
 
 use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_TRUNC);
 use Fugu::Process;
-use Fugu::Util;
+use Fugu::Timeout;
 
 # Fugu::SSH - run a command on another machine over SSH.
 #
@@ -93,11 +93,11 @@ sub _connect ($self)
 
 # $self->wait_available($timeout):
 #	Poll until the host takes an authenticated connection. The wait
-#	stops early on an interrupt, through Fugu::Util. The method
+#	stops early on an interrupt, through Fugu::Timeout. The method
 #	returns 1 when the host answered, and 0 otherwise.
 sub wait_available ( $self, $timeout = 120 )
 {
-	return Fugu::Util::wait_until( $timeout, 2,
+	return Fugu::Timeout::wait_until( $timeout, 2,
 		sub { $self->is_available } )
 	    ? 1
 	    : 0;

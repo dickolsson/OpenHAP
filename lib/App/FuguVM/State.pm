@@ -22,11 +22,11 @@ package App::FuguVM::State;
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Pidfile;
-use Fugu::Store;
+use Fugu::StateFile;
 
 # App::FuguVM::State - what FuguVM remembers about one VM between runs.
 #
-# The JSON blob rides on Fugu::Store. The two process IDs ride on
+# The JSON blob rides on Fugu::StateFile. The two process IDs ride on
 # Fugu::Pidfile, which locks before it truncates and reaps a zombie
 # before it answers "running".
 #
@@ -55,7 +55,7 @@ sub new ( $class, $state_dir, $vm_name, %opts )
 		vm_pid => Fugu::Pidfile->new( path => "$vm_state_dir/vm.pid" ),
 		proxy_pid =>
 		    Fugu::Pidfile->new( path => "$vm_state_dir/proxy.pid" ),
-		store => Fugu::Store->new(
+		store => Fugu::StateFile->new(
 			path => "$vm_state_dir/status",
 			mode => 0600,
 		),

@@ -40,7 +40,7 @@ use App::FuguVM::QGA;
 use Fugu::Random;
 use Fugu::Process;
 use Fugu::SSH;
-use Fugu::Util;
+use Fugu::Timeout;
 
 use constant {
 	EXIT_SUCCESS        => 0,
@@ -865,10 +865,10 @@ sub _graceful_shutdown ($self)
 # $self->_bounded($seconds, $code):
 #	Run $code under a hard wall-clock deadline, so a blocked guest
 #	interaction cannot stall the caller. The guard itself is
-#	Fugu::Util; this wrapper adds the log line.
+#	Fugu::Timeout; this wrapper adds the log line.
 sub _bounded ( $self, $seconds, $code )
 {
-	my $result = Fugu::Util::bounded( $seconds, $code );
+	my $result = Fugu::Timeout::bounded( $seconds, $code );
 	return $result if defined $result;
 
 	$self->{log}->warning("Guest did not respond within ${seconds}s");
@@ -1143,7 +1143,7 @@ sub _wait_console_ready ( $self, $port, $timeout )
 {
 	require IO::Socket::INET;
 
-	my $ready = Fugu::Util::wait_until(
+	my $ready = Fugu::Timeout::wait_until(
 		$timeout, 0.2,
 		sub {
 			my $sock = IO::Socket::INET->new(

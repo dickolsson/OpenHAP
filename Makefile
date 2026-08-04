@@ -50,12 +50,12 @@ MAN3P			= man/fugu/CLI.3p man/fugu/Config.3p \
 			  man/fugu/EventLoop.3p man/fugu/File.3p \
 			  man/fugu/Imsg.3p \
 			  man/fugu/JSONSocket.3p man/fugu/Log.3p \
-			  man/fugu/MDNS.3p man/fugu/MQTT.3p \
+			  man/fugu/Mdnsd.3p man/fugu/MQTT.3p \
 			  man/fugu/Pidfile.3p man/fugu/Privdrop.3p \
 			  man/fugu/Process.3p man/fugu/Proxy.3p \
 			  man/fugu/Random.3p man/fugu/SSH.3p \
 			  man/fugu/Sandbox.3p man/fugu/Signal.3p \
-			  man/fugu/Store.3p man/fugu/Util.3p
+			  man/fugu/StateFile.3p man/fugu/Timeout.3p
 MAN5			= man/openhap/openhapd.conf.5
 MAN8			= man/openhap/hapctl.8 man/openhap/openhapd.8
 CATMAN1			= $(MAN1:.1=.cat1)
@@ -264,8 +264,12 @@ uninstall:
 	rm -rf $(DESTDIR)$(LIBDIR)/App/OpenHAP
 	rm -rf $(DESTDIR)$(LIBDIR)/Fugu
 	rm -rf $(DESTDIR)$(LIBDIR)/Protocol/HAP
-	rm -f $(DESTDIR)$(LIBDIR)/Protocol/HAP.pm
-	rm -f $(DESTDIR)$(LIBDIR)/Protocol/HAP.pod
+	# The loop derives the list from the source tree.  A new
+	# top-level Protocol:: module is thus removed with no second
+	# place to keep true
+	for f in lib/Protocol/*.pm lib/Protocol/*.pod; do \
+		rm -f "$(DESTDIR)$(LIBDIR)/Protocol/$${f##*/}"; \
+	done
 	-rmdir $(DESTDIR)$(LIBDIR)/App 2>/dev/null
 	-rmdir $(DESTDIR)$(LIBDIR)/Protocol 2>/dev/null
 	# Remove man pages

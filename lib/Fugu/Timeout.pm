@@ -17,14 +17,17 @@
 
 use v5.36;
 
-package Fugu::Util;
+package Fugu::Timeout;
 
 use Fugu::Signal;
 use Time::HiRes qw(time);
 
-# Fugu::Util - the three small helpers that had a copy in every
-# subsystem: a wall-clock guard, a bounded poll, and a byte count that
-# a person can read.
+# Fugu::Timeout - run something under a time limit.
+#
+# The module holds the two ways to do that: bounded sets an alarm, and
+# wait_until polls. An alarm interrupts a blocking syscall that a poll
+# loop cannot reach, and a poll loop leaves a signal handler alone.
+# Neither can do the other's job, so both are here.
 #
 # The functions are plain functions, not methods. They keep no state
 # and they never log.
@@ -91,28 +94,6 @@ sub wait_until ( $timeout, $interval, $code )
 		select undef, undef, undef,
 		    $left < $interval ? $left : $interval;
 	}
-}
-
-# format_size($bytes):
-#	Return a byte count in the shortest unit that keeps it under
-#	1024. A count of undef reads as a question mark: a size that
-#	nobody could measure is not a size of zero.
-sub format_size ( $bytes = undef )
-{
-	return '?' if !defined $bytes;
-
-	my @units = ( 'B', 'K', 'M', 'G', 'T' );
-	my $size  = $bytes;
-	my $unit  = 0;
-
-	while ( $size >= 1024 && $unit < $#units ) {
-		$size /= 1024;
-		$unit++;
-	}
-
-	return $unit == 0
-	    ? sprintf( '%d%s',   $size, $units[$unit] )
-	    : sprintf( '%.1f%s', $size, $units[$unit] );
 }
 
 1;

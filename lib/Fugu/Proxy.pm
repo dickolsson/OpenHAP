@@ -22,7 +22,7 @@ package Fugu::Proxy;
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Process;
-use Fugu::Util;
+use Fugu::Timeout;
 use IO::Socket::INET;
 use Socket      qw(IPPROTO_TCP TCP_NODELAY SOL_SOCKET SO_SNDBUF);
 use Time::HiRes qw(time);
@@ -53,7 +53,7 @@ use constant {
 # Fugu::Proxy->new(%args):
 #	cache   => $cache	a Fugu::Proxy::Cache (required)
 #	pidfile => $pidfile	a Fugu::Pidfile for the child (required)
-#	store   => $store	a Fugu::Store that holds the port (required)
+#	store   => $store	a Fugu::StateFile that holds the port (required)
 #	child   => $class	the class whose run_child the child calls
 #	logfile => $path	where the child's output goes
 #	log     => $logger	default: Fugu::Log->default
@@ -181,7 +181,7 @@ sub wait_ready ( $self, $timeout = READY_TIMEOUT )
 	my $port = $self->port;
 	return 0 if !defined $port;
 
-	my $ready = Fugu::Util::wait_until(
+	my $ready = Fugu::Timeout::wait_until(
 		$timeout, 0.5,
 		sub {
 			my $sock = IO::Socket::INET->new(

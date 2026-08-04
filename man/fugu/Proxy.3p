@@ -34,7 +34,7 @@ my $cache = Fugu::Proxy::Cache->new(
 my $proxy = Fugu::Proxy->new(
     cache   => $cache,
     pidfile => Fugu::Pidfile->new(path => "$dir/proxy.pid"),
-    store   => Fugu::Store->new(path => "$dir/state.json")->load,
+    store   => Fugu::StateFile->new(path => "$dir/state.json")->load,
     child   => 'MyApp::Proxy',
 );
 
@@ -78,7 +78,7 @@ for the child.
 This argument is necessary.
 .It Fa store
 A
-.Xr Fugu::Store 3p
+.Xr Fugu::StateFile 3p
 that holds the port.
 This argument is necessary.
 .It Fa child
@@ -278,7 +278,7 @@ No other method dies.
 .Xr Fugu::File 3p ,
 .Xr Fugu::Pidfile 3p ,
 .Xr Fugu::Process 3p ,
-.Xr Fugu::Store 3p ,
+.Xr Fugu::StateFile 3p ,
 .Xr HTTP::Daemon 3p ,
 .Xr LWP::UserAgent 3p
 .Sh AUTHORS
