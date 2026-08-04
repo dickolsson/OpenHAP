@@ -95,9 +95,55 @@ The pages, in file order. Each entry is a hashref:
     value       what the source names, and undef for index
     unlinked    true when no other page links to it
 
+=head2 groups
+
+The manual groups, in file order. Each entry is an
+C<App::FuguWeb::Config::Group>, and the two block types interleave as
+the description wrote them.
+
+=head1 GROUPS
+
+A C<manuals> or C<modules> block becomes one group. A group never holds
+a list of manuals: it reads its directory, so a manual that is added
+reaches the site with no edit anywhere.
+
+A group whose directory does not exist fails the load and names the
+directory. A silent empty group hides a typo in a path, and a rename
+that nothing catches is what this file exists to prevent.
+
+=head2 kind, heading, anchor, dir, namespace, module_root
+
+C<kind> is C<manuals> or C<modules>. C<heading> is the block name, which
+becomes the C<< <h2> >>, and C<anchor> its C<id>. C<dir> is the
+directory, resolved against the project root.
+
+=head2 manuals
+
+The manuals of the group, in the order the index shows them, as
+L<App::FuguWeb::Manual> objects. The method reads the directory once and
+keeps the answer.
+
+A C<manuals> group globs F<*.1>, F<*.3p>, F<*.5> and F<*.8>. It sorts by
+section, in the order 1, 3p, 5, 8, and then by file name. The
+C<namespace> setting prefixes the name and the staged file name, so
+F<man/fugu/Daemon.3p> becomes C<Fugu::Daemon(3p)>.
+
+A C<modules> group finds every F<.pod> file below its directory, and the
+sidecar that names the directory itself: F<lib/App/FuguWeb.pod> is the
+umbrella of F<lib/App/FuguWeb/>. It sorts by path, so F<Store.pod> stays
+before F<Store/Memory.pod>.
+
+Both sorts compare bytes and never read the locale of the builder. A
+site must not depend on the machine that built it.
+
+Never name a directory that holds more than one namespace. In this
+repository F<lib/App> is such a directory, and one group there would
+swallow three namespaces.
+
 =head1 SEE ALSO
 
-L<App::FuguWeb>, L<Fugu::Config>, L<fuguweb(1)>
+L<App::FuguWeb>, L<App::FuguWeb::Manual>, L<Fugu::Config>,
+L<fuguweb(1)>
 
 =head1 AUTHOR
 

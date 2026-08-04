@@ -20,6 +20,8 @@ use v5.36;
 package App::FuguWeb::Config;
 
 use App::FuguWeb;
+use App::FuguWeb::Manual;
+use File::Find ();
 use Fugu::Config;
 
 # App::FuguWeb::Config - the site description over Fugu::Config.
@@ -96,16 +98,18 @@ sub load ( $class, %args )
 	}
 
 	my $self = bless {
-		root => $root,
-		path => $path,
-		file => $file,
-		nav  => [],
-		page => [],
+		root  => $root,
+		path  => $path,
+		file  => $file,
+		nav   => [],
+		page  => [],
+		group => [],
 	}, $class;
 
 	$self->_apply_settings;
 	$self->_read_nav($reason)    or return;
 	$self->_read_pages($reason)  or return;
+	$self->_read_groups($reason) or return;
 	$self->_check_paths($reason) or return;
 
 	return $self;
@@ -156,6 +160,14 @@ sub nav ($self)
 sub pages ($self)
 {
 	return @{ $self->{page} };
+}
+
+# $self->groups:
+#	The manual groups, in file order. Each entry is an
+#	App::FuguWeb::Config::Group.
+sub groups ($self)
+{
+	return @{ $self->{group} };
 }
 
 # $self->_apply_settings:
@@ -253,6 +265,64 @@ sub _read_pages ( $self, $reason )
 	return $self;
 }
 
+# The two block types that describe a manual group, and the kind that
+# each one produces.
+my %GROUP_BLOCK = ( manuals => 'manuals', modules => 'modules' );
+
+# $self->_read_groups($reason):
+#	Collect the manuals and modules blocks, in file order. A group
+#	whose directory does not exist is an error: a silent empty
+#	group hides a typo in a path, and a rename that nothing catches
+#	is what this file exists to prevent.
+sub _read_groups ( $self, $reason )
+{
+	# The two types interleave as the file wrote them, so the order
+	# key decides and not the type.
+	my @blocks =
+	    sort { $a->{order} <=> $b->{order} }
+	    map { $self->{file}->blocks($_) } sort keys %GROUP_BLOCK;
+
+	for my $block (@blocks) {
+		my $heading  = $block->{name};
+		my $settings = $block->{settings};
+		my $kind     = $GROUP_BLOCK{ $block->{type} };
+
+		my $dir = $settings->{dir};
+		unless ( defined $dir && length $dir ) {
+			return $self->_fail( $reason,
+				"$block->{type} \"$heading\" has no dir" );
+		}
+		if ( _has_parent_step($dir) ) {
+			return $self->_fail( $reason,
+				      "$block->{type} \"$heading\" dir is $dir,"
+				    . ' which leaves the project' );
+		}
+		unless ( -d "$self->{root}/$dir" ) {
+			return $self->_fail( $reason,
+				      "$block->{type} \"$heading\" names $dir,"
+				    . ' which is not a directory' );
+		}
+
+		my $anchor = $settings->{anchor};
+		unless ( defined $anchor && length $anchor ) {
+			return $self->_fail( $reason,
+				"$block->{type} \"$heading\" has no anchor" );
+		}
+
+		push @{ $self->{group} },
+		    App::FuguWeb::Config::Group->new(
+			kind        => $kind,
+			heading     => $heading,
+			anchor      => $anchor,
+			dir         => "$self->{root}/$dir",
+			namespace   => $settings->{namespace},
+			module_root => "$self->{root}/$self->{module_root}",
+		    );
+	}
+
+	return $self;
+}
+
 # $self->_check_paths($reason):
 #	Refuse a path setting that steps out of the project. A build
 #	writes inside the output directory and reads inside the
@@ -290,6 +360,103 @@ sub _fail ( $self, $reason, $message )
 	$$reason = "$self->{path}: $message";
 
 	return;
+}
+
+package App::FuguWeb::Config::Group;
+
+# App::FuguWeb::Config::Group - one group of the manual index.
+#
+# A group is a heading, an anchor, and a directory. It never holds a
+# list of manuals: it reads the directory, so a manual that is added
+# reaches the site with no edit anywhere.
+#
+# A manuals group globs mdoc sources. A modules group finds POD
+# sidecars below the directory, and the file that names the directory
+# itself: lib/App/FuguWeb.pod is the umbrella of lib/App/FuguWeb/.
+
+# The sections that a manuals group globs, in the order the index
+# shows them.
+my @SECTIONS = qw(1 3p 5 8);
+
+# App::FuguWeb::Config::Group->new(%args):
+#	kind        => 'manuals'|'modules'
+#	heading     => $string	the h2 of the group
+#	anchor      => $string	the id of the h2
+#	dir         => $path	the directory it reads
+#	namespace   => $string	the prefix of a manuals name
+#	module_root => $path	the prefix a module name drops
+sub new ( $class, %args )
+{
+	return bless {
+		kind        => $args{kind},
+		heading     => $args{heading},
+		anchor      => $args{anchor},
+		dir         => $args{dir},
+		namespace   => $args{namespace},
+		module_root => $args{module_root},
+	}, $class;
+}
+
+sub kind        ($self) { return $self->{kind}; }
+sub heading     ($self) { return $self->{heading}; }
+sub anchor      ($self) { return $self->{anchor}; }
+sub dir         ($self) { return $self->{dir}; }
+sub namespace   ($self) { return $self->{namespace}; }
+sub module_root ($self) { return $self->{module_root}; }
+
+# $self->manuals:
+#	The manuals of the group, in the order the index shows them.
+#	The method reads the directory once and keeps the answer.
+sub manuals ($self)
+{
+	$self->{manuals} //=
+	    $self->{kind} eq 'manuals'
+	    ? [ $self->_mdoc_manuals ]
+	    : [ $self->_pod_manuals ];
+
+	return @{ $self->{manuals} };
+}
+
+# $self->_mdoc_manuals:
+#	Every mdoc source in the directory, by section in the order 1,
+#	3p, 5, 8, and then by file name. The sort compares bytes and
+#	never reads the locale of the builder: a site must not depend
+#	on the machine that built it.
+sub _mdoc_manuals ($self)
+{
+	my @manuals;
+	for my $section (@SECTIONS) {
+		my @paths = sort glob "$self->{dir}/*.$section";
+		push @manuals,
+		    map { App::FuguWeb::Manual->from_mdoc( $_, $self ) } @paths;
+	}
+
+	return @manuals;
+}
+
+# $self->_pod_manuals:
+#	Every POD sidecar below the directory, and the sidecar that
+#	names the directory itself, by path. Sorting by the whole path
+#	keeps Store.pod before Store/Memory.pod, because a dot sorts
+#	before a slash.
+sub _pod_manuals ($self)
+{
+	my @paths;
+	push @paths, "$self->{dir}.pod" if -f "$self->{dir}.pod";
+
+	File::Find::find( {
+			no_chdir => 1,
+			wanted   => sub {
+				push @paths, $File::Find::name
+				    if /\.pod$/ && -f $File::Find::name;
+			},
+		},
+		$self->{dir} );
+
+	return map {
+		App::FuguWeb::Manual->from_pod( $_, $self,
+			$self->{module_root} )
+	} sort @paths;
 }
 
 1;

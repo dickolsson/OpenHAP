@@ -21,6 +21,7 @@ package App::FuguWeb::CLI;
 
 use App::FuguWeb;
 use App::FuguWeb::Config;
+use App::FuguWeb::Index;
 use App::FuguWeb::Page;
 use Fugu::CLI;
 use Fugu::Log;
@@ -53,6 +54,10 @@ my %COMMANDS = (
 		summary => 'Wrap a body fragment from standard input',
 		usage   => '<title>',
 		method  => 'cmd_page',
+	},
+	index => {
+		summary => 'Write the body of the manual index',
+		method  => 'cmd_index',
 	},
 );
 
@@ -110,6 +115,7 @@ sub run ( $class, @argv )
 		epilogue => <<'EOF',
 Examples:
   fuguweb page 'Install' < install.html
+  fuguweb index | fuguweb page 'Manuals'
 EOF
 	);
 
@@ -161,6 +167,16 @@ sub cmd_page ( $self, $cli, @args )
 
 	my $page = App::FuguWeb::Page->new( config => $self->{config} );
 	print $page->document( $title, $fragment );
+
+	return EXIT_SUCCESS;
+}
+
+# Write the body fragment of the manual index
+sub cmd_index ( $self, $cli, @args )
+{
+	binmode STDOUT;
+	my $index = App::FuguWeb::Index->new( config => $self->{config} );
+	print $index->body;
 
 	return EXIT_SUCCESS;
 }

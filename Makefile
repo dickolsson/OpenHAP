@@ -45,12 +45,14 @@ DEPS			= scripts/deps
 # Man pages.  Fugu sources drop the Fugu:: prefix because a colon
 # cannot appear in a make target.  install-man puts it back.
 MAN1			= man/fuguvm/fuguvm.1
+# The list is in LC_ALL=C order, which is the order fuguweb sorts a
+# manuals group by.  Thus the make list and the site index agree.
 MAN3P			= man/fugu/CLI.3p man/fugu/Config.3p \
 			  man/fugu/Control.3p man/fugu/Daemon.3p \
 			  man/fugu/EventLoop.3p man/fugu/File.3p \
 			  man/fugu/Imsg.3p \
 			  man/fugu/JSONSocket.3p man/fugu/Log.3p \
-			  man/fugu/Mdnsd.3p man/fugu/MQTT.3p \
+			  man/fugu/MQTT.3p man/fugu/Mdnsd.3p \
 			  man/fugu/Pidfile.3p man/fugu/Privdrop.3p \
 			  man/fugu/Process.3p man/fugu/Proxy.3p \
 			  man/fugu/Random.3p man/fugu/SSH.3p \
@@ -67,11 +69,10 @@ CATMAN8			= $(MAN8:.8=.cat8)
 WEBOUT			?= web/build
 WEBMAN			= $(WEBOUT)/.man
 FUGUWEB			?= bin/fuguweb
-MKINDEX			= web/mkindex.sh
 # The Makefile finds the .pod sidecars and never lists them.  Otherwise
 # a sidecar without its own Makefile line would never reach the site.
 # An exclusion list would be one more thing to keep true.  LC_ALL=C
-# makes sure the order of the index does not depend on the builder's
+# makes sure the order of the pages does not depend on the builder's
 # locale.
 FINDPOD			= find lib -name '*.pod' | LC_ALL=C sort
 # mandoc resolves .Xr against the working directory.  A page named %N.%S
@@ -325,7 +326,7 @@ web:
 	$(FUGUWEB) page 'Not found' < web/404.body.html > $(WEBOUT)/404.html
 	$(LOWDOWN) -Thtml INSTALL.md | \
 	    $(FUGUWEB) page 'Install' > $(WEBOUT)/install.html
-	$(MKINDEX) $(MAN1) $(MAN3P) $(MAN5) $(MAN8) `$(FINDPOD)` | \
+	$(FUGUWEB) index | \
 	    $(FUGUWEB) page 'Manuals' > $(WEBOUT)/manuals.html
 	$(FUGUWEB) page 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
 	$(FUGUWEB) page 'Fugu' < web/fugu.body.html > $(WEBOUT)/fugu.html

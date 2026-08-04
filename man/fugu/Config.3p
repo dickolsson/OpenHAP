@@ -153,6 +153,11 @@ The header arguments, in order, as an array reference.
 The last header argument.
 .It Va settings
 The settings inside the block, as a hash reference.
+.It Va order
+The position of the block in the file, counted from zero over every
+block of every type.
+A caller that reads two block types and wants them interleaved as the
+file wrote them sorts on it.
 .El
 .Ss block
 .Fn block "$type" "$name"
