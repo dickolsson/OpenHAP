@@ -66,7 +66,7 @@ CATMAN8			= $(MAN8:.8=.cat8)
 # Website
 WEBOUT			?= web/build
 WEBMAN			= $(WEBOUT)/.man
-MKPAGE			= web/mkpage.sh
+FUGUWEB			?= bin/fuguweb
 MKINDEX			= web/mkindex.sh
 # The Makefile finds the .pod sidecars and never lists them.  Otherwise
 # a sidecar without its own Makefile line would never reach the site.
@@ -235,6 +235,7 @@ package: clean
 
 test:
 	prove -l -v t/fuguvm/*.t
+	prove -l -v t/fuguweb/*.t
 	prove -l -v t/fugu/*.t
 	prove -l -v t/protocol/*.t
 	prove -l -v t/openhap/*.t
@@ -319,27 +320,27 @@ web:
 	# The custom domain is a repository setting.  The deploy artifact
 	# carries it too.  Thus a rebuild can never drop it
 	cp web/CNAME $(WEBOUT)/CNAME
-	$(MKPAGE) 'HomeKit Accessory Protocol for OpenBSD' \
+	$(FUGUWEB) page 'HomeKit Accessory Protocol for OpenBSD' \
 	    < web/index.body.html > $(WEBOUT)/index.html
-	$(MKPAGE) 'Not found' < web/404.body.html > $(WEBOUT)/404.html
+	$(FUGUWEB) page 'Not found' < web/404.body.html > $(WEBOUT)/404.html
 	$(LOWDOWN) -Thtml INSTALL.md | \
-	    $(MKPAGE) 'Install' > $(WEBOUT)/install.html
+	    $(FUGUWEB) page 'Install' > $(WEBOUT)/install.html
 	$(MKINDEX) $(MAN1) $(MAN3P) $(MAN5) $(MAN8) `$(FINDPOD)` | \
-	    $(MKPAGE) 'Manuals' > $(WEBOUT)/manuals.html
-	$(MKPAGE) 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
-	$(MKPAGE) 'Fugu' < web/fugu.body.html > $(WEBOUT)/fugu.html
+	    $(FUGUWEB) page 'Manuals' > $(WEBOUT)/manuals.html
+	$(FUGUWEB) page 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
+	$(FUGUWEB) page 'Fugu' < web/fugu.body.html > $(WEBOUT)/fugu.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.8 ) | \
-	    $(MKPAGE) 'openhapd(8)' > $(WEBOUT)/openhapd.8.html
+	    $(FUGUWEB) page 'openhapd(8)' > $(WEBOUT)/openhapd.8.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) hapctl.8 ) | \
-	    $(MKPAGE) 'hapctl(8)' > $(WEBOUT)/hapctl.8.html
+	    $(FUGUWEB) page 'hapctl(8)' > $(WEBOUT)/hapctl.8.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.conf.5 ) | \
-	    $(MKPAGE) 'openhapd.conf(5)' > $(WEBOUT)/openhapd.conf.5.html
+	    $(FUGUWEB) page 'openhapd.conf(5)' > $(WEBOUT)/openhapd.conf.5.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) fuguvm.1 ) | \
-	    $(MKPAGE) 'fuguvm(1)' > $(WEBOUT)/fuguvm.1.html
+	    $(FUGUWEB) page 'fuguvm(1)' > $(WEBOUT)/fuguvm.1.html
 	for f in $(MAN3P); do \
 		n="Fugu::$${f##*/}"; n="$${n%.3p}"; \
 		( cd $(WEBMAN) && $(MANDOC) $(MANHTML) "$$n.3p" ) | \
-		    $(MKPAGE) "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
+		    $(FUGUWEB) page "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
 	done
 	# One page per .pod sidecar.  The recipe gives --name, --center
 	# and --release so the chrome matches the mdoc pages.  The date
@@ -353,7 +354,7 @@ web:
 		    --center='Perl Library Manual' --release='OpenBSD' \
 		    "$$p" | \
 		    $(MANDOC) $(MANHTML) | \
-		    $(MKPAGE) "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
+		    $(FUGUWEB) page "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
 	done
 	# Staging is a build detail and never part of the published tree
 	rm -rf $(WEBMAN)

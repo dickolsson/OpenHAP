@@ -1,4 +1,6 @@
-#!/bin/sh
+#!/usr/bin/env perl
+# ex:ts=8 sw=4:
+# $OpenBSD$
 #
 # Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
 #
@@ -13,19 +15,12 @@
 # WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-#
-# Read an HTML body fragment from stdin.  Wrap it in the shared page
-# chrome.
-# Usage: mkpage.sh <title>
 
-set -eu
+use v5.36;
 
-[ $# -eq 1 ] && [ -n "$1" ] || { echo "usage: mkpage.sh <title>" >&2; exit 1; }
+use FindBin qw($RealBin);
+use lib "$RealBin/../lib";
 
-# The chrome lives beside this script, so callers can run it from any
-# directory
-web=$(dirname "$0")
+use App::FuguWeb::CLI;
 
-sed "s/@TITLE@/$1/" "$web/head.html"
-cat
-cat "$web/foot.html"
+exit App::FuguWeb::CLI->run(@ARGV);

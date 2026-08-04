@@ -1,0 +1,71 @@
+# The OpenHAP website, built by fuguweb(1).
+#
+# The file describes the site. It holds no list that the tree already
+# holds: a manuals or modules group globs its directory, and every
+# file in the source directory that is not a body fragment is an asset.
+
+site       = OpenHAP
+out_dir    = web/build
+source_dir = web
+entry      = index.html
+
+# Six navigation entries, in the order the site shows them.
+nav "index.html" {
+	label = OpenHAP
+}
+
+nav "install.html" {
+	label = Install
+}
+
+nav "manuals.html" {
+	label = Manuals
+}
+
+nav "fuguvm.html" {
+	label = FuguVM
+}
+
+nav "fugu.html" {
+	label = Fugu
+}
+
+nav "https://github.com/dickolsson/openhap" {
+	label = GitHub
+}
+
+# The pages. A page names one source: a body fragment in the source
+# directory, a Markdown file, or the generated manual index.
+page "index.html" {
+	title = HomeKit Accessory Protocol for OpenBSD
+	body  = index.body.html
+}
+
+page "404.html" {
+	title = Not found
+	body  = 404.body.html
+
+	# The host serves this page for an unknown path, so no page
+	# links to it.
+	unlinked = yes
+}
+
+page "install.html" {
+	title    = Install
+	markdown = INSTALL.md
+}
+
+page "manuals.html" {
+	title = Manuals
+	index = yes
+}
+
+page "fuguvm.html" {
+	title = FuguVM
+	body  = fuguvm.body.html
+}
+
+page "fugu.html" {
+	title = Fugu
+	body  = fugu.body.html
+}

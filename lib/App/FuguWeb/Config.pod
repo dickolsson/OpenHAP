@@ -1,0 +1,104 @@
+=head1 NAME
+
+App::FuguWeb::Config - the site description over Fugu::Config
+
+=head1 SYNOPSIS
+
+    use App::FuguWeb::Config;
+
+    my $config = App::FuguWeb::Config->load(error => \my $reason)
+        or die "$reason\n";
+
+    say $config->site;
+    say $_->{href} for $config->nav;
+    say $_->{file} for $config->pages;
+
+=head1 DESCRIPTION
+
+The class reads F<.fuguwebrc>, applies the defaults, and validates the
+result. The grammar, the quoting, and the yes/no spellings come from
+L<Fugu::Config>; this class holds what is true of a site.
+
+The object is immutable once loaded, and the module keeps no package
+state. Two sites in one process therefore share nothing.
+
+=head1 METHODS
+
+=head2 load
+
+    App::FuguWeb::Config->load(
+        root  => $dir,          # default: discover
+        error => \my $reason,
+    )
+
+Read and validate the description. The method returns the object, or
+C<undef> with the reason in C<$reason>.
+
+Without C<root>, the method walks up from the working directory to the
+first directory that holds F<.fuguwebrc>, as C<fuguvm> finds
+F<.fuguvmrc>.
+
+The reason travels through a reference because the object that would
+hold it does not exist when the load fails.
+
+A load fails when the file is absent, when a line does not parse, when
+there is no C<site> setting, when a C<page> block names no source or
+more than one, when two C<page> blocks name the same file, when a
+C<nav> block has no label, or when a path setting steps out of the
+project with a C<..> component. Every message names the file, and the
+block when a block is at fault.
+
+=head2 root, path
+
+The project root, and the F<.fuguwebrc> that this object read.
+
+=head2 source_path
+
+    my $dir  = $config->source_path;
+    my $file = $config->source_path('footer.body.html');
+
+The source directory, or one file in it.
+
+=head2 site, banner, lang, out_dir, source_dir, entry, module_root, pod_center, pod_release, mandoc_os, man_url, stylesheet
+
+The settings. C<site> is the only one a project must give.
+
+    site            (required)  the name in the title of every page
+    banner          site        the text of the header link
+    lang            en          the lang attribute of the document
+    out_dir         web/build   where the build writes
+    source_dir      web         the fragments and the assets
+    entry           index.html  the front page, and the banner link
+    module_root     lib         the prefix a module name drops
+    pod_center      Perl Library Manual   the pod2man --center
+    pod_release     OpenBSD     the pod2man --release
+    mandoc_os       OpenBSD     the mandoc -I os=, which pins the footer
+    man_url         https://man.openbsd.org/   where a remote .Xr goes
+    stylesheet      (searched)  the base stylesheet
+
+C<stylesheet> overrides the search that L<Fugu::File/share_path> does.
+A project that installs the tool from CPAN needs it, because the search
+finds the sheet in a checkout only.
+
+=head2 nav
+
+The navigation, in file order. Each entry is a hashref with C<href> and
+C<label>.
+
+=head2 pages
+
+The pages, in file order. Each entry is a hashref:
+
+    file        the name of the page in the output
+    title       the title, which defaults to the file name
+    source      one of body, markdown or index
+    value       what the source names, and undef for index
+    unlinked    true when no other page links to it
+
+=head1 SEE ALSO
+
+L<App::FuguWeb>, L<Fugu::Config>, L<fuguweb(1)>
+
+=head1 AUTHOR
+
+Dick Olsson <hi@senzilla.io>
