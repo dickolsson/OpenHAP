@@ -53,13 +53,21 @@ iOS Home App
 └─────────────┘     └───────────┘     └─────────────┘
 ```
 
-## The protocol library
+## The protocol libraries
 
 The HAP protocol itself lives in `Protocol::HAP`, under `lib/Protocol/`. The
 library is host-neutral: it uses core Perl plus four declared crypto modules,
-and it never touches sockets, timers, logging, or files. `openhapd` is its
-reference host. A CPAN release is planned; see `lib/Protocol/HAP.pod` for the
-library overview and the host contracts.
+and it knows nothing about the daemon that hosts it. The engine takes its
+timers, its writes, and its persistence as injected contracts, so it touches no
+socket, no timer, and no file of its own. Two classes beside the engine do the
+work that the contracts describe: a blocking client and a file store. `openhapd`
+is the reference host.
+
+`Protocol::Imsg` is the second library there. It frames OpenBSD imsg(3) messages
+as bytes, and `Fugu::Imsg` owns the socket.
+
+A CPAN release is planned; see `lib/Protocol/HAP.pod` for the library overview
+and the host contracts.
 
 ## License
 
