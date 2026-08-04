@@ -14,16 +14,16 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use FuguLib::Control;
-use FuguLib::Imsg;
+use Fugu::Control;
+use Fugu::Imsg;
 use IO::Socket::UNIX;
 use JSON::PP ();
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use POSIX       ();
 use Socket      qw(SOCK_STREAM);
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 my $socket = $env->get_config_value('control')
@@ -59,7 +59,7 @@ isnt( $sock_stat[4], 0, 'the socket is not root-owned' );
 # What the daemon answers
 # ------------------------------------------------------------------
 
-my $client = FuguLib::Control::Client->new( path => $socket );
+my $client = Fugu::Control::Client->new( path => $socket );
 
 my $status = $client->request('status');
 ok( defined $status, 'the daemon answers status' )
@@ -97,15 +97,15 @@ like( $client->error, qr/unknown command/, 'and the reason says so' );
 # A payload that is not JSON, sent by hand
 my $raw = IO::Socket::UNIX->new( Type => SOCK_STREAM, Peer => $socket )
     or die "connect: $!";
-my $imsg = FuguLib::Imsg->new( fh => $raw );
+my $imsg = Fugu::Imsg->new( fh => $raw );
 $imsg->send(
-	type   => FuguLib::Control::TYPE_REQUEST(),
+	type   => Fugu::Control::TYPE_REQUEST(),
 	peerid => 42,
 	data   => 'not json at all',
 );
 my $frame = $imsg->recv( timeout => 5 );
 ok( defined $frame, 'the daemon answered a malformed request' );
-is( $frame->{type}, FuguLib::Control::TYPE_ERROR(),
+is( $frame->{type}, Fugu::Control::TYPE_ERROR(),
 	'and the answer is an error frame' );
 $imsg->close;
 

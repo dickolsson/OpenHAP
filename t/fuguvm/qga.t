@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # The guest-agent command set. The transport belongs to
-# FuguLib::JSONSocket and is proven in t/fugulib/jsonsocket.t.
+# Fugu::JSONSocket and is proven in t/fugu/jsonsocket.t.
 
 use v5.36;
 use Test::More;
@@ -10,7 +10,7 @@ use lib "$RealBin/../../lib";
 use IO::Socket::UNIX;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use_ok('FuguVM::QGA');
+use_ok('App::FuguVM::QGA');
 
 # paired_qga(): a QGA object wired to one end of a socketpair, and the
 # peer that plays the guest agent.
@@ -20,7 +20,7 @@ sub paired_qga ()
 	    IO::Socket::UNIX->socketpair( AF_UNIX, SOCK_STREAM, PF_UNSPEC );
 	return if !defined $ours;
 
-	my $qga = FuguVM::QGA->new('/tmp/test-qga.sock');
+	my $qga = App::FuguVM::QGA->new('/tmp/test-qga.sock');
 	$qga->{socket}{sock} = $ours;
 
 	return ( $qga, $theirs );
@@ -28,21 +28,21 @@ sub paired_qga ()
 
 # Test object creation
 {
-	my $qga = FuguVM::QGA->new('/tmp/test-qga.sock');
+	my $qga = App::FuguVM::QGA->new('/tmp/test-qga.sock');
 	ok( defined $qga, 'QGA object created' );
 	is( $qga->socket_path, '/tmp/test-qga.sock', 'Socket path set correctly' );
 }
 
 # Test connection failure to non-existent socket
 {
-	my $qga = FuguVM::QGA->new('/tmp/nonexistent-qga.sock');
+	my $qga = App::FuguVM::QGA->new('/tmp/nonexistent-qga.sock');
 	is( $qga->open_connection, 0, 'Connection fails for non-existent socket' );
 	ok( !$qga->is_available, 'is_available false without a socket' );
 }
 
 # Test run_command on unconnected socket returns undef
 {
-	my $qga = FuguVM::QGA->new('/tmp/test-qga.sock');
+	my $qga = App::FuguVM::QGA->new('/tmp/test-qga.sock');
 	is( $qga->run_command('guest-ping'),
 		undef, 'run_command returns undef when not connected' );
 }

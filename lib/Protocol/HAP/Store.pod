@@ -8,7 +8,7 @@ C<Protocol::HAP> owns no files. Everything a paired accessory must
 remember goes through a store object that the host injects. Any object
 with the twelve methods below satisfies the contract.
 L<Protocol::HAP::Store::Memory> is the reference implementation;
-C<OpenHAP::Storage> is a production implementation over files.
+L<Protocol::HAP::Store::File> is the durable implementation over files.
 
 =head1 THE INCREMENT RULE
 
@@ -90,6 +90,7 @@ Store the count of failed pairing attempts.
 =head1 SEE ALSO
 
 L<Protocol::HAP>, L<Protocol::HAP::Store::Memory>,
-L<Protocol::HAP::Pairing>, F<spec/HAP-Pairing.md>
+L<Protocol::HAP::Store::File>, L<Protocol::HAP::Pairing>,
+F<spec/HAP-Pairing.md>
 
 =cut

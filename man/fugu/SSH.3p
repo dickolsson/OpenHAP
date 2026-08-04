@@ -1,0 +1,170 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::SSH 3p
+.Os
+.Sh NAME
+.Nm Fugu::SSH
+.Nd run a command on another machine over SSH
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::SSH;
+
+my $ssh = Fugu::SSH->new(
+    host => '127.0.0.1',
+    port => 2222,
+    user => 'root',
+);
+
+$ssh->wait_available(120) or die "the host never answered\en";
+
+my $result = $ssh->run_command('uname -a');
+print $result->{stdout};
+.Ed
+.Sh DESCRIPTION
+.Nm
+wraps
+.Xr Net::SSH2 3p
+for the two things a provisioning tool does: run a command and capture
+its output, and write a file.
+An interactive session falls back to
+.Xr ssh 1 ,
+because
+.Xr Net::SSH2 3p
+does not give correct control of a terminal.
+.Pp
+.Xr Net::SSH2 3p
+loads at connect time and not at compile time.
+Thus the module keeps the core-Perl load contract of Fugu, and an
+installation without the library still loads it and fails with a clear
+message at the first connect.
+.Pp
+Authentication tries the SSH agent first, when
+.Ev SSH_AUTH_SOCK
+is set, and falls back to the password when the caller gave one.
+.Ss new
+.Fn new "%args"
+creates a connection object.
+The method opens nothing: every other method connects for itself and
+disconnects when it is done.
+.Pp
+These are the arguments:
+.Bl -tag -width "passwordXX"
+.It Fa host
+The host to reach.
+The default is
+.Ql 127.0.0.1 .
+.It Fa port
+The port.
+The default is 22.
+.It Fa user
+The user to log in as.
+The default is
+.Ql root .
+.It Fa password
+The password, for a host that has no key yet.
+.It Fa timeout
+The connection timeout in seconds.
+The default is 10.
+.El
+.Ss run_command
+.Fn run_command "$command"
+runs one command and returns a hash reference with
+.Va stdout ,
+.Va stderr
+and
+.Va exit_code .
+A connection that fails reports exit code 1 and a message in
+.Va stderr .
+.Ss write_file
+.Fn write_file "$remote_path" "$content" "$mode"
+writes a file over SFTP.
+The default mode is 0644.
+.Pp
+The method checks the length that the write reported.
+A provisioning script that arrives half-written is worse than one that
+never arrived.
+.Ss make_remote_dir
+.Fn make_remote_dir "$remote_path" "$mode"
+creates a directory over SFTP.
+The default mode is 0755.
+.Ss is_available
+.Fn is_available
+reports if the host takes an authenticated connection now.
+.Ss wait_available
+.Fn wait_available "$timeout"
+polls until the host takes a connection, or until the timeout ends.
+The default timeout is 120 seconds.
+.Pp
+The wait stops early when a signal arrives, through
+.Xr Fugu::Timeout 3p .
+A poll loop must not outlive the interrupt that told the program to
+stop.
+.Ss interactive
+.Fn interactive
+runs
+.Xr ssh 1
+with the terminal of the caller and returns its exit code.
+.Pp
+The code is a value between 0 and 255, and not a raw wait status.
+A caller that passed the raw status to
+.Ic exit
+would turn a remote exit code of 1 into
+.Ql exit(256) ,
+which the kernel truncates to 0, and a failed remote command would
+read as a success.
+.Sh RETURN VALUES
+.Fn run_command
+returns a hash reference.
+.Pp
+.Fn write_file
+and
+.Fn make_remote_dir
+return 0 on success and 1 on failure, like a command.
+.Pp
+.Fn is_available
+and
+.Fn wait_available
+return 1 or 0.
+.Fn interactive
+returns an exit code.
+.Sh ERRORS
+Every method dies when
+.Xr Net::SSH2 3p
+is not installed.
+The message names the module, because that failure is an installation
+problem and not a connection problem.
+.Pp
+No method dies for a connection that fails.
+.Sh SEE ALSO
+.Xr ssh 1 ,
+.Xr Fugu::Process 3p ,
+.Xr Fugu::Timeout 3p ,
+.Xr Net::SSH2 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+Every method opens its own connection and closes it at the end.
+A caller that runs many commands pays the handshake for each one.
+.Pp
+.Fn run_command
+holds the whole output of the command in memory.
+.Pp
+The module does not verify the host key.
+It is a provisioning tool for a machine that the caller just created,
+on a port on the loopback address.
+Do not use it to reach a host across a network you do not trust.

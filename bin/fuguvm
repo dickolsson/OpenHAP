@@ -21,6 +21,6 @@ use v5.36;
 use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 
-use FuguVM::CLI;
+use App::FuguVM::CLI;
 
-exit FuguVM::CLI->run(@ARGV);
+exit App::FuguVM::CLI->run(@ARGV);

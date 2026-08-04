@@ -14,7 +14,7 @@
 # or unveil call from bin/openhapd, the corresponding syscall is
 # absent from the trace.
 #
-# The forked children of t/fugulib/sandbox.t prove the enforcement
+# The forked children of t/fugu/sandbox.t prove the enforcement
 # semantics: a violation aborts, and a path outside the view is
 # unreachable. No operator-supplied read path exists to probe
 # enforcement through the running daemon itself. Thus this file
@@ -31,10 +31,10 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 my $config_file = '/etc/openhapd.conf';

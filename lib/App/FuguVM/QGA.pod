@@ -1,0 +1,72 @@
+=head1 NAME
+
+App::FuguVM::QGA - the QEMU Guest Agent command set
+
+=head1 SYNOPSIS
+
+    use App::FuguVM::QGA;
+
+    my $qga = App::FuguVM::QGA->new('/path/to/qga.sock');
+    $qga->open_connection or die "no guest agent socket\n";
+
+    $qga->sync;
+    $qga->shutdown('powerdown');
+
+=head1 DESCRIPTION
+
+The guest agent runs inside the VM and answers over a socket that QEMU
+serves. FuguVM uses it for the filesystem operations that a clean
+shutdown needs. The transport is L<Fugu::JSONSocket>; this module
+holds only the command set.
+
+The agent sends no greeting, so there is nothing to read before the
+first command.
+
+=head1 METHODS
+
+=head2 new, socket_path, is_available
+
+C<is_available> reports if the socket file is there. QEMU, not the
+guest, serves that socket. Thus the file exists even when the guest
+runs no agent, and a command against it answers with silence rather
+than a refused connection. Every read is bounded for that reason.
+
+=head2 open_connection, disconnect, run_command
+
+As in L<App::FuguVM::QMP>, without the greeting and the handshake.
+
+=head2 sync
+
+Sync the guest filesystems, so that every buffer reaches the disk.
+
+The C<guest-sync> command of the protocol synchronizes the protocol
+and not the filesystems, so the real sync runs F</bin/sync> through
+C<guest-exec> and waits for it to finish.
+
+=head2 freeze_filesystems, thaw_filesystems, fsfreeze_status
+
+Freeze the mounted filesystems for a snapshot, thaw them again, and
+report which of the two states holds. The first two return the number
+of filesystems, and C<undef> on failure.
+
+=head2 ping
+
+Report if the agent answers.
+
+=head2 shutdown
+
+    $qga->shutdown($mode)
+
+Ask the guest to shut down. The mode is C<powerdown> (the default),
+C<halt> or C<reboot>.
+
+The command sends no reply: the guest goes down at once. Thus the
+method reports success as soon as the request is away.
+
+=head1 SEE ALSO
+
+L<Fugu::JSONSocket>, L<App::FuguVM::QMP>, L<App::FuguVM::Guest>
+
+=head1 AUTHOR
+
+Dick Olsson <hi@senzilla.io>

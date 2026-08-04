@@ -8,56 +8,56 @@ refinements.
 ### Security & Hardening
 
 - [x] **Implement full pledge(2) restrictions**
-  - Implemented: `FuguLib::Sandbox` (real on OpenBSD, no-op elsewhere); openhapd
+  - Implemented: `Fugu::Sandbox` (real on OpenBSD, no-op elsewhere); openhapd
     pledges `stdio rpath wpath cpath fattr flock inet dns unix` after the
     privilege drop and mDNS publish, before any network input. No `proc`, `exec`
     or `prot_exec`: the mdnsctl child was replaced with a native mdnsd control
-    client (`FuguLib::MDNS` over `FuguLib::Imsg`, spec/MDNS-\*.md)
-  - Proven by: `t/fugulib/sandbox.t` (SIGABRT on violation, asserted from the
+    client (`Fugu::Mdnsd` over `Fugu::Imsg`, spec/MDNS-\*.md)
+  - Proven by: `t/fugu/sandbox.t` (SIGABRT on violation, asserted from the
     parent) and `t/openhap/integration/sandbox.t` (ktrace shows the syscall with
     the exact promise string)
-  - Files: `lib/FuguLib/Sandbox.pm`, `bin/openhapd`
+  - Files: `lib/Fugu/Sandbox.pm`, `bin/openhapd`
 
 - [x] **Implement full unveil(2) restrictions**
   - Implemented: ordered inventory with per-path required/optional dispositions,
     assembled by `unveil_paths` in `bin/openhapd`, applied and locked between
     the privilege drop and the pledge; optional paths (config file, daemon log,
     mdnsd socket, resolver files) never fail startup
-  - Proven by: `t/fugulib/sandbox.t` (enforcement) and
+  - Proven by: `t/fugu/sandbox.t` (enforcement) and
     `t/openhap/integration/sandbox.t` (trace and lock ordering)
-  - Files: `lib/FuguLib/Sandbox.pm`, `bin/openhapd`
+  - Files: `lib/Fugu/Sandbox.pm`, `bin/openhapd`
 
 - [ ] **Pledge and unveil hapctl**
   - Current: only openhapd is restricted
   - Need: `hapctl` reads config and state and prints, so `stdio rpath` plus a
-    handful of unveiled paths covers it; cheap now that `FuguLib::Sandbox`
-    exists, and the asymmetry with a pledged openhapd goes unnoticed otherwise
+    handful of unveiled paths covers it; cheap now that `Fugu::Sandbox` exists,
+    and the asymmetry with a pledged openhapd goes unnoticed otherwise
   - File: `bin/hapctl`
 
 - [ ] **Verify what grants \_openhap access to /var/run/mdnsd.sock**
   - Current: the socket is root:wheel 0660 and provisioning adds `_openhap` to
-    wheel, but `FuguLib::Privdrop` calls only `setgid`/`setuid` and Perl's
+    wheel, but `Fugu::Privdrop` calls only `setgid`/`setuid` and Perl's
     `$) = $gid` assignment itself invokes `setgroups`, which would drop
     supplementary groups rather than keep them - so the mechanism that makes the
     connect succeed today is unverified, and may be retained root supplementary
     groups (a mild privilege leak in its own right)
   - Need: measure `id` and group set of the running daemon in the VM, then make
     privdrop set supplementary groups deliberately
-  - Files: `lib/FuguLib/Privdrop.pm`, `bin/openhapd`
+  - Files: `lib/Fugu/Privdrop.pm`, `bin/openhapd`
 
 - [ ] **Re-establish the mDNS advertisement after an mdnsd restart**
   - Current: the advertisement lives exactly as long as the held control socket;
     if mdnsd restarts, discovery is gone until openhapd restarts. Parity with
     the old mdnsctl behaviour - a known limitation, now recorded
   - Need: detect the closed socket in the event loop and republish
-  - File: `lib/OpenHAP/Server.pm`, `bin/openhapd`
+  - File: `lib/App/OpenHAP/Host.pm`, `bin/openhapd`
 
 - [ ] **Implement mdnsd browse, resolve and lookup**
   - Current: `spec/MDNS-Control.md` §11 specifies all three message shapes, but
     only publish is implemented; `make spec-coverage` shows the uncovered
     sections, which is deliberate rather than an oversight
-  - Need: implement in `FuguLib::MDNS` when a consumer appears
-  - File: `lib/FuguLib/MDNS.pm`
+  - Need: implement in `Fugu::Mdnsd` when a consumer appears
+  - File: `lib/Fugu/Mdnsd.pm`
 
 - [ ] **Fix rcctl reload: SIGHUP stops the daemon instead of reloading**
   - Current: `etc/rc.d/openhapd` reloads with `pkill -HUP`, but openhapd
@@ -78,9 +78,9 @@ refinements.
 - [ ] **Secure PIN generation**
   - Current: Default PIN '1995-1018' in code (configurable via config file)
   - Need: Generate cryptographically random PIN on first run if not configured
-  - Should: Display PIN on console, save to secure file
-  - File: `lib/OpenHAP/Storage.pm`, `bin/openhapd`
-  - Note: PIN validation implemented in `lib/Protocol/HAP/PIN.pm`
+  - Should: Display the setup code on the console, save it to a secure file
+  - File: `lib/Protocol/HAP/Store/File.pm`, `bin/openhapd`
+  - Note: setup-code validation implemented in `lib/Protocol/HAP/SetupCode.pm`
 
 - [ ] **Input validation**
   - Current: Limited validation on HTTP requests
@@ -101,7 +101,7 @@ refinements.
   - Features: Topic wildcards (+/#), callback dispatch, reconnection support
   - Integration: HAP server polls MQTT in select loop with 100ms timeout
   - Reconnection: Automatic reconnection every 30 seconds with resubscription
-  - Files: `lib/FuguLib/MQTT.pm`, `lib/OpenHAP/Server.pm`
+  - Files: `lib/Fugu/MQTT.pm`, `lib/App/OpenHAP/Host.pm`
 
 - [x] **Proper daemon mode**
   - Implemented: Fork to background, setsid, redirect I/O to
@@ -109,22 +109,22 @@ refinements.
   - Features: Daemonizes unless -f flag is used, proper process separation
   - Includes: Connection timeout for MQTT to prevent blocking on startup
   - Includes: Automatic MQTT reconnection every 30 seconds if connection lost
-  - File: `bin/openhapd`, `lib/FuguLib/Daemon.pm`, `lib/FuguLib/MQTT.pm`,
-    `lib/OpenHAP/Server.pm`
+  - File: `bin/openhapd`, `lib/Fugu/Daemon.pm`, `lib/Fugu/MQTT.pm`,
+    `lib/App/OpenHAP/Host.pm`
 
 - [x] **Signal handling**
-  - Implemented: `FuguLib::Signal` handlers for graceful shutdown on SIGTERM,
+  - Implemented: `Fugu::Signal` handlers for graceful shutdown on SIGTERM,
     SIGINT and SIGHUP, with cleanup callbacks (mDNS withdrawal, logger close)
   - Note: SIGHUP currently _exits_ rather than reloads - see the rcctl reload
     item under Security & Hardening
-  - File: `bin/openhapd`, `lib/FuguLib/Signal.pm`
+  - File: `bin/openhapd`, `lib/Fugu/Signal.pm`
 
 - [ ] **Logging with syslog**
-  - Current: Partial syslog implementation exists in `lib/FuguLib/Log.pm`
+  - Current: Partial syslog implementation exists in `lib/Fugu/Log.pm`
   - Status: Log module with syslog integration completed
-  - Need: Verify all modules use FuguLib::Log consistently
+  - Need: Verify all modules use Fugu::Log consistently
   - Levels: debug, info, notice, warning, error, critical (implemented)
-  - File: `lib/FuguLib/Log.pm` (implemented), verify usage in all other modules
+  - File: `lib/Fugu/Log.pm` (implemented), verify usage in all other modules
 
 ### Protocol Compliance
 
@@ -157,9 +157,9 @@ refinements.
 ### Device Support
 
 - [x] **Tasmota device types implemented**
-  - [x] Temperature/humidity sensors (`lib/OpenHAP/Tasmota/Sensor.pm`)
-  - [x] Heater/switch devices (`lib/OpenHAP/Tasmota/Heater.pm`)
-  - [x] Thermostat devices (`lib/OpenHAP/Tasmota/Thermostat.pm`)
+  - [x] Temperature/humidity sensors (`lib/App/OpenHAP/Tasmota/Sensor.pm`)
+  - [x] Heater/switch devices (`lib/App/OpenHAP/Tasmota/Heater.pm`)
+  - [x] Thermostat devices (`lib/App/OpenHAP/Tasmota/Thermostat.pm`)
 
 - [ ] **Additional Tasmota device types**
   - [ ] Light bulbs with brightness control
@@ -168,57 +168,57 @@ refinements.
   - [ ] Garage door opener
   - [ ] Motion sensors
   - [ ] Door/window contact sensors
-  - Files: New files in `lib/OpenHAP/Tasmota/`
+  - Files: New files in `lib/App/OpenHAP/Tasmota/`
 
 - [ ] **Generic MQTT device support**
   - Current: Only Tasmota-specific protocol
   - Need: Configurable topic/payload patterns
-  - File: New `lib/OpenHAP/MQTT/Device.pm`
+  - File: New `lib/App/OpenHAP/MQTT/Device.pm`
 
 - [ ] **Device discovery**
   - Current: Manual configuration only
   - Need: Auto-discover Tasmota devices via MQTT
   - Method: Subscribe to `tasmota/discovery/#`
-  - File: `lib/FuguLib/MQTT.pm`, `bin/openhapd`
+  - File: `lib/Fugu/MQTT.pm`, `bin/openhapd`
 
 ### Configuration
 
 - [ ] **Configuration reload**
   - Current: Requires daemon restart
   - Need: Reload config on SIGHUP without losing pairings
-  - File: `bin/openhapd`, `lib/FuguLib/Config.pm`
+  - File: `bin/openhapd`, `lib/Fugu/Config.pm`
 
 - [ ] **Configuration validation**
   - Current: Minimal validation
   - Need: Validate device blocks, required fields, data types
-  - File: `lib/FuguLib/Config.pm`
+  - File: `lib/Fugu/Config.pm`
 
 - [ ] **Environment variable support**
   - Current: No environment variable substitution
   - Need: Support ${VAR} syntax in config file
-  - File: `lib/FuguLib/Config.pm`
+  - File: `lib/Fugu/Config.pm`
 
 ### Testing
 
 - [x] **Unit tests for core modules**
   - [x] `Protocol::HAP::TLV` - TLV8 encoding/decoding
   - [x] `Protocol::HAP::HTTP` - HTTP request parsing
-  - [x] `FuguLib::Config` - Configuration file parsing
+  - [x] `Fugu::Config` - Configuration file parsing
   - [x] `Protocol::HAP::Crypto` - Encryption and key generation
   - [x] `Protocol::HAP::SRP` - SRP protocol
   - [x] `Protocol::HAP::Pairing` - Pairing flows
   - [x] `Protocol::HAP::Session` - Session encryption
-  - [x] `OpenHAP::Storage` - Persistence layer
+  - [x] `Protocol::HAP::Store::File` - Persistence layer
   - [x] `Protocol::HAP::Accessory` - Accessory management
   - [x] `Protocol::HAP::Bridge` - Bridge functionality
   - [x] `Protocol::HAP::Characteristic` - Characteristic handling
   - [x] `Protocol::HAP::Service` - Service management
-  - [x] `FuguLib::MQTT` - MQTT client
-  - [x] `FuguLib::Daemon` - Daemon utilities
-  - [x] `FuguLib::Log` - Logging system
-  - [x] `Protocol::HAP::PIN` - PIN validation
-  - [x] `OpenHAP::DeviceLoader` - Device configuration loading
-  - The module tests live in `t/protocol/`, `t/openhap/`, and `t/fugulib/`
+  - [x] `Fugu::MQTT` - MQTT client
+  - [x] `Fugu::Daemon` - Daemon utilities
+  - [x] `Fugu::Log` - Logging system
+  - [x] `Protocol::HAP::SetupCode` - PIN validation
+  - [x] `App::OpenHAP::Devices` - Device configuration loading
+  - The module tests live in `t/protocol/`, `t/openhap/`, and `t/fugu/`
 
 - [ ] **Integration test infrastructure**
   - Status: Framework exists but needs QEMU VM setup to be functional
@@ -495,28 +495,28 @@ refinements.
   - Current: Manual config file editing
   - Need: Simple web interface for configuration
   - Framework: Mojolicious::Lite or Dancer2
-  - Files: New `lib/OpenHAP/Web/` directory
+  - Files: New `lib/App/OpenHAP/Web/` directory
 
 - [ ] **Device grouping/scenes**
   - Current: No scene support
   - Need: Create scenes that control multiple devices
-  - File: New `lib/OpenHAP/Scene.pm`
+  - File: New `lib/App/OpenHAP/Scene.pm`
 
 - [ ] **Automation rules**
   - Current: No automation
   - Need: Simple if-then rules (temp > 20 -> turn off heater)
-  - File: New `lib/OpenHAP/Automation.pm`
+  - File: New `lib/App/OpenHAP/Automation.pm`
 
 - [x] **Status monitoring endpoint**
   - Implemented: the control socket answers status and devices from process
     state; `hapctl status` and `hapctl devices` read it
-  - File: `bin/hapctl`, `lib/OpenHAP/Server.pm`, `lib/FuguLib/Control.pm`
+  - File: `bin/hapctl`, `lib/App/OpenHAP/Host.pm`, `lib/Fugu/Control.pm`
 
 - [ ] **Metrics/statistics**
   - Current: No metrics collected
   - Need: Track pairing attempts, requests, errors, latency
   - Export: Prometheus format or JSON
-  - File: New `lib/OpenHAP/Metrics.pm`
+  - File: New `lib/App/OpenHAP/Metrics.pm`
 
 ### OpenBSD Integration
 
@@ -565,17 +565,40 @@ refinements.
   - Need: Version tagging, changelog, release notes
   - Files: New `CHANGELOG.md`, version tagging
 
-### Protocol::HAP CPAN release
+### CPAN release
 
-The `Protocol::HAP` library under `lib/Protocol/` is host-neutral and
-self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
+Plan 008 decided every module name in the tree, so no naming question is left
+here. What a release still needs is below. It applies to any distribution this
+repository could ship: `Protocol-HAP`, `Protocol-Imsg`, `Fugu`, `App-OpenHAP`,
+and `App-FuguVM`.
 
-- [ ] PAUSE registration of the `Protocol-HAP` distribution name
-- [ ] A `$VERSION` policy for the modules (none carry one today)
-- [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`,
-      distribution tests
-- [ ] A redistribution-license review of `spec/` before any spec text ships in
-      the distribution
+- [ ] **A `Fugu` distribution would ship with no documentation.** MetaCPAN
+      renders POD, not mdoc, and no `lib/Fugu/` module holds POD: the API
+      documentation is in `man/fugu/*.3p`, which the `Makefile` installs and a
+      distribution would not carry. This is the largest obstacle to releasing
+      the one namespace that the whole effort exists to justify. Either the
+      release ships generated POD, or the documentation rule changes for
+      `Fugu::`.
+- [ ] A distribution main module for `App-OpenHAP`, `App-FuguVM`, and `Fugu`.
+      PAUSE grants indexing permission on that module first, and none exists.
+- [ ] A `$VERSION` policy. No module carries one, and PAUSE does not index a
+      module without a version.
+- [ ] PAUSE registration of each distribution name.
+- [ ] `no_index` metadata for the packages that live inside another file:
+      `Protocol::HAP::Log::Null`, `Protocol::HAP::SRP::Client`,
+      `Fugu::Control::Client`, `Fugu::Proxy::Cache`, `Fugu::Proxy::Meta`, and
+      `App::FuguVM::Proxy::Cache`.
+- [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`, and
+      distribution tests.
+- [ ] A redistribution-license review of `spec/` before any spec text ships in a
+      distribution.
+- [ ] The descriptor-passing subset of `Protocol::Imsg`. A release either adds
+      it, which needs `recvmsg` and `sendmsg`, or states the subset in the
+      distribution metadata as plainly as the pod does. The name is a compromise
+      as well: the header is native-endian, so the format never crosses a host,
+      while `Protocol::` on CPAN holds interoperable protocols. `OpenBSD::` is
+      the honest alternative and it is unusable, because OpenBSD base perl owns
+      that namespace.
 
 ## Technical Debt
 
@@ -594,7 +617,7 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
   - Impact: May fail on unusual requests
 
 - [ ] **Session management**
-  - Location: `lib/OpenHAP/Server.pm` (the connection map)
+  - Location: `lib/App/OpenHAP/Host.pm` (the connection map)
   - Issue: No session timeout, unlimited sessions in memory
   - Need: Session timeout and cleanup
   - Impact: Memory leak potential
@@ -606,13 +629,13 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
   - Impact: Hard to debug encryption issues
 
 - [ ] **Storage file locking**
-  - Location: `lib/OpenHAP/Storage.pm:48-76`
+  - Location: `lib/Protocol/HAP/Store/File.pm:48-76`
   - Issue: flock used but no timeout handling
   - Need: Timeout and lock failure handling
   - Impact: Potential deadlock
 
 - [ ] **Config parser error handling**
-  - Location: `lib/FuguLib/Config.pm`
+  - Location: `lib/Fugu/Config.pm`
   - Issue: Parse errors silently skipped
   - Need: Validation and error reporting
   - Impact: Invalid config may be partially loaded
@@ -645,7 +668,7 @@ self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
   - Current: Automatic reconnection implemented every 30 seconds
   - Status: Basic reconnection works, resubscribes to all topics
   - Enhancement: Could add exponential backoff for failed reconnects
-  - File: `lib/FuguLib/MQTT.pm`, `lib/OpenHAP/Server.pm`
+  - File: `lib/Fugu/MQTT.pm`, `lib/App/OpenHAP/Host.pm`
 
 - [ ] **File system full conditions**
   - Current: No space checking before writing
@@ -707,7 +730,7 @@ implementation is minimal with basic commands. Future enhancements planned:
 - [ ] **Monitoring hooks** - Export metrics for Prometheus/Nagios
 - [ ] **Syslog correlation** - Cross-reference log entries by timestamp
 
-Files: `bin/hapctl`, `lib/FuguLib/Daemon.pm`, `lib/OpenHAP/Storage.pm`
+Files: `bin/hapctl`, `lib/Fugu/Daemon.pm`, `lib/Protocol/HAP/Store/File.pm`
 
 ## Future Enhancements
 

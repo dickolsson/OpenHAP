@@ -19,14 +19,14 @@ Integration tests verify actual functionality end-to-end, without workarounds:
 ## Prerequisites
 
 A provisioned OpenBSD installation as described in the ENVIRONMENT section of
-`lib/OpenHAP/Test/Integration.pod`, plus mosquitto (MQTT tests) and mdnsd (mDNS
-tests).
+`lib/App/OpenHAP/Test/Integration.pod`, plus mosquitto (MQTT tests) and mdnsd
+(mDNS tests).
 
 ## Writing a new test
 
 Each file covers one functional area with no overlap between files. Start from
-this skeleton and use the `OpenHAP::Test::Integration` helpers (API in
-`lib/OpenHAP/Test/Integration.pod`):
+this skeleton and use the `App::OpenHAP::Test::Integration` helpers (API in
+`lib/App/OpenHAP/Test/Integration.pod`):
 
 ```perl
 #!/usr/bin/env perl
@@ -35,9 +35,9 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
 my $response = $env->http_request('GET', '/accessories');
@@ -62,8 +62,8 @@ shared daemon is never left paired between files.
 - Files own their pairing lifecycle: call `$env->ensure_unpaired` in setup, pair
   via the controller if needed, and unpair in teardown. The shared daemon is
   never left paired between files.
-- `lib/OpenHAP/Test/` and `t/lib/` ship to the VM alongside the tests; `prove`
-  runs with `-It/lib`.
+- `lib/App/OpenHAP/Test/` and `t/lib/` ship to the VM alongside the tests;
+  `prove` runs with `-It/lib`.
 
 ## Running the suite
 
@@ -101,6 +101,6 @@ Usual causes, in order of likelihood:
 
 ## References
 
-- Test helper API: `lib/OpenHAP/Test/Integration.pod`,
+- Test helper API: `lib/App/OpenHAP/Test/Integration.pod`,
   `lib/Protocol/HAP/Controller.pod`
 - VM lifecycle: `fuguvm` skill

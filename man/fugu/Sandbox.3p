@@ -1,0 +1,193 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::Sandbox 3p
+.Os
+.Sh NAME
+.Nm Fugu::Sandbox
+.Nd pledge and unveil as a platform abstraction
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Sandbox;
+
+Fugu::Sandbox->unveil(
+    paths => [
+        ['/var/db/mydaemon',  'rwc'],
+        ['/etc/mydaemon.conf', 'r', { optional => 1 }],
+        Fugu::Sandbox->system_paths,
+    ],
+    on_skip => sub ($path) { ... },
+);
+Fugu::Sandbox->unveil_lock;
+Fugu::Sandbox->pledge(promises => 'stdio rpath inet');
+.Ed
+.Sh DESCRIPTION
+.Nm
+wraps
+.Xr pledge 2
+and
+.Xr unveil 2
+so that callers do not test the operating system themselves.
+On
+.Ox ,
+the restrictions are real.
+On all other platforms, each method is a no-op that returns success.
+.Fn is_supported
+tells a caller or a test which of the two it gets.
+.Pp
+All methods are class methods.
+There is no object because the two syscalls that the module wraps are
+process-global.
+A method that fails dies with the promise string or the path that
+caused the failure, and with the errno.
+There is no force flag and no warn-and-continue mode.
+The module never logs.
+The caller decides what to report.
+.Pp
+Two methods,
+.Fn perl_lib_dirs
+and
+.Fn system_paths ,
+assemble path lists and call no syscall.
+They never touch the filesystem view.
+Thus a unit test can prove the inventory of a daemon on any platform.
+.Pp
+On
+.Ox ,
+.Nm
+loads the base-system modules
+.Xr OpenBSD::Pledge 3p
+and
+.Xr OpenBSD::Unveil 3p
+when it loads.
+If these modules do not load, the process dies immediately.
+On that platform, the absence of these modules shows a broken perl and
+not an unsupported system.
+.Ss is_supported
+.Fn is_supported
+returns true only where the restrictions are real,
+that is,
+on
+.Ox .
+.Ss pledge
+.Fn pledge "promises => $string"
+limits the process to the space-separated set of promises,
+as
+.Xr pledge 2
+defines it.
+The method returns 1.
+On failure, it dies and gives the promises and the error.
+The first call defines the sandbox.
+Later calls can only make it smaller.
+.Ss unveil
+.Fo unveil
+.Fa "paths => arrayref of pairs"
+.Fa "on_skip => sub"
+.Fc
+limits the filesystem view to the listed paths with the listed
+.Xr unveil 2
+permission strings.
+The argument is an ordered list of pairs, not a hash.
+.Xr unveil 2
+replaces the permissions of a path and does not merge them.
+Thus the order of parent before child is necessary,
+and the key order of a hash makes that order random.
+.Pp
+Each entry can have
+.Li { optional => 1 }
+as a third element.
+If a
+.Em necessary
+path is absent,
+the method dies and gives the path.
+If the method accepts a path with a typo and gives no report,
+unveil becomes useless.
+If an
+.Em optional
+path is absent,
+the method skips it and reports it through the
+.Fa on_skip
+callback.
+The optional flag is for paths that can be absent on a system that
+operates correctly.
+Examples are a configuration file and the socket of a daemon that does
+not run.
+The method returns 1.
+.Ss unveil_lock
+.Fn unveil_lock
+prevents more
+.Fn unveil
+calls and locks the view for the life of the process.
+The method returns 1.
+It dies on failure.
+.Ss perl_lib_dirs
+.Fn perl_lib_dirs
+returns the library directories of the perl that runs.
+The values are
+.Va privlibexp ,
+.Va archlibexp ,
+.Va sitelibexp
+and
+.Va sitearchexp
+from
+.Xr Config 3p .
+.Pp
+These are stable facts about the interpreter build.
+They are not the live
+.Va @INC .
+A program adds directories to
+.Va @INC
+at run time, and a module can add one later still.
+A daemon that unveils the library tree for a late
+.Ic require
+must name the stable set, and never a set that depends on the moment of
+the call.
+.Ss system_paths
+.Fn system_paths
+returns the read-only
+.Fn unveil
+inventory that every daemon repeats:
+.Pa /dev/urandom ,
+.Pa /etc/resolv.conf ,
+.Pa /etc/hosts ,
+.Pa /etc/services ,
+.Pa /etc/protocols
+and
+.Pa /etc/localtime .
+The entries are ready for
+.Fn unveil .
+All of them carry the optional flag except
+.Pa /dev/urandom ,
+which every system has.
+A resolver file is absent on a host with no name service, and that host
+still runs the daemon.
+.Sh RETURN VALUES
+.Fn perl_lib_dirs
+returns a list of directory names.
+.Pp
+.Fn system_paths
+returns a list of
+.Fn unveil
+entries.
+.Sh SEE ALSO
+.Xr pledge 2 ,
+.Xr unveil 2 ,
+.Xr Config 3p ,
+.Xr OpenBSD::Pledge 3p ,
+.Xr OpenBSD::Unveil 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io

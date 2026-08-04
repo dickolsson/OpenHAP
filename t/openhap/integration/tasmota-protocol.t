@@ -10,11 +10,11 @@ use Test::More tests => 11;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use JSON::PP qw(decode_json encode_json);
 use Time::HiRes qw(sleep time);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 $env->ensure_unpaired or die "Cannot reset pairing state\n";
 

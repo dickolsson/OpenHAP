@@ -57,12 +57,12 @@ shared chrome:
 - **mandoc picks a local or a remote `.Xr` target by looking for a file named
   `%N.%S` in its working directory**, exactly as mandoc(1) documents. That is
   why all mdoc sources are staged into `$(WEBOUT)/.man/` and mandoc is run from
-  there, and why the FuguLib pages are staged under their full
-  `FuguLib::<Module>.3p` names rather than the file names in `man/fugulib/`.
+  there, and why the Fugu pages are staged under their full `Fugu::<Module>.3p`
+  names rather than the file names in `man/fugu/`.
 - **Local links carry a `./` prefix.** A relative URL whose first path segment
-  contains a colon is parsed as a scheme, so a bare `FuguLib::Daemon.3p.html`
-  href would be read as the `fugulib:` protocol. Both `mandoc -O man=` and
-  `mkindex.sh` emit `./`.
+  contains a colon is parsed as a scheme, so a bare `Fugu::Daemon.3p.html` href
+  would be read as the `fugu:` protocol. Both `mandoc -O man=` and `mkindex.sh`
+  emit `./`.
 - **`pod2man` renders `L<Some::Module>` as italic text, not a link.** POD pages
   therefore cross-reference as plain text while mdoc pages link. This is
   accepted: making it work would mean post-processing mandoc's HTML.

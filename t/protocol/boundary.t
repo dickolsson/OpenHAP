@@ -3,9 +3,11 @@
 # The dependency rules of the Protocol::HAP library.
 #
 # Protocol::HAP is self-contained: core Perl plus the declared Crypt::*
-# modules, and nothing else. It never uses FuguLib, FuguVM, or OpenHAP.
-# FuguLib never uses Protocol::HAP or OpenHAP. The test parses the use
-# and require lines and fails on a line that breaks a rule.
+# modules, and nothing else. It never uses Fugu or App.
+#
+# Fugu never uses App, and it reaches Protocol:: only through an
+# allowlist of codecs. The test parses the use and require lines and
+# fails on a line that breaks a rule.
 
 use v5.36;
 use Test::More;
@@ -58,7 +60,7 @@ sub imports_in ($file)
 }
 
 # Direction one: Protocol::HAP uses core Perl, the declared list, and
-# itself. A FuguLib, FuguVM, or OpenHAP import is a boundary violation.
+# itself. A Fugu or App import is a boundary violation.
 # So is an undeclared CPAN module.
 subtest 'Protocol::HAP is self-contained' => sub {
 	my @files = perl_files("$ROOT/lib/Protocol");
@@ -70,7 +72,7 @@ subtest 'Protocol::HAP is self-contained' => sub {
 		for my $import ( imports_in($file) ) {
 			my ( $line, $module ) = @$import;
 
-			if ( $module =~ /^(?:FuguLib|FuguVM|OpenHAP)\b/ ) {
+			if ( $module =~ /^(?:Fugu|App)\b/ ) {
 				push @violations,
 				    "$name:$line uses $module";
 				next;
@@ -88,21 +90,37 @@ subtest 'Protocol::HAP is self-contained' => sub {
 	    or diag( join "\n", @violations );
 };
 
-# Direction two: FuguLib stays generic. A Protocol::HAP or OpenHAP
-# import would invert the dependency.
-subtest 'FuguLib never uses Protocol::HAP or OpenHAP' => sub {
-	my @files = perl_files("$ROOT/lib/FuguLib");
-	ok( @files, 'found modules under lib/FuguLib/' );
+# The Protocol:: modules that Fugu:: may use. Each one is a codec with
+# no host policy in it. Protocol::HAP is not on the list and never can
+# be: the host nexus must not know the protocol its user speaks.
+my %ALLOWED_PROTOCOL = map { $_ => 1 } qw(
+    Protocol::Imsg
+);
+
+# Direction two: Fugu stays generic. An App import would invert the
+# dependency, and so would any Protocol:: import that is not an
+# allowlisted codec.
+subtest 'Fugu uses no App module and only allowlisted codecs' => sub {
+	my @files = perl_files("$ROOT/lib/Fugu");
+	ok( @files, 'found modules under lib/Fugu/' );
 
 	my @violations;
 	for my $file (@files) {
 		my $name = $file =~ s{^\Q$ROOT\E/}{}r;
 		for my $import ( imports_in($file) ) {
 			my ( $line, $module ) = @$import;
-			next
-			    unless $module
-			    =~ /^(?:Protocol::HAP|OpenHAP)\b/;
-			push @violations, "$name:$line uses $module";
+
+			if ( $module =~ /^App\b/ ) {
+				push @violations,
+				    "$name:$line uses $module";
+				next;
+			}
+			next unless $module =~ /^Protocol\b/;
+			next if $ALLOWED_PROTOCOL{$module};
+
+			push @violations,
+			    "$name:$line uses $module, which is not an"
+			    . ' allowlisted codec';
 		}
 	}
 

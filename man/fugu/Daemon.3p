@@ -1,0 +1,166 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::Daemon 3p
+.Os
+.Sh NAME
+.Nm Fugu::Daemon
+.Nd daemonization for Perl programs
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Daemon;
+
+Fugu::Daemon->daemonize(
+    logfile => '/var/log/mydaemon.log',
+    pidfile => '/var/run/mydaemon.pid',
+);
+.Ed
+.Sh DESCRIPTION
+.Nm
+turns the program into a daemon, as
+.Xr daemon 3
+does.
+The program forks, and the parent exits.
+The child becomes a session leader, redirects its standard descriptors
+away from the terminal, leaves the directory it started in, and sets
+its file creation mask.
+.Pp
+The module keeps no state that a caller can see and has one class
+method.
+.Ss daemonize
+.Fn daemonize "%args"
+forks into the background and detaches from the controlling terminal.
+.Pp
+The parent calls
+.Fa on_fork
+if the caller gave one, and then exits with status 0.
+Thus
+.Fn daemonize
+returns only in the child.
+The child calls
+.Xr setsid 2
+and reopens standard input from
+.Pa /dev/null .
+The child then appends standard output to
+.Fa logfile
+and duplicates standard output onto standard error.
+It changes to the root directory and applies
+.Fa umask .
+Last, it takes the PID file when the caller named one.
+.Pp
+The child redirects the descriptors before it changes the directory.
+Thus a relative
+.Fa logfile
+keeps the meaning that the caller gave it.
+.Pp
+These are the arguments:
+.Bl -tag -width "logfileXX"
+.It Fa logfile
+The path for standard output and standard error.
+The default is
+.Pa /dev/null .
+This default is correct for a daemon that logs through
+.Xr Fugu::Log 3p
+in syslog mode.
+The module opens the file in append mode.
+.It Fa pidfile
+The PID file the child takes with
+.Xr Fugu::Pidfile 3p .
+The child acquires it after
+.Xr setsid 2 ,
+so the file holds the PID of the session leader.
+The child holds the lock for the life of the process, even if the
+caller discards the returned object.
+The default is no PID file.
+.It Fa umask
+The file creation mask of the daemon.
+The default is 022.
+.It Fa on_fork
+A code reference that the parent calls with the child's process ID
+before the parent exits.
+Use
+.Fa pidfile
+instead for the common case.
+.El
+.Sh RETURN VALUES
+.Fn daemonize
+never returns in the parent.
+In the child it returns the
+.Xr Fugu::Pidfile 3p
+object when the caller gave a
+.Fa pidfile ,
+and nothing otherwise.
+.Sh EXAMPLES
+This example daemonizes the program, takes a PID file, and logs through
+syslog:
+.Bd -literal -offset indent
+my $log = Fugu::Log->new(mode => 'syslog', ident => 'mydaemon');
+
+Fugu::Daemon->daemonize(
+    logfile => '/var/log/mydaemon.log',
+    pidfile => '/var/run/mydaemon.pid',
+);
+
+$log->info('started, pid %d', $$);
+.Ed
+.Sh ERRORS
+.Fn daemonize
+dies and does not return if the fork fails, if
+.Xr setsid 2
+fails, if the module cannot redirect one of the three standard
+descriptors, if it cannot change to the root directory, or if it cannot
+take the PID file.
+A daemon cannot recover from these startup conditions.
+.Pp
+A failure to take the PID file most often means that a second daemon
+already holds it.
+.Sh SEE ALSO
+.Xr setsid 2 ,
+.Xr umask 2 ,
+.Xr daemon 3 ,
+.Xr Fugu::Log 3p ,
+.Xr Fugu::Pidfile 3p ,
+.Xr Fugu::Privdrop 3p ,
+.Xr Fugu::Process 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+Call
+.Fn daemonize
+before you open files or sockets that the daemon must keep.
+The child redirects the standard descriptors, but it inherits
+everything that is already open with no change.
+.Pp
+The parent exits with status 0 even if
+.Fa on_fork
+fails.
+To make sure that the PID file exists, the caller must do a separate
+check.
+Use
+.Fa pidfile
+instead: a failure there stops the child.
+.Pp
+The daemon never removes the PID file.
+An
+.Xr unlink 2
+in a root-owned directory needs a write permission on the directory
+that a daemon gives up at the privilege drop.
+The
+.Fn is_stale
+method of
+.Xr Fugu::Pidfile 3p
+covers the leftover file.

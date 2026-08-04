@@ -42,20 +42,20 @@ UNAME			!= uname
 FTP				= scripts/ftp
 DEPS			= scripts/deps
 
-# Man pages.  FuguLib sources drop the FuguLib:: prefix because a colon
+# Man pages.  Fugu sources drop the Fugu:: prefix because a colon
 # cannot appear in a make target.  install-man puts it back.
 MAN1			= man/fuguvm/fuguvm.1
-MAN3P			= man/fugulib/CLI.3p man/fugulib/Config.3p \
-			  man/fugulib/Control.3p man/fugulib/Daemon.3p \
-			  man/fugulib/EventLoop.3p man/fugulib/File.3p \
-			  man/fugulib/Imsg.3p \
-			  man/fugulib/JSONSocket.3p man/fugulib/Log.3p \
-			  man/fugulib/MDNS.3p man/fugulib/MQTT.3p \
-			  man/fugulib/Pidfile.3p man/fugulib/Privdrop.3p \
-			  man/fugulib/Process.3p man/fugulib/Proxy.3p \
-			  man/fugulib/Random.3p man/fugulib/SSH.3p \
-			  man/fugulib/Sandbox.3p man/fugulib/Signal.3p \
-			  man/fugulib/Store.3p man/fugulib/Util.3p
+MAN3P			= man/fugu/CLI.3p man/fugu/Config.3p \
+			  man/fugu/Control.3p man/fugu/Daemon.3p \
+			  man/fugu/EventLoop.3p man/fugu/File.3p \
+			  man/fugu/Imsg.3p \
+			  man/fugu/JSONSocket.3p man/fugu/Log.3p \
+			  man/fugu/Mdnsd.3p man/fugu/MQTT.3p \
+			  man/fugu/Pidfile.3p man/fugu/Privdrop.3p \
+			  man/fugu/Process.3p man/fugu/Proxy.3p \
+			  man/fugu/Random.3p man/fugu/SSH.3p \
+			  man/fugu/Sandbox.3p man/fugu/Signal.3p \
+			  man/fugu/StateFile.3p man/fugu/Timeout.3p
 MAN5			= man/openhap/openhapd.conf.5
 MAN8			= man/openhap/hapctl.8 man/openhap/openhapd.8
 CATMAN1			= $(MAN1:.1=.cat1)
@@ -76,7 +76,7 @@ MKINDEX			= web/mkindex.sh
 FINDPOD			= find lib -name '*.pod' | LC_ALL=C sort
 # mandoc resolves .Xr against the working directory.  A page named %N.%S
 # there becomes a local link.  Anything else goes to man.openbsd.org.
-# The './' matters.  A module page is FuguLib::Daemon.3p.html.  The
+# The './' matters.  A module page is Fugu::Daemon.3p.html.  The
 # browser reads a relative URL whose first segment holds a colon as a
 # scheme instead.
 # -I os= pins the footer so the site does not vary with the build host.
@@ -110,35 +110,34 @@ install: install-man
 	install -d $(DESTDIR)$(BINDIR)
 	install -m 755 bin/openhapd $(DESTDIR)$(BINDIR)/openhapd
 	install -m 755 bin/hapctl $(DESTDIR)$(BINDIR)/hapctl
-	# Install Perl libraries
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota
-	install -d $(DESTDIR)$(LIBDIR)/OpenHAP/Test
-	install -d $(DESTDIR)$(LIBDIR)/FuguLib
-	install -m 644 lib/OpenHAP/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/
-	install -m 644 lib/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/
-	install -m 644 lib/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
-	install -m 644 lib/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/OpenHAP/Tasmota/
+	# Install Perl libraries.  App/ is a shared parent: other
+	# distributions live there too, so it is created, never removed
+	install -d $(DESTDIR)$(LIBDIR)/App
+	install -d $(DESTDIR)$(LIBDIR)/App/OpenHAP
+	install -d $(DESTDIR)$(LIBDIR)/App/OpenHAP/Tasmota
+	install -d $(DESTDIR)$(LIBDIR)/App/OpenHAP/Test
+	install -d $(DESTDIR)$(LIBDIR)/Fugu
+	install -m 644 lib/App/OpenHAP/*.pm $(DESTDIR)$(LIBDIR)/App/OpenHAP/
+	install -m 644 lib/App/OpenHAP/*.pod $(DESTDIR)$(LIBDIR)/App/OpenHAP/
+	install -m 644 lib/App/OpenHAP/Tasmota/*.pm $(DESTDIR)$(LIBDIR)/App/OpenHAP/Tasmota/
+	install -m 644 lib/App/OpenHAP/Tasmota/*.pod $(DESTDIR)$(LIBDIR)/App/OpenHAP/Tasmota/
 	# The glob loops accept zero, one, or many matches without stderr
 	# noise, because the test helper modules are not always present
-	for f in lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod; do \
+	for f in lib/App/OpenHAP/Test/*.pm lib/App/OpenHAP/Test/*.pod; do \
 		[ -e "$$f" ] || continue; \
-		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/OpenHAP/Test/; \
+		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/App/OpenHAP/Test/; \
 	done
-	# FuguLib's API documentation lives in man3p, not in sidecars
-	install -m 644 lib/FuguLib/*.pm $(DESTDIR)$(LIBDIR)/FuguLib/
-	# The Protocol::HAP library. The Store/ loop accepts zero
-	# matches, because the subdirectory arrives in a later phase
+	# Fugu's API documentation lives in man3p, not in sidecars
+	install -m 644 lib/Fugu/*.pm $(DESTDIR)$(LIBDIR)/Fugu/
+	# The Protocol::HAP library
 	install -d $(DESTDIR)$(LIBDIR)/Protocol
 	install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP
 	install -m 644 lib/Protocol/*.pm lib/Protocol/*.pod $(DESTDIR)$(LIBDIR)/Protocol/
 	install -m 644 lib/Protocol/HAP/*.pm $(DESTDIR)$(LIBDIR)/Protocol/HAP/
 	install -m 644 lib/Protocol/HAP/*.pod $(DESTDIR)$(LIBDIR)/Protocol/HAP/
-	for f in lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod; do \
-		[ -e "$$f" ] || continue; \
-		install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store; \
-		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store/; \
-	done
+	install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store
+	install -m 644 lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod \
+	    $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store/
 	# Install rc.d script
 	install -d $(DESTDIR)$(SYSCONFDIR)/rc.d
 	install -m 755 etc/rc.d/openhapd $(DESTDIR)$(SYSCONFDIR)/rc.d/openhapd
@@ -153,11 +152,11 @@ install-man:
 	install -d $(DESTDIR)$(MANDIR)/man3p
 	install -d $(DESTDIR)$(MANDIR)/man5
 	install -d $(DESTDIR)$(MANDIR)/man8
-	# The rename cannot be a glob.  'man FuguLib::Daemon' looks for a
+	# The rename cannot be a glob.  'man Fugu::Daemon' looks for a
 	# file of that name.  make cannot have that name as a target
 	for f in $(MAN3P); do \
 		install -m 644 "$$f" \
-		    "$(DESTDIR)$(MANDIR)/man3p/FuguLib::$${f##*/}"; \
+		    "$(DESTDIR)$(MANDIR)/man3p/Fugu::$${f##*/}"; \
 	done
 	install -m 644 $(MAN5) $(DESTDIR)$(MANDIR)/man5/
 	install -m 644 $(MAN8) $(DESTDIR)$(MANDIR)/man8/
@@ -193,38 +192,34 @@ spec-coverage:
 
 package: clean
 	mkdir -p build/$(PACKAGE)/bin
-	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Tasmota
-	mkdir -p build/$(PACKAGE)/lib/OpenHAP/Test
-	mkdir -p build/$(PACKAGE)/lib/FuguLib
+	mkdir -p build/$(PACKAGE)/lib/App/OpenHAP/Tasmota
+	mkdir -p build/$(PACKAGE)/lib/App/OpenHAP/Test
+	mkdir -p build/$(PACKAGE)/lib/Fugu
 	mkdir -p build/$(PACKAGE)/lib/Protocol/HAP
 	mkdir -p build/$(PACKAGE)/etc/rc.d
 	mkdir -p build/$(PACKAGE)/share/openhap/examples
-	mkdir -p build/$(PACKAGE)/man/fugulib
+	mkdir -p build/$(PACKAGE)/man/fugu
 	mkdir -p build/$(PACKAGE)/man/openhap
 	mkdir -p build/$(PACKAGE)/scripts
 	mkdir -p build/$(PACKAGE)/deps
 	# Binaries
 	cp bin/openhapd bin/hapctl build/$(PACKAGE)/bin/
 	# Perl libraries
-	cp lib/OpenHAP/*.pm lib/OpenHAP/*.pod build/$(PACKAGE)/lib/OpenHAP/
-	cp lib/OpenHAP/Tasmota/*.pm lib/OpenHAP/Tasmota/*.pod build/$(PACKAGE)/lib/OpenHAP/Tasmota/
-	cp lib/OpenHAP/Test/*.pm lib/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/OpenHAP/Test/
-	cp lib/FuguLib/*.pm build/$(PACKAGE)/lib/FuguLib/
+	cp lib/App/OpenHAP/*.pm lib/App/OpenHAP/*.pod build/$(PACKAGE)/lib/App/OpenHAP/
+	cp lib/App/OpenHAP/Tasmota/*.pm lib/App/OpenHAP/Tasmota/*.pod build/$(PACKAGE)/lib/App/OpenHAP/Tasmota/
+	cp lib/App/OpenHAP/Test/*.pm lib/App/OpenHAP/Test/*.pod build/$(PACKAGE)/lib/App/OpenHAP/Test/
+	cp lib/Fugu/*.pm build/$(PACKAGE)/lib/Fugu/
 	cp lib/Protocol/*.pm lib/Protocol/*.pod build/$(PACKAGE)/lib/Protocol/
 	cp lib/Protocol/HAP/*.pm lib/Protocol/HAP/*.pod build/$(PACKAGE)/lib/Protocol/HAP/
-	# The Store/ loop accepts zero matches, because the
-	# subdirectory arrives in a later phase
-	for f in lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod; do \
-		[ -e "$$f" ] || continue; \
-		mkdir -p build/$(PACKAGE)/lib/Protocol/HAP/Store; \
-		cp "$$f" build/$(PACKAGE)/lib/Protocol/HAP/Store/; \
-	done
+	mkdir -p build/$(PACKAGE)/lib/Protocol/HAP/Store
+	cp lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod \
+	    build/$(PACKAGE)/lib/Protocol/HAP/Store/
 	# rc.d script
 	cp etc/rc.d/openhapd build/$(PACKAGE)/etc/rc.d/
 	# Example configuration
 	cp share/openhap/examples/openhapd.conf.sample build/$(PACKAGE)/share/openhap/examples/
 	# Man pages
-	cp $(MAN3P) build/$(PACKAGE)/man/fugulib/
+	cp $(MAN3P) build/$(PACKAGE)/man/fugu/
 	cp $(MAN5) $(MAN8) build/$(PACKAGE)/man/openhap/
 	# Scripts for dependency management
 	cp scripts/ftp scripts/deps build/$(PACKAGE)/scripts/
@@ -240,7 +235,7 @@ package: clean
 
 test:
 	prove -l -v t/fuguvm/*.t
-	prove -l -v t/fugulib/*.t
+	prove -l -v t/fugu/*.t
 	prove -l -v t/protocol/*.t
 	prove -l -v t/openhap/*.t
 	prove -l -v t/conformance/*.t
@@ -262,13 +257,24 @@ uninstall:
 	# Remove binaries
 	rm -f $(DESTDIR)$(BINDIR)/openhapd
 	rm -f $(DESTDIR)$(BINDIR)/hapctl
-	# Remove Perl libraries
-	rm -rf $(DESTDIR)$(LIBDIR)/OpenHAP
-	rm -rf $(DESTDIR)$(LIBDIR)/FuguLib
-	rm -rf $(DESTDIR)$(LIBDIR)/Protocol
+	# Remove Perl libraries.  App/ and Protocol/ are shared parents:
+	# App::cpanminus and any other Protocol:: distribution live
+	# beside ours.  Remove what this project owns, then rmdir the
+	# parent, which fails harmlessly when it still holds something
+	rm -rf $(DESTDIR)$(LIBDIR)/App/OpenHAP
+	rm -rf $(DESTDIR)$(LIBDIR)/Fugu
+	rm -rf $(DESTDIR)$(LIBDIR)/Protocol/HAP
+	# The loop derives the list from the source tree.  A new
+	# top-level Protocol:: module is thus removed with no second
+	# place to keep true
+	for f in lib/Protocol/*.pm lib/Protocol/*.pod; do \
+		rm -f "$(DESTDIR)$(LIBDIR)/Protocol/$${f##*/}"; \
+	done
+	-rmdir $(DESTDIR)$(LIBDIR)/App 2>/dev/null
+	-rmdir $(DESTDIR)$(LIBDIR)/Protocol 2>/dev/null
 	# Remove man pages
 	for f in $(MAN3P); do \
-		rm -f "$(DESTDIR)$(MANDIR)/man3p/FuguLib::$${f##*/}"; \
+		rm -f "$(DESTDIR)$(MANDIR)/man3p/Fugu::$${f##*/}"; \
 	done
 	rm -f $(DESTDIR)$(MANDIR)/man5/openhapd.conf.5
 	rm -f $(DESTDIR)$(MANDIR)/man8/openhapd.8
@@ -302,11 +308,11 @@ web:
 	$(MANDOC) -Tlint -W warning $(MAN1) $(MAN3P) $(MAN5) $(MAN8)
 	# Put every mdoc source in one directory.  Then mandoc can tell a
 	# local cross-reference from one that belongs on man.openbsd.org.
-	# Stage the FuguLib pages under the name that .Xr refers to them by.
+	# Stage the Fugu pages under the name that .Xr refers to them by.
 	mkdir -p $(WEBMAN)
 	cp $(MAN1) $(MAN5) $(MAN8) $(WEBMAN)/
 	for f in $(MAN3P); do \
-		cp "$$f" "$(WEBMAN)/FuguLib::$${f##*/}"; \
+		cp "$$f" "$(WEBMAN)/Fugu::$${f##*/}"; \
 	done
 	cp web/style.css $(WEBOUT)/style.css
 	cp web/robots.txt $(WEBOUT)/robots.txt
@@ -321,7 +327,7 @@ web:
 	$(MKINDEX) $(MAN1) $(MAN3P) $(MAN5) $(MAN8) `$(FINDPOD)` | \
 	    $(MKPAGE) 'Manuals' > $(WEBOUT)/manuals.html
 	$(MKPAGE) 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
-	$(MKPAGE) 'FuguLib' < web/fugulib.body.html > $(WEBOUT)/fugulib.html
+	$(MKPAGE) 'Fugu' < web/fugu.body.html > $(WEBOUT)/fugu.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.8 ) | \
 	    $(MKPAGE) 'openhapd(8)' > $(WEBOUT)/openhapd.8.html
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) hapctl.8 ) | \
@@ -331,7 +337,7 @@ web:
 	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) fuguvm.1 ) | \
 	    $(MKPAGE) 'fuguvm(1)' > $(WEBOUT)/fuguvm.1.html
 	for f in $(MAN3P); do \
-		n="FuguLib::$${f##*/}"; n="$${n%.3p}"; \
+		n="Fugu::$${f##*/}"; n="$${n%.3p}"; \
 		( cd $(WEBMAN) && $(MANDOC) $(MANHTML) "$$n.3p" ) | \
 		    $(MKPAGE) "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
 	done

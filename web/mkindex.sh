@@ -57,7 +57,7 @@ describe()
 #	An mdoc page takes its name from the file name, with the
 #	group's module namespace as a prefix if the group has one.  A
 #	POD sidecar takes its name from the path under lib/, so
-#	lib/OpenHAP/Tasmota/Heater.pod is OpenHAP::Tasmota::Heater.
+#	lib/App/OpenHAP/Tasmota/Heater.pod is App::OpenHAP::Tasmota::Heater.
 manual_name()
 {
 	case $1 in
@@ -88,7 +88,7 @@ manual_section()
 
 # emit_entry <path> <namespace>
 #	The './' matters.  A page has a name such as
-#	FuguLib::Daemon.3p.html, and a relative URL whose first segment
+#	Fugu::Daemon.3p.html, and a relative URL whose first segment
 #	holds a colon reads as a scheme.
 emit_entry()
 {
@@ -145,7 +145,7 @@ EOF
 
 emit_group 'OpenHAP' openhap man/openhap/ '' "$@"
 emit_group 'FuguVM' fuguvm man/fuguvm/ '' "$@"
-emit_group 'FuguLib' fugulib man/fugulib/ 'FuguLib::' "$@"
-emit_group 'OpenHAP modules' modules lib/OpenHAP/ '' "$@"
-emit_group 'Protocol::HAP modules' protocol-modules lib/Protocol/ '' "$@"
-emit_group 'FuguVM modules' vm-modules lib/FuguVM/ '' "$@"
+emit_group 'Fugu' fugu man/fugu/ 'Fugu::' "$@"
+emit_group 'OpenHAP modules' modules lib/App/OpenHAP/ '' "$@"
+emit_group 'Protocol modules' protocol-modules lib/Protocol/ '' "$@"
+emit_group 'FuguVM modules' vm-modules lib/App/FuguVM/ '' "$@"

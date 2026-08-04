@@ -22,10 +22,12 @@ L<Crypt::KeyDerivation>, and L<Crypt::AuthEnc::ChaCha20Poly1305>. The
 crypto modules load lazily, on first use.
 
 The engine is sans-IO. It consumes bytes and emits bytes. The host owns
-sockets, timers, logging, and persistence. Two documented exceptions
-exist: C<Protocol::HAP::Crypto> reads F</dev/urandom>, and
+sockets, timers, logging, and persistence. Three documented exceptions
+exist: C<Protocol::HAP::Crypto> reads F</dev/urandom>,
 C<Protocol::HAP::Controller> is a blocking convenience client that owns
-its socket.
+its socket, and C<Protocol::HAP::Store::File> writes the store contract
+to files. None of the three is the engine, which is the class the
+sans-IO rule describes.
 
 =head1 HOST CONTRACTS
 
@@ -43,7 +45,8 @@ module. An object passes its logger to the objects it creates itself.
 
 An object with the twelve persistence methods that
 F<Protocol/HAP/Store.pod> documents. C<Protocol::HAP::Store::Memory> is
-the reference implementation.
+the reference implementation, and C<Protocol::HAP::Store::File> is the
+durable one.
 
 =item output
 
@@ -76,7 +79,7 @@ four logger methods and drops every message.
 
 =item L<Protocol::HAP::TLV> - TLV8 codec
 
-=item L<Protocol::HAP::PIN> - setup-code normalization and rules
+=item L<Protocol::HAP::SetupCode> - setup-code normalization and rules
 
 =item L<Protocol::HAP::Crypto> - randomness and crypto primitives
 
@@ -95,6 +98,8 @@ four logger methods and drops every message.
 =item L<Protocol::HAP::Session> - per-connection state and the AEAD frame codec
 
 =item L<Protocol::HAP::Store::Memory> - the reference store implementation
+
+=item L<Protocol::HAP::Store::File> - the durable store over files
 
 =item L<Protocol::HAP::HTTP> - the HTTP/1.1 subset codec, EVENT/1.0 builder
 

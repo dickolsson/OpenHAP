@@ -2,7 +2,7 @@
 # ex:ts=8 sw=4:
 # The QMP command set. The transport - the deadline on a read, the
 # buffered remainder, the reassembly of a split line - belongs to
-# FuguLib::JSONSocket and is proven in t/fugulib/jsonsocket.t.
+# Fugu::JSONSocket and is proven in t/fugu/jsonsocket.t.
 
 use v5.36;
 use Test::More;
@@ -11,7 +11,7 @@ use lib "$RealBin/../../lib";
 use IO::Socket::UNIX;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use_ok('FuguVM::QMP');
+use_ok('App::FuguVM::QMP');
 
 # paired_qmp(): a QMP object wired to one end of a socketpair. The
 # helper returns the peer, so the test can play QEMU. Both ends come
@@ -23,7 +23,7 @@ sub paired_qmp ()
 	    IO::Socket::UNIX->socketpair( AF_UNIX, SOCK_STREAM, PF_UNSPEC );
 	return if !defined $ours;
 
-	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
+	my $qmp = App::FuguVM::QMP->new('/tmp/test-qmp.sock');
 	$qmp->{socket}{sock} = $ours;
 
 	return ( $qmp, $theirs );
@@ -31,7 +31,7 @@ sub paired_qmp ()
 
 # Test object creation
 {
-	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
+	my $qmp = App::FuguVM::QMP->new('/tmp/test-qmp.sock');
 	ok( defined $qmp, 'QMP object created' );
 	is( $qmp->socket_path, '/tmp/test-qmp.sock', 'Socket path set correctly' );
 	ok( !$qmp->is_available, 'the socket file is absent' );
@@ -39,19 +39,19 @@ sub paired_qmp ()
 
 # Test connection failure to non-existent socket
 {
-	my $qmp = FuguVM::QMP->new('/tmp/nonexistent-qmp.sock');
+	my $qmp = App::FuguVM::QMP->new('/tmp/nonexistent-qmp.sock');
 	is( $qmp->open_connection, 0, 'Connection fails for non-existent socket' );
 }
 
 # Test disconnect on unconnected socket
 {
-	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
+	my $qmp = App::FuguVM::QMP->new('/tmp/test-qmp.sock');
 	ok( defined $qmp->disconnect, 'Disconnect returns the object' );
 }
 
 # Test run_command on unconnected socket returns undef
 {
-	my $qmp = FuguVM::QMP->new('/tmp/test-qmp.sock');
+	my $qmp = App::FuguVM::QMP->new('/tmp/test-qmp.sock');
 	is( $qmp->run_command('query-status'),
 		undef, 'run_command returns undef when not connected' );
 }

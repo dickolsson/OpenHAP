@@ -7,14 +7,14 @@ use Test::More tests => 13;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use FuguLib::Pidfile;
-use OpenHAP::Test::Integration;
+use Fugu::Pidfile;
+use App::OpenHAP::Test::Integration;
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
-my $pidfile = FuguLib::Pidfile->new(path => '/var/run/openhapd.pid');
+my $pidfile = Fugu::Pidfile->new(path => '/var/run/openhapd.pid');
 
 # Test 1: Daemon is running after setup
 my $running = system('rcctl check openhapd >/dev/null 2>&1') == 0;

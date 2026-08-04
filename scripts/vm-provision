@@ -159,6 +159,18 @@ fi
 # Change to extracted directory
 cd /tmp/openhap-*
 
+# Purge every Perl library path that an older install of this project
+# could have left on a warm disk. 'make uninstall' above runs from the
+# NEW checkout, so it names only the current paths: a renamed
+# namespace stays in @INC forever, and a missed rename still resolves
+# there. The suite would then pass against a shim that the environment
+# supplies. The globs cover the retired spellings without naming them,
+# so t/scripts/namespaces.t stays green. App/ itself is not removed:
+# it is a shared parent and holds App::cpanminus on this guest.
+SITE_PERL=/usr/local/libdata/perl5/site_perl
+rm -rf "${SITE_PERL}"/Fugu* "${SITE_PERL}"/OpenHAP \
+	"${SITE_PERL}"/App/OpenHAP "${SITE_PERL}"/Protocol
+
 # Run make install
 make install
 

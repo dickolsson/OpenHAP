@@ -1,0 +1,208 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::EventLoop 3p
+.Os
+.Sh NAME
+.Nm Fugu::EventLoop
+.Nd one select loop for a daemon with one process
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::EventLoop;
+
+my $loop = Fugu::EventLoop->new(signal => $sig);
+
+$loop->add_fd($listener, read => sub ($fh) { accept_one($fh) });
+$loop->every(1, sub { $mqtt->tick(0) });
+$loop->every(30, sub { $mqtt->reconnect unless $mqtt->is_connected });
+
+my $flush = $loop->after(0.25, sub { flush_events() });
+
+$loop->run;	# returns when a signal or a callback stops it
+.Ed
+.Sh DESCRIPTION
+.Nm
+is the loop that a daemon with one process and no threads runs.
+A caller registers descriptors and timers, then calls
+.Fn run .
+.Pp
+Written by hand, that loop becomes one
+.Ic while
+with a poll interval chosen for whichever job needs it most, an epoch
+comparison for each periodic job, and no way out but
+.Xr exit 3
+inside a signal handler.
+This module is that loop, written one time.
+.Pp
+The select timeout comes from the nearest timer deadline.
+Thus a loop whose only job runs every second does not wake ten times
+a second, and a loop with a 250 ms job does not miss it by a whole
+interval.
+.Pp
+There are no threads.
+A callback runs in the process that called
+.Fn run ,
+between passes, and nothing else runs while it does.
+A callback that blocks blocks the loop, so keep the work short or
+queue it.
+.Ss new
+.Fn new "%args"
+creates a loop.
+.Pp
+These are the arguments:
+.Bl -tag -width "signalXX"
+.It Fa log
+The logger for a callback that dies.
+The default is the process default of
+.Xr Fugu::Log 3p .
+.It Fa signal
+A
+.Xr Fugu::Signal 3p
+whose interrupt flag ends the loop.
+.El
+.Ss add_fd
+.Fn add_fd "$fh" "%args"
+watches a descriptor.
+The loop calls the
+.Fa read
+callback with the handle when the handle is readable.
+.Pp
+A second
+.Fn add_fd
+on the same handle replaces the callback rather than adding one, so a
+caller that re-registers does not get two calls for one readable
+event.
+.Pp
+The callback must read with
+.Xr sysread 2 ,
+not with a buffered read.
+A buffered read can take more bytes than the callback consumes, and
+then the descriptor is not readable again and the rest is never
+served.
+.Ss remove_fd
+.Fn remove_fd "$fh"
+stops watching a descriptor.
+The loop does not close it: the owner of a handle closes it.
+.Ss has_fd
+.Fn has_fd "$fh"
+reports if the loop watches a descriptor.
+.Ss every
+.Fn every "$seconds" "$code"
+runs the callback every
+.Fa $seconds .
+The method returns a handle for
+.Fn cancel .
+.Ss after
+.Fn after "$seconds" "$code"
+runs the callback one time,
+.Fa $seconds
+from now.
+The method returns a handle for
+.Fn cancel .
+.Pp
+A caller that schedules the same work again before it runs gets two
+runs.
+Keep the handle, or test it first.
+.Ss cancel
+.Fn cancel "$handle"
+drops a timer.
+Cancelling a timer that already ran, or one that was cancelled, does
+nothing.
+.Ss stop
+.Fn stop
+ends the loop after the current pass.
+A callback calls this to stop the loop it runs inside.
+.Ss is_running
+.Fn is_running
+reports if the loop is between the start and the end of
+.Fn run .
+.Ss signal
+.Fn signal "$manager"
+sets or reads the signal manager.
+A caller that builds the loop before the manager uses this instead of
+the constructor argument.
+.Ss run
+.Fn run
+watches and dispatches until something stops the loop.
+.Pp
+Three things stop it: a callback that calls
+.Fn stop ,
+an interrupt flag on the signal manager, and a loop with no
+descriptor and no timer left, which has nothing to wait for.
+.Pp
+The last one matters to a caller that drives the loop for one piece
+of work: register the work, call
+.Fn run ,
+and the method returns when the work is done.
+.Sh RETURN VALUES
+.Fn every
+and
+.Fn after
+return a timer handle.
+.Fn cancel
+returns 1 when it removed a timer and 0 when there was none.
+.Fn has_fd
+and
+.Fn is_running
+return 1 or 0.
+Every other method returns the object.
+.Sh EXAMPLES
+A daemon that ends on a signal, and shuts down where an operator can
+read it:
+.Bd -literal -offset indent
+my $sig = Fugu::Signal->new;
+$sig->setup_interrupt_flag('INT', 'TERM');
+
+my $loop = Fugu::EventLoop->new(signal => $sig);
+$loop->add_fd($listener, read => \&accept_one);
+$loop->run;
+
+$log->info('Shutting down');
+withdraw_advertisement();
+.Ed
+.Sh ERRORS
+.Fn add_fd
+dies without a code reference, and with a handle that has no
+descriptor.
+A timer dies without a code reference and without a positive
+interval.
+Those are programming errors.
+.Pp
+A callback that dies does not stop the loop.
+The loop logs the reason and carries on.
+A daemon that exits because one connection misbehaved is a daemon
+that a peer can stop.
+.Sh SEE ALSO
+.Xr Fugu::Log 3p ,
+.Xr Fugu::Signal 3p ,
+.Xr IO::Select 3p
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+A pass never sleeps longer than one second, even with no timer due.
+The loop must come back often enough to see a stop request, and a
+caller must not have to add a timer of its own to get that.
+.Pp
+A periodic timer measures its next deadline from the end of the
+callback, not from the old deadline.
+A callback that overran does not then run several times in a row to
+catch up.
+Thus the interval is a minimum gap, not a rate.
+.Pp
+The loop watches for readable only.
+A caller that must know when a descriptor is writable, or that writes
+more than the socket buffer holds, needs a queue of its own.

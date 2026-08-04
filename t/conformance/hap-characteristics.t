@@ -12,15 +12,15 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
 use_ok('Protocol::HAP::Characteristic');
 use_ok('Protocol::HAP::Bridge');
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Heater');
-use_ok('OpenHAP::Tasmota::Sensor');
-use_ok('OpenHAP::Tasmota::Thermostat');
-use_ok('OpenHAP::Tasmota::Lightbulb');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::Tasmota::Sensor');
+use_ok('App::OpenHAP::Tasmota::Thermostat');
+use_ok('App::OpenHAP::Tasmota::Lightbulb');
 
 # [HAP-Characteristics §5] catalog rows for the characteristics that
 # OpenHAP implements: short UUID, format, spec permissions, spec
@@ -198,37 +198,37 @@ subtest '[HAP-Characteristics §1][HAP-Characteristics §7] JSON shape' =>
 # against its catalog row.
 subtest '[HAP-Characteristics §5] device characteristics match rows' =>
     sub {
-	my $mqtt        = OpenHAP::TestMock::MQTT->new;
+	my $mqtt        = App::OpenHAP::TestMock::MQTT->new;
 	my @accessories = (
 		Protocol::HAP::Bridge->new( name => 'Bridge' ),
-		OpenHAP::Tasmota::Heater->new(
+		App::OpenHAP::Tasmota::Heater->new(
 			aid         => 2,
 			name        => 'Heater',
 			mqtt_topic  => 'h',
 			mqtt_client => $mqtt,
 		),
-		OpenHAP::Tasmota::Sensor->new(
+		App::OpenHAP::Tasmota::Sensor->new(
 			aid          => 3,
 			name         => 'Sensor',
 			mqtt_topic   => 's',
 			mqtt_client  => $mqtt,
 			has_humidity => 1,
 		),
-		OpenHAP::Tasmota::Thermostat->new(
+		App::OpenHAP::Tasmota::Thermostat->new(
 			aid         => 4,
 			name        => 'Thermostat',
 			mqtt_topic  => 't',
 			mqtt_client => $mqtt,
 		),
-		OpenHAP::Tasmota::Lightbulb->new(
+		App::OpenHAP::Tasmota::Lightbulb->new(
 			aid          => 5,
 			name         => 'Light',
 			mqtt_topic   => 'l',
 			mqtt_client  => $mqtt,
 			capabilities =>
-			    OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() |
-			    OpenHAP::Tasmota::Lightbulb::CAP_COLOR() |
-			    OpenHAP::Tasmota::Lightbulb::CAP_CT(),
+			    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER() |
+			    App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR() |
+			    App::OpenHAP::Tasmota::Lightbulb::CAP_CT(),
 		),
 	);
 

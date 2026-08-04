@@ -16,15 +16,15 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
-use FuguLib::Pidfile;
+use Fugu::Pidfile;
 use IO::Socket::INET;
-use OpenHAP::Test::Integration;
+use App::OpenHAP::Test::Integration;
 use Time::HiRes qw(sleep);
 
-my $env = OpenHAP::Test::Integration->new;
+my $env = App::OpenHAP::Test::Integration->new;
 $env->setup;
 
-my $pidfile  = FuguLib::Pidfile->new( path => '/var/run/openhapd.pid' );
+my $pidfile  = Fugu::Pidfile->new( path => '/var/run/openhapd.pid' );
 my $hap_port = $env->get_config_value('hap_port') // 51827;
 my $hap_name = $env->get_config_value('hap_name') // 'OpenHAP';
 

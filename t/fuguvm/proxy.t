@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
-# The OpenBSD mirror policy of FuguVM::Proxy. The generic proxy, its
-# cache and its metadata table are proven in t/fugulib/proxy.t.
+# The OpenBSD mirror policy of App::FuguVM::Proxy. The generic proxy, its
+# cache and its metadata table are proven in t/fugu/proxy.t.
 
 use v5.36;
 use Test::More;
@@ -9,19 +9,19 @@ use FindBin    qw($RealBin);
 use lib "$RealBin/../../lib";
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
-use FuguLib::Log;
-use FuguLib::Pidfile;
-use FuguLib::Store;
+use Fugu::Log;
+use Fugu::Pidfile;
+use Fugu::StateFile;
 
-use_ok('FuguVM::Proxy');
-use_ok('FuguVM::State');
+use_ok('App::FuguVM::Proxy');
+use_ok('App::FuguVM::State');
 
-FuguLib::Log->set_default( FuguLib::Log->new( mode => 'quiet' ) );
+Fugu::Log->set_default( Fugu::Log->new( mode => 'quiet' ) );
 
 # Which URL is worth keeping is the whole of the mirror policy. Every
 # pattern is version-scoped, and that is what makes prune safe.
 {
-	my $cache = FuguVM::Proxy::Cache->new( tempdir( CLEANUP => 1 ) );
+	my $cache = App::FuguVM::Proxy::Cache->new( tempdir( CLEANUP => 1 ) );
 
 	my @cacheable = (
 	    'http://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/base78.tgz',
@@ -48,7 +48,7 @@ FuguLib::Log->set_default( FuguLib::Log->new( mode => 'quiet' ) );
 # A kernel has no extension, so the generic content-type table cannot
 # name it. The policy adds that entry.
 {
-	my $cache = FuguVM::Proxy::Cache->new( tempdir( CLEANUP => 1 ) );
+	my $cache = App::FuguVM::Proxy::Cache->new( tempdir( CLEANUP => 1 ) );
 
 	is( $cache->content_type('/pub/OpenBSD/7.8/arm64/bsd'),
 	    'application/octet-stream', 'a kernel is bytes' );
@@ -60,11 +60,11 @@ FuguLib::Log->set_default( FuguLib::Log->new( mode => 'quiet' ) );
 # address gets out of the SLIRP network.
 {
 	my $dir   = tempdir( CLEANUP => 1 );
-	my $store = FuguLib::Store->new( path => "$dir/state.json" )->load;
+	my $store = Fugu::StateFile->new( path => "$dir/state.json" )->load;
 
-	my $proxy = FuguVM::Proxy->new(
-	    cache   => FuguVM::Proxy::Cache->new($dir),
-	    pidfile => FuguLib::Pidfile->new( path => "$dir/proxy.pid" ),
+	my $proxy = App::FuguVM::Proxy->new(
+	    cache   => App::FuguVM::Proxy::Cache->new($dir),
+	    pidfile => Fugu::Pidfile->new( path => "$dir/proxy.pid" ),
 	    store   => $store,
 	);
 
@@ -101,7 +101,7 @@ my $MIRROR = 'cdn.openbsd.org/pub/OpenBSD';
 # directory that a CI cache made still carried them.
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
+	my $cache = App::FuguVM::Proxy::Cache->new($tmpdir);
 
 	_seed($tmpdir, "$MIRROR/7.8/arm64/base78.tgz", 100);
 	_seed($tmpdir, "$MIRROR/7.8/arm64/SHA256", 10);
@@ -150,7 +150,7 @@ my $MIRROR = 'cdn.openbsd.org/pub/OpenBSD';
 # pub/OpenBSD at all
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
+	my $cache = App::FuguVM::Proxy::Cache->new($tmpdir);
 
 	_seed($tmpdir, "$MIRROR/7.6/arm64/base76.tgz", 10);
 	_seed($tmpdir, "$MIRROR/7.7/arm64/base77.tgz", 20);
@@ -166,7 +166,7 @@ my $MIRROR = 'cdn.openbsd.org/pub/OpenBSD';
 # A prune that keeps only an absent version removes everything present
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
+	my $cache = App::FuguVM::Proxy::Cache->new($tmpdir);
 
 	_seed($tmpdir, "$MIRROR/7.7/arm64/base77.tgz", 30);
 
@@ -179,7 +179,7 @@ my $MIRROR = 'cdn.openbsd.org/pub/OpenBSD';
 # directories at all.
 {
 	my $tmpdir = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::Proxy::Cache->new($tmpdir);
+	my $cache = App::FuguVM::Proxy::Cache->new($tmpdir);
 
 	is_deeply($cache->prune('7.8'), [],
 	    'prune on an empty cache is a no-op');

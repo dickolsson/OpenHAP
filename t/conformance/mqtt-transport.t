@@ -8,19 +8,19 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Base');
-use_ok('OpenHAP::Tasmota::Heater');
-use_ok('OpenHAP::Tasmota::Lightbulb');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Device');
+use_ok('App::OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::Tasmota::Lightbulb');
 
 use constant AVAILABILITY_ONLINE  => 1;
 use constant AVAILABILITY_OFFLINE => 2;
 
 sub make_base ( $mqtt, %extra )
 {
-	return OpenHAP::Tasmota::Base->new(
+	return App::OpenHAP::Tasmota::Device->new(
 		aid         => 2,
 		name        => 'Transport Test',
 		mqtt_topic  => 'device',
@@ -30,7 +30,7 @@ sub make_base ( $mqtt, %extra )
 }
 
 subtest '[MQTT-Transport §1][MQTT-Transport §1.1] topic prefixes' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 
@@ -48,7 +48,7 @@ subtest '[MQTT-Transport §1][MQTT-Transport §1.1] topic prefixes' => sub {
 };
 
 subtest '[MQTT-Transport §1.2] FullTopic pattern' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 
 	# Default pattern: %prefix%/%topic%/
 	my $default = make_base($mqtt);
@@ -68,7 +68,7 @@ subtest '[MQTT-Transport §1.2] FullTopic pattern' => sub {
 };
 
 subtest '[MQTT-Transport §1.3] topic tokens' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 	my $base = make_base( $mqtt, fulltopic => 'home/%topic%/%prefix%/' );
 
 	# The builder replaces %topic% with the device topic and
@@ -79,7 +79,7 @@ subtest '[MQTT-Transport §1.3] topic tokens' => sub {
 };
 
 subtest '[MQTT-Transport §1.4] LWT special topic' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 
@@ -93,8 +93,8 @@ subtest '[MQTT-Transport §1.4] LWT special topic' => sub {
 };
 
 subtest '[MQTT-Transport §2][MQTT-Transport §2.1] command topic and payload' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Heater',
 		mqtt_topic  => 'device',
@@ -110,7 +110,7 @@ subtest '[MQTT-Transport §2][MQTT-Transport §2.1] command topic and payload' =
 };
 
 subtest '[MQTT-Transport §2.3] query pattern' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 
@@ -128,8 +128,8 @@ subtest '[MQTT-Transport §2.3] query pattern' => sub {
 };
 
 subtest '[MQTT-Transport §2.4] bidirectional flow' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Heater',
 		mqtt_topic  => 'device',
@@ -150,10 +150,10 @@ subtest '[MQTT-Transport §2.4] bidirectional flow' => sub {
 };
 
 subtest '[MQTT-Transport §3][MQTT-Transport §3.1][MQTT-Transport §3.2] MQTT-related SetOptions' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 
 	# SO26: indexed POWER1 even for a single relay
-	my $so26 = OpenHAP::Tasmota::Heater->new(
+	my $so26 = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'SO26 Heater',
 		mqtt_topic  => 'device',
@@ -166,14 +166,14 @@ subtest '[MQTT-Transport §3][MQTT-Transport §3.1][MQTT-Transport §3.2] MQTT-r
 		'SetOption26 command topic indexed' );
 
 	# SO4: responses on command-named topics instead of RESULT
-	my $light = OpenHAP::Tasmota::Lightbulb->new(
+	my $light = App::OpenHAP::Tasmota::Lightbulb->new(
 		aid          => 3,
 		name         => 'SO4 Light',
 		mqtt_topic   => 'light',
 		mqtt_client  => $mqtt,
-		capabilities => OpenHAP::Tasmota::Lightbulb::CAP_DIMMER()
-		    | OpenHAP::Tasmota::Lightbulb::CAP_COLOR()
-		    | OpenHAP::Tasmota::Lightbulb::CAP_CT(),
+		capabilities => App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER()
+		    | App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR()
+		    | App::OpenHAP::Tasmota::Lightbulb::CAP_CT(),
 	);
 	$light->subscribe_mqtt;
 	my @subs = $mqtt->get_subscriptions;
@@ -184,7 +184,7 @@ subtest '[MQTT-Transport §3][MQTT-Transport §3.1][MQTT-Transport §3.2] MQTT-r
 };
 
 subtest '[MQTT-Transport §4][MQTT-Transport §4.2] LWT Online/Offline handling' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 
@@ -199,7 +199,7 @@ subtest '[MQTT-Transport §4][MQTT-Transport §4.2] LWT Online/Offline handling'
 };
 
 subtest '[MQTT-Transport §5][MQTT-Transport §5.2] reconnection state refresh' => sub {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 	my $base = make_base($mqtt);
 	$base->subscribe_mqtt;
 

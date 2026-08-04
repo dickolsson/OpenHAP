@@ -1,0 +1,89 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 3 2026 $
+.Dt Fugu::Random 3p
+.Os
+.Sh NAME
+.Nm Fugu::Random
+.Nd random bytes and random passwords
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Random;
+
+my $nonce = Fugu::Random->random_bytes(12);
+my $password = Fugu::Random->random_password(32);
+.Ed
+.Sh DESCRIPTION
+.Nm
+gives random bytes from
+.Pa /dev/urandom
+and random passwords built from them.
+.Pp
+Every method is a class method.
+The module keeps no state, never logs, and uses core Perl only.
+A programming error dies.
+There is no partial result and no quiet fallback, because a caller
+cannot recover from a secret with a known prefix.
+.Ss random_bytes
+.Fn random_bytes "$length"
+returns
+.Fa $length
+bytes from
+.Pa /dev/urandom .
+.Pp
+The method dies when the device does not open, and dies on a short
+read.
+Neither one has a recovery: a caller that continues with fewer bytes
+than it asked for builds a secret with a known prefix.
+.Ss random_password
+.Fn random_password "$length"
+returns a random password of exactly
+.Fa $length
+characters.
+The default length is 32.
+.Pp
+The alphabet is URL-safe base64, so the password survives a shell, a
+URL and a configuration file with no quoting.
+.Sh RETURN VALUES
+.Fn random_bytes
+and
+.Fn random_password
+return a string of the asked-for length.
+.Sh ERRORS
+.Fn random_bytes
+dies when
+.Pa /dev/urandom
+does not open, on a short read, and on a length that is not positive.
+.Fn random_password
+dies on a length that is not positive.
+.Sh SEE ALSO
+.Xr arc4random 3 ,
+.Xr random 4
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io
+.Sh CAVEATS
+.Fn random_password
+trims a base64 string to the asked-for length.
+A password of
+.Fa n
+characters therefore carries about six bits of entropy for each
+character, and not eight.
+.Pp
+The HAP protocol library has its own randomness in
+.Vt Protocol::HAP::Crypto .
+The duplication is deliberate: the protocol library stays
+self-contained across a distribution boundary.

@@ -9,28 +9,28 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::Log;
-use FuguLib::TestLog;
+use Fugu::Log;
+use Fugu::TestLog;
 
-use_ok('OpenHAP::TestMock::MQTT');
-use_ok('OpenHAP::Tasmota::Base');
-use_ok('OpenHAP::Tasmota::Heater');
-use_ok('OpenHAP::Tasmota::Sensor');
-use_ok('OpenHAP::Tasmota::Thermostat');
-use_ok('OpenHAP::Tasmota::Lightbulb');
+use_ok('App::OpenHAP::TestMock::MQTT');
+use_ok('App::OpenHAP::Tasmota::Device');
+use_ok('App::OpenHAP::Tasmota::Heater');
+use_ok('App::OpenHAP::Tasmota::Sensor');
+use_ok('App::OpenHAP::Tasmota::Thermostat');
+use_ok('App::OpenHAP::Tasmota::Lightbulb');
 
 use constant AVAILABILITY_UNKNOWN => 0;
 use constant AVAILABILITY_ONLINE  => 1;
 use constant AVAILABILITY_OFFLINE => 2;
 
-my $CAP_DIMMER = OpenHAP::Tasmota::Lightbulb::CAP_DIMMER();
-my $CAP_COLOR  = OpenHAP::Tasmota::Lightbulb::CAP_COLOR();
-my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
+my $CAP_DIMMER = App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER();
+my $CAP_COLOR  = App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR();
+my $CAP_CT     = App::OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test Base class construction and availability accessors
 {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
-	my $base = OpenHAP::Tasmota::Base->new(
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
+	my $base = App::OpenHAP::Tasmota::Device->new(
 		aid         => 2,
 		name        => 'Test Base',
 		mqtt_topic  => 'test_device',
@@ -53,8 +53,8 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test temperature conversion helper
 {
-	my $mqtt = OpenHAP::TestMock::MQTT->new;
-	my $base = OpenHAP::Tasmota::Base->new(
+	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
+	my $base = App::OpenHAP::Tasmota::Device->new(
 		aid         => 2,
 		name        => 'Test Base',
 		mqtt_topic  => 'test_device',
@@ -74,8 +74,8 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test Heater construction and initial state
 {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Test Heater',
 		mqtt_topic  => 'heater',
@@ -90,8 +90,8 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test Sensor construction and initial state
 {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $sensor = OpenHAP::Tasmota::Sensor->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $sensor = App::OpenHAP::Tasmota::Sensor->new(
 		aid         => 2,
 		name        => 'Test Sensor',
 		mqtt_topic  => 'sensor',
@@ -104,8 +104,8 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test Thermostat construction and initial state
 {
-	my $mqtt       = OpenHAP::TestMock::MQTT->new;
-	my $thermostat = OpenHAP::Tasmota::Thermostat->new(
+	my $mqtt       = App::OpenHAP::TestMock::MQTT->new;
+	my $thermostat = App::OpenHAP::Tasmota::Thermostat->new(
 		aid         => 2,
 		name        => 'Test Thermostat',
 		mqtt_topic  => 'thermostat',
@@ -120,8 +120,8 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test Lightbulb construction and initial state
 {
-	my $mqtt      = OpenHAP::TestMock::MQTT->new;
-	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
+	my $mqtt      = App::OpenHAP::TestMock::MQTT->new;
+	my $lightbulb = App::OpenHAP::Tasmota::Lightbulb->new(
 		aid          => 2,
 		name         => 'Test Light',
 		mqtt_topic   => 'light',
@@ -136,8 +136,8 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 
 # Test RGB to HSB conversion helper math
 {
-	my $mqtt      = OpenHAP::TestMock::MQTT->new;
-	my $lightbulb = OpenHAP::Tasmota::Lightbulb->new(
+	my $mqtt      = App::OpenHAP::TestMock::MQTT->new;
+	my $lightbulb = App::OpenHAP::Tasmota::Lightbulb->new(
 		aid          => 2,
 		name         => 'RGB Test',
 		mqtt_topic   => 'light',
@@ -169,9 +169,9 @@ my $CAP_CT     = OpenHAP::Tasmota::Lightbulb::CAP_CT();
 # Without this, the write and subscription debug lines of the daemon
 # would disappear into the null logger.
 subtest 'a driver passes its logger to its characteristics' => sub {
-	my $mqtt   = OpenHAP::TestMock::MQTT->new;
-	my $logger = FuguLib::Log->new( mode => FuguLib::Log::MODE_QUIET );
-	my $heater = OpenHAP::Tasmota::Heater->new(
+	my $mqtt   = App::OpenHAP::TestMock::MQTT->new;
+	my $logger = Fugu::Log->new( mode => Fugu::Log::MODE_QUIET );
+	my $heater = App::OpenHAP::Tasmota::Heater->new(
 		aid         => 2,
 		name        => 'Logger Test',
 		mqtt_topic  => 'heater',

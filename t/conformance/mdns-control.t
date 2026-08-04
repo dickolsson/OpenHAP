@@ -12,8 +12,8 @@ use IO::Socket::UNIX;
 use POSIX qw(_exit);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use_ok('FuguLib::Imsg');
-use_ok('FuguLib::MDNS');
+use_ok('Fugu::Imsg');
+use_ok('Fugu::Mdnsd');
 
 # The layout literals below are LP64 and little-endian, as measured
 # for the platforms that OpenHAP deploys to. On other platforms the
@@ -22,7 +22,7 @@ use_ok('FuguLib::MDNS');
 my $lp64_le = $Config{ptrsize} == 8
     && unpack( 'S', "\x01\x00" ) == 1;
 
-# harness(%replies): a FuguLib::MDNS whose connection is one end of a
+# harness(%replies): a Fugu::Mdnsd whose connection is one end of a
 # socketpair. The harness queues the given replies on the peer end.
 # It returns ($mdns, $peer). Tests read the sent bytes back from
 # $peer.
@@ -32,8 +32,8 @@ sub harness (@reply_types)
 	    or die "socketpair: $!";
 	binmode $_ for $a, $b;
 
-	my $mdns = FuguLib::MDNS->new;
-	$mdns->{imsg} = FuguLib::Imsg->new( fh => $a );
+	my $mdns = Fugu::Mdnsd->new;
+	$mdns->{imsg} = Fugu::Imsg->new( fh => $a );
 
 	for my $type (@reply_types) {
 		syswrite $b,
@@ -78,7 +78,7 @@ subtest '[MDNS-Control §2] imsg_type ordinals are positional' => sub {
 	    IMSG_CTL_GROUP_ANNOUNCING IMSG_CTL_GROUP_PUBLISHED
 	);
 	for my $ordinal ( 0 .. $#enum ) {
-		my $value = FuguLib::MDNS->can( $enum[$ordinal] )->();
+		my $value = Fugu::Mdnsd->can( $enum[$ordinal] )->();
 		is( $value, $ordinal,
 			"[MDNS-Control §2/$enum[$ordinal]] ordinal $ordinal"
 		);
@@ -89,7 +89,7 @@ subtest '[MDNS-Control §4] struct mdns_service against a literal' => sub {
 	plan skip_all => 'layout literal is LP64 little-endian'
 	    unless $lp64_le;
 
-	my $mdns = FuguLib::MDNS->new;
+	my $mdns = Fugu::Mdnsd->new;
 	$mdns->{service} = {
 		name  => 'OpenHAP Bridge',
 		app   => 'hap',
@@ -211,7 +211,7 @@ subtest '[MDNS-Control §7] group name equals the instance name' => sub {
 	# The API cannot express the unusable combination:
 	# publish_service has no separate group parameter to disagree
 	# with the name
-	ok( !FuguLib::MDNS->can('publish_group'),
+	ok( !Fugu::Mdnsd->can('publish_group'),
 		'no API takes a separate group name' );
 };
 
@@ -235,7 +235,7 @@ subtest '[MDNS-Control §8] TXT replacement reconnects, never resets' =>
 		$fh->autoflush(1);
 		for my $conn ( 0, 1 ) {
 			my $sock = $listener->accept or _exit(1);
-			my $imsg = FuguLib::Imsg->new( fh => $sock );
+			my $imsg = Fugu::Imsg->new( fh => $sock );
 			for ( 1 .. 3 ) {
 				my $msg = $imsg->recv( timeout => 10 )
 				    or _exit(1);
@@ -252,7 +252,7 @@ subtest '[MDNS-Control §8] TXT replacement reconnects, never resets' =>
 	}
 	close $listener;
 
-	my $mdns = FuguLib::MDNS->new( socket_path => $path );
+	my $mdns = Fugu::Mdnsd->new( socket_path => $path );
 	ok( $mdns->connect,          'connected' );
 	ok( publish_example($mdns),  'published' );
 	ok( $mdns->update_txt( txt => 'c#=1.sf=0' ), 'TXT updated' );
@@ -283,7 +283,7 @@ subtest '[MDNS-Control §5] TXT travels as one verbatim string' => sub {
 
 	# Several key=value pairs joined with '.' are a single wire
 	# field. The code does not escape or re-encode anything.
-	my $mdns = FuguLib::MDNS->new;
+	my $mdns = Fugu::Mdnsd->new;
 	$mdns->{service} = {
 		name  => 'x',
 		app   => 'hap',
@@ -302,7 +302,7 @@ subtest '[MDNS-Control §5] TXT travels as one verbatim string' => sub {
 
 subtest '[MDNS-Control §3.1] group names bound at 255 usable bytes' =>
     sub {
-	my $mdns = FuguLib::MDNS->new;
+	my $mdns = Fugu::Mdnsd->new;
 	ok( !defined $mdns->publish_service(
 			name  => 'n' x 256,
 			app   => 'hap',

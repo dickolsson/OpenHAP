@@ -1,0 +1,202 @@
+.\" $OpenBSD$
+.\"
+.\" Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: August 2 2026 $
+.Dt Fugu::Mdnsd 3p
+.Os
+.Sh NAME
+.Nm Fugu::Mdnsd
+.Nd control mdnsd over its control socket
+.Sh SYNOPSIS
+.Bd -literal
+use Fugu::Mdnsd;
+
+my $mdns = Fugu::Mdnsd->new;
+
+$mdns->publish(
+    name  => 'My Bridge',
+    app   => 'hap',
+    proto => 'tcp',
+    port  => 51827,
+    txt   => 'c#=1.sf=1',
+) or warn 'publish failed: ' . $mdns->error;
+
+$mdns->update_txt(txt => 'c#=1.sf=0');
+
+$mdns->withdraw;
+.Ed
+.Sh DESCRIPTION
+.Nm
+publishes services with
+.Xr mdnsd 8 .
+The module uses the mdnsd control protocol directly over
+.Pa /var/run/mdnsd.sock ,
+and it starts no
+.Xr mdnsctl 8
+child process.
+It implements no mDNS of its own: every method here is a control
+operation, and no mDNS packet ever leaves the module.
+.Xr mdnsd 8
+sends those.
+The connection is the lifetime of the advertisement.
+mdnsd withdraws the service when the socket closes.
+Thus a daemon keeps the object alive for as long as the daemon must
+be discoverable.
+To withdraw the advertisement, the daemon only closes the socket.
+.Pp
+The document
+.Pa spec/MDNS-Control.md
+in the OpenHAP repository specifies the wire protocol.
+This specification has the message types, the payload layouts, the
+group state machine, and its timing.
+The module never logs.
+Every method returns an outcome and records the most recent failure
+for
+.Fn error .
+.Ss new
+.Fn new "socket_path => $path" "timeout => $seconds"
+creates a handle.
+.Fa socket_path
+defaults to
+.Pa /var/run/mdnsd.sock .
+.Fa timeout
+sets the maximum time that the publish methods wait for the replies
+from mdnsd.
+The default is 10 seconds.
+A healthy mdnsd confirms publication after approximately four seconds.
+.Pp
+The method proves the
+.Vt struct mdns_service
+template at construction and dies when the encoded size is wrong.
+That size is a measured fact about the platform, not an input.
+A template that no longer matches means every publish would send a
+malformed record.
+.Ss publish
+.Fo publish
+.Fa "name => $instance"
+.Fa "app => $app"
+.Fa "proto => $proto"
+.Fa "port => $port"
+.Fa "txt => $string"
+.Fa "timeout => $seconds"
+.Fc
+connects if necessary, then publishes.
+This is the whole startup path of a daemon that advertises one service:
+one call, and one error to report.
+The arguments are those of
+.Fn publish_service .
+.Pp
+Use
+.Fn connect
+and
+.Fn publish_service
+separately only when the two steps need different handling.
+.Ss connect
+.Fn connect
+connects to the control socket.
+The method returns 1 on success.
+It returns
+.Dv undef
+when the socket is absent or unreachable.
+When mdnsd does not run, this is a normal condition.
+The caller decides if this condition is important.
+.Ss publish_service
+.Fo publish_service
+.Fa "name => $instance"
+.Fa "app => $app"
+.Fa "proto => $proto"
+.Fa "port => $port"
+.Fa "txt => $string"
+.Fa "timeout => $seconds"
+.Fc
+advertises one service and waits for mdnsd to confirm publication.
+.Fa name
+is the service instance name.
+mdnsd also uses this name as the publish group name.
+Thus the two names cannot be different.
+.Fa app
+is the application protocol with no underscore at the start
+.Pq Dq hap , not Dq _hap .
+.Fa proto
+must be
+.Dq tcp
+or
+.Dq udp .
+.Fa txt
+is the TXT string in its final format:
+key=value pairs with the
+.Ql \&.
+character between them.
+.Xr mdnsd 8
+splits the string on this delimiter, with no escape mechanism.
+The meaning of the keys is not important to the module.
+.Pp
+The method returns 1 after mdnsd publishes the service.
+The method returns
+.Dv undef
+on input that is too long.
+This is an error, never a silent truncation.
+The method also returns
+.Dv undef
+on an absent connection, on an error reply (for example, a name
+collision),
+on an end-of-file, or on a timeout.
+.Ss format_txt
+.Fn format_txt "%records"
+formats TXT records for mdnsd: key=value pairs in sorted key order,
+joined with
+.Sq \&. .
+.Pp
+The join is mdnsd's format, not the protocol's.
+mdnsd uses
+.Sq \&.
+as the TXT record delimiter and does not support escaping.
+The sorted order keeps the wire form deterministic.
+This is a plain function, not a method.
+.Ss update_txt
+.Fn update_txt "txt => $string" "timeout => $seconds"
+replaces the TXT record.
+mdnsd cannot replace records on a held connection.
+Thus the method withdraws the advertisement and publishes it again
+over a fresh connection.
+The method uses the same parameters that the caller gave to
+.Fn publish_service .
+When the service is not published, the method does nothing and
+returns success.
+.Ss withdraw
+.Fn withdraw
+closes the control socket.
+This closure withdraws the advertisement.
+The method always returns 1.
+.Pp
+The destructor calls
+.Fn withdraw .
+The held socket is the lifetime of the advertisement, so the object
+going away must withdraw the service, whether the caller remembered to
+or not.
+.Ss is_published
+.Fn is_published
+returns true while the module advertises the service on a held
+connection.
+.Ss error
+.Fn error
+returns the most recent failure as a short string.
+The caller can log this string.
+.Sh SEE ALSO
+.Xr Fugu::Imsg 3p ,
+.Xr mdnsd 8
+.Sh AUTHORS
+.An Dick Olsson Aq Mt hi@senzilla.io

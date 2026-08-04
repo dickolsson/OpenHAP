@@ -7,7 +7,7 @@ use Protocol::HAP::TLV;
 use Protocol::HAP::SRP;
 use Protocol::HAP::Crypto;
 
-use Protocol::HAP::PIN qw(normalize_pin);
+use Protocol::HAP::SetupCode qw(normalize_setup_code);
 
 # TLV Types for pairing
 use constant {
@@ -46,7 +46,7 @@ use constant MAX_AUTH_ATTEMPTS => 100;
 
 sub new ( $class, %args )
 {
-	my $pin = normalize_pin( $args{pin} ) // die "PIN required";
+	my $pin = normalize_setup_code( $args{pin} ) // die "PIN required";
 
 	# The store is required. The attempt counter of HAP-Pairing.md
 	# §8 needs persistence; a silent in-memory fallback would fail

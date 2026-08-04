@@ -8,18 +8,18 @@ use lib "$RealBin/../lib";
 use File::Temp qw(tempdir);
 use File::Path qw(make_path);
 
-use_ok('FuguVM::Config');
+use_ok('App::FuguVM::Config');
 
 # Test constants
-is(FuguVM::Config::DEFAULT_MEMORY(), 2048, 'DEFAULT_MEMORY is 2048');
-is(FuguVM::Config::DEFAULT_SSH_PORT(), 2222, 'DEFAULT_SSH_PORT is 2222');
-is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
+is(App::FuguVM::Config::DEFAULT_MEMORY(), 2048, 'DEFAULT_MEMORY is 2048');
+is(App::FuguVM::Config::DEFAULT_SSH_PORT(), 2222, 'DEFAULT_SSH_PORT is 2222');
+is(App::FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 
 # Test find_project_root returns undef when not in project
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     chdir $tmpdir;
-    my $root = FuguVM::Config->find_project_root;
+    my $root = App::FuguVM::Config->find_project_root;
     is($root, undef, 'find_project_root returns undef outside project');
 }
 
@@ -31,7 +31,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     close $fh;
     chdir $tmpdir;
-    my $root = FuguVM::Config->find_project_root;
+    my $root = App::FuguVM::Config->find_project_root;
     # Resolve symlinks for comparison (macOS /var -> /private/var)
     use Cwd qw(realpath);
     my $expected = realpath($tmpdir);
@@ -50,7 +50,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "default_vm test\n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->default_vm, 'test', 'default_vm parsed correctly');
 }
 
@@ -69,7 +69,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "}\n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('test');
     
     ok(defined $vm, 'VM config loaded from block');
@@ -91,7 +91,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "memory 2048\n";
     close $fh;
 
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('spare');
 
     ok(defined $vm, 'VM config loaded from separate file');
@@ -104,7 +104,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
 
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('nonexistent');
     is($vm, undef, 'load_vm returns undef for missing VM');
 }
@@ -122,7 +122,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "}\n";
     close $fh;
 
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('test');
 
     is($vm->{cache_dir}, '/var/cache/fuguvm',
@@ -144,7 +144,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "vm test {\n}\n";
     close $fh;
 
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->image_cache, 1, 'image_cache defaults to on');
     is($config->load_vm('test')->{image_cache}, 1,
 	'and the default reaches the per-VM config');
@@ -152,14 +152,14 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     open my $gh, '>', "$homedir/.fuguvmrc";
     print $gh "image_cache no\n";
     close $gh;
-    $config = FuguVM::Config->new($tmpdir);
+    $config = App::FuguVM::Config->new($tmpdir);
     is($config->image_cache, 0, 'global image_cache no switches it off');
 
     open $fh, '>', "$tmpdir/.fuguvmrc";
     print $fh "image_cache yes\n";
     print $fh "vm test {\n}\n";
     close $fh;
-    $config = FuguVM::Config->new($tmpdir);
+    $config = App::FuguVM::Config->new($tmpdir);
     is($config->image_cache, 1, 'project image_cache wins over global');
     is($config->load_vm('test')->{image_cache}, 1,
 	'and reaches the per-VM config');
@@ -168,7 +168,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 	open $fh, '>', "$tmpdir/.fuguvmrc";
 	print $fh "image_cache $off\n";
 	close $fh;
-	is(FuguVM::Config->new($tmpdir)->image_cache, 0,
+	is(App::FuguVM::Config->new($tmpdir)->image_cache, 0,
 	    "image_cache $off is off");
     }
 
@@ -176,7 +176,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
 	open $fh, '>', "$tmpdir/.fuguvmrc";
 	print $fh "image_cache $on\n";
 	close $fh;
-	is(FuguVM::Config->new($tmpdir)->image_cache, 1,
+	is(App::FuguVM::Config->new($tmpdir)->image_cache, 1,
 	    "image_cache $on is on");
     }
 
@@ -189,7 +189,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     {
 	local *STDERR;
 	open STDERR, '>', \$diagnostic or die "capture stderr: $!";
-	$result = FuguVM::Config->new($tmpdir)->image_cache;
+	$result = App::FuguVM::Config->new($tmpdir)->image_cache;
     }
     is($result, 1, 'an unparseable image_cache falls back to the default');
     like($diagnostic, qr/not a yes\/no value: maybe/,
@@ -211,7 +211,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "}\n";
     close $fh;
 
-    my $vm = FuguVM::Config->new($tmpdir)->load_vm('test');
+    my $vm = App::FuguVM::Config->new($tmpdir)->load_vm('test');
     is($vm->{image_cache}, 0,
 	'a VM block switches its own image cache off, as a number');
 }
@@ -227,7 +227,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "vm test {\n}\n";
     close $fh;
 
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('test');
 
     is($vm->{cache_dir}, "$homedir/.cache/fuguvm",
@@ -244,7 +244,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "ssh_pubkey ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI test\@example\n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     like($config->ssh_pubkey, qr/^ssh-ed25519/, 'ssh_pubkey parsed from project config');
 }
 
@@ -265,7 +265,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     close $gh;
     
     local $ENV{HOME} = $homedir;
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     like($config->ssh_pubkey, qr/^ssh-rsa/, 'ssh_pubkey falls back to global config');
 }
 
@@ -282,7 +282,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "}\n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('test');
     is($vm->{ssh_pubkey}, 'ssh-ed25519 TESTKEY test@vm', 'ssh_pubkey included in VM config');
 }
@@ -306,7 +306,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     close $fh;
     
     local $ENV{HOME} = $homedir;
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     
     is($config->default_vm, 'project-vm', 'project config overrides global default_vm');
     is($config->cache_dir, '/global/cache', 'global cache_dir used when not in project');
@@ -326,7 +326,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     use Cwd qw(getcwd realpath);
     my $orig_cwd = getcwd();
     chdir "$tmpdir/subdir/deep/nested";
-    my $root = FuguVM::Config->find_project_root;
+    my $root = App::FuguVM::Config->find_project_root;
     chdir $orig_cwd;  # Restore the cwd before cleanup
     
     my $expected = realpath($tmpdir);
@@ -346,7 +346,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "  cache_dir   /path/with/spaces   \n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->default_vm, 'test', 'inline comments stripped');
     is($config->cache_dir, '/path/with/spaces', 'whitespace trimmed');
 }
@@ -359,7 +359,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->{data_dir}, "$tmpdir/.fuguvm", 'data_dir set correctly');
 }
 
@@ -371,7 +371,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->state_dir, "$tmpdir/.fuguvm/state", 'state_dir defaults to .fuguvm/state');
 }
 
@@ -384,7 +384,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "state_dir /custom/state\n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->state_dir, '/custom/state', 'state_dir from config');
 }
 
@@ -399,7 +399,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     close $fh;
     
     local $ENV{HOME} = $homedir;
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->cache_dir, "$homedir/cache/fuguvm", 'cache_dir expands tilde');
 }
 
@@ -421,7 +421,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     close $fh;
     
     local $ENV{HOME} = $homedir;
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('shared');
     
     ok(defined $vm, 'VM loaded from global config');
@@ -449,7 +449,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     close $fh;
     
     local $ENV{HOME} = $homedir;
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('test');
     
     is($vm->{memory}, 4096, 'project VM config overrides global');
@@ -463,7 +463,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     open my $fh, '>', "$tmpdir/.fuguvmrc";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     is($config->project_root, $tmpdir, 'project_root accessor');
 }
 
@@ -479,7 +479,7 @@ is(FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     print $fh "}\n";
     close $fh;
     
-    my $config = FuguVM::Config->new($tmpdir);
+    my $config = App::FuguVM::Config->new($tmpdir);
     my $vm = $config->load_vm('simple');
     
     ok(defined $vm, 'VM with unquoted name loaded');

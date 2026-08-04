@@ -7,7 +7,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use lib "$RealBin/../lib";
-use FuguLib::TestLog;
+use Fugu::TestLog;
 
 use_ok('Protocol::HAP::TLV');
 use_ok('Protocol::HAP::Pairing');
@@ -216,11 +216,10 @@ subtest '[HAP-TLV8 §10] parser rules with hostile buffers' => sub {
 
 	# Malformed input to pair-setup returns an error TLV, not a crash
 	require Protocol::HAP::Session;
-	require OpenHAP::Storage;
+	require Protocol::HAP::Store::File;
 	require File::Temp;
-	my $storage =
-	    OpenHAP::Storage->new(
-		db_path => File::Temp::tempdir( CLEANUP => 1 ) );
+	my $storage = Protocol::HAP::Store::File->new(
+		path => File::Temp::tempdir( CLEANUP => 1 ) );
 	my $pairing = Protocol::HAP::Pairing->new(
 		pin            => '123-45-678',
 		store        => $storage,

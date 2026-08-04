@@ -7,19 +7,19 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../lib";
 use File::Temp qw(tempdir);
 
-use_ok('FuguVM::Disk');
+use_ok('App::FuguVM::Disk');
 
 # Test object creation
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = FuguVM::Disk->new($tmpdir);
+    my $disk = App::FuguVM::Disk->new($tmpdir);
     ok(defined $disk, 'Disk object created');
 }
 
 # Test path generation
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = FuguVM::Disk->new($tmpdir);
+    my $disk = App::FuguVM::Disk->new($tmpdir);
     
     my $path = $disk->path('test');
     like($path, qr/test.*disk\.qcow2$/, 'path includes VM name and disk.qcow2');
@@ -28,7 +28,7 @@ use_ok('FuguVM::Disk');
 # Test exists returns false for non-existent disk
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = FuguVM::Disk->new($tmpdir);
+    my $disk = App::FuguVM::Disk->new($tmpdir);
     
     ok(!$disk->disk_exists('test'), 'disk_exists returns false for missing disk');
 }
@@ -36,7 +36,7 @@ use_ok('FuguVM::Disk');
 # Test remove on non-existent disk
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = FuguVM::Disk->new($tmpdir);
+    my $disk = App::FuguVM::Disk->new($tmpdir);
     
     my $result = $disk->remove('test');
     ok($result, 'remove returns true for non-existent disk');
@@ -48,7 +48,7 @@ SKIP: {
     skip 'qemu-img not installed', 10 unless $has_qemu;
 
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = FuguVM::Disk->new($tmpdir);
+    my $disk = App::FuguVM::Disk->new($tmpdir);
 
     # Test disk creation
     my $path = $disk->create('test', '1G');
@@ -63,7 +63,7 @@ SKIP: {
 
     # Overlays: no size, and a qcow2 (not raw) backing format
     my $overlay_dir = tempdir(CLEANUP => 1);
-    my $overlay = FuguVM::Disk->new($overlay_dir);
+    my $overlay = App::FuguVM::Disk->new($overlay_dir);
     my $opath = $overlay->create('child', undef, $path, 'qcow2');
     ok(defined $opath, 'overlay created without an explicit size');
 
@@ -94,12 +94,12 @@ SKIP: {
     skip 'qemu-io not installed', 4 unless $has_qemu_io;
 
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = FuguVM::Disk->new($tmpdir);
+    my $disk = App::FuguVM::Disk->new($tmpdir);
     my $path = $disk->create('locked', '64M');
     my $parent = $disk->create('parent', '64M');
 
     my $overlay_dir = tempdir(CLEANUP => 1);
-    my $overlay = FuguVM::Disk->new($overlay_dir);
+    my $overlay = App::FuguVM::Disk->new($overlay_dir);
     $overlay->create('kid', undef, $parent, 'qcow2');
 
     # qemu-io holds the image, and its lock, while its stdin is open.
