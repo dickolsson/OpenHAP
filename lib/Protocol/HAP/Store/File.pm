@@ -385,7 +385,9 @@ sub _write ( $self, $path, $data, $mode )
 #	one filesystem, so the temporary name is a sibling.
 sub _write_atomic ( $self, $path, $data, $mode )
 {
-	my $temp = "$path.$$.tmp";
+	# A hidden sibling, as the host helper used before the move. The
+	# state directory thus looks the same to an operator.
+	my $temp = $path =~ s{(^|/)([^/]+)$}{${1}.$2.$$.tmp}r;
 	unlink $temp if -e $temp;
 
 	sysopen my $fh, $temp, O_CREAT | O_EXCL | O_WRONLY, $mode or do {
