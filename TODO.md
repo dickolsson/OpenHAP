@@ -565,17 +565,24 @@ refinements.
   - Need: Version tagging, changelog, release notes
   - Files: New `CHANGELOG.md`, version tagging
 
-### Protocol::HAP CPAN release
+### Protocol:: CPAN release
 
-The `Protocol::HAP` library under `lib/Protocol/` is host-neutral and
-self-contained. A CPAN release of the `Protocol-HAP` distribution needs:
+The libraries under `lib/Protocol/` are host-neutral and self-contained. A CPAN
+release of the `Protocol-HAP` or `Protocol-Imsg` distribution needs:
 
-- [ ] PAUSE registration of the `Protocol-HAP` distribution name
+- [ ] PAUSE registration of the distribution name
 - [ ] A `$VERSION` policy for the modules (none carry one today)
 - [ ] Distribution tooling: `Makefile.PL` or `Build.PL`, `MANIFEST`,
       distribution tests
 - [ ] A redistribution-license review of `spec/` before any spec text ships in
       the distribution
+- [ ] `Protocol::Imsg` frames without descriptor passing. A release either adds
+      it, which needs `recvmsg` and `sendmsg`, or states the subset in the
+      distribution metadata as plainly as the pod does.
+- [ ] The `Protocol::Imsg` name is a compromise. The header is native-endian, so
+      the format never crosses a host, while `Protocol::` on CPAN holds
+      interoperable protocols. `OpenBSD::` is the honest alternative and it is
+      unusable: OpenBSD base perl owns that namespace.
 
 ## Technical Debt
 

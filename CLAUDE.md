@@ -17,14 +17,15 @@ via mDNS. OpenBSD is the production platform (pledge(2)/unveil(2), rc.d,
 
 The repo contains four Perl namespaces with distinct concerns:
 
-- `Protocol::` (`lib/Protocol/`) — the host-neutral HAP protocol library:
-  codecs, crypto, pairing, the data model, the sans-IO server engine, and a
-  controller; self-contained, headed for CPAN
+- `Protocol::` (`lib/Protocol/`) — the host-neutral protocol libraries:
+  `Protocol::HAP` (codecs, crypto, pairing, the data model, the sans-IO server
+  engine, a controller, two stores) and `Protocol::Imsg` (the imsg(3) frame);
+  self-contained, headed for CPAN
 - `App::OpenHAP::` (`lib/App/OpenHAP/`) — the reference host: the daemon
   plumbing, MQTT device integration, and OpenBSD policy
 - `Fugu::` (`lib/Fugu/`) — generic OpenBSD-style daemon utilities (daemonize,
-  privilege drop, signals, logging, process, state, pledge/unveil, imsg framing,
-  mdnsd publishing)
+  privilege drop, signals, logging, process, state, pledge/unveil, the imsg
+  transport, mdnsd publishing)
 - `App::FuguVM::` (`lib/App/FuguVM/`) — installs and manages OpenBSD VMs under
   QEMU, driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this
   repo is its first user, not its purpose

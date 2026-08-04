@@ -1,6 +1,12 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # Conformance tests for spec/MDNS-Imsg.md
+#
+# The framing is Protocol::Imsg, so most sections drive the codec over
+# bytes. Two predicates are not framing at all: an invalid len drops
+# the connection, and EOF mid-message is an error. A codec with append
+# and next_message has no concept of a connection or an EOF, so both
+# keep their socketpair against Fugu::Imsg.
 
 use v5.36;
 use Test::More;
@@ -8,10 +14,11 @@ use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
+use_ok('Protocol::Imsg');
 use_ok('Fugu::Imsg');
 
-# pair(): a Fugu::Imsg endpoint and the raw peer handle. Thus
-# tests can capture and inject wire bytes.
+# pair(): a Fugu::Imsg endpoint and the raw peer handle. Thus a test
+# can inject wire bytes that the transport would never produce.
 sub pair ()
 {
 	socketpair( my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
@@ -21,7 +28,7 @@ sub pair ()
 }
 
 subtest '[MDNS-Imsg §1] header is four uint32 fields in order' => sub {
-	my $hdr = Fugu::Imsg::_encode_header( 0x11223344, 0x55667788,
+	my $hdr = Protocol::Imsg::_encode_header( 0x11223344, 0x55667788,
 		0x99aabbcc, 0xddeeff00 );
 
 	is( length($hdr), 16, 'IMSG_HEADER_SIZE is 16' );
@@ -40,10 +47,9 @@ subtest '[MDNS-Imsg §1] header is four uint32 fields in order' => sub {
 };
 
 subtest '[MDNS-Imsg §2] len counts header plus payload' => sub {
-	my ( $imsg, $peer ) = pair();
+	my $wire =
+	    Protocol::Imsg->new->encode( type => 8, data => 'x' x 240 );
 
-	ok( $imsg->send( type => 8, data => 'x' x 240 ), 'sent' );
-	sysread $peer, my $wire, 4096;
 	is( length($wire), 256, 'whole message is header + payload' );
 	my ( $type, $len ) = unpack 'L2', $wire;
 	is( $len, 256, 'len field includes the 16-byte header' );
@@ -51,77 +57,88 @@ subtest '[MDNS-Imsg §2] len counts header plus payload' => sub {
 
 subtest '[MDNS-Imsg §2] payload bound is MAX_IMSGSIZE minus header' =>
     sub {
-	my ( $imsg, $peer ) = pair();
+	my $codec = Protocol::Imsg->new;
 
-	ok( !defined $imsg->send( type => 1, data => 'x' x 16369 ),
+	ok( !defined $codec->encode( type => 1, data => 'x' x 16369 ),
 		'payload above 16368 bytes is refused, not truncated' );
-	ok( $imsg->send( type => 1, data => 'x' x 16368 ),
+	ok( defined $codec->encode( type => 1, data => 'x' x 16368 ),
 		'payload of exactly 16368 bytes is accepted' );
     };
 
 subtest '[MDNS-Imsg §2] receiver masks the fd mark off len' => sub {
-	my ( $imsg, $peer ) = pair();
+	my $codec = Protocol::Imsg->new;
 
 	# A message whose len carries IMSG_FD_MARK still frames
 	# correctly after the receiver masks off the mark
-	my $marked = pack( 'L4', 7, ( 16 + 4 ) | 0x80000000, 0, 1 ) . 'data';
-	syswrite $peer, $marked;
-	my $msg = $imsg->recv( timeout => 5 );
+	$codec->append(
+		pack( 'L4', 7, ( 16 + 4 ) | 0x80000000, 0, 1 ) . 'data' );
+	my $msg = $codec->next_message;
 	ok( defined $msg, 'marked message received' );
 	is( $msg->{data}, 'data', 'payload length taken from masked len' );
 };
 
+# A dropped connection is a transport predicate: the codec records a
+# permanent framing failure, and Fugu::Imsg turns it into a socket that
+# carries nothing more.
 subtest '[MDNS-Imsg §2] invalid len drops the connection' => sub {
 	my ( $imsg, $peer ) = pair();
 
 	syswrite $peer, pack( 'L4', 1, 15, 0, 1 );    # len < header size
 	ok( !defined $imsg->recv( timeout => 5 ), 'len below 16 rejected' );
 	ok( !defined $imsg->recv( timeout => 0.1 ), 'connection is dead' );
+	ok( $imsg->is_dead, 'and it reports so' );
 
 	( $imsg, $peer ) = pair();
 	syswrite $peer, pack( 'L4', 1, 16385, 0, 1 );    # len > MAX_IMSGSIZE
 	ok( !defined $imsg->recv( timeout => 5 ),
 		'len above MAX_IMSGSIZE rejected' );
+	ok( $imsg->is_dead, 'and that connection is dead too' );
 };
 
 subtest '[MDNS-Imsg §3] pid is the sender, peerid zero' => sub {
-	my ( $imsg, $peer ) = pair();
+	my $wire = Protocol::Imsg->new->encode( type => 11, data => 'p' );
 
-	ok( $imsg->send( type => 11, data => 'p' ), 'sent' );
-	sysread $peer, my $wire, 4096;
 	my ( $type, $len, $peerid, $pid ) = unpack 'L4', $wire;
 	is( $peerid, 0,  'peerid sent as 0' );
 	is( $pid,    $$, 'pid field carries the sending process pid' );
+
+	# imsg substitutes the sender's pid when the caller passes 0.
+	# Thus a literal 0 never reaches the wire.
+	my $zero = Protocol::Imsg->new->encode( type => 11, pid => 0 );
+	is( ( unpack 'L4', $zero )[3],
+		$$, 'a pid of 0 becomes the sending pid' );
 };
 
 subtest '[MDNS-Imsg §4] short reads accumulate across calls' => sub {
-	my ( $imsg, $peer ) = pair();
+	my $codec = Protocol::Imsg->new;
 
 	my $wire = pack( 'L4', 15, 16 + 6, 0, 1 ) . 'abcdef';
 
-	# Send the header split mid-field. Then send the rest.
-	syswrite $peer, substr( $wire, 0, 10 );
-	ok( !defined $imsg->recv( timeout => 0.1 ),
+	# Append the header split mid-field. Then append the rest.
+	$codec->append( substr $wire, 0, 10 );
+	ok( !defined $codec->next_message,
 		'partial header is not a message yet' );
-	syswrite $peer, substr( $wire, 10 );
-	my $msg = $imsg->recv( timeout => 5 );
+	$codec->append( substr $wire, 10 );
+	my $msg = $codec->next_message;
 	is( $msg->{data}, 'abcdef', 'message assembled across reads' );
 };
 
 subtest '[MDNS-Imsg §4] several messages in one read' => sub {
-	my ( $imsg, $peer ) = pair();
+	my $codec = Protocol::Imsg->new;
 
 	my $wire = ( pack( 'L4', 15, 16 + 1, 0, 1 ) . 'a' )
 	    . ( pack( 'L4', 16, 16 + 1, 0, 1 ) . 'b' );
-	syswrite $peer, $wire;
+	$codec->append($wire);
 
-	my $m1 = $imsg->recv( timeout => 5 );
-	my $m2 = $imsg->recv( timeout => 5 );
+	my $m1 = $codec->next_message;
+	my $m2 = $codec->next_message;
 	is( $m1->{type}, 15,  'first message framed' );
 	is( $m2->{type}, 16,  'second message framed from the same read' );
 	is( $m2->{data}, 'b', 'boundary fell exactly between messages' );
 };
 
+# EOF is a transport predicate. The codec has no concept of one: it
+# waits for more bytes, and only the socket knows that none will come.
 subtest '[MDNS-Imsg §4] EOF mid-message is an error' => sub {
 	my ( $imsg, $peer ) = pair();
 
@@ -129,6 +146,7 @@ subtest '[MDNS-Imsg §4] EOF mid-message is an error' => sub {
 	close $peer;
 	ok( !defined $imsg->recv( timeout => 5 ),
 		'truncated message yields undef on EOF' );
+	ok( $imsg->is_dead, 'and the connection is dead' );
 };
 
 done_testing();

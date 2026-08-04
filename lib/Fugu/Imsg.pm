@@ -19,66 +19,36 @@ use v5.36;
 
 package Fugu::Imsg;
 
-use Errno qw(EBADMSG EMSGSIZE EPIPE);
+use Errno qw(EPIPE);
 use IO::Select;
+use Protocol::Imsg;
 use Time::HiRes qw(time);
 
-# Fugu::Imsg - the base-system imsg(3) framing over a connected
-# stream socket. Each message is a fixed native-endian header followed
-# by a payload. The module does serialization only. It never opens or
-# names a socket itself, and it never logs. The callers decide what an
-# error means.
+# Fugu::Imsg - imsg(3) messages over a connected stream socket.
 #
-# The wire format is in spec/MDNS-Imsg.md in the OpenHAP repository.
-# That document is a curated reference, not an installed manual.
-
-# Header and size constants per spec/MDNS-Imsg.md §1-§2. The header
-# has four native uint32 fields: type, len, peerid, pid. The len field
-# counts the whole message, and MAX_IMSGSIZE bounds it. The
-# HEADER_TEMPLATE pack template pins the field order and widths.
-# Change them only against the spec.
-use constant {
-	HEADER_SIZE     => 16,
-	HEADER_TEMPLATE => 'L4',    # type, len, peerid, pid; native order
-	MAX_IMSGSIZE    => 16384,
-};
-use constant MAX_PAYLOAD => MAX_IMSGSIZE - HEADER_SIZE;
-
-# The high bit of len marks fd-passing messages [MDNS-Imsg §2]. The
-# protocols this module serves never set it. But a receiver must mask
-# it off before it trusts the length.
-use constant FD_MARK => 0x80000000;
+# Protocol::Imsg owns the frame. This module owns the socket: the write
+# loop, the SIGPIPE guard, the poll, and the read loop. It never opens
+# or names a socket itself, and it never logs. The callers decide what
+# an error means.
+#
+# The constant below is re-exported and not redefined. Fugu::Control
+# reads Fugu::Imsg::MAX_PAYLOAD as a bareword, so the constant leaving
+# this module would be a compile-time abort, not a runtime error.
+use constant MAX_PAYLOAD => Protocol::Imsg::MAX_PAYLOAD;
 
 # Fugu::Imsg->new(%args):
 #	fh => $fh	connected stream socket (required)
-#	Make a framing object over an already-connected handle.
+#	Make a transport over an already-connected handle.
 sub new ( $class, %args )
 {
 	my $fh = $args{fh} or die 'fh parameter required';
 	binmode $fh;
 
 	return bless {
-		fh     => $fh,
-		buffer => '',
-		dead   => 0,
+		fh    => $fh,
+		codec => Protocol::Imsg->new,
+		dead  => 0,
 	}, $class;
-}
-
-# _encode_header($type, $len, $peerid, $pid):
-#	Encode one header [MDNS-Imsg §1]. This internal seam lets the
-#	tests assert the encoded bytes. The tests do not have to
-#	scrape a socketpair.
-sub _encode_header ( $type, $len, $peerid, $pid )
-{
-	return pack( HEADER_TEMPLATE, $type, $len, $peerid, $pid );
-}
-
-# _decode_header($bytes):
-#	Decode one header. The function returns ($type, $len, $peerid,
-#	$pid).
-sub _decode_header ($bytes)
-{
-	return unpack( HEADER_TEMPLATE, $bytes );
 }
 
 # $self->send(%args):
@@ -86,31 +56,23 @@ sub _decode_header ($bytes)
 #	data   => $bytes payload (default empty)
 #	peerid => $n	caller-chosen correlation value (default 0)
 #	Frame and write one message. The method returns 1 on success.
-#	It returns undef, with $! set, on an oversized payload, a dead
-#	connection, or a write error. A peer that closed the socket
-#	shows as EPIPE, not as a fatal SIGPIPE.
+#	It returns undef, with $! set, on a dead connection, an
+#	oversized payload, or a write error. A peer that closed the
+#	socket shows as EPIPE, not as a fatal SIGPIPE.
 #
-#	The peerid field is opaque to this module [MDNS-Imsg §1]. A
-#	request and response protocol puts its correlation value there
-#	and reads it back from recv.
+#	The dead check comes first, and the encode second. A caller
+#	prints this $! to the operator, and the two conditions have
+#	different causes: EPIPE says the peer closed the connection,
+#	EMSGSIZE says the payload was too long.
 sub send ( $self, %args )
 {
-	my $type   = $args{type}   // die 'type parameter required';
-	my $data   = $args{data}   // '';
-	my $peerid = $args{peerid} // 0;
-
 	if ( $self->{dead} ) {
 		$! = EPIPE;
 		return;
 	}
-	if ( length($data) > MAX_PAYLOAD ) {
-		$! = EMSGSIZE;
-		return;
-	}
 
-	my $msg =
-	    _encode_header( $type, HEADER_SIZE + length($data), $peerid, $$ )
-	    . $data;
+	# The codec sets $! to EMSGSIZE for an oversized payload.
+	my $msg = $self->{codec}->encode(%args) // return;
 
 	local $SIG{PIPE} = 'IGNORE';
 	my $off = 0;
@@ -133,8 +95,9 @@ sub send ( $self, %args )
 #	Return one whole message as a hashref with type, peerid, pid
 #	and data. The method accumulates short reads across calls. It
 #	returns undef on timeout, clean EOF, or an unrecoverable
-#	framing error. For a framing error, it sets $! to EBADMSG and
-#	marks the connection dead per spec/MDNS-Imsg.md §4.
+#	framing error. For a framing error the codec sets $! to EBADMSG,
+#	and this method marks the connection dead per
+#	spec/MDNS-Imsg.md §4.
 #
 #	A timeout of 0 takes what already arrived and returns. This is
 #	the form for an event loop, which knows the socket is readable
@@ -147,8 +110,14 @@ sub recv ( $self, %args )
 	my $polled   = 0;
 
 	while (1) {
-		if ( my $msg = $self->_extract_message ) {
+		if ( my $msg = $self->{codec}->next_message ) {
 			return $msg;
+		}
+
+		# A framing failure is permanent for the connection.
+		if ( $self->{codec}->is_failed ) {
+			$self->{dead} = 1;
+			return;
 		}
 		return if $self->{dead};
 
@@ -184,52 +153,26 @@ sub recv ( $self, %args )
 			$self->{dead} = 1;
 			return;
 		}
-		$self->{buffer} .= $chunk;
+		$self->{codec}->append($chunk);
 	}
-}
-
-# $self->_extract_message:
-#	Pop one complete message off the buffer. Return undef when
-#	more bytes are necessary. An invalid length marks the
-#	connection dead [MDNS-Imsg §2].
-sub _extract_message ($self)
-{
-	return if length( $self->{buffer} ) < HEADER_SIZE;
-
-	my ( $type, $len, $peerid, $pid ) =
-	    _decode_header( substr( $self->{buffer}, 0, HEADER_SIZE ) );
-	$len &= ~FD_MARK;
-
-	if ( $len < HEADER_SIZE || $len > MAX_IMSGSIZE ) {
-		$self->{dead} = 1;
-		$! = EBADMSG;
-		return;
-	}
-	return if length( $self->{buffer} ) < $len;
-
-	my $data = substr( $self->{buffer}, HEADER_SIZE, $len - HEADER_SIZE );
-	substr( $self->{buffer}, 0, $len ) = '';
-
-	return {
-		type   => $type,
-		peerid => $peerid,
-		pid    => $pid,
-		data   => $data,
-	};
 }
 
 # $self->close:
 #	Close the socket and mark the connection dead. The method is
 #	idempotent and returns 1. A caller that owns the socket closes
 #	it here, and never by reaching into the object.
+#
+#	The reset matters: recv extracts before it checks the dead
+#	flag, so a buffer that still held a frame would hand it out
+#	after the close.
 sub close ($self)
 {
 	if ( $self->{fh} ) {
 		CORE::close $self->{fh};
 		$self->{fh} = undef;
 	}
-	$self->{dead}   = 1;
-	$self->{buffer} = '';
+	$self->{dead} = 1;
+	$self->{codec}->reset;
 
 	return 1;
 }
