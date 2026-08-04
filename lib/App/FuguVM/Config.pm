@@ -108,7 +108,10 @@ sub load_vm ( $self, $name )
 	    // $self->{global}->block( 'vm', $name );
 	my $vm = $block ? { %{ $block->{settings} } } : undef;
 
-	# Fall back to a separate VM file for backwards compatibility
+	# Then look for a file of its own under vms/. This is not a
+	# compatibility path: 'fuguvm init' writes vms/default.conf,
+	# and fuguvm(1) documents the directory. A vm block in the
+	# project or global config wins over it.
 	if ( !defined $vm ) {
 		my $vm_file = "$self->{data_dir}/vms/$name.conf";
 		if ( -f $vm_file ) {

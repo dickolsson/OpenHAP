@@ -44,10 +44,6 @@ is C<< Protocol::HAP->null_logger >>, which drops every message.
 
 =back
 
-C<new> also folds the legacy counter files into F<state.json>. An older
-installation kept each counter in a file of its own. The migration runs
-once, and a paired accessory thus keeps its configuration number.
-
 =head1 FILES
 
 Every write applies the mode at the open, before the first byte. A

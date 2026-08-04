@@ -4,14 +4,11 @@
 #
 # The contract itself is proven over both implementations in
 # t/protocol/store.t. This file proves what is specific to files: the
-# layout on disk, the mode of every file the store creates, the
-# counters that survive a restart, and the migration of an
-# installation that predates the state file.
+# layout on disk, the mode of every file the store creates, and the
+# counters that survive a restart.
 
 use v5.36;
 use Test::More;
-use FindBin qw($RealBin);
-use File::Copy qw(copy);
 use File::Temp qw(tempdir);
 
 use_ok('Protocol::HAP::Store::File');
@@ -113,6 +110,9 @@ subtest 'the mode of every file the store creates' => sub {
 		'and a widened pairings file' );
 };
 
+# The counters live in one state file, at mode 0600. A restart must
+# find them where it left them: a controller that sees c# go backwards
+# drops the accessory and the owner has to pair again.
 subtest 'the counters survive a restart' => sub {
 	my $dir   = tempdir( CLEANUP => 1 );
 	my $store = Protocol::HAP::Store::File->new( path => $dir );
@@ -121,14 +121,22 @@ subtest 'the counters survive a restart' => sub {
 	is( $store->get_auth_attempts, 0,     'and the attempts at 0' );
 	is( $store->get_config_digest, undef, 'with no digest yet' );
 
-	$store->increment_config_number;
-	$store->save_config_digest('a-digest');
-	$store->set_auth_attempts(4);
+	$store->save_config_digest('b1946ac92492d2347c6235b4d2611184');
+	$store->set_auth_attempts(3);
+	is( $store->increment_config_number, 2, 'c# starts at 1 and goes up' );
+
+	ok( -f "$dir/state.json", 'the counters are in a state file' );
+	is( mode_of("$dir/state.json"), 0600,
+		'which no other user can read' );
 
 	my $again = Protocol::HAP::Store::File->new( path => $dir );
-	is( $again->get_config_number, 2, 'the number survives' );
-	is( $again->get_config_digest, 'a-digest', 'so does the digest' );
-	is( $again->get_auth_attempts, 4, 'and the attempt count' );
+	is( $again->get_config_number, 2,
+		'[HAP-Pairing §7.2] the configuration number survives' );
+	is( $again->get_config_digest,
+		'b1946ac92492d2347c6235b4d2611184',
+		'the configuration digest survives' );
+	is( $again->get_auth_attempts, 3,
+		'[HAP-Pairing §8] the failed-attempt counter survives' );
 };
 
 subtest 'a corrupt state file does not stop the store' => sub {
@@ -147,63 +155,6 @@ subtest 'a corrupt state file does not stop the store' => sub {
 	$store->set_auth_attempts(1);
 	is( Protocol::HAP::Store::File->new( path => $dir )->get_auth_attempts,
 		1, 'and the next write repairs it' );
-};
-
-# t/fixtures/storage-legacy holds a paired installation in the on-disk
-# format that came before the counters moved into one state file. The
-# counters were one file each: config_number, config_digest and
-# auth_attempts. This subtest proves that such an installation keeps
-# working, and above all that it keeps its configuration number. A
-# controller that sees c# go backwards drops the accessory and the
-# owner has to pair again.
-subtest 'a store directory from before the state file' => sub {
-	my $fixture = "$RealBin/../fixtures/storage-legacy";
-	my $dir     = tempdir( CLEANUP => 1 );
-
-	opendir my $dh, $fixture or die "opendir $fixture: $!";
-	my @files = grep { !/^\./ } readdir $dh;
-	closedir $dh;
-	copy( "$fixture/$_", "$dir/$_" ) or die "copy $_: $!" for @files;
-
-	ok( !-f "$dir/state.json", 'the fixture holds no state file' );
-
-	my $store = Protocol::HAP::Store::File->new( path => $dir );
-
-	is( $store->get_config_number, 7,
-		'[HAP-Pairing §7.2] the configuration number survives' );
-	is( $store->get_config_digest,
-		'b1946ac92492d2347c6235b4d2611184',
-		'the configuration digest survives' );
-	is( $store->get_auth_attempts, 3,
-		'[HAP-Pairing §8] the failed-attempt counter survives' );
-
-	my $pairings = $store->load_pairings;
-	is( scalar keys %$pairings, 2, 'both pairings load' );
-	is( $pairings->{'legacy-admin'}{permissions}, 1, 'the admin is admin' );
-	is( $pairings->{'legacy-user'}{permissions},  0, 'the user is not' );
-	is( unpack( 'H*', $pairings->{'legacy-admin'}{ltpk} ),
-		'deadbeef' . ( 'aa' x 14 ),
-		'the key of a pairing decodes from hex' );
-
-	my ( $ltsk, $ltpk ) = $store->load_accessory_keys;
-	is( unpack( 'H*', $ltsk ), '11' x 64, 'the secret key loads' );
-	is( unpack( 'H*', $ltpk ), '22' x 32, 'the public key loads' );
-
-	# The counters are in the state file now, at 0600. The old files
-	# stay: this release reads them, and an operator who goes back
-	# to the release before it finds its state where it left it.
-	ok( -f "$dir/state.json", 'the counters moved into a state file' );
-	is( mode_of("$dir/state.json"), 0600,
-		'which no other user can read' );
-
-	# c# only ever goes up
-	is( $store->increment_config_number, 8, 'the next change gives 8' );
-
-	# A second start must not fold the old file over the new value
-	my $again = Protocol::HAP::Store::File->new( path => $dir );
-	is( $again->get_config_number, 8,
-		'a later start keeps the newer number' );
-	is( $again->get_auth_attempts, 3, 'and the other counters' );
 };
 
 # The store belongs to the protocol tier now, so it must reach no host

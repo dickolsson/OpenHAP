@@ -79,22 +79,23 @@ is(App::FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     is($vm->{version}, '7.8', 'VM version has default');
 }
 
-# Test VM config loading from separate file (backwards compatibility)
+# Test VM config loading from a file of its own under vms/, the layout
+# that 'fuguvm init' writes
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     make_path("$tmpdir/.fuguvm/vms");
-    
+
     # Create a separate VM config file
-    open my $fh, '>', "$tmpdir/.fuguvm/vms/legacy.conf";
-    print $fh "name legacy-vm\n";
+    open my $fh, '>', "$tmpdir/.fuguvm/vms/spare.conf";
+    print $fh "name spare-vm\n";
     print $fh "memory 2048\n";
     close $fh;
-    
+
     my $config = App::FuguVM::Config->new($tmpdir);
-    my $vm = $config->load_vm('legacy');
-    
+    my $vm = $config->load_vm('spare');
+
     ok(defined $vm, 'VM config loaded from separate file');
-    is($vm->{name}, 'legacy-vm', 'VM name parsed from file');
+    is($vm->{name}, 'spare-vm', 'VM name parsed from file');
     is($vm->{memory}, 2048, 'VM memory parsed from file');
 }
 

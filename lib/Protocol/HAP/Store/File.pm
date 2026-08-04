@@ -36,7 +36,7 @@ use Protocol::HAP;
 # is the point: sans-IO describes Protocol::HAP::Server, and the store
 # is the injected seam that keeps the engine pure.
 #
-# The layout on disk:
+# The layout on disk is:
 #
 #	<path>/accessory_ltsk		mode 0600
 #	<path>/accessory_ltpk		mode 0644
@@ -72,7 +72,6 @@ sub new ( $class, %args )
 	$self->_ensure_dir( $path, 0700 )
 	    or croak "Cannot create the state directory $path";
 	$self->_load_state;
-	$self->_migrate;
 
 	return $self;
 }
@@ -82,33 +81,6 @@ sub new ( $class, %args )
 sub path ($self)
 {
 	return $self->{path};
-}
-
-# $self->_migrate:
-#	Read the counters that an older installation kept in one file
-#	each, and fold them into the state file. A daemon that was
-#	paired before this change must keep its configuration number:
-#	a controller that sees c# go backwards drops the accessory.
-sub _migrate ($self)
-{
-	my @legacy = qw(auth_attempts config_digest config_number);
-
-	my $migrated = 0;
-	for my $key (@legacy) {
-		my $path = "$self->{path}/$key";
-		next unless -f $path;
-		next if CORE::exists $self->{state}{$key};
-
-		my $value = $self->_read($path);
-		next unless defined $value;
-		chomp $value;
-
-		$self->{state}{$key} = $value;
-		$migrated++;
-	}
-	$self->_save_state if $migrated;
-
-	return $self;
 }
 
 # --- the accessory identity -----------------------------------------------
