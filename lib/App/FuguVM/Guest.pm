@@ -17,24 +17,25 @@
 
 use v5.36;
 
-# FuguVM::VM - OpenBSD VM management for macOS/arm64
+# App::FuguVM::Guest - the lifecycle of one OpenBSD guest.
 #
-# This module is an opinionated VM controller for OpenBSD guests on
-# Apple Silicon. It uses QMP for reliable VM lifecycle management.
+# The module creates, starts, waits for, stops, and destroys one
+# guest. It drives QEMU over QMP, so the lifecycle verbs report what
+# the hypervisor says and not what a sleep guessed.
 
-package FuguVM::VM;
+package App::FuguVM::Guest;
 
 use File::Path  qw(make_path);
 use POSIX       qw(setsid);
 use Time::HiRes qw(usleep);
 
-use FuguVM::Image;
-use FuguVM::ImageCache;
-use FuguVM::Disk;
-use FuguVM::Expect;
-use FuguVM::Proxy;
-use FuguVM::QMP;
-use FuguVM::QGA;
+use App::FuguVM::Miniroot;
+use App::FuguVM::DiskCache;
+use App::FuguVM::Disk;
+use App::FuguVM::Console;
+use App::FuguVM::Proxy;
+use App::FuguVM::QMP;
+use App::FuguVM::QGA;
 
 use Fugu::Random;
 use Fugu::Process;
@@ -104,7 +105,7 @@ sub up ($self)
 	# Check for an unclean shutdown. Then check the disk integrity.
 	if ( $state->was_unclean_shutdown ) {
 		$log->warning("Detected unclean shutdown, checking disk...");
-		my $disk  = FuguVM::Disk->new( $state->state_dir );
+		my $disk  = App::FuguVM::Disk->new( $state->state_dir );
 		my $check = $disk->check( $config->{name} );
 
 		if ( defined $check && $check->{status} ne 'ok' ) {
@@ -153,7 +154,8 @@ sub up ($self)
 
 	if ( !$state->is_installed ) {
 		$log->info("Checking OpenBSD image...");
-		my $image = FuguVM::Image->new( $self->_cache_dir, $proxy );
+		my $image =
+		    App::FuguVM::Miniroot->new( $self->_cache_dir, $proxy );
 		$image_path = $image->ensure( $config->{version} );
 
 		if ( !defined $image_path ) {
@@ -174,7 +176,7 @@ sub up ($self)
 
 	if ( !$state->disk_exists ) {
 		$log->info("Creating disk image ($config->{disk_size})...");
-		my $disk = FuguVM::Disk->new( $state->state_dir );
+		my $disk = App::FuguVM::Disk->new( $state->state_dir );
 		my $result =
 		    $disk->create( $config->{name}, $config->{disk_size} );
 		if ( !defined $result ) {
@@ -211,7 +213,7 @@ sub up ($self)
 		$log->info("Generated secure root password");
 
 		$log->info("Installing OpenBSD...");
-		my $expect = FuguVM::Expect->new(
+		my $expect = App::FuguVM::Console->new(
 			host => '127.0.0.1',
 			port => $config->{console_port},
 		);
@@ -327,7 +329,7 @@ sub _image_cache ($self)
 	my $enabled = $self->{config}{image_cache};
 	return if defined $enabled && !$enabled;
 
-	return FuguVM::ImageCache->new( $self->_cache_dir );
+	return App::FuguVM::DiskCache->new( $self->_cache_dir );
 }
 
 # $self->_verify_backing_chain:
@@ -342,7 +344,7 @@ sub _verify_backing_chain ($self)
 	my $state  = $self->{state};
 	my $log    = $self->{log};
 
-	my $disk    = FuguVM::Disk->new( $state->state_dir );
+	my $disk    = App::FuguVM::Disk->new( $state->state_dir );
 	my $backing = $disk->backing_file( $config->{name} );
 	return 1 if !defined $backing;
 	return 1 if -f $backing;
@@ -377,7 +379,7 @@ sub _cache_restore ( $self, $cache, $key )
 		return 0;
 	}
 
-	my $disk = FuguVM::Disk->new( $state->state_dir );
+	my $disk = App::FuguVM::Disk->new( $state->state_dir );
 	my $path =
 	    $disk->create( $config->{name}, undef, $hit->{base}, 'qcow2' );
 	if ( !defined $path ) {
@@ -459,7 +461,7 @@ sub _reparent_disk ( $self, $base )
 
 	# Disk::create returns early on an existing path. Thus the
 	# rename above is what makes this call create the overlay.
-	my $disk = FuguVM::Disk->new( $state->state_dir );
+	my $disk = App::FuguVM::Disk->new( $state->state_dir );
 	my $path = $disk->create( $config->{name}, undef, $base, 'qcow2' );
 	if ( !defined $path ) {
 		rename $saved, $disk_path
@@ -877,7 +879,7 @@ sub _bounded ( $self, $seconds, $code )
 #	Start the caching proxy if it does not run, and return it. The
 #	method returns undef when the proxy cannot start.
 #
-#	The lifecycle lives here and not in FuguVM::State, because a
+#	The lifecycle lives here and not in App::FuguVM::State, because a
 #	state file must not start a process. That split is what removed
 #	the require cycle between the two modules.
 sub _ensure_proxy ($self)
@@ -915,11 +917,11 @@ sub _proxy ($self)
 {
 	my $state = $self->{state};
 
-	return FuguVM::Proxy->new(
-		cache   => FuguVM::Proxy::Cache->new( $self->_cache_dir ),
+	return App::FuguVM::Proxy->new(
+		cache   => App::FuguVM::Proxy::Cache->new( $self->_cache_dir ),
 		pidfile => $state->proxy_pidfile,
 		store   => $state->store,
-		child   => 'FuguVM::Proxy',
+		child   => 'App::FuguVM::Proxy',
 		logfile => $state->vm_state_dir . '/proxy.log',
 		log     => $self->{log},
 	);
@@ -946,7 +948,7 @@ sub _qga_socket_path ($self)
 
 sub _qga_connect ($self)
 {
-	my $qga = FuguVM::QGA->new( $self->_qga_socket_path );
+	my $qga = App::FuguVM::QGA->new( $self->_qga_socket_path );
 	return if !$qga->is_available;
 	return $qga->open_connection ? $qga : undef;
 }
@@ -959,7 +961,7 @@ sub _qmp_socket_path ($self)
 
 sub _qmp_connect ($self)
 {
-	my $qmp = FuguVM::QMP->new( $self->_qmp_socket_path );
+	my $qmp = App::FuguVM::QMP->new( $self->_qmp_socket_path );
 	return $qmp->open_connection ? $qmp : undef;
 }
 
@@ -1244,7 +1246,7 @@ sub _find_efi_firmware ($self)
 }
 
 # $self->_cache_dir:
-#	Return the configured cache directory. FuguVM::Config::load_vm
+#	Return the configured cache directory. App::FuguVM::Config::load_vm
 #	injects it into the per-VM config. The fallback only serves VM
 #	objects built without a configuration.
 sub _cache_dir ($self)

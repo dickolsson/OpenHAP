@@ -15,7 +15,7 @@ BEGIN {
 	    or plan skip_all => 'JSON::XS not available';
 }
 
-use_ok('FuguVM::ImageCache');
+use_ok('App::FuguVM::DiskCache');
 
 my $HAS_QEMU_IMG = defined qx{sh -c 'command -v qemu-img 2>/dev/null'}
     && $? == 0
@@ -33,7 +33,7 @@ my %CONFIG = (
 # Construction and layout
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	is( $cache->cache_dir, $tmp, 'cache_dir is the configured path' );
 	is( $cache->installed_dir, "$tmp/installed",
@@ -43,10 +43,10 @@ my %CONFIG = (
 		'base_path' );
 }
 
-# Tilde expansion, like FuguVM::Image
+# Tilde expansion, like App::FuguVM::Miniroot
 {
 	local $ENV{HOME} = '/home/somebody';
-	my $cache = FuguVM::ImageCache->new('~/.cache/fuguvm');
+	my $cache = App::FuguVM::DiskCache->new('~/.cache/fuguvm');
 	is( $cache->cache_dir, '/home/somebody/.cache/fuguvm',
 		'leading ~ is expanded' );
 }
@@ -54,7 +54,7 @@ my %CONFIG = (
 # Key derivation: shape, stability, and what does and does not rotate it
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	my $key = $cache->key( \%CONFIG );
 	ok( defined $key, 'key derived from a VM configuration' );
@@ -111,7 +111,7 @@ my %CONFIG = (
 # The real checkout resolves both key inputs
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	ok( defined $cache->_install_script,
 		'install.exp resolves in this checkout' );
@@ -122,7 +122,7 @@ my %CONFIG = (
 # Lookup misses: nothing cached, empty entry, base without metadata
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	is( $cache->lookup('7.8-arm64-deadbeef'),
 		undef, 'lookup misses when nothing is cached' );
@@ -147,7 +147,7 @@ my %CONFIG = (
 # sweep_temp removes temporary trees, whatever left them behind
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	make_path( $cache->installed_dir . '/.tmp.12345.abcdef' );
 	_spit( $cache->installed_dir . '/.tmp.12345.abcdef/base.qcow2', 'x' );
@@ -161,7 +161,7 @@ my %CONFIG = (
 # Removal
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	ok( $cache->remove('never-existed'),
 		'removing an absent entry succeeds' );
@@ -180,7 +180,7 @@ SKIP: {
 	skip 'qemu-img not installed', 19 if !$HAS_QEMU_IMG;
 
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new("$tmp/cache");
+	my $cache = App::FuguVM::DiskCache->new("$tmp/cache");
 	my $key   = '7.8-arm64-abcd1234';
 
 	my $disk = "$tmp/disk.qcow2";
@@ -250,10 +250,10 @@ SKIP: {
 SKIP: {
 	skip 'qemu-img not installed', 5 if !$HAS_QEMU_IMG;
 
-	require FuguVM::Disk;
+	require App::FuguVM::Disk;
 
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new("$tmp/cache");
+	my $cache = App::FuguVM::DiskCache->new("$tmp/cache");
 	my $key   = '7.8-arm64-0f0f0f0f';
 
 	my $source = "$tmp/source.qcow2";
@@ -263,7 +263,7 @@ SKIP: {
 	my $base = $cache->store( $key, $source, { root_password => 'pw' } );
 	ok( defined $base, 'base image published' );
 
-	my $disk = FuguVM::Disk->new("$tmp/state");
+	my $disk = App::FuguVM::Disk->new("$tmp/state");
 	my $path = $disk->create( 'default', undef, $base, 'qcow2' );
 	ok( defined $path, 'overlay created without an explicit size' );
 
@@ -281,7 +281,7 @@ SKIP: {
 # Snapshot names become file names inside the cache
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	ok( $cache->valid_snapshot_name('deps-abc123'), 'a plain name' );
 	ok( $cache->valid_snapshot_name('s1'),          'short names' );
@@ -300,7 +300,7 @@ SKIP: {
 # Which cache entry a path belongs to
 {
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new($tmp);
+	my $cache = App::FuguVM::DiskCache->new($tmp);
 
 	is( $cache->key_for_path( $cache->base_path('k1') ),
 		'k1', 'a base image resolves to its key' );
@@ -315,10 +315,10 @@ SKIP: {
 SKIP: {
 	skip 'qemu-img not installed', 16 if !$HAS_QEMU_IMG;
 
-	require FuguVM::Disk;
+	require App::FuguVM::Disk;
 
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new("$tmp/cache");
+	my $cache = App::FuguVM::DiskCache->new("$tmp/cache");
 	my $key   = '7.8-arm64-5a5a5a5a';
 
 	my $source = "$tmp/source.qcow2";
@@ -327,7 +327,7 @@ SKIP: {
 	my $base = $cache->store( $key, $source, { root_password => 'pw' } );
 
 	# A working overlay, the shape a snapshot comes from
-	my $disk = FuguVM::Disk->new("$tmp/state");
+	my $disk = App::FuguVM::Disk->new("$tmp/state");
 	$disk->create( 'default', undef, $base, 'qcow2' );
 	my $disk_path = $disk->path('default');
 
@@ -381,7 +381,7 @@ SKIP: {
 	skip 'qemu-img not installed', 3 if !$HAS_QEMU_IMG;
 
 	my $tmp   = tempdir( CLEANUP => 1 );
-	my $cache = FuguVM::ImageCache->new("$tmp/cache");
+	my $cache = App::FuguVM::DiskCache->new("$tmp/cache");
 	my $key   = '7.8-arm64-6b6b6b6b';
 
 	my $source = "$tmp/source.qcow2";
@@ -435,7 +435,7 @@ sub _temp_trees ($dir)
 package TestInputs;
 
 # The inheritance must be in place before the tests above run
-BEGIN { our @ISA = ('FuguVM::ImageCache'); }
+BEGIN { our @ISA = ('App::FuguVM::DiskCache'); }
 
 sub new ( $class, $cache_dir, $input_dir )
 {

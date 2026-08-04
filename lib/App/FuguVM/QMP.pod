@@ -1,12 +1,12 @@
 =head1 NAME
 
-FuguVM::QMP - the QEMU Machine Protocol command set
+App::FuguVM::QMP - the QEMU Machine Protocol command set
 
 =head1 SYNOPSIS
 
-    use FuguVM::QMP;
+    use App::FuguVM::QMP;
 
-    my $qmp = FuguVM::QMP->new('/path/to/qmp.sock');
+    my $qmp = App::FuguVM::QMP->new('/path/to/qmp.sock');
     $qmp->open_connection or die "QEMU is not listening\n";
 
     if ($qmp->is_running) {
@@ -67,7 +67,7 @@ stop a VM that is up.
 
 =head1 SEE ALSO
 
-L<Fugu::JSONSocket>, L<FuguVM::QGA>, L<FuguVM::VM>
+L<Fugu::JSONSocket>, L<App::FuguVM::QGA>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

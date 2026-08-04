@@ -17,19 +17,22 @@
 
 use v5.36;
 
-package FuguVM::Image;
+package App::FuguVM::Miniroot;
 
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Process;
 
-# FuguVM::Image - Download and cache OpenBSD miniroot images
+# App::FuguVM::Miniroot - the OpenBSD miniroot install media.
 #
-# This module gives access to OpenBSD miniroot images. It downloads an
-# image when necessary and stores it in the proxy cache for reuse.
-# Downloads use the scripts/ftp helper, which falls back through curl,
-# wget, and ftp. The Proxy::Cache module stores the files for
-# consistent caching.
+# The miniroot is what the installer boots from. This module downloads
+# it when necessary and keeps it in the proxy cache for reuse. The
+# download uses the scripts/ftp helper, which falls back through curl,
+# wget, and ftp.
+#
+# The module caches the install media. App::FuguVM::DiskCache caches
+# the disk that the installer produced. Neither is a cache of the
+# other.
 
 use constant {
 	CDN_HOST => 'cdn.openbsd.org',
@@ -69,9 +72,10 @@ sub ensure ( $self, $version )
 }
 
 # _ftp_script():
-#	Return the absolute path to the scripts/ftp helper. The path
-#	resolves from the location of this module: lib/FuguVM/Image.pm
-#	is two directories below the project root. The code factors
+#	Return the absolute path to the scripts/ftp helper.
+#	Fugu::File->share_path resolves it, and it derives the root of
+#	the tree from its own location, not from this module. Thus a
+#	move of this file does not move the answer. The code factors
 #	this function out of download. Thus a test can make sure that
 #	the path still resolves. download only warns when the path does
 #	not resolve. Thus a rename would otherwise degrade silently to
@@ -236,8 +240,8 @@ sub _cache ($self)
 {
 	return $self->{proxy}->cache if defined $self->{proxy};
 
-	require FuguVM::Proxy;
-	return FuguVM::Proxy::Cache->new( $self->{cache_dir} );
+	require App::FuguVM::Proxy;
+	return App::FuguVM::Proxy::Cache->new( $self->{cache_dir} );
 }
 
 1;

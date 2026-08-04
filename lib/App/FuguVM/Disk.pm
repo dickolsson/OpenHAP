@@ -17,7 +17,7 @@
 
 use v5.36;
 
-package FuguVM::Disk;
+package App::FuguVM::Disk;
 
 use File::Basename;
 use Fugu::File;

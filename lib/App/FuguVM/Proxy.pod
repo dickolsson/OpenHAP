@@ -1,16 +1,16 @@
 =head1 NAME
 
-FuguVM::Proxy - the OpenBSD mirror policy over Fugu::Proxy
+App::FuguVM::Proxy - the OpenBSD mirror policy over Fugu::Proxy
 
 =head1 SYNOPSIS
 
-    use FuguVM::Proxy;
+    use App::FuguVM::Proxy;
 
-    my $proxy = FuguVM::Proxy->new(
-        cache   => FuguVM::Proxy::Cache->new($cache_dir),
+    my $proxy = App::FuguVM::Proxy->new(
+        cache   => App::FuguVM::Proxy::Cache->new($cache_dir),
         pidfile => $state->proxy_pidfile,
         store   => $state->store,
-        child   => 'FuguVM::Proxy',
+        child   => 'App::FuguVM::Proxy',
         logfile => $state->vm_state_dir . '/proxy.log',
     );
 
@@ -27,8 +27,8 @@ L<Fugu::Proxy> holds the serve loop, the cache and the metadata.
 This file holds only what is true of an OpenBSD mirror and of a QEMU
 guest.
 
-The file has two packages. C<FuguVM::Proxy> inherits the supervisor
-and adds the guest URL. C<FuguVM::Proxy::Cache> inherits the cache and
+The file has two packages. C<App::FuguVM::Proxy> inherits the supervisor
+and adds the guest URL. C<App::FuguVM::Proxy::Cache> inherits the cache and
 adds the mirror patterns and the version-scoped prune.
 
 =head1 METHODS
@@ -38,7 +38,7 @@ These are the additions.
 
 =head2 run_child
 
-    FuguVM::Proxy->run_child($port, $cache_dir)
+    App::FuguVM::Proxy->run_child($port, $cache_dir)
 
 The entry point of the spawned child. The child builds its own cache,
 warms the metadata table, and serves until a C<SIGTERM> arrives.
@@ -94,7 +94,7 @@ the upstream is fixed.
 
 =head1 SEE ALSO
 
-L<Fugu::Proxy>, L<FuguVM::Image>, L<FuguVM::VM>
+L<Fugu::Proxy>, L<App::FuguVM::Miniroot>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

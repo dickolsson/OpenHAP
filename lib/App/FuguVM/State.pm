@@ -17,22 +17,22 @@
 
 use v5.36;
 
-package FuguVM::State;
+package App::FuguVM::State;
 
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Pidfile;
 use Fugu::Store;
 
-# FuguVM::State - what FuguVM remembers about one VM between runs.
+# App::FuguVM::State - what FuguVM remembers about one VM between runs.
 #
 # The JSON blob rides on Fugu::Store. The two process IDs ride on
 # Fugu::Pidfile, which locks before it truncates and reaps a zombie
 # before it answers "running".
 #
 # The module is persistence only. It starts nothing and stops nothing:
-# the proxy lifecycle belongs to FuguVM::VM, which is what removed the
-# require cycle between this module and FuguVM::Proxy.
+# the proxy lifecycle belongs to App::FuguVM::Guest, which is what removed the
+# require cycle between this module and App::FuguVM::Proxy.
 
 sub new ( $class, $state_dir, $vm_name, %opts )
 {
@@ -80,7 +80,7 @@ sub save ($self)
 }
 
 # $self->store:
-#	Return the state store. FuguVM::VM gives it to the proxy, which
+#	Return the state store. App::FuguVM::Guest gives it to the proxy, which
 #	keeps its port there.
 sub store ($self)
 {
@@ -89,7 +89,7 @@ sub store ($self)
 
 # $self->state_dir:
 #	Return the directory that holds every VM's state, not this
-#	VM's own. FuguVM::Disk keys its paths by VM name under it.
+#	VM's own. App::FuguVM::Disk keys its paths by VM name under it.
 sub state_dir ($self)
 {
 	return $self->{state_dir};
@@ -104,7 +104,7 @@ sub vm_pidfile ($self)
 }
 
 # $self->proxy_pidfile:
-#	Return the PID file of the proxy child. FuguVM::VM gives it to
+#	Return the PID file of the proxy child. App::FuguVM::Guest gives it to
 #	the proxy supervisor.
 sub proxy_pidfile ($self)
 {

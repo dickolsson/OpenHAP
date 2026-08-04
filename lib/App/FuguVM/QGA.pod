@@ -1,12 +1,12 @@
 =head1 NAME
 
-FuguVM::QGA - the QEMU Guest Agent command set
+App::FuguVM::QGA - the QEMU Guest Agent command set
 
 =head1 SYNOPSIS
 
-    use FuguVM::QGA;
+    use App::FuguVM::QGA;
 
-    my $qga = FuguVM::QGA->new('/path/to/qga.sock');
+    my $qga = App::FuguVM::QGA->new('/path/to/qga.sock');
     $qga->open_connection or die "no guest agent socket\n";
 
     $qga->sync;
@@ -33,7 +33,7 @@ than a refused connection. Every read is bounded for that reason.
 
 =head2 open_connection, disconnect, run_command
 
-As in L<FuguVM::QMP>, without the greeting and the handshake.
+As in L<App::FuguVM::QMP>, without the greeting and the handshake.
 
 =head2 sync
 
@@ -65,7 +65,7 @@ method reports success as soon as the request is away.
 
 =head1 SEE ALSO
 
-L<Fugu::JSONSocket>, L<FuguVM::QMP>, L<FuguVM::VM>
+L<Fugu::JSONSocket>, L<App::FuguVM::QMP>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

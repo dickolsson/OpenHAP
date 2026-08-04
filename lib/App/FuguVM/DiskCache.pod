@@ -1,12 +1,12 @@
 =head1 NAME
 
-FuguVM::ImageCache - cache of installed OpenBSD disk images
+App::FuguVM::DiskCache - cache of installed OpenBSD disks
 
 =head1 SYNOPSIS
 
-    use FuguVM::ImageCache;
+    use App::FuguVM::DiskCache;
 
-    my $cache = FuguVM::ImageCache->new('~/.cache/fuguvm');
+    my $cache = App::FuguVM::DiskCache->new('~/.cache/fuguvm');
     my $key   = $cache->key($vm_config);
 
     # Boot from a previous installation
@@ -61,7 +61,7 @@ inputs are:
 =item * the disk size
 
 =item * the contents of the F<install.exp> script that
-L<FuguVM::Expect> resolves
+L<App::FuguVM::Console> resolves
 
 =item * the contents of F<share/fuguvm/cache-generation>
 
@@ -69,8 +69,8 @@ L<FuguVM::Expect> resolves
 
 The last file is a generation counter. Increase the number in this
 file when the install driver changes in a way that the F<install.exp>
-hash cannot see. One example is a change in how L<FuguVM::VM> or
-L<FuguVM::Expect> drives the installer.
+hash cannot see. One example is a change in how L<App::FuguVM::Guest> or
+L<App::FuguVM::Console> drives the installer.
 
 The counter is a data file, not a constant in this module. Thus a
 continuous-integration cache key can hash the file too. Keep the file
@@ -195,7 +195,7 @@ The method flattens the stopped working disk at C<$disk_path> onto
 the base image of C<$key>, and publishes the result as the named
 layer. Put the state fields that the disk holds in C<$meta>:
 C<installed> and the installed SSH public key. With these fields, a
-restore can reseed L<FuguVM::State>. The method copies the root
+restore can reseed L<App::FuguVM::State>. The method copies the root
 password from the metadata of the base itself, and it does not trust
 the caller for this value. The method returns the snapshot path, or
 C<undef> on a failure.
@@ -237,7 +237,7 @@ Thus the password is not a localhost-only secret. See L<fuguvm(1)>.
 
 =head1 SEE ALSO
 
-L<FuguVM::Disk>, L<FuguVM::Expect>, L<FuguVM::Image>, L<FuguVM::VM>,
+L<App::FuguVM::Disk>, L<App::FuguVM::Console>, L<App::FuguVM::Miniroot>, L<App::FuguVM::Guest>,
 L<fuguvm(1)>
 
 =cut

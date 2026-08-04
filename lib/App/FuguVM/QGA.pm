@@ -17,13 +17,13 @@
 
 use v5.36;
 
-package FuguVM::QGA;
+package App::FuguVM::QGA;
 
 use Fugu::JSONSocket;
 use Fugu::Util;
 use JSON::PP ();
 
-# FuguVM::QGA - the QEMU Guest Agent command set.
+# App::FuguVM::QGA - the QEMU Guest Agent command set.
 #
 # The transport is Fugu::JSONSocket. This file holds only what is
 # true of the guest agent: it sends no greeting, and its commands are

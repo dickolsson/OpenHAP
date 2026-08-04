@@ -1,12 +1,12 @@
 =head1 NAME
 
-FuguVM::Disk - the qcow2 disk of a virtual machine
+App::FuguVM::Disk - the qcow2 disk of a virtual machine
 
 =head1 SYNOPSIS
 
-    use FuguVM::Disk;
+    use App::FuguVM::Disk;
 
-    my $disk = FuguVM::Disk->new($state_dir);
+    my $disk = App::FuguVM::Disk->new($state_dir);
 
     $disk->create('default', '8G');
     $disk->create('default', undef, $base_image, 'qcow2');   # an overlay
@@ -66,8 +66,8 @@ C<ok> or C<corrupted>. C<repair> runs the repair pass and returns 1 or
 
 =head1 SEE ALSO
 
-L<qemu-img(1)>, L<Fugu::Process>, L<FuguVM::ImageCache>,
-L<FuguVM::VM>
+L<qemu-img(1)>, L<Fugu::Process>, L<App::FuguVM::DiskCache>,
+L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

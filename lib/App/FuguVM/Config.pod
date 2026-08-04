@@ -1,14 +1,14 @@
 =head1 NAME
 
-FuguVM::Config - the VM defaults over Fugu::Config
+App::FuguVM::Config - the VM defaults over Fugu::Config
 
 =head1 SYNOPSIS
 
-    use FuguVM::Config;
+    use App::FuguVM::Config;
 
-    my $root   = FuguVM::Config->find_project_root
+    my $root   = App::FuguVM::Config->find_project_root
         or die "not in a FuguVM project\n";
-    my $config = FuguVM::Config->new($root);
+    my $config = App::FuguVM::Config->new($root);
 
     my $vm = $config->load_vm($config->default_vm);
     printf "%s: OpenBSD %s, %s of memory\n",
@@ -41,14 +41,14 @@ that turns the installed-image cache off.
 
 =head2 new
 
-    FuguVM::Config->new($project_root)
+    App::FuguVM::Config->new($project_root)
 
 Read both files. An absent file is normal: a checkout has no global
 file, and a global-only setup has no project file.
 
 =head2 find_project_root
 
-    FuguVM::Config->find_project_root
+    App::FuguVM::Config->find_project_root
 
 Walk up from the working directory to the first directory that holds
 F<.fuguvmrc>. The method returns C<undef> when the walk reaches the
@@ -94,7 +94,7 @@ the opposite.
 
 =head1 SEE ALSO
 
-L<Fugu::Config>, L<FuguVM::CLI>, L<FuguVM::VM>, L<fuguvm(1)>
+L<Fugu::Config>, L<App::FuguVM::CLI>, L<App::FuguVM::Guest>, L<fuguvm(1)>
 
 =head1 AUTHOR
 

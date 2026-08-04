@@ -1,12 +1,12 @@
 =head1 NAME
 
-FuguVM::Image - the OpenBSD miniroot image
+App::FuguVM::Miniroot - the OpenBSD miniroot image
 
 =head1 SYNOPSIS
 
-    use FuguVM::Image;
+    use App::FuguVM::Miniroot;
 
-    my $image = FuguVM::Image->new($cache_dir, $proxy);
+    my $image = App::FuguVM::Miniroot->new($cache_dir, $proxy);
     my $path  = $image->ensure('7.8')
         or die "cannot get the miniroot for 7.8\n";
 
@@ -25,7 +25,7 @@ download the image again.
 
 =head2 new
 
-    FuguVM::Image->new($cache_dir, $proxy)
+    App::FuguVM::Miniroot->new($cache_dir, $proxy)
 
 The proxy is optional. Without one the module can find a cached image
 but cannot download a missing one.
@@ -46,7 +46,7 @@ images, newest version first.
 
 =head1 SEE ALSO
 
-L<FuguVM::Proxy>, L<FuguVM::VM>
+L<App::FuguVM::Proxy>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

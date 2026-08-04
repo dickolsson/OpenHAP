@@ -8,31 +8,31 @@ use lib "$RealBin/../lib";
 use File::Temp qw(tempdir);
 use File::Path qw(make_path);
 
-use_ok('FuguVM::Image');
+use_ok('App::FuguVM::Miniroot');
 
 # Test constants
-is(FuguVM::Image::CDN_HOST(), 'cdn.openbsd.org',
+is(App::FuguVM::Miniroot::CDN_HOST(), 'cdn.openbsd.org',
     'CDN_HOST is correct');
-is(FuguVM::Image::ARCH(), 'arm64',
+is(App::FuguVM::Miniroot::ARCH(), 'arm64',
     'ARCH is correct');
 
 # download() only warns when the helper is missing. Thus a rename
 # degrades silently to "no download" instead of a failure. Assert
 # that the path still resolves.
-ok(-x FuguVM::Image::_ftp_script(),
+ok(-x App::FuguVM::Miniroot::_ftp_script(),
     'the ftp helper resolves to an executable');
 
 # Test object creation
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     ok(defined $image, 'Image object created');
 }
 
 # Test url generation
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     
     my $url = $image->url('7.8');
     is($url, 'https://cdn.openbsd.org/pub/OpenBSD/7.8/arm64/miniroot78.img',
@@ -42,7 +42,7 @@ ok(-x FuguVM::Image::_ftp_script(),
 # Test image filename generation
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     
     my $filename = $image->_image_filename('7.8');
     is($filename, 'miniroot78.img', 'Image filename generated correctly');
@@ -51,7 +51,7 @@ ok(-x FuguVM::Image::_ftp_script(),
 # Test path returns undef for missing image
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     
     my $path = $image->path('7.8');
     is($path, undef, 'path returns undef for missing image');
@@ -60,7 +60,7 @@ ok(-x FuguVM::Image::_ftp_script(),
 # Test path returns path for cached image
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     
     # Create a fake cached image in the proxy cache structure
     my $cache_path = "$tmpdir/proxy/cdn.openbsd.org/pub/OpenBSD/7.8/arm64";
@@ -77,7 +77,7 @@ ok(-x FuguVM::Image::_ftp_script(),
 # Test list returns empty for empty cache
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     
     my $list = $image->list;
     is(ref $list, 'ARRAY', 'list returns array ref');
@@ -87,7 +87,7 @@ ok(-x FuguVM::Image::_ftp_script(),
 # Test list finds cached images
 {
     my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = FuguVM::Image->new($tmpdir);
+    my $image = App::FuguVM::Miniroot->new($tmpdir);
     
     # Create fake cached images in the proxy cache structure
     for my $ver (qw(7.7 7.8)) {

@@ -17,14 +17,14 @@
 
 use v5.36;
 
-package FuguVM::Proxy;
+package App::FuguVM::Proxy;
 
 use Fugu::Log;
 use Fugu::Proxy;
 
 our @ISA = ('Fugu::Proxy');
 
-# FuguVM::Proxy - the OpenBSD mirror policy over Fugu::Proxy.
+# App::FuguVM::Proxy - the OpenBSD mirror policy over Fugu::Proxy.
 #
 # The generic proxy holds the serve loop, the cache and the metadata.
 # This file holds only what is true of an OpenBSD mirror and of a QEMU
@@ -45,7 +45,7 @@ sub run_child ( $class, $port, $cache_dir )
 	my $log = Fugu::Log->new( mode => 'stderr', level => 'debug' );
 
 	my $self = bless {
-		cache => FuguVM::Proxy::Cache->new($cache_dir),
+		cache => App::FuguVM::Proxy::Cache->new($cache_dir),
 		meta  => Fugu::Proxy::Meta->new,
 		log   => $log,
 	}, $class;
@@ -70,14 +70,14 @@ sub guest_url ($self)
 	return 'http://' . HOST_GATEWAY . ":$port";
 }
 
-package FuguVM::Proxy::Cache;
+package App::FuguVM::Proxy::Cache;
 
 use Fugu::Log;
 use Fugu::Proxy;
 
 our @ISA = ('Fugu::Proxy::Cache');
 
-# FuguVM::Proxy::Cache - which parts of an OpenBSD mirror to keep.
+# App::FuguVM::Proxy::Cache - which parts of an OpenBSD mirror to keep.
 #
 # The patterns are the release tree, the packages, the syspatch sets
 # and the files that an installer reads. Every one of them is

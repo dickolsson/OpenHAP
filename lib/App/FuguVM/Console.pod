@@ -1,27 +1,30 @@
 =head1 NAME
 
-FuguVM::Expect - drive the OpenBSD installer over the serial console
+App::FuguVM::Console - drive the serial console of a guest
 
 =head1 SYNOPSIS
 
-    use FuguVM::Expect;
+    use App::FuguVM::Console;
 
-    my $expect = FuguVM::Expect->new(
+    my $console = App::FuguVM::Console->new(
         host => '127.0.0.1',
         port => $console_port,
     );
 
-    $expect->run_install({
+    $console->run_install({
         root_password => $password,
         proxy_url     => $proxy->guest_url,
     }) or die "installation failed\n";
 
+    $console->run_script('reboot.exp');
+
 =head1 DESCRIPTION
 
-The OpenBSD installer asks questions that no protocol answers, so an
-L<expect(1)> script types them. The scripts ship under
-F<share/fuguvm/expect>, and L<Fugu::File> resolves them against the
-install root.
+The console answers no protocol, so an L<expect(1)> script types at it.
+The module runs the OpenBSD installer that way, and it runs any other
+script the operator names: C<fuguvm expect> is that second verb. The
+scripts ship under F<share/fuguvm/expect>, and L<Fugu::File> resolves
+them against the install root.
 
 The run is a passthrough: the child writes straight to the terminal of
 the caller. An installation writes for tens of minutes, and an
@@ -31,7 +34,7 @@ operator who waits needs to see the progress while it happens.
 
 =head2 new
 
-    FuguVM::Expect->new(host => ..., port => ..., timeout => ...)
+    App::FuguVM::Console->new(host => ..., port => ..., timeout => ...)
 
 The host and port name the serial console. The default timeout is 180
 seconds, or C<FUGUVM_TIMEOUT> when the environment sets it. The
@@ -39,30 +42,30 @@ timeout travels to the script in that variable.
 
 =head2 script_path
 
-    FuguVM::Expect->script_path($name)
+    App::FuguVM::Console->script_path($name)
 
 Return the path of a shipped script, or C<undef>. The method also
-works on the class: L<FuguVM::ImageCache> hashes the installer script
+works on the class: L<App::FuguVM::DiskCache> hashes the installer script
 into its cache key, so it must resolve the script the same way
 C<run_install> does.
 
 =head2 run_install
 
-    $expect->run_install(\%config)
+    $console->run_install(\%config)
 
 Drive a complete installation. The configuration gives the root
 password and the proxy URL that the guest fetches its sets through.
 
 =head2 run_script
 
-    $expect->run_script($script, @args)
+    $console->run_script($script, @args)
 
 Run one script against this console. The argument is a path, or the
 name of a shipped script.
 
 =head1 SEE ALSO
 
-L<expect(1)>, L<Fugu::File>, L<Fugu::Process>, L<FuguVM::VM>
+L<expect(1)>, L<Fugu::File>, L<Fugu::Process>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

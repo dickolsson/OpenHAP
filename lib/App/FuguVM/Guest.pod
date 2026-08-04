@@ -1,12 +1,12 @@
 =head1 NAME
 
-FuguVM::VM - the lifecycle of one OpenBSD virtual machine
+App::FuguVM::Guest - the lifecycle of one OpenBSD virtual machine
 
 =head1 SYNOPSIS
 
-    use FuguVM::VM;
+    use App::FuguVM::Guest;
 
-    my $vm = FuguVM::VM->new(
+    my $vm = App::FuguVM::Guest->new(
         config => $config->load_vm('default'),
         state  => $state,
         log    => $log,
@@ -30,7 +30,7 @@ connection comes from L<Fugu::SSH>.
 
 =head2 new
 
-    FuguVM::VM->new(config => \%vm, state => $state, log => $log, ...)
+    App::FuguVM::Guest->new(config => \%vm, state => $state, log => $log, ...)
 
 Build a controller. C<emulate> forces TCG instead of hardware
 acceleration; C<no_cache> ignores the installed-image cache.
@@ -70,8 +70,8 @@ leaves a filesystem that the next boot has to repair.
 =head1 SEE ALSO
 
 L<Fugu::Process>, L<Fugu::SSH>, L<Fugu::Util>,
-L<FuguVM::Disk>, L<FuguVM::ImageCache>, L<FuguVM::QGA>,
-L<FuguVM::QMP>, L<FuguVM::State>, L<fuguvm(1)>
+L<App::FuguVM::Disk>, L<App::FuguVM::DiskCache>, L<App::FuguVM::QGA>,
+L<App::FuguVM::QMP>, L<App::FuguVM::State>, L<fuguvm(1)>
 
 =head1 AUTHOR
 

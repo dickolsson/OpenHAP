@@ -9,47 +9,44 @@ use lib "$RealBin/../lib";
 use Fugu::TestLog;
 use File::Temp qw(tempdir);
 
-# Check that the module loads. The load can fail if Net::SSH2 is
-# not available.
-BEGIN {
-	eval { require FuguVM::VM; 1 }
-	    or plan skip_all => 'FuguVM::VM dependencies not available';
-}
-
-use_ok('FuguVM::VM');
+# The load is a hard failure, not a skip. Fugu::SSH requires Net::SSH2
+# lazily, so this module loads with core Perl alone: an eval guard here
+# could only ever hide a rename or a syntax error, which are the two
+# failures it must report.
+use_ok('App::FuguVM::Guest');
 
 # Memory and CPU constants
 {
-	ok(defined &FuguVM::VM::MEMORY_DEFAULT, 'MEMORY_DEFAULT defined');
-	is(FuguVM::VM::MEMORY_DEFAULT(), '1G', 'Default memory is 1G');
-	ok(defined &FuguVM::VM::CPU_COUNT, 'CPU_COUNT defined');
-	is(FuguVM::VM::CPU_COUNT(), 2, 'Default CPU count is 2');
+	ok(defined &App::FuguVM::Guest::MEMORY_DEFAULT, 'MEMORY_DEFAULT defined');
+	is(App::FuguVM::Guest::MEMORY_DEFAULT(), '1G', 'Default memory is 1G');
+	ok(defined &App::FuguVM::Guest::CPU_COUNT, 'CPU_COUNT defined');
+	is(App::FuguVM::Guest::CPU_COUNT(), 2, 'Default CPU count is 2');
 }
 
 # Exit code constants
 {
-	is(FuguVM::VM::EXIT_SUCCESS(), 0, 'EXIT_SUCCESS is 0');
-	is(FuguVM::VM::EXIT_ERROR(), 1, 'EXIT_ERROR is 1');
-	is(FuguVM::VM::EXIT_VM_RUNNING(), 5, 'EXIT_VM_RUNNING is 5');
-	is(FuguVM::VM::EXIT_VM_NOT_RUNNING(), 6, 'EXIT_VM_NOT_RUNNING is 6');
-	is(FuguVM::VM::EXIT_TIMEOUT(), 7, 'EXIT_TIMEOUT is 7');
+	is(App::FuguVM::Guest::EXIT_SUCCESS(), 0, 'EXIT_SUCCESS is 0');
+	is(App::FuguVM::Guest::EXIT_ERROR(), 1, 'EXIT_ERROR is 1');
+	is(App::FuguVM::Guest::EXIT_VM_RUNNING(), 5, 'EXIT_VM_RUNNING is 5');
+	is(App::FuguVM::Guest::EXIT_VM_NOT_RUNNING(), 6, 'EXIT_VM_NOT_RUNNING is 6');
+	is(App::FuguVM::Guest::EXIT_TIMEOUT(), 7, 'EXIT_TIMEOUT is 7');
 }
 
 # Accelerator selection
 {
 	# --emulate always forces TCG with a named CPU model
-	my $emulated = FuguVM::VM->new(emulate => 1);
+	my $emulated = App::FuguVM::Guest->new(emulate => 1);
 	my %args = ($emulated->_accel_args);
 	is($args{'-accel'}, 'tcg', '--emulate forces TCG');
-	is($args{'-cpu'}, FuguVM::VM::TCG_CPU(),
+	is($args{'-cpu'}, App::FuguVM::Guest::TCG_CPU(),
 	    'TCG uses a named CPU model, not host passthrough');
 
 	# Auto-selection returns a consistent accel/cpu pair
-	my $auto = FuguVM::VM->new;
+	my $auto = App::FuguVM::Guest->new;
 	%args = ($auto->_accel_args);
 	like($args{'-accel'}, qr/^(hvf|kvm|tcg)$/, 'known accelerator');
 	if ($args{'-accel'} eq 'tcg') {
-		is($args{'-cpu'}, FuguVM::VM::TCG_CPU(),
+		is($args{'-cpu'}, App::FuguVM::Guest::TCG_CPU(),
 		    'software emulation pairs with a named CPU');
 	} else {
 		is($args{'-cpu'}, 'host',
@@ -57,7 +54,7 @@ use_ok('FuguVM::VM');
 	}
 
 	# The host arch helper returns a non-empty machine string
-	ok(length(FuguVM::VM::_host_arch()), 'host arch detected');
+	ok(length(App::FuguVM::Guest::_host_arch()), 'host arch detected');
 }
 
 # Bounded guest interaction: _bounded must return the code's value
@@ -65,7 +62,7 @@ use_ok('FuguVM::VM');
 # return undef and must not hang. Thus a wedged guest can never
 # stall shutdown.
 {
-	my $vm = FuguVM::VM->new;
+	my $vm = App::FuguVM::Guest->new;
 	$vm->{log} = TestLog->new;    # swallow the timeout warning
 
 	is($vm->_bounded(5, sub { return 'done' }), 'done',
@@ -79,15 +76,15 @@ use_ok('FuguVM::VM');
 }
 
 # The image cache follows the configured cache_dir, which
-# FuguVM::Config::load_vm injects into the per-VM config.
+# App::FuguVM::Config::load_vm injects into the per-VM config.
 {
-	my $vm = FuguVM::VM->new(config => { cache_dir => '/var/cache/fuguvm' });
+	my $vm = App::FuguVM::Guest->new(config => { cache_dir => '/var/cache/fuguvm' });
 	is($vm->_cache_dir, '/var/cache/fuguvm', 'configured cache_dir wins');
 	is($vm->_image_cache->cache_dir, '/var/cache/fuguvm',
 	    'the image cache uses it too');
 
 	local $ENV{HOME} = '/home/nobody';
-	my $bare = FuguVM::VM->new(config => {});
+	my $bare = App::FuguVM::Guest->new(config => {});
 	is($bare->_cache_dir, '/home/nobody/.cache/fuguvm',
 	    'a config without cache_dir falls back to the default');
 }
@@ -96,17 +93,17 @@ use_ok('FuguVM::VM');
 # It derives no key at all. Thus it can neither look one up nor
 # publish one.
 {
-	my $off = FuguVM::VM->new(
+	my $off = App::FuguVM::Guest->new(
 		config => { cache_dir => '/var/cache/fuguvm', image_cache => 0 });
 	is($off->_image_cache, undef, 'image_cache no disables the cache');
 
-	my $flag = FuguVM::VM->new(
+	my $flag = App::FuguVM::Guest->new(
 		config   => { cache_dir => '/var/cache/fuguvm' },
 		no_cache => 1,
 	);
 	is($flag->_image_cache, undef, '--no-cache disables the cache');
 
-	my $on = FuguVM::VM->new(
+	my $on = App::FuguVM::Guest->new(
 		config => { cache_dir => '/var/cache/fuguvm', image_cache => 1 });
 	ok(defined $on->_image_cache, 'image_cache yes leaves it enabled');
 }
@@ -117,12 +114,12 @@ SKIP: {
 	my $has_qemu = `which qemu-img 2>/dev/null`;
 	skip 'qemu-img not installed', 14 unless $has_qemu;
 
-	require FuguVM::Disk;
-	require FuguVM::ImageCache;
-	require FuguVM::State;
+	require App::FuguVM::Disk;
+	require App::FuguVM::DiskCache;
+	require App::FuguVM::State;
 
 	my $root = tempdir(CLEANUP => 1);
-	my $cache = FuguVM::ImageCache->new("$root/cache");
+	my $cache = App::FuguVM::DiskCache->new("$root/cache");
 	my $key = '7.8-arm64-11223344';
 
 	# A stand-in for a freshly installed disk
@@ -133,8 +130,8 @@ SKIP: {
 	    { root_password => 'from-the-image' });
 	ok(defined $base, 'a base image is available to restore from');
 
-	my $state = FuguVM::State->new("$root/state", 'default');
-	my $vm = FuguVM::VM->new(
+	my $state = App::FuguVM::State->new("$root/state", 'default');
+	my $vm = App::FuguVM::Guest->new(
 		config => { name => 'default', cache_dir => "$root/cache" },
 		state  => $state,
 		log    => TestLog->new,
@@ -150,7 +147,7 @@ SKIP: {
 	is($state->data->{cached_from}, $key,
 	    'state records which cached image it came from');
 
-	my $disk = FuguVM::Disk->new("$root/state");
+	my $disk = App::FuguVM::Disk->new("$root/state");
 	is($disk->backing_file('default'), $base,
 	    'the working disk is an overlay on the cached base');
 
@@ -158,16 +155,16 @@ SKIP: {
 	ok($vm->_verify_backing_chain, 'an intact backing chain verifies');
 
 	# Reparenting a standalone disk onto a base
-	my $other = FuguVM::State->new("$root/state2", 'default');
-	my $vm2 = FuguVM::VM->new(
+	my $other = App::FuguVM::State->new("$root/state2", 'default');
+	my $vm2 = App::FuguVM::Guest->new(
 		config => { name => 'default', cache_dir => "$root/cache" },
 		state  => $other,
 		log    => TestLog->new,
 	);
-	FuguVM::Disk->new("$root/state2")->create('default', '64M');
+	App::FuguVM::Disk->new("$root/state2")->create('default', '64M');
 	ok($other->disk_exists, 'a standalone disk to reparent');
 	ok($vm2->_reparent_disk($base), 'reparent succeeds');
-	is(FuguVM::Disk->new("$root/state2")->backing_file('default'), $base,
+	is(App::FuguVM::Disk->new("$root/state2")->backing_file('default'), $base,
 	    'the standalone disk became an overlay');
 	ok(!-f $other->disk_path . '.replaced',
 	    'no leftover copy of the replaced disk');
@@ -182,8 +179,8 @@ SKIP: {
 	    'and the error names the remedy');
 
 	# A restore against the now-empty cache is a miss, not a crash
-	my $fresh = FuguVM::State->new("$root/state3", 'default');
-	my $vm3 = FuguVM::VM->new(
+	my $fresh = App::FuguVM::State->new("$root/state3", 'default');
+	my $vm3 = App::FuguVM::Guest->new(
 		config => { name => 'default', cache_dir => "$root/cache" },
 		state  => $fresh,
 		log    => TestLog->new,

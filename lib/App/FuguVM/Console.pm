@@ -17,18 +17,18 @@
 
 use v5.36;
 
-package FuguVM::Expect;
+package App::FuguVM::Console;
 
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Process;
 
-# FuguVM::Expect - drive the OpenBSD installer over the serial console.
+# App::FuguVM::Console - drive the serial console of a guest.
 #
-# The installer asks questions that no protocol answers, so an
-# expect(1) script types them. The scripts ship under
-# share/fuguvm/expect, and Fugu::File resolves them against the
-# install root.
+# The console answers no protocol, so an expect(1) script types at it.
+# The module runs the installer that way, and it runs any other script
+# the operator names. The scripts ship under share/fuguvm/expect, and
+# Fugu::File resolves them against the install root.
 
 # Where the shipped scripts live, relative to the root of the tree.
 use constant SCRIPT_DIR => 'share/fuguvm/expect';
@@ -47,7 +47,7 @@ sub new ( $class, %args )
 # $class_or_self->script_path($script_name):
 #	Return the path of a shipped expect script, or undef.
 #
-#	The method also works on the class. FuguVM::ImageCache hashes
+#	The method also works on the class. App::FuguVM::DiskCache hashes
 #	the installer script into its cache key, so it must resolve the
 #	script the same way run_install does.
 sub script_path ( $self, $script_name )

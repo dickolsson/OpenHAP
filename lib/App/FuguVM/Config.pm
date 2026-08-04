@@ -17,13 +17,13 @@
 
 use v5.36;
 
-package FuguVM::Config;
+package App::FuguVM::Config;
 
 use Fugu::Config;
 use Fugu::File;
 use Fugu::Log;
 
-# FuguVM::Config - the VM defaults over Fugu::Config.
+# App::FuguVM::Config - the VM defaults over Fugu::Config.
 #
 # The grammar, the tilde expansion and the yes/no spellings come from
 # Fugu::Config. This file holds only what is true of FuguVM: the

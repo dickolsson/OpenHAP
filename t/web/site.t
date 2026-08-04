@@ -200,7 +200,7 @@ for my $page (@PAGES) {
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
 	my @module_pages =
-	    grep { /^(?:App|FuguVM|Protocol)::.*\.3p\.html$/ } readdir $dh;
+	    grep { /^(?:App|Protocol)::.*\.3p\.html$/ } readdir $dh;
 	closedir $dh;
 
 	is( scalar @module_pages, scalar keys %POD,

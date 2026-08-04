@@ -17,11 +17,11 @@
 
 use v5.36;
 
-package FuguVM::QMP;
+package App::FuguVM::QMP;
 
 use Fugu::JSONSocket;
 
-# FuguVM::QMP - the QEMU Machine Protocol command set.
+# App::FuguVM::QMP - the QEMU Machine Protocol command set.
 #
 # The transport is Fugu::JSONSocket. This file holds only what is
 # true of QMP: the greeting, the capabilities handshake, and the four

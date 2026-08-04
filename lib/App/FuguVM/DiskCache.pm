@@ -17,22 +17,25 @@
 
 use v5.36;
 
-# FuguVM::ImageCache - cache of installed OpenBSD disk images
+# App::FuguVM::DiskCache - cache of installed OpenBSD disks.
 #
 # An OpenBSD installation under TCG emulation costs tens of minutes.
 # This module keeps the result: a pristine, compacted copy of the disk,
 # taken the moment the installer finished. Later runs use that copy as
 # the backing image of a throwaway overlay.
+#
+# The module caches the disk. App::FuguVM::Miniroot caches the install
+# media that produced it. Neither is a cache of the other.
 
-package FuguVM::ImageCache;
+package App::FuguVM::DiskCache;
 
 use Digest::SHA ();
 use File::Basename;
 use File::Path qw(remove_tree);
 use Fugu::File;
 use Fugu::Log;
-use FuguVM::Expect;
-use FuguVM::Image;
+use App::FuguVM::Console;
+use App::FuguVM::Miniroot;
 
 use constant {
 	BASE_NAME         => 'base.qcow2',
@@ -94,7 +97,7 @@ sub base_path ( $self, $key )
 sub key ( $self, $vm_config )
 {
 	my $version   = _sanitize( $vm_config->{version} // '' );
-	my $arch      = _sanitize(FuguVM::Image::ARCH);
+	my $arch      = _sanitize(App::FuguVM::Miniroot::ARCH);
 	my $disk_size = $vm_config->{disk_size} // '';
 
 	my $script = $self->_install_script;
@@ -515,11 +518,11 @@ sub _convert ( $source, $target, $backing = undef, $backing_format = 'qcow2' )
 
 # $self->_install_script:
 #	Return the installer script whose bytes go into the cache key.
-#	The path resolves through FuguVM::Expect. Thus it is always the
+#	The path resolves through App::FuguVM::Console. Thus it is always the
 #	same file that run_install would execute.
 sub _install_script ($)
 {
-	return FuguVM::Expect->script_path(INSTALL_SCRIPT);
+	return App::FuguVM::Console->script_path(INSTALL_SCRIPT);
 }
 
 # $self->_generation_file:

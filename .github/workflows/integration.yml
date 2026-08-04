@@ -34,7 +34,7 @@ on:
       # The harness that installs the guest, provisions it, and
       # controls the run
       - "bin/fuguvm"
-      - "lib/FuguVM/**.pm"
+      - "lib/App/FuguVM/**.pm"
       - ".fuguvmrc"
       - "share/fuguvm/cache-generation"
       - "share/fuguvm/expect/*.exp"
@@ -71,7 +71,7 @@ on:
       - "t/fugu/sandbox.t"
       - "t/lib/**.pm"
       - "bin/fuguvm"
-      - "lib/FuguVM/**.pm"
+      - "lib/App/FuguVM/**.pm"
       - ".fuguvmrc"
       - "share/fuguvm/cache-generation"
       - "share/fuguvm/expect/*.exp"

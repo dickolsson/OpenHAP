@@ -25,9 +25,9 @@ The repo contains four Perl namespaces with distinct concerns:
 - `Fugu::` (`lib/Fugu/`) — generic OpenBSD-style daemon utilities (daemonize,
   privilege drop, signals, logging, process, state, pledge/unveil, imsg framing,
   mdnsd publishing)
-- `FuguVM::` (`lib/FuguVM/`) — installs and manages OpenBSD VMs under QEMU,
-  driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this repo is
-  its first user, not its purpose
+- `App::FuguVM::` (`lib/App/FuguVM/`) — installs and manages OpenBSD VMs under
+  QEMU, driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this
+  repo is its first user, not its purpose
 
 ## Commands
 
@@ -161,7 +161,7 @@ Corollaries:
 
 - Rows 2 and 3 are exclusive. Fugu uses 3p manuals, found by `man Fugu::Daemon`.
   OpenHAP and FuguVM keep sidecars. The shared `Fugu` prefix does not group
-  `Fugu::` and `FuguVM::` here. No module has both.
+  `Fugu::` and `App::FuguVM::` here. No module has both.
 - No `README.md` anywhere except the repository root
 - Skills and `CLAUDE.md` files may point to man pages, `.pod` files, `spec/`, or
   each other, but never restate their content

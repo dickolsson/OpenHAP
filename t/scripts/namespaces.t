@@ -67,6 +67,24 @@ my @RETIRED = (
 		name    => 'OpenHAP::Tasmota::Base',
 		pattern => qr{OpenHAP(?:::|/)Tasmota(?:::|/)Base\b},
 	},
+
+	# Phase 3: the VM utility moved under App::, and four modules
+	# took a name that says what they do.
+	{ name => 'FuguVM::',    pattern => qr/(?<!App::)FuguVM::/ },
+	{ name => 'lib/FuguVM',  pattern => qr{lib/FuguVM\b} },
+	{ name => 'FuguVM::VM',  pattern => qr{FuguVM(?:::|/)VM\b} },
+	{
+		name    => 'FuguVM::Expect',
+		pattern => qr{FuguVM(?:::|/)Expect\b},
+	},
+	{
+		name    => 'FuguVM::ImageCache',
+		pattern => qr{FuguVM(?:::|/)ImageCache\b},
+	},
+	{
+		name    => 'FuguVM::Image',
+		pattern => qr{FuguVM(?:::|/)Image\b},
+	},
 );
 
 # plans/001 to plans/008 record what was true when they were written.
@@ -108,6 +126,12 @@ cmp_ok( scalar @files, '>', 50, 'the sweep reads the whole tree' );
 
 my @violations;
 for my $file (@files) {
+
+	# git ls-files answers from the index. A rename in progress
+	# leaves a tracked path with no file behind it, and that path is
+	# on its way out, so it is not a shim.
+	next unless -f $file;
+
 	for my $retired (@RETIRED) {
 		push @violations, "$file: the path names $retired->{name}"
 		    if $file =~ $retired->{pattern};

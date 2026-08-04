@@ -3,7 +3,7 @@
 # The dependency rules of the Protocol::HAP library.
 #
 # Protocol::HAP is self-contained: core Perl plus the declared Crypt::*
-# modules, and nothing else. It never uses Fugu, FuguVM, or App.
+# modules, and nothing else. It never uses Fugu or App.
 # Fugu never uses Protocol::HAP or App. The test parses the use
 # and require lines and fails on a line that breaks a rule.
 
@@ -58,7 +58,7 @@ sub imports_in ($file)
 }
 
 # Direction one: Protocol::HAP uses core Perl, the declared list, and
-# itself. A Fugu, FuguVM, or App import is a boundary violation.
+# itself. A Fugu or App import is a boundary violation.
 # So is an undeclared CPAN module.
 subtest 'Protocol::HAP is self-contained' => sub {
 	my @files = perl_files("$ROOT/lib/Protocol");
@@ -70,7 +70,7 @@ subtest 'Protocol::HAP is self-contained' => sub {
 		for my $import ( imports_in($file) ) {
 			my ( $line, $module ) = @$import;
 
-			if ( $module =~ /^(?:Fugu|FuguVM|App)\b/ ) {
+			if ( $module =~ /^(?:Fugu|App)\b/ ) {
 				push @violations,
 				    "$name:$line uses $module";
 				next;

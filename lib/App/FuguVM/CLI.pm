@@ -17,7 +17,7 @@
 
 use v5.36;
 
-package FuguVM::CLI;
+package App::FuguVM::CLI;
 
 use File::Basename;
 
@@ -26,17 +26,17 @@ use Fugu::File;
 use Fugu::Log;
 use Fugu::SSH;
 use Fugu::Util;
-use FuguVM::Config;
-use FuguVM::Disk;
-use FuguVM::Expect;
-use FuguVM::Image;
-use FuguVM::ImageCache;
-use FuguVM::Proxy;
-use FuguVM::State;
-use FuguVM::VM;
+use App::FuguVM::Config;
+use App::FuguVM::Disk;
+use App::FuguVM::Console;
+use App::FuguVM::Miniroot;
+use App::FuguVM::DiskCache;
+use App::FuguVM::Proxy;
+use App::FuguVM::State;
+use App::FuguVM::Guest;
 
 # The generic exit codes come from Fugu::CLI. Only the codes that
-# mean something to a VM are defined here, and FuguVM::VM uses them
+# mean something to a VM are defined here, and App::FuguVM::Guest uses them
 # from here rather than defining the same numbers again.
 use constant {
 	EXIT_SUCCESS      => Fugu::CLI::EXIT_SUCCESS,
@@ -235,7 +235,7 @@ sub _prepare ( $self, $cli, $entry )
 	return if $entry->{offline};
 
 	my $project_root = $self->{project}
-	    // FuguVM::Config->find_project_root;
+	    // App::FuguVM::Config->find_project_root;
 	if ( !defined $project_root ) {
 		$self->{log}->error(
 			"Not in a FuguVM project. Run 'fuguvm init' first.");
@@ -247,9 +247,9 @@ sub _prepare ( $self, $cli, $entry )
 		return EXIT_CONFIG_ERROR;
 	}
 
-	$self->{config} = FuguVM::Config->new($project_root);
-	$self->{state} =
-	    FuguVM::State->new( $self->{config}->state_dir, $self->{vm_name} );
+	$self->{config} = App::FuguVM::Config->new($project_root);
+	$self->{state}  = App::FuguVM::State->new( $self->{config}->state_dir,
+		$self->{vm_name} );
 	if ( !defined $self->{state} ) {
 		$self->{log}->error(
 			"Cannot initialize state for VM '$self->{vm_name}'");
@@ -267,7 +267,7 @@ sub _load_vm ( $self, %opts )
 		return;
 	}
 
-	return FuguVM::VM->new(
+	return App::FuguVM::Guest->new(
 		config   => $vm_config,
 		state    => $self->{state},
 		log      => $self->{log},
@@ -376,7 +376,7 @@ sub cmd_expect ( $self, $cli, @args )
 	}
 
 	my $vm     = $self->_load_vm or return EXIT_VM_NOT_FOUND;
-	my $expect = FuguVM::Expect->new(
+	my $expect = App::FuguVM::Console->new(
 		host => 'localhost',
 		port => $vm->console_port,
 	);
@@ -423,7 +423,7 @@ sub cmd_image ( $self, $cli, @args )
 
 	my $cache_dir = $self->{config}->cache_dir;
 
-	my $image = FuguVM::Image->new($cache_dir);
+	my $image = App::FuguVM::Miniroot->new($cache_dir);
 
 	if ( $action eq 'list' ) {
 		my $images = $image->list;
@@ -464,7 +464,7 @@ sub cmd_cache ( $self, $cli, @args )
 		return EXIT_INVALID_ARGS;
 	}
 
-	my $cache = FuguVM::ImageCache->new( $self->{config}->cache_dir );
+	my $cache = App::FuguVM::DiskCache->new( $self->{config}->cache_dir );
 
 	return $self->_cache_list($cache) if $action eq 'list';
 	return $self->_cache_clear( $cli, $cache, @args );
@@ -514,7 +514,8 @@ sub _cache_list ( $self, $cache )
 #	nobody knew to bound.
 sub _proxy_list ($self)
 {
-	my $cache = FuguVM::Proxy::Cache->new( $self->{config}->cache_dir );
+	my $cache =
+	    App::FuguVM::Proxy::Cache->new( $self->{config}->cache_dir );
 	my $files = $cache->list;
 
 	if ( !@$files ) {
@@ -623,7 +624,8 @@ sub _cache_clear ( $self, $cli, $cache, @args )
 #	need.
 sub _proxy_clear ( $self, $stale )
 {
-	my $cache = FuguVM::Proxy::Cache->new( $self->{config}->cache_dir );
+	my $cache =
+	    App::FuguVM::Proxy::Cache->new( $self->{config}->cache_dir );
 
 	if ( !$stale ) {
 		my $size = $cache->size;
@@ -682,7 +684,7 @@ sub _disks_backed_by ( $self, $entry_dir )
 	    sort grep { !/^\./ && -f "$state_dir/$_/disk.qcow2" } readdir $dh;
 	closedir $dh;
 
-	my $disk = FuguVM::Disk->new($state_dir);
+	my $disk = App::FuguVM::Disk->new($state_dir);
 	my @users;
 
 	for my $name (@names) {
@@ -690,7 +692,7 @@ sub _disks_backed_by ( $self, $entry_dir )
 		next if !defined $backing;
 		next if index( $backing, "$entry_dir/" ) != 0;
 
-		my $state = FuguVM::State->new( $state_dir, $name );
+		my $state = App::FuguVM::State->new( $state_dir, $name );
 		push @users,
 		    {
 			vm      => $name,
@@ -712,7 +714,7 @@ sub cmd_snapshot ( $self, $cli, @args )
 		return EXIT_INVALID_ARGS;
 	}
 
-	my $cache = FuguVM::ImageCache->new( $self->{config}->cache_dir );
+	my $cache = App::FuguVM::DiskCache->new( $self->{config}->cache_dir );
 
 	return $self->_snapshot_list( $cli, $cache, @args )
 	    if $action eq 'list';
@@ -825,7 +827,7 @@ sub _snapshot_restore ( $self, $cache, $name )
 	}
 
 	my $vm_config = $self->{config}->load_vm( $self->{vm_name} );
-	my $disk      = FuguVM::Disk->new( $self->{config}->state_dir );
+	my $disk      = App::FuguVM::Disk->new( $self->{config}->state_dir );
 	my $created =
 	    $disk->create( $vm_config->{name}, undef, $found->{path}, 'qcow2' );
 	if ( !defined $created ) {
@@ -920,7 +922,7 @@ sub _disk_cache_key ( $self, $cache )
 	# Scalar context: backing_file returns an empty list for a
 	# standalone disk. Without scalar context, the empty list would
 	# reach key_for_path as no argument at all, not as undef.
-	my $disk    = FuguVM::Disk->new( $self->{config}->state_dir );
+	my $disk    = App::FuguVM::Disk->new( $self->{config}->state_dir );
 	my $backing = $disk->backing_file( $vm_config->{name} );
 
 	return $cache->key_for_path($backing);
@@ -935,7 +937,7 @@ sub cmd_disk ( $self, $cli, @args )
 		return EXIT_INVALID_ARGS;
 	}
 
-	my $disk = FuguVM::Disk->new( $self->{state}{state_dir} );
+	my $disk = App::FuguVM::Disk->new( $self->{state}{state_dir} );
 
 	if ( $action eq 'info' ) {
 		my $info = $disk->info( $self->{vm_name} );
@@ -1001,9 +1003,9 @@ sub cmd_disk ( $self, $cli, @args )
 sub cmd_init ( $self, $cli, @args )
 {
 	my $dir         = shift @args // '.';
-	my $data_dir    = FuguVM::Config::DATA_DIR();
+	my $data_dir    = App::FuguVM::Config::DATA_DIR();
 	my $fuguvm_dir  = "$dir/$data_dir";
-	my $config_file = "$dir/" . FuguVM::Config::PROJECT_CONFIG();
+	my $config_file = "$dir/" . App::FuguVM::Config::PROJECT_CONFIG();
 
 	if ( -f $config_file ) {
 		$self->{log}->info("FuguVM already initialized in $dir");
