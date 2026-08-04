@@ -22,11 +22,11 @@ BEGIN {
 }
 
 use_ok('OpenHAP::Server');
-use_ok('OpenHAP::Storage');
+use_ok('Protocol::HAP::Store::File');
 use_ok('Fugu::MDNS');
 
-# Test host creation: the engine is built over OpenHAP::Storage and
-# the host contracts
+# Test host creation: the engine is built over
+# Protocol::HAP::Store::File and the host contracts
 {
     my $temp_dir = tempdir(CLEANUP => 1);
     my $server = OpenHAP::Server->new(

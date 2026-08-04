@@ -34,7 +34,7 @@ use_ok('Protocol::HAP::Crypto');
 use_ok('Protocol::HAP::SRP');
 use_ok('Protocol::HAP::Pairing');
 use_ok('Protocol::HAP::Session');
-use_ok('OpenHAP::Storage');
+use_ok('Protocol::HAP::Store::File');
 use_ok('Protocol::HAP::TLV');
 
 my $PIN = '123-45-678';
@@ -48,8 +48,8 @@ sub i2b ( $int, $len = undef )
 
 sub make_pairing ( $storage = undef )
 {
-	$storage //= OpenHAP::Storage->new(
-		db_path => tempdir( CLEANUP => 1 ) );
+	$storage //= Protocol::HAP::Store::File->new(
+		path => tempdir( CLEANUP => 1 ) );
 	my ( $ltsk, $ltpk ) = Protocol::HAP::Crypto->ed25519_keypair;
 	my $pairing = Protocol::HAP::Pairing->new(
 		pin            => $PIN,
@@ -622,8 +622,8 @@ subtest '[HAP-Pairing §3] pair-verify handshake' => sub {
 };
 
 subtest '[HAP-Pairing §8] authentication attempt limits' => sub {
-	my $storage =
-	    OpenHAP::Storage->new( db_path => tempdir( CLEANUP => 1 ) );
+	my $storage = Protocol::HAP::Store::File->new(
+		path => tempdir( CLEANUP => 1 ) );
 	my ( $pairing, undef, undef ) = make_pairing($storage);
 
 	# The limit is 100 attempts. At the limit, M1 returns 0x05

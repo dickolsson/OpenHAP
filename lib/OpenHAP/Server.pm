@@ -25,8 +25,8 @@ use Time::HiRes qw(time);
 use Fugu::EventLoop;
 use Fugu::Log;
 use Fugu::MDNS;
-use OpenHAP::Storage;
 use Protocol::HAP::Server;
+use Protocol::HAP::Store::File;
 
 # OpenHAP::Server - the host of the Protocol::HAP engine.
 #
@@ -47,8 +47,8 @@ use constant MQTT_RECONNECT_INTERVAL => 30;
 sub new ( $class, %args )
 {
 	my $self = bless {
-		port         => $args{port}         // 51827,
-		storage_path => $args{storage_path} // '/var/db/openhapd',
+		port         => $args{port} // 51827,
+		storage_path => $args{storage_path},
 
 		storage => undef,
 		engine  => undef,
@@ -74,8 +74,10 @@ sub new ( $class, %args )
 		started => int time,
 	}, $class;
 
-	$self->{storage} =
-	    OpenHAP::Storage->new( db_path => $self->{storage_path} );
+	$self->{storage} = Protocol::HAP::Store::File->new(
+		path   => $self->{storage_path},
+		logger => Fugu::Log->default,
+	);
 
 	# Build the engine over the host contracts: the storage, the
 	# process logger, writes through the connection map, and the

@@ -127,18 +127,15 @@ install: install-man
 	done
 	# Fugu's API documentation lives in man3p, not in sidecars
 	install -m 644 lib/Fugu/*.pm $(DESTDIR)$(LIBDIR)/Fugu/
-	# The Protocol::HAP library. The Store/ loop accepts zero
-	# matches, because the subdirectory arrives in a later phase
+	# The Protocol::HAP library
 	install -d $(DESTDIR)$(LIBDIR)/Protocol
 	install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP
 	install -m 644 lib/Protocol/*.pm lib/Protocol/*.pod $(DESTDIR)$(LIBDIR)/Protocol/
 	install -m 644 lib/Protocol/HAP/*.pm $(DESTDIR)$(LIBDIR)/Protocol/HAP/
 	install -m 644 lib/Protocol/HAP/*.pod $(DESTDIR)$(LIBDIR)/Protocol/HAP/
-	for f in lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod; do \
-		[ -e "$$f" ] || continue; \
-		install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store; \
-		install -m 644 "$$f" $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store/; \
-	done
+	install -d $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store
+	install -m 644 lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod \
+	    $(DESTDIR)$(LIBDIR)/Protocol/HAP/Store/
 	# Install rc.d script
 	install -d $(DESTDIR)$(SYSCONFDIR)/rc.d
 	install -m 755 etc/rc.d/openhapd $(DESTDIR)$(SYSCONFDIR)/rc.d/openhapd
@@ -212,13 +209,9 @@ package: clean
 	cp lib/Fugu/*.pm build/$(PACKAGE)/lib/Fugu/
 	cp lib/Protocol/*.pm lib/Protocol/*.pod build/$(PACKAGE)/lib/Protocol/
 	cp lib/Protocol/HAP/*.pm lib/Protocol/HAP/*.pod build/$(PACKAGE)/lib/Protocol/HAP/
-	# The Store/ loop accepts zero matches, because the
-	# subdirectory arrives in a later phase
-	for f in lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod; do \
-		[ -e "$$f" ] || continue; \
-		mkdir -p build/$(PACKAGE)/lib/Protocol/HAP/Store; \
-		cp "$$f" build/$(PACKAGE)/lib/Protocol/HAP/Store/; \
-	done
+	mkdir -p build/$(PACKAGE)/lib/Protocol/HAP/Store
+	cp lib/Protocol/HAP/Store/*.pm lib/Protocol/HAP/Store/*.pod \
+	    build/$(PACKAGE)/lib/Protocol/HAP/Store/
 	# rc.d script
 	cp etc/rc.d/openhapd build/$(PACKAGE)/etc/rc.d/
 	# Example configuration

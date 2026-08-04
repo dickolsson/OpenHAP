@@ -279,8 +279,9 @@ eval { require Net::MQTT::Simple; 1 };
 # is a name. A wrong disposition turns a configuration that starts
 # today into a startup failure.
 #
-# Storage's make_path already created $db_path through HAP->new. Thus
-# a $db_path that is still missing is a hard failure, and correctly so.
+# The store's make_path already created $db_path through HAP->new.
+# Thus a $db_path that is still missing is a hard failure, and
+# correctly so.
 Fugu::Sandbox->unveil(
 	paths   => [ unveil_paths() ],
 	on_skip => sub ($path) {
@@ -293,11 +294,11 @@ Fugu::Sandbox->unveil_lock;
 # network input:
 #
 #	stdio	always
-#	rpath	/dev/urandom (Crypto), Storage reads, lazy require
-#	wpath	Storage writes, the daemon log
-#	cpath	Storage file creation and removal, make_path
-#	fattr	chmod 0600 on stored key material (Storage)
-#	flock	Storage locking
+#	rpath	/dev/urandom (Crypto), store reads, lazy require
+#	wpath	store writes, the daemon log
+#	cpath	store file creation and removal, make_path
+#	fattr	chmod 0600 on stored key material (the store)
+#	flock	store locking
 #	inet	the HAP listener, MQTT connects and reconnects
 #	dns	resolving mqtt_host when it is a name
 #	unix	reconnecting to mdnsd. update_txt withdraws and
