@@ -55,33 +55,48 @@ Render the whole site:
 
 =item 1.
 
-lint every mdoc source;
+check that every renderer is installed, and name the first one that is
+not;
 
 =item 2.
 
-create the output directory and the staging directory inside it;
+refuse an output directory that no build may own;
 
 =item 3.
 
-copy every mdoc source into the staging directory under its staged name;
+lint every mdoc source;
 
 =item 4.
 
-copy the base stylesheet and every asset;
+create the output directory and the staging directory inside it;
 
 =item 5.
 
-render each C<page> block;
+copy every mdoc source into the staging directory under its staged name;
 
 =item 6.
 
-render one page for each manual in each group;
+copy the base stylesheet and every asset;
 
 =item 7.
 
-remove the staging directory.
+render each C<page> block;
+
+=item 8.
+
+render one page for each manual in each group;
+
+=item 9.
+
+remove the staging directory, and every file the site no longer holds.
 
 =back
+
+The last step is what makes a second build over the same directory
+right. A manual that was renamed leaves its old page behind, and a site
+that carried both would fail its own check. The build owns the output
+directory, so it owns the removal too; it removes a plain file and
+never a tree.
 
 The method returns true on success, and C<undef> with a message in the
 log otherwise.
@@ -94,6 +109,28 @@ have broken the moment the staging step moved.
 
 Remove the output directory. The method returns true when the directory
 is gone, whether or not it was there to begin with.
+
+C<clean> removes a built site and refuses anything else. It deletes a
+tree without asking, so the one thing it must never do is delete a tree
+that no build made. A build writes one flat directory of files, plus
+the staging directory while it runs; a target that holds anything else
+is refused by name.
+
+=head2 THE OUTPUT DIRECTORY
+
+Both C<build> and C<clean> refuse a target that no build may own: the
+root of the filesystem, the home directory, the project root, and any
+directory that holds the project. C<--out> reaches them both, and the
+C<out_dir> setting it overrides is checked in the description, so the
+guard has to sit here as well.
+
+The rule is deliberately not "inside the project". The tests and the CI
+both build into a temporary directory outside it.
+
+A C<..> in the target is resolved before the comparison.
+C<File::Spec-E<gt>canonpath> leaves it alone by design, and a guard that
+compared the uncollapsed form would let C<< <project>/.. >> through as a
+directory it had never seen.
 
 =head2 pod_date
 

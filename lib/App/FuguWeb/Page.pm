@@ -100,7 +100,10 @@ sub _head ( $self, $title )
 	my $site   = App::FuguWeb::escape_html( $config->site );
 
 	my $html = "<!DOCTYPE html>\n";
-	$html .= '<html lang="' . $config->lang . qq{">\n};
+	$html .=
+	      '<html lang="'
+	    . App::FuguWeb::escape_attr( $config->lang )
+	    . qq{">\n};
 	$html .= "<head>\n";
 	$html .= qq{<meta charset="utf-8">\n};
 	$html .= '<meta name="viewport"'
@@ -114,7 +117,7 @@ sub _head ( $self, $title )
 	$html .= "</head>\n<body>\n";
 	$html .=
 	      '<header class="banner"><a href="'
-	    . $config->entry . '">'
+	    . App::FuguWeb::escape_attr( $config->entry ) . '">'
 	    . App::FuguWeb::escape_html( $config->banner )
 	    . "</a></header>\n";
 	$html .= $self->_nav;
@@ -151,7 +154,7 @@ sub _nav ($self)
 		my $entry = $entries[$index];
 		$html .=
 		      '<a href="'
-		    . $entry->{href} . '">'
+		    . App::FuguWeb::escape_attr( $entry->{href} ) . '">'
 		    . App::FuguWeb::escape_html( $entry->{label} ) . '</a>';
 		$html .= ' ' . MIDDLE_DOT if $index < $#entries;
 		$html .= "\n";

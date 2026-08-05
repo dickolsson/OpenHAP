@@ -12,9 +12,11 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 use File::Path qw(make_path);
+use File::Spec;
 use File::Temp qw(tempdir);
 
 use_ok('App::FuguWeb::Config');
+use_ok('App::FuguWeb::Render');
 use_ok('App::FuguWeb::Site');
 use_ok('Fugu::Log');
 
@@ -137,6 +139,37 @@ subtest 'the build makes the site and nothing else' => sub {
 	is( $site->missing_tool, undef, 'every renderer is installed' );
 	ok( $site->build, 'the build succeeds' );
 
+	# The probe is the first step, so the failure names the tool
+	# that is missing. Without it the build reaches the lint and
+	# reports that a manual source was rejected, which sends the
+	# reader to the wrong place.
+	my $absent = tempdir( CLEANUP => 1 ) . '/out';
+	my $config = site( $ROOT, $absent )->config;
+	my $said   = '';
+
+	open my $saved, '>&', \*STDERR or die "Cannot save stderr: $!";
+	close STDERR;
+	open STDERR, '>', \$said or die 'Cannot capture stderr';
+
+	my $failed = App::FuguWeb::Site->new(
+		config => $config,
+		out    => $absent,
+		render => App::FuguWeb::Render->new(
+			config => $config,
+			mandoc => '/nonexistent/mandoc',
+		),
+	)->build;
+
+	close STDERR;
+	open STDERR, '>&', $saved or die "Cannot restore stderr: $!";
+
+	ok( !$failed, 'a build with no mandoc fails' );
+	like( $said, qr{/nonexistent/mandoc is not installed},
+		'and names the tool that is missing' );
+	unlike( $said, qr/rejected a manual source/,
+		'and does not blame a manual for it' );
+	ok( !-e $absent, 'and writes nothing' );
+
 	# The pages of the description, one page per manual, the base
 	# stylesheet, and the assets.
 	my @expected = qw(
@@ -226,6 +259,104 @@ subtest 'pod_date is the date of the last commit' => sub {
 	# answers. Either way the answer is a date and not a file time.
 	like( $site->pod_date, qr/^\d{4}-\d{2}-\d{2}$/,
 		'the date is an ISO date' );
+
+	SKIP: {
+		skip 'git not found', 1 unless have('git');
+
+		# git does not preserve file times, so a build that read
+		# one would give different bytes on every checkout. The
+		# value has to be the commit date and not merely a date.
+		my $root = project();
+		my $quiet = '>/dev/null 2>&1';
+		my $env = 'GIT_AUTHOR_DATE="2001-02-03T04:05:06 +0000"'
+		    . ' GIT_COMMITTER_DATE="2001-02-03T04:05:06 +0000"'
+		    . ' GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.org'
+		    . ' GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.org';
+		system("cd '$root' && git init -q $quiet") == 0
+		    or skip 'git init failed', 1;
+		system("cd '$root' && git add -A $quiet") == 0
+		    or skip 'git add failed', 1;
+		system("cd '$root' && $env git commit -qm one $quiet") == 0
+		    or skip 'git commit failed', 1;
+
+		is( site( $root, tempdir( CLEANUP => 1 ) . '/out' )->pod_date,
+			'2001-02-03', 'the date of the last commit' );
+	}
+};
+
+subtest 'a stale staging directory does not reach the next build' => sub {
+	my $root = project();
+	my $out  = tempdir( CLEANUP => 1 ) . '/out';
+
+	# mandoc reads a cross-reference as a local link when a file of
+	# that name sits in its working directory. A stale source left
+	# by an interrupted build would therefore turn a reference that
+	# belongs on the manual host into a link that leads nowhere.
+	open my $fh, '>>', "$root/man/tool.1"
+	    or die "Cannot extend the source: $!";
+	print {$fh} ".Sh SEE ALSO\n.Xr ghost 1\n";
+	close $fh;
+
+	make_path("$out/.man");
+	open my $ghost, '>', "$out/.man/ghost.1"
+	    or die "Cannot write the stale source: $!";
+	print {$ghost} ".Dd \$Mdocdate: July 27 2026 \$\n.Dt GHOST 1\n.Os\n"
+	    . ".Sh NAME\n.Nm ghost\n.Nd a source no group names\n";
+	close $ghost;
+
+	ok( site( $root, $out )->build, 'the build succeeds' );
+	ok( !-e "$out/.man",         'and the staging directory is gone' );
+	ok( !-e "$out/ghost.1.html", 'the stale source rendered nothing' );
+
+	open my $page, '<', "$out/tool.1.html" or die "Cannot read: $!";
+	my $html = do { local $/; <$page> };
+	close $page;
+
+	like( $html, qr{href="https://man\.openbsd\.org/ghost\.1"},
+		'and the cross-reference still leaves for the manual host' );
+};
+
+subtest 'a page the site no longer holds is removed' => sub {
+	my $root = project();
+	my $out  = tempdir( CLEANUP => 1 ) . '/out';
+
+	ok( site( $root, $out )->build, 'the first build succeeds' );
+	ok( -e "$out/tool.1.html", 'the manual has a page' );
+
+	rename "$root/man/tool.1", "$root/man/renamed.1"
+	    or die "Cannot rename the source: $!";
+
+	ok( site( $root, $out )->build, 'the second build succeeds' );
+	ok( -e "$out/renamed.1.html", 'the new page is there' );
+	ok( !-e "$out/tool.1.html",   'and the old one is gone' );
+};
+
+subtest 'the build refuses an output directory it must not own' => sub {
+	my $root = project();
+
+	# --out reaches build and clean alike, and the setting it
+	# overrides is checked in the description.
+	for my $bad ( $root, '/', "$root/..", File::Spec->rootdir ) {
+		ok( !site( $root, $bad )->build,
+			"the build refuses $bad" );
+		ok( !site( $root, $bad )->clean,
+			"and the clean refuses it too" );
+	}
+
+	ok( -e "$root/.fuguwebrc", 'the project is untouched' );
+};
+
+subtest 'clean refuses a directory that no build made' => sub {
+	my $root = project();
+	my $out  = tempdir( CLEANUP => 1 ) . '/out';
+	make_path("$out/deep");
+
+	open my $fh, '>', "$out/deep/keep.txt" or die "Cannot write: $!";
+	print {$fh} "important\n";
+	close $fh;
+
+	ok( !site( $root, $out )->clean, 'clean fails' );
+	ok( -e "$out/deep/keep.txt",     'and removes nothing' );
 };
 
 done_testing();

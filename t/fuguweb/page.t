@@ -125,6 +125,33 @@ RC
 		'a title may hold a slash' );
 };
 
+subtest 'a value that reaches an attribute is escaped' => sub {
+	my $config = site( <<'RC' );
+site  = Example
+lang  = en" onload="x
+entry = index.html?a&b
+
+nav "search.html?q=1&r=2" {
+	label = Search
+}
+RC
+	my $page = App::FuguWeb::Page->new( config => $config );
+	my $html = $page->document( 'Install', '' );
+
+	# A quote in a value would end the attribute early, and
+	# everything after it would become markup.
+	like( $html, qr/<html lang="en&quot; onload=&quot;x">/,
+		'the lang attribute is escaped' );
+	unlike( $html, qr/onload="x"/, 'no attribute was injected' );
+
+	# An ampersand is not markup, but it is not valid in an
+	# attribute either, and the same escape covers both.
+	like( $html, qr{href="index\.html\?a&amp;b"},
+		'the banner link is escaped' );
+	like( $html, qr{href="search\.html\?q=1&amp;r=2"},
+		'a navigation href is escaped' );
+};
+
 subtest 'the footer fragment is optional' => sub {
 	my $page = App::FuguWeb::Page->new( config => site($RC) );
 	my $html = $page->document( 'Install', '' );

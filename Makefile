@@ -287,5 +287,12 @@ vm-up:
 web:
 	@$(FUGUWEB) build --out $(WEBOUT)
 
+# The tarball ships the Makefile and no fuguweb, so clean falls back to
+# a plain removal there.  fuguweb refuses a directory that no build
+# made; the fallback is only reached where there is no site to protect.
 web-clean:
-	@$(FUGUWEB) clean --out $(WEBOUT)
+	@if [ -x $(FUGUWEB) ]; then \
+		$(FUGUWEB) clean --out $(WEBOUT); \
+	else \
+		rm -rf $(WEBOUT); \
+	fi

@@ -90,7 +90,12 @@ Render the whole site.
 .Fl Fl out
 overrides the
 .Va out_dir
-setting.
+setting,
+and a relative value is resolved against the project root,
+exactly as the setting is.
+.Pp
+The build also removes a page that the site no longer holds,
+so a manual that was renamed leaves nothing behind.
 .Pp
 The command checks the renderers first,
 and names the one that is missing.
@@ -98,6 +103,30 @@ It then rejects a malformed manual source,
 because such a page must fail the build and not render badly.
 .It Cm clean Op Fl Fl out Ar dir
 Remove the output directory.
+.Pp
+The command removes a built site and refuses anything else.
+A build writes one flat directory of files,
+so a target that holds a subdirectory,
+a symlink,
+or anything else that no build made is refused by name.
+.Pp
+Both
+.Cm build
+and
+.Cm clean
+also refuse the root of the filesystem,
+the home directory,
+the project root,
+and any directory that holds the project.
+.Pp
+With
+.Fl Fl out
+the command needs no
+.Pa .fuguwebrc ,
+because the target is named on the command line.
+.Cm clean
+is the command you reach for when the description is the thing that is
+broken.
 .It Cm check Oo Fl Fl out Ar dir Oc Op Fl Fl verbose
 Check a built site:
 that every page and asset is there and is not empty,

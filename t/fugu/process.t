@@ -330,6 +330,36 @@ subtest 'run starts the child in the named directory' => sub {
 	ok( !$r->{success}, 'an absent directory fails the run' );
 	like( $r->{error}, qr/Cannot chdir to \Q$dir\E\/absent/,
 		'and the message names it' );
+
+	# The passthrough path forks its own child, so it needs the
+	# same chdir. It captures nothing, so the proof is a command
+	# that fails unless it runs in the right directory.
+	#
+	# No timeout here: a passthrough run that is given one reaps
+	# the child inside wait_exit and then reads a stale status, so
+	# every such run reports a failure. That is a separate defect
+	# and no caller in the tree hits it.
+	$r = Fugu::Process->run(
+		cmd         => [ 'test', '-f', 'marker' ],
+		cwd         => "$dir/inside",
+		passthrough => 1,
+	);
+	ok( $r->{success}, 'a passthrough child runs in the directory too' );
+
+	$r = Fugu::Process->run(
+		cmd         => [ 'test', '-f', 'marker' ],
+		cwd         => $dir,
+		passthrough => 1,
+	);
+	ok( !$r->{success}, 'and not in the one the caller was in' );
+
+	$r = Fugu::Process->run(
+		cmd         => [ 'true' ],
+		cwd         => "$dir/absent",
+		passthrough => 1,
+	);
+	ok( !$r->{success}, 'an absent directory fails a passthrough run' );
+	like( $r->{error}, qr/Cannot chdir/, 'and says why' );
 };
 
 done_testing();

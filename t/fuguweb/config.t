@@ -251,6 +251,115 @@ RC
 	    or diag $reason;
 };
 
+subtest 'a page name stays inside the output directory' => sub {
+	# The block name becomes a file in the output, so it is a path
+	# and needs the guard the sources get.
+	my ( $config, $reason ) = load_rc( <<'RC' );
+site = Example
+
+page "../../ESCAPED.html" {
+	body = index.body.html
+}
+RC
+	is( $config, undef, 'a .. in a page name fails the load' );
+	like( $reason, qr/leaves the output directory/, 'and says why' );
+
+	( $config, $reason ) = load_rc( <<'RC' );
+site = Example
+
+page "/etc/passwd" {
+	body = index.body.html
+}
+RC
+	is( $config, undef, 'an absolute page name fails the load' );
+	like( $reason, qr/is an absolute path/, 'and says why' );
+};
+
+subtest 'an unlinked value that does not parse is a typo' => sub {
+	my ( $config, $reason ) = load_rc( <<'RC' );
+site = Example
+
+page "index.html" {
+	body     = index.body.html
+	unlinked = probably
+}
+RC
+	is( $config, undef, 'the load fails' );
+	like( $reason, qr/sets unlinked to probably; use yes or no/,
+		'and names the value' );
+};
+
+subtest 'a symlink in the source directory fails the load' => sub {
+	my $root = write_rc("site = Example\n");
+	mkdir "$root/web" or die "Cannot create the source directory: $!";
+
+	open my $fh, '>', "$root/secret.txt" or die "Cannot write: $!";
+	print {$fh} "TOPSECRET\n";
+	close $fh;
+
+	# Every file in the source directory that the build does not
+	# render is copied into the site. A symlink would publish
+	# whatever it points at, from anywhere on the machine.
+	symlink "$root/secret.txt", "$root/web/notes.txt"
+	    or plan skip_all => 'this filesystem has no symlinks';
+
+	my $config =
+	    App::FuguWeb::Config->load( root => $root, error => \my $reason );
+	is( $config, undef, 'the load fails' );
+	like( $reason, qr{web/notes\.txt is a symlink}, 'and names the file' );
+};
+
+subtest 'a namespace is a name and not a path' => sub {
+	my $root = write_rc( <<'RC' );
+site = Example
+
+manuals "Manuals" {
+	dir       = man
+	anchor    = manuals
+	namespace = "../../"
+}
+RC
+	mkdir "$root/man" or die "Cannot create the directory: $!";
+
+	my $config =
+	    App::FuguWeb::Config->load( root => $root, error => \my $reason );
+	is( $config, undef, 'a separator in a namespace fails the load' );
+	like( $reason, qr/holds a path separator/, 'and says why' );
+};
+
+subtest 'a modules group lives below the module root' => sub {
+	my $root = write_rc( <<'RC' );
+site        = Example
+module_root = lib
+
+modules "Elsewhere" {
+	dir    = docs
+	anchor = elsewhere
+}
+RC
+	mkdir "$root/docs" or die "Cannot create the directory: $!";
+
+	# A directory outside the module root has no Perl name to turn
+	# into, and the build would publish the whole absolute path.
+	my $config =
+	    App::FuguWeb::Config->load( root => $root, error => \my $reason );
+	is( $config, undef, 'the load fails' );
+	like( $reason, qr/is not below the module root/, 'and says why' );
+};
+
+subtest 'module_root drops a trailing slash' => sub {
+	my ( $config, $reason ) = load_rc( <<'RC' );
+site        = Example
+module_root = lib/
+RC
+	ok( $config, 'the description loads' ) or diag $reason;
+
+	# The value becomes the prefix that a module name drops. A
+	# trailing slash would survive into it, the strip would miss,
+	# and the page name would keep the whole absolute path.
+	is( $config->module_root, 'lib', 'the slash is gone' );
+};
+
 subtest 'a description must name the site' => sub {
 	my ( $config, $reason ) = load_rc("out_dir = build\n");
 	is( $config, undef, 'no site fails the load' );

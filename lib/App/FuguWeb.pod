@@ -102,10 +102,12 @@ source directory, C<markdown> for a Markdown file, or C<index = yes>
 for the generated manual index. C<unlinked = yes> marks a page that no
 other page links to, such as F<404.html>.
 
-Three rules keep a list out of the file. A C<manuals> block globs its
+Three rules keep a list out of the file. A C<manuals> block reads its
 directory. A C<modules> block finds every F<.pod> file below its
-directory. Every file in the source directory that does not end in
-F<.body.html> is an asset, and the build copies it.
+directory, and the sidecar that names the directory itself. Every file
+in the source directory that the build does not render is an asset, and
+the build copies it; L<App::FuguWeb::Site/ASSETS> says exactly which
+those are.
 
 L<App::FuguWeb::Config> documents every setting and every default.
 
@@ -118,6 +120,15 @@ L<App::FuguWeb::Config> documents every setting and every default.
 Escape C<&>, C<< < >> and C<< > >>, in that order. The function takes
 bytes and returns bytes: no file in the namespace carries C<use utf8>,
 so a multi-byte character passes through untouched.
+
+=head2 escape_attr
+
+    my $safe = App::FuguWeb::escape_attr($text);
+
+The same, plus the double quote. Use it for a value on its way into a
+double-quoted attribute: a value that holds a quote ends the attribute
+early, and everything after it becomes markup. L</escape_html> alone
+does not guard an attribute.
 
 =head1 CONSTANTS
 

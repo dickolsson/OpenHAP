@@ -58,8 +58,13 @@ every expected page and asset exists and is not empty;
 
 =item *
 
-every page has a title, and no title holds an unsubstituted C<@TITLE@>
-placeholder;
+every page has a title;
+
+=item *
+
+no page holds an unsubstituted C<@TITLE@> placeholder, outside an
+element that marks the text as literal code: a page that documents the
+placeholder is not a broken page;
 
 =item *
 

@@ -57,4 +57,17 @@ sub escape_html ($text)
 	return $escaped;
 }
 
+# escape_attr($text):
+#	Escape a value on its way into a double-quoted attribute. The
+#	quote is the character that matters here: a value that holds
+#	one ends the attribute early, and everything after it becomes
+#	markup. escape_html alone does not guard an attribute.
+sub escape_attr ($text)
+{
+	my $escaped = escape_html($text);
+	$escaped =~ s/"/&quot;/g;
+
+	return $escaped;
+}
+
 1;

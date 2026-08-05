@@ -115,7 +115,7 @@ sub _group ( $self, $group )
 
 	my $html =
 	      '<h2 id="'
-	    . $group->anchor . '">'
+	    . App::FuguWeb::escape_attr( $group->anchor ) . '">'
 	    . App::FuguWeb::escape_html( $group->heading )
 	    . "</h2>\n<dl>\n";
 	$html .= _entry($_) for @manuals;
@@ -135,7 +135,7 @@ sub _entry ($manual)
 
 	return
 	    sprintf "<dt><a href=\"./%s\">%s(%s)</a></dt>\n" . "<dd>%s</dd>\n",
-	    $manual->page, $name, $section,
+	    App::FuguWeb::escape_attr( $manual->page ), $name, $section,
 	    App::FuguWeb::escape_html( $manual->description );
 }
 

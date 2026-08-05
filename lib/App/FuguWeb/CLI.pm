@@ -25,6 +25,7 @@ use App::FuguWeb::Config;
 use App::FuguWeb::Index;
 use App::FuguWeb::Page;
 use App::FuguWeb::Site;
+use File::Spec;
 use Fugu::File;
 use Fugu::CLI;
 use Fugu::Log;
@@ -73,6 +74,12 @@ my %COMMANDS = (
 		usage   => '[--out <dir>]',
 		options => { 'out=s' => 'the output directory' },
 		method  => 'cmd_clean',
+
+		# clean is the command an operator reaches for when the
+		# tree is in a bad state, so it must not be the one
+		# command that needs the tree to be in a good state.
+		# With --out it needs no description at all.
+		offline => 1,
 	},
 	check => {
 		summary => 'Check a built site',
@@ -103,6 +110,12 @@ entry      = index.html
 
 nav "index.html" {
 	label = Home
+}
+
+# Every page needs a way in, or 'fuguweb check' reports it as
+# unreachable. A page that nothing links to says 'unlinked = yes'.
+nav "manuals.html" {
+	label = Manuals
 }
 
 page "index.html" {
@@ -204,6 +217,14 @@ sub _prepare ( $self, $cli, $entry )
 
 	return if $entry->{offline};
 
+	return $self->_load_config;
+}
+
+# $self->_load_config:
+#	Load the site description. The method returns undef when the
+#	command may run, and an exit code when it may not.
+sub _load_config ($self)
+{
 	my $config = App::FuguWeb::Config->load(
 		root  => $self->{project},
 		error => \my $reason,
@@ -266,6 +287,16 @@ sub cmd_build ( $self, $cli, @args )
 # Remove the output directory
 sub cmd_clean ( $self, $cli, @args )
 {
+	# Without --out only the description knows where the site is,
+	# so that is the one case where clean has to load it.
+	unless ( defined $cli->option('out') ) {
+		my $failure = $self->_load_config;
+		return $failure if defined $failure;
+	}
+
+	$self->{config} //= App::FuguWeb::Config->anonymous( $self->{project}
+		    // File::Spec->curdir );
+
 	return $self->_site($cli)->clean ? EXIT_SUCCESS : EXIT_ERROR;
 }
 
@@ -274,9 +305,7 @@ sub cmd_check ( $self, $cli, @args )
 {
 	my $check = App::FuguWeb::Check->new(
 		config => $self->{config},
-		out    => $cli->option('out') // (
-			$self->{config}->root . '/' . $self->{config}->out_dir
-		),
+		out    => $self->_out($cli),
 	);
 
 	my @problems = $check->run;
@@ -320,13 +349,24 @@ sub cmd_init ( $self, $cli, @args )
 #	The site over the loaded description, with --out applied.
 sub _site ( $self, $cli )
 {
-	my $out = $cli->option('out');
-
 	return App::FuguWeb::Site->new(
 		config => $self->{config},
 		log    => $self->{log},
-		defined $out ? ( out => $out ) : (),
+		out    => $self->_out($cli),
 	);
+}
+
+# $self->_out($cli):
+#	The output directory. A relative --out is resolved against the
+#	project root, exactly as the out_dir setting it overrides is,
+#	so the same value means the same directory from any working
+#	directory.
+sub _out ( $self, $cli )
+{
+	my $out  = $cli->option('out') // $self->{config}->out_dir;
+	my $root = $self->{config}->root;
+
+	return $out =~ m{^/} ? $out : "$root/$out";
 }
 
 1;

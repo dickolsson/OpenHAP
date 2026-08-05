@@ -19,6 +19,7 @@ use v5.36;
 
 package App::FuguWeb::Check;
 
+use App::FuguWeb;
 use Fugu::File;
 
 # App::FuguWeb::Check - what a built site must be true of.
@@ -30,11 +31,16 @@ use Fugu::File;
 # The class never fetches a link. It collects the external ones and
 # reports them, because the build and its checks touch no network.
 
-# The placeholder that a template-driven chrome substitutes. A title
-# that still carries it was never substituted. The check reads the
-# title element alone: a page that documents the placeholder in its
-# body is not a broken page.
+# The placeholder that a template-driven chrome substitutes. A page
+# that still carries it was never substituted.
 use constant TITLE_PLACEHOLDER => '@TITLE@';
+
+# The elements that mark text as literal code. A page that documents
+# the placeholder shows it inside one of them, and that page is not a
+# broken page. lowdown writes <code>; mandoc writes the second form
+# for a .Ql or a POD C<>.
+my @LITERAL =
+    ( qr{<code\b[^>]*>.*?</code>}s, qr{<span class="Li">.*?</span>}s );
 
 # App::FuguWeb::Check->new(%args):
 #	config => $config	the site description (required)
@@ -142,15 +148,22 @@ sub _check_page ( $self, $page )
 	my ($title) = $html =~ m{<title>([^<]*)</title>};
 	push @problems, "$page: has no title"
 	    unless defined $title && length $title;
-	push @problems,
-	    "$page: the title holds an unsubstituted " . TITLE_PLACEHOLDER
-	    if defined $title && index( $title, TITLE_PLACEHOLDER ) >= 0;
+
+	# The whole page, not the title alone: a project writes its own
+	# body fragments, and a placeholder that reached one is as
+	# unsubstituted as one in the chrome.
+	push @problems, "$page: holds an unsubstituted " . TITLE_PLACEHOLDER
+	    if index( _without_literals($html), TITLE_PLACEHOLDER ) >= 0;
 
 	for my $entry ( $self->{config}->nav ) {
 		my $href = $entry->{href};
+
+		# The chrome escapes an attribute on its way out, so the
+		# search has to escape it the same way.
+		my $written = App::FuguWeb::escape_attr($href);
 		push @problems,
 		    "$page: does not carry the navigation" . " entry $href"
-		    unless index( $html, qq{href="$href"} ) >= 0;
+		    unless index( $html, qq{href="$written"} ) >= 0;
 	}
 
 	push @problems, $self->_check_references( $page, $html );
@@ -165,7 +178,9 @@ sub _check_references ( $self, $page, $html )
 {
 	my @problems;
 
-	for my $ref ( $html =~ m{(?:href|src)="([^"]+)"}g ) {
+	for my $ref ( map { _unescape($_) }
+		$html =~ m{(?:href|src)="([^"]+)"}g )
+	{
 
 		# The host may serve the site from a path below the
 		# root, where a leading slash leaves the site entirely.
@@ -210,6 +225,33 @@ sub _check_references ( $self, $page, $html )
 	return @problems;
 }
 
+# _without_literals($html):
+#	The page with every literal-code element removed. A page that
+#	documents a placeholder is not a page that failed to
+#	substitute one.
+sub _without_literals ($html)
+{
+	my $text = $html;
+	$text =~ s/$_//g for @LITERAL;
+
+	return $text;
+}
+
+# _unescape($text):
+#	Turn the four attribute entities back into their characters. A
+#	reference is compared against a file name, and the file holds
+#	the character and not the entity.
+sub _unescape ($text)
+{
+	my $plain = $text;
+	$plain =~ s/&lt;/</g;
+	$plain =~ s/&gt;/>/g;
+	$plain =~ s/&quot;/"/g;
+	$plain =~ s/&amp;/&/g;
+
+	return $plain;
+}
+
 # $self->_check_xrefs($page, $html):
 #	A manual cross-reference that mandoc made local must resolve.
 #	One that left for the manual host is not this tool's business.
@@ -217,7 +259,9 @@ sub _check_xrefs ( $self, $page, $html )
 {
 	my @problems;
 
-	for my $xref ( $html =~ m{<a class="Xr" href="([^"]+)"}g ) {
+	for my $xref ( map { _unescape($_) }
+		$html =~ m{<a class="Xr" href="([^"]+)"}g )
+	{
 		next if $xref =~ m{^[a-z]+://};
 
 		my $path = $xref =~ s{^\./}{}r;
@@ -245,7 +289,9 @@ sub _check_reachable ($self)
 		next unless $page =~ /\.html$/;
 
 		my $html = Fugu::File->read( $self->{out} . "/$page" ) // '';
-		for my $ref ( $html =~ m{(?:href|src)="([^"]+)"}g ) {
+		for my $ref ( map { _unescape($_) }
+			$html =~ m{(?:href|src)="([^"]+)"}g )
+		{
 			next if $ref =~ m{^[A-Za-z][A-Za-z0-9.+-]*:};
 
 			my ($path) = split /#/, $ref, 2;

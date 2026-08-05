@@ -98,8 +98,13 @@ sub lint ( $self, @paths )
 	return 1 if $result->{success};
 
 	$self->{log}->error('mandoc rejected a manual source:');
-	$self->{log}->error( '%s', $_ )
-	    for grep { length } split /\n/, $result->{stderr} // '';
+
+	# mandoc -Tlint writes its diagnostics to standard output, not
+	# to standard error. A caller that logged only stderr would
+	# report the failure with no line, no column and no reason.
+	my $said = join "\n", grep { defined } $result->{stdout},
+	    $result->{stderr}, $result->{error};
+	$self->{log}->error( '%s', $_ ) for grep { length } split /\n/, $said;
 
 	return;
 }

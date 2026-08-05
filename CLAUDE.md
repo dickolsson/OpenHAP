@@ -46,7 +46,7 @@ never `App::`. `App::` uses both. A sibling application is not a library: no
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/{fuguvm,fugu,protocol,openhap,conformance,scripts,web,ci}/*.t
+make test           # prove -l -v t/{fuguvm,fuguweb,fugu,protocol,openhap,conformance,scripts,web,ci}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check

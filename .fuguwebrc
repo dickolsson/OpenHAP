@@ -1,8 +1,8 @@
 # The OpenHAP website, built by fuguweb(1).
 #
 # The file describes the site. It holds no list that the tree already
-# holds: a manuals or modules group globs its directory, and every
-# file in the source directory that is not a body fragment is an asset.
+# holds: a manuals or modules group reads its directory, and every file
+# in the source directory that the build does not render is an asset.
 
 site       = OpenHAP
 out_dir    = web/build

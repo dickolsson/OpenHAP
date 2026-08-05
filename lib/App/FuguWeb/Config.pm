@@ -111,6 +111,33 @@ sub load ( $class, %args )
 	$self->_read_pages($reason)  or return;
 	$self->_read_groups($reason) or return;
 	$self->_check_paths($reason) or return;
+	$self->_check_pages($reason) or return;
+
+	return $self;
+}
+
+# App::FuguWeb::Config->anonymous($root):
+#	A description that names nothing: every setting takes its
+#	default, and there is no navigation, no page and no group.
+#
+#	'fuguweb clean --out <dir>' uses it. Removing a directory that
+#	the caller named needs a project root and nothing else, and
+#	clean is the command an operator reaches for when the
+#	description is the thing that is broken.
+sub anonymous ( $class, $root )
+{
+	my $self = bless {
+		root => $root,
+		path => undef,
+		file => Fugu::Config->new(
+			file => "$root/" . App::FuguWeb::CONFIG_FILE
+		),
+		nav   => [],
+		page  => [],
+		group => [],
+	}, $class;
+
+	$self->_apply_settings;
 
 	return $self;
 }
@@ -209,6 +236,10 @@ sub _apply_settings ($self)
 	$self->{source_dir}  = $file->get( 'source_dir',  DEFAULT_SOURCE_DIR );
 	$self->{entry}       = $file->get( 'entry',       DEFAULT_ENTRY );
 	$self->{module_root} = $file->get( 'module_root', DEFAULT_MODULE_ROOT );
+
+	# A trailing slash would survive into the prefix that a module
+	# name drops, and the name would then keep the whole path.
+	$self->{module_root} =~ s{/+$}{};
 	$self->{pod_center}  = $file->get( 'pod_center',  DEFAULT_POD_CENTER );
 	$self->{pod_release} = $file->get( 'pod_release', DEFAULT_POD_RELEASE );
 	$self->{mandoc_os}   = $file->get( 'mandoc_os',   DEFAULT_MANDOC_OS );
@@ -255,6 +286,14 @@ sub _read_pages ( $self, $reason )
 			    : 'names no source (body, markdown or index)';
 			return $self->_fail( $reason, "page \"$name\" $what" );
 		}
+
+		# The block name becomes a file in the output directory,
+		# so it is a path and gets the same guard the sources
+		# get. Without it a page block writes anywhere the
+		# builder can write.
+		if ( my $why = _unsafe_output_name($name) ) {
+			return $self->_fail( $reason, "page \"$name\" $why" );
+		}
 		if ( $seen{$name}++ ) {
 			return $self->_fail( $reason,
 				"page \"$name\" is declared twice" );
@@ -277,14 +316,24 @@ sub _read_pages ( $self, $reason )
 				    . ' which leaves the project' );
 		}
 
+		# A yes/no setting that does not parse is a typo, and a
+		# typo that the parser swallows is a setting that
+		# silently does not apply.
+		my $unlinked =
+		    $self->{file}->parse_bool( $settings->{unlinked}, 0 );
+		if ( $self->{file}->error ) {
+			return $self->_fail( $reason,
+				      "page \"$name\" sets unlinked to"
+				    . " $settings->{unlinked}; use yes or no" );
+		}
+
 		push @{ $self->{page} },
 		    {
 			file     => $name,
 			title    => $settings->{title} // $name,
 			source   => $source,
 			value    => $value,
-			unlinked => $self->{file}
-			    ->parse_bool( $settings->{unlinked}, 0 ),
+			unlinked => $unlinked,
 		    };
 	}
 
@@ -335,6 +384,30 @@ sub _read_groups ( $self, $reason )
 				"$block->{type} \"$heading\" has no anchor" );
 		}
 
+		# The namespace prefixes a manual name, and that name
+		# becomes both the staged file and the published page.
+		# It is a name, so it may not hold a path separator.
+		my $namespace = $settings->{namespace};
+		if ( defined $namespace && $namespace =~ m{/} ) {
+			return $self->_fail( $reason,
+				      "$block->{type} \"$heading\" namespace is"
+				    . " $namespace, which holds a path"
+				    . ' separator' );
+		}
+
+		# A modules group turns a path below the module root
+		# into a Perl name. A directory outside that root has no
+		# name to turn into, and the build would publish the
+		# whole absolute path instead.
+		if ( $kind eq 'modules'
+			&& !_below( $dir, $self->{module_root} ) )
+		{
+			return $self->_fail( $reason,
+				      "modules \"$heading\" names $dir, which"
+				    . " is not below the module root"
+				    . " $self->{module_root}" );
+		}
+
 		push @{ $self->{group} },
 		    App::FuguWeb::Config::Group->new(
 			kind        => $kind,
@@ -344,6 +417,41 @@ sub _read_groups ( $self, $reason )
 			namespace   => $settings->{namespace},
 			module_root => "$self->{root}/$self->{module_root}",
 		    );
+	}
+
+	return $self;
+}
+
+# $self->_check_pages($reason):
+#	Refuse two manuals that would become the same page. The two
+#	sources would overwrite each other in the staging directory and
+#	in the output, and the index would show two entries that lead
+#	to one page. A page block already gets this check; a manual
+#	needs it as much.
+sub _check_pages ( $self, $reason )
+{
+	my %source;
+
+	for my $group ( $self->groups ) {
+		for my $manual ( $group->manuals ) {
+			my $page  = $manual->page;
+			my $first = $source{$page};
+			if ( defined $first ) {
+				return $self->_fail( $reason,
+					      "$first and "
+					    . $manual->path
+					    . " both become $page" );
+			}
+			$source{$page} = $manual->path;
+		}
+	}
+
+	for my $page ( $self->pages ) {
+		next unless defined $source{ $page->{file} };
+		return $self->_fail( $reason,
+			      "page \"$page->{file}\" and "
+			    . $source{ $page->{file} }
+			    . ' both become the same page' );
 	}
 
 	return $self;
@@ -365,6 +473,31 @@ sub _check_paths ( $self, $reason )
 			"$key is $self->{$key}, which leaves the project" );
 	}
 
+	return $self->_check_source_dir($reason);
+}
+
+# $self->_check_source_dir($reason):
+#	Refuse a symlink in the source directory. Every file there
+#	that the build does not render is copied into the site, and a
+#	symlink would publish whatever it points at, from anywhere on
+#	the machine. A content directory holds content.
+sub _check_source_dir ( $self, $reason )
+{
+	my $dir = $self->source_path;
+	return $self unless -d $dir;
+
+	opendir my $dh, $dir
+	    or return $self->_fail( $reason, "cannot read $dir: $!" );
+	my @names = sort grep { $_ ne '.' && $_ ne '..' } readdir $dh;
+	closedir $dh;
+
+	for my $name (@names) {
+		next unless -l "$dir/$name";
+		return $self->_fail( $reason,
+			      "$self->{source_dir}/$name is a symlink;"
+			    . ' the build would publish what it points at' );
+	}
+
 	return $self;
 }
 
@@ -376,6 +509,33 @@ sub _has_parent_step ($path)
 	return 0 unless defined $path;
 
 	return scalar grep { $_ eq '..' } split m{/}, $path;
+}
+
+# _unsafe_output_name($name):
+#	Report why a name may not become a file in the output
+#	directory, or undef when it may. The name is one path below the
+#	output: no step out, no absolute path, and no empty name.
+sub _unsafe_output_name ($name)
+{
+	return 'is empty' unless defined $name && length $name;
+	return 'is an absolute path'         if $name =~ m{^/};
+	return 'leaves the output directory' if _has_parent_step($name);
+
+	return;
+}
+
+# _below($path, $root):
+#	Report whether $path is $root or lies below it. Both are
+#	relative to the project, and a trailing slash on either does
+#	not change the answer.
+sub _below ( $path, $root )
+{
+	my $one = $path =~ s{/+$}{}r;
+	my $two = $root =~ s{/+$}{}r;
+
+	return 1 if $one eq $two;
+
+	return index( $one, "$two/" ) == 0 ? 1 : 0;
 }
 
 # $self->_fail($reason, $message):
@@ -448,13 +608,28 @@ sub manuals ($self)
 #	3p, 5, 8, and then by file name. The sort compares bytes and
 #	never reads the locale of the builder: a site must not depend
 #	on the machine that built it.
+#
+#	The method reads the directory rather than globs it. Perl's
+#	glob splits its pattern on whitespace and reads [ ] { } ? ~, so
+#	a project whose path holds one of them would lose its manuals
+#	or collect a sibling directory's. It also matches a directory,
+#	and a directory named tool.1 is not a manual.
 sub _mdoc_manuals ($self)
 {
+	opendir my $dh, $self->{dir} or return ();
+	my @names = sort grep { !/^\./ } readdir $dh;
+	closedir $dh;
+
 	my @manuals;
 	for my $section (@SECTIONS) {
-		my @paths = sort glob "$self->{dir}/*.$section";
-		push @manuals,
-		    map { App::FuguWeb::Manual->from_mdoc( $_, $self ) } @paths;
+		for my $name (@names) {
+			next unless $name =~ /\.\Q$section\E$/;
+			next unless -f "$self->{dir}/$name";
+
+			push @manuals,
+			    App::FuguWeb::Manual->from_mdoc(
+				"$self->{dir}/$name", $self );
+		}
 	}
 
 	return @manuals;

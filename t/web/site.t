@@ -56,6 +56,44 @@ SKIP: {
 		'build honours WEBOUT and writes nowhere else' );
 }
 
+# The pages and assets that this site holds, written down. The tool
+# derives its expectation from .fuguwebrc and web/, so a page or an
+# asset that is deleted from both is invisible to it. These names are
+# the second opinion: dropping web/CNAME or the 404 page has to fail
+# somewhere.
+my @SITE = qw(
+    index.html install.html manuals.html fuguvm.html fugu.html 404.html
+);
+my @ASSETS = qw(style.css robots.txt CNAME);
+
+for my $file ( @SITE, @ASSETS ) {
+	ok( -s "$OUT/$file", "$file exists and is not empty" );
+}
+
+# The manual sources have two consumers: this site, and install-man.
+# The site globs a directory and the Makefile keeps a list, so the two
+# can drift. A manual that reaches the site and not the list is
+# published but never installed, never packaged, and has no cat page.
+{
+	my $makefile = slurp("$ROOT/Makefile");
+	# The four lists run from MAN1 to the first CATMAN line.
+	my ($lists) = $makefile =~ m{^MAN1\s*=(.*?)^CATMAN1\b}ms;
+	$lists //= '';
+
+	my @listed = $lists =~ m{(man/\S+\.(?:1|3p|5|8))}g;
+	my %listed = map { $_ => 1 } @listed;
+	ok( scalar @listed, 'the Makefile lists manual sources' );
+
+	my @missing;
+	for my $src ( sort glob("$ROOT/man/*/*") ) {
+		next unless $src =~ m{/(man/[^/]+/[^/]+\.(?:1|3p|5|8))$};
+		push @missing, $1 unless $listed{$1};
+	}
+	is( scalar @missing, 0,
+		'every manual the site publishes is in MAN1/MAN3P/MAN5/MAN8' )
+	    or diag "not installed, not packaged: @missing";
+}
+
 # The namespaces that a manuals group declares, read from .fuguwebrc as
 # text. Plan 008 had to edit a hard-coded rule here for one directory;
 # nobody should edit it again.

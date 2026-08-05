@@ -23,6 +23,7 @@ use App::FuguWeb::Index;
 use App::FuguWeb::Page;
 use App::FuguWeb::Render;
 use File::Path qw(remove_tree);
+use File::Spec;
 use Fugu::File;
 use Fugu::Log;
 use Fugu::Process;
@@ -30,10 +31,12 @@ use POSIX ();
 
 # App::FuguWeb::Site - the whole build.
 #
-# One method renders the site: probe the renderers, lint every manual
-# source, stage the mdoc sources, copy the assets, render every page,
-# and remove the staging. Each step reports its own failure and stops
-# the build. A site that is half rendered must not look like a success.
+# One method renders the site: probe the renderers, refuse an output
+# directory that no build may own, lint every manual source, stage the
+# mdoc sources, copy the assets, render every page, remove the staging,
+# and remove what the site no longer holds. Each step reports its own
+# failure and stops the build. A site that is half rendered must not
+# look like a success.
 #
 # The build reads nothing from the network, writes nothing outside the
 # output directory, and gives the same bytes for the same checkout.
@@ -103,6 +106,13 @@ sub missing_tool ($self)
 #	undef with a message in the log otherwise.
 sub build ($self)
 {
+	my $missing = $self->missing_tool;
+	if ( defined $missing ) {
+		$self->{log}->error( '%s is not installed', $missing );
+		return;
+	}
+
+	$self->_check_target    or return;
 	$self->_lint            or return;
 	$self->_prepare_output  or return;
 	$self->_stage_mdoc      or return;
@@ -115,17 +125,174 @@ sub build ($self)
 	# would serve the mdoc sources beside the pages made from them.
 	remove_tree( $self->staging, { safe => 0 } );
 
-	return 1;
+	return $self->_prune_output;
 }
 
 # $self->clean:
 #	Remove the output directory. The method returns true when the
 #	directory is gone, whether or not it was there to begin with.
+#
+#	The method removes a built site and refuses anything else. It
+#	deletes a tree without asking, so the one thing it must never
+#	do is delete a tree the build did not make.
 sub clean ($self)
 {
-	remove_tree( $self->{out}, { safe => 0 } ) if -d $self->{out};
+	$self->_check_target or return;
+	return 1 unless -d $self->{out};
+
+	# A build writes one flat directory of files, plus the staging
+	# directory while it runs. Anything else in there means the
+	# caller named a directory that is not a site.
+	opendir my $dh, $self->{out} or do {
+		$self->{log}->error( 'Cannot read %s: %s', $self->{out}, $! );
+		return;
+	};
+	my @names = grep { $_ ne '.' && $_ ne '..' } readdir $dh;
+	closedir $dh;
+
+	for my $name (@names) {
+		next if $name eq STAGING_DIR;
+		next if -f "$self->{out}/$name" && !-l "$self->{out}/$name";
+
+		$self->{log}->error(
+'%s holds %s, which no build made; refusing to remove it',
+			$self->{out}, $name
+		);
+		return;
+	}
+
+	remove_tree( $self->{out}, { safe => 0 } );
 
 	return -e $self->{out} ? undef : 1;
+}
+
+# $self->_check_target:
+#	Refuse an output directory that must never be written into or
+#	removed. The build and the clean both go through here, because
+#	--out reaches them both and the setting it overrides is checked
+#	in the description.
+#
+#	The rule is not "inside the project": the tests and the CI both
+#	build into a temporary directory outside it. The rule is that
+#	the target may not be the root of the filesystem, the home
+#	directory, the project root, or any directory that holds the
+#	project.
+sub _check_target ($self)
+{
+	my $out = $self->{out};
+	unless ( defined $out && length $out ) {
+		$self->{log}->error('No output directory');
+		return;
+	}
+
+	my $target = _absolute($out);
+	my $root   = _absolute( $self->{config}->root );
+	my $home   = defined $ENV{HOME} ? _absolute( $ENV{HOME} ) : undef;
+
+	my $why;
+	$why = 'the root of the filesystem' if $target eq '/';
+	$why = 'the home directory'
+	    if !$why && defined $home && $target eq $home;
+	$why = 'the project root'  if !$why && $target eq $root;
+	$why = 'above the project' if !$why && _holds( $target, $root );
+
+	return 1 unless $why;
+
+	$self->{log}->error( 'The output directory %s is %s', $out, $why );
+
+	return;
+}
+
+# $self->_prune_output:
+#	Remove what the site no longer holds. A manual that was renamed
+#	leaves its old page behind, and the next build would publish
+#	both. The build owns the output directory, so it owns the
+#	removal too.
+sub _prune_output ($self)
+{
+	my %expected = map { $_ => 1 } $self->_inventory;
+
+	opendir my $dh, $self->{out} or do {
+		$self->{log}->error( 'Cannot read %s: %s', $self->{out}, $! );
+		return;
+	};
+	my @names = grep { $_ ne '.' && $_ ne '..' } readdir $dh;
+	closedir $dh;
+
+	for my $name ( sort @names ) {
+		next if $expected{$name};
+
+		# A plain file only, and never a tree. The build writes
+		# one flat directory of files, so a file is the only
+		# thing it can have left behind. Anything else belongs
+		# to whoever put it there, and the check reports it.
+		my $path = "$self->{out}/$name";
+		unless ( -f $path && !-l $path ) {
+			$self->{log}->warning(
+				'%s is in the output and no build made it',
+				$name );
+			next;
+		}
+
+		$self->{log}
+		    ->info( 'Removing %s, which the site no longer holds',
+			$name );
+		unlink $path
+		    or
+		    $self->{log}->warning( 'Cannot remove %s: %s', $name, $! );
+	}
+
+	return 1;
+}
+
+# $self->_inventory:
+#	Every name that the output directory must hold after a build.
+sub _inventory ($self)
+{
+	my $config = $self->{config};
+
+	return ( map { $_->{file} } $config->pages ),
+	    ( map { $_->page } map { $_->manuals } $config->groups ),
+	    OUTPUT_STYLESHEET, $config->assets;
+}
+
+# _absolute($path):
+#	The path with no trailing slash and no parent step, resolved
+#	against the working directory when it is relative.
+#
+#	The function collapses '..' itself. File::Spec->canonpath
+#	leaves it alone by design, and a guard that compared the
+#	uncollapsed form would let '<project>/..' through as a
+#	directory it had never seen.
+#
+#	The path need not exist, so no symlink is resolved. A symlink
+#	is not a way around the guard: the build refuses to write
+#	through one, and the clean removes the link and not its target.
+sub _absolute ($path)
+{
+	my $absolute = File::Spec->canonpath( File::Spec->rel2abs($path) );
+
+	my @parts;
+	for my $part ( split m{/}, $absolute ) {
+		next if $part eq '' || $part eq '.';
+		if ( $part eq '..' ) {
+			pop @parts;
+			next;
+		}
+		push @parts, $part;
+	}
+
+	return @parts ? '/' . join '/', @parts : '/';
+}
+
+# _holds($dir, $other):
+#	Report whether $dir is $other or holds it somewhere below.
+sub _holds ( $dir, $other )
+{
+	return 1 if $dir eq $other;
+	return 1 if $dir eq '/';
+
+	return index( $other, "$dir/" ) == 0 ? 1 : 0;
 }
 
 # $self->pod_date:

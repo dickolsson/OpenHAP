@@ -268,6 +268,52 @@ HTML
 		'a page marked unlinked is not reported' );
 };
 
+subtest 'what is not a problem stays not a problem' => sub {
+	# The two skip rules. Without a case that exercises each of
+	# them, a check that lost one would report a false positive and
+	# only the real site would notice.
+	my @problems = built( 'other.html' => <<'HTML' )->run;
+<title>Other &#8212; Example</title>
+<a href="index.html">Home</a>
+<a href="https://example.org/">Elsewhere</a>
+<a href="mailto:hi@example.org">Mail</a>
+<a class="Xr" href="https://man.openbsd.org/rc.8">rc(8)</a>
+<h2 id="here">Here</h2>
+HTML
+	my $joined = join "\n", @problems;
+
+	is( scalar @problems, 0, 'no problem' ) or diag $joined;
+	unlike( $joined, qr/mailto/,
+		'a mailto: link is not a dead local link' );
+	unlike( $joined, qr/man\.openbsd\.org/,
+		'a cross-reference that left for the host does not dangle' );
+};
+
+subtest 'the placeholder is caught anywhere but in a literal' => sub {
+	# The chrome is built in code, so a placeholder can only reach
+	# a page through a project's own body fragment.
+	my @problems = built( 'other.html' => <<'HTML' )->run;
+<title>Other &#8212; Example</title>
+<a href="index.html">Home</a>
+<a href="https://example.org/">Elsewhere</a>
+<h1>@TITLE@</h1>
+<h2 id="here">Here</h2>
+HTML
+	like( join( "\n", @problems ), qr/holds an unsubstituted \@TITLE\@/,
+		'a placeholder in the body is a problem' );
+
+	# A page that documents the placeholder is not a broken page.
+	@problems = built( 'other.html' => <<'HTML' )->run;
+<title>Other &#8212; Example</title>
+<a href="index.html">Home</a>
+<a href="https://example.org/">Elsewhere</a>
+<p>The chrome substitutes <code>@TITLE@</code>.</p>
+<h2 id="here">Here</h2>
+HTML
+	is( scalar @problems, 0, 'a documented placeholder is not' )
+	    or diag join "\n", @problems;
+};
+
 subtest 'a stray file in the output' => sub {
 	my @problems = built( 'index.html~' => "an editor backup\n" )->run;
 	like( join( "\n", @problems ),

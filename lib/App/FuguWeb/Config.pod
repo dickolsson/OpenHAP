@@ -41,12 +41,63 @@ F<.fuguvmrc>.
 The reason travels through a reference because the object that would
 hold it does not exist when the load fails.
 
-A load fails when the file is absent, when a line does not parse, when
-there is no C<site> setting, when a C<page> block names no source or
-more than one, when two C<page> blocks name the same file, when a
-C<nav> block has no label, or when a path setting steps out of the
-project with a C<..> component. Every message names the file, and the
-block when a block is at fault.
+A load fails when the file is absent, when a line does not parse, or
+when the description would make the build do something it must not.
+Every message names the file, and the block when a block is at fault.
+
+The description is rejected when:
+
+=over 4
+
+=item *
+
+there is no C<site> setting;
+
+=item *
+
+a C<page> block names no source, or more than one;
+
+=item *
+
+two C<page> blocks name the same file, or two manuals would become the
+same page;
+
+=item *
+
+a C<nav> block has no label;
+
+=item *
+
+a path setting steps out of the project with a C<..> component;
+
+=item *
+
+a C<page> block name is absolute or steps out of the output directory:
+the name becomes a file there, so it is a path and gets the same guard
+the sources get;
+
+=item *
+
+a C<manuals> namespace holds a path separator: it prefixes a manual
+name, and that name becomes both the staged file and the published
+page;
+
+=item *
+
+a C<modules> directory is not below C<module_root>, which would leave
+the module with no name to take but its whole path;
+
+=item *
+
+a yes/no setting holds something that is neither;
+
+=item *
+
+the source directory holds a symlink. Every file there that the build
+does not render is copied into the site, so a symlink would publish
+whatever it points at, from anywhere on the machine.
+
+=back
 
 =head2 root, path
 
@@ -70,6 +121,7 @@ The settings. C<site> is the only one a project must give.
     source_dir      web         the fragments and the assets
     entry           index.html  the front page, and the banner link
     module_root     lib         the prefix a module name drops
+                                (a trailing slash is dropped)
     pod_center      Perl Library Manual   the pod2man --center
     pod_release     OpenBSD     the pod2man --release
     mandoc_os       OpenBSD     the mandoc -I os=, which pins the footer
@@ -123,8 +175,12 @@ The manuals of the group, in the order the index shows them, as
 L<App::FuguWeb::Manual> objects. The method reads the directory once and
 keeps the answer.
 
-A C<manuals> group globs F<*.1>, F<*.3p>, F<*.5> and F<*.8>. It sorts by
-section, in the order 1, 3p, 5, 8, and then by file name. The
+A C<manuals> group reads its directory for F<*.1>, F<*.3p>, F<*.5> and
+F<*.8>, and takes a plain file only. It does not glob: Perl's C<glob>
+splits its pattern on whitespace and reads C<[ ] { } ? ~>, so a project
+whose path holds one of them would lose its manuals or collect a
+sibling directory's. It sorts by section, in the order 1, 3p, 5, 8, and
+then by file name. The
 C<namespace> setting prefixes the name and the staged file name, so
 F<man/fugu/Daemon.3p> becomes C<Fugu::Daemon(3p)>.
 
