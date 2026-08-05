@@ -129,6 +129,16 @@ my @RETIRED = (
 	# not appear outside App::FuguVM::CLI. The private form is a
 	# different name and does not match.
 	{ name => 'format_size', pattern => qr/(?<!_)\bformat_size\b/ },
+
+	# plans/009: the two web scripts and the three files they read
+	# became App::FuguWeb. The same clean-break rule covers a
+	# retired script: a build recipe that still calls one is a
+	# recipe that silently does nothing.
+	{ name => 'mkpage.sh',  pattern => qr/\bmkpage(?:\.sh)?\b/ },
+	{ name => 'mkindex.sh', pattern => qr/\bmkindex(?:\.sh)?\b/ },
+	{ name => 'web/head.html', pattern => qr{\bweb/head\.html\b} },
+	{ name => 'web/foot.html', pattern => qr{\bweb/foot\.html\b} },
+	{ name => 'web/style.css', pattern => qr{\bweb/style\.css\b} },
 );
 
 # plans/001 to plans/008 record what was true when they were written.

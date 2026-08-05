@@ -15,9 +15,9 @@ ChaCha20-Poly1305, HKDF-SHA-512, and TLV8 over encrypted HTTP/1.1, advertised
 via mDNS. OpenBSD is the production platform (pledge(2)/unveil(2), rc.d,
 `_openhap` user); Linux and Darwin are supported for development and CI only.
 
-The repo holds five Perl namespaces with distinct concerns. It claims exactly
-one top-level name, `Fugu`; `App::` and `Protocol::` are shared namespaces that
-the project joins.
+The repo holds six Perl namespaces with distinct concerns. It claims exactly one
+top-level name, `Fugu`; `App::` and `Protocol::` are shared namespaces that the
+project joins.
 
 - `Protocol::HAP` (`lib/Protocol/HAP/`) — the host-neutral HAP library: codecs,
   crypto, pairing, the data model, the server engine, a controller, and two
@@ -32,17 +32,21 @@ the project joins.
 - `App::FuguVM::` (`lib/App/FuguVM/`) — installs and manages OpenBSD VMs under
   QEMU, driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this
   repo is its first user, not its purpose
+- `App::FuguWeb::` (`lib/App/FuguWeb/`) — builds a documentation website from
+  mdoc(7) manuals, `.pod` sidecars and Markdown, driven by `bin/fuguweb` and
+  `.fuguwebrc`. Keep it OpenHAP-agnostic, as `App::FuguVM::` is
 
 The dependency direction is one way. `Protocol::` uses core Perl and its
 declared CPAN modules, and never `Fugu::` or `App::`. `Fugu::` uses core Perl,
 its optional CPAN libraries, and the `Protocol::` codecs on an allowlist, and
-never `App::`. `App::` uses both.
+never `App::`. `App::` uses both. A sibling application is not a library: no
+`App::` namespace uses another.
 
 ## Commands
 
 ```sh
 make check          # tidy + lint + test; MUST pass before every commit
-make test           # prove -l -v t/{fuguvm,fugu,protocol,openhap,conformance,scripts,web,ci}/*.t
+make test           # prove -l -v t/{fuguvm,fuguweb,fugu,protocol,openhap,conformance,scripts,web,ci}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check
@@ -60,7 +64,7 @@ make integration    # provision OpenBSD VM and run integration tests
 ## Layout
 
 - `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `fuguvm` (OpenBSD VM
-  CLI)
+  CLI), `fuguweb` (website CLI)
 - `lib/Protocol/` — two libraries. `Protocol::HAP` holds codecs (`TLV.pm`,
   `HTTP.pm`), setup-code rules (`SetupCode.pm`), crypto (`Crypto.pm`, `SRP.pm`),
   pairing and sessions (`Pairing.pm`, `Session.pm`, `Store.pod`,
@@ -72,13 +76,18 @@ make integration    # provision OpenBSD VM and run integration tests
   (`t/protocol/boundary.t` enforces the dependency rule instead)
 - `lib/App/OpenHAP/` — the host (`Host.pm`), device integration (`Devices.pm`,
   `Tasmota/*.pm`), the integration-test driver (`Test/Integration.pm`)
-- `t/openhap/`, `t/fugu/`, `t/protocol/`, `t/fuguvm/` — unit tests;
-  `t/conformance/` — spec-cited conformance tests; `t/scripts/`, `t/web/`,
-  `t/ci/` — tooling tests, named after what they drive (see `t/CLAUDE.md`);
-  `t/openhap/integration/` — integration tests, run inside the OpenBSD VM
+- `lib/App/FuguWeb/` — the website builder: the description (`Config.pm`), the
+  chrome (`Page.pm`), the manual index (`Manual.pm`, `Index.pm`), the external
+  renderers (`Render.pm`), the build (`Site.pm`), and the checks (`Check.pm`)
+- `t/openhap/`, `t/fugu/`, `t/protocol/`, `t/fuguvm/`, `t/fuguweb/` — unit
+  tests; `t/conformance/` — spec-cited conformance tests; `t/scripts/`,
+  `t/web/`, `t/ci/` — tooling tests, named after what they drive (see
+  `t/CLAUDE.md`); `t/openhap/integration/` — integration tests, run inside the
+  OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
   `openhapd.conf.5`; `man/fugu/` — `<Module>.3p`, one per `lib/Fugu/` module,
-  installed as `Fugu::<Module>.3p`; `man/fuguvm/` — `fuguvm.1`
+  installed as `Fugu::<Module>.3p`; `man/fuguvm/` — `fuguvm.1`; `man/fuguweb/` —
+  `fuguweb.1`
 - `spec/` — curated protocol references, normative for the conformance tier (see
   `spec/CLAUDE.md`)
 - `plans/` — design documents and phased implementation plans (see the Plans
@@ -163,16 +172,17 @@ placement top-down — first match wins:
 | 6   | a procedure — "how to do X" on demand           | a skill in `.claude/skills/<name>/SKILL.md`                                                                   |
 | 7   | none of the above                               | nowhere — delete it                                                                                           |
 
-`web/` is not another place for any of this: the site renders `README.md`,
-`INSTALL.md`, `man/` and the `.pod` sidecars, never restating them. Only
-site-specific framing is hand-written, in `web/*.body.html` — see
+`web/` is not another place for any of this: the site renders `INSTALL.md`,
+`man/` and the `.pod` sidecars, never restating them. Only site-specific framing
+is hand-written, in `web/*.body.html`, and the front page is one of those — see
 `web/CLAUDE.md`.
 
 Corollaries:
 
 - Rows 2 and 3 are exclusive. Fugu uses 3p manuals, found by `man Fugu::Daemon`.
-  OpenHAP and FuguVM keep sidecars. The shared `Fugu` prefix does not group
-  `Fugu::` and `App::FuguVM::` here. No module has both.
+  OpenHAP, FuguVM and FuguWeb keep sidecars. The shared `Fugu` prefix does not
+  group `Fugu::` with `App::FuguVM::` or `App::FuguWeb::` here. No module has
+  both.
 - No `README.md` anywhere except the repository root
 - Skills and `CLAUDE.md` files may point to man pages, `.pod` files, `spec/`, or
   each other, but never restate their content

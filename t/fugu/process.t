@@ -5,6 +5,7 @@ use Test::More;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../lib";
 
+use Cwd        ();
 use File::Temp qw(tempdir);
 
 use_ok('Fugu::Process');
@@ -296,5 +297,69 @@ use_ok('Fugu::Process');
 	is( length( $r->{stdout} ), 400 * 41, 'stdout arrived whole' );
 	is( length( $r->{stderr} ), 400 * 2,  'stderr arrived whole' );
 }
+
+# Test 20: the cwd option moves the child and nothing else. mandoc
+# resolves a cross-reference against its working directory, so a
+# caller needs a child that starts somewhere else.
+subtest 'run starts the child in the named directory' => sub {
+	my $dir = tempdir( CLEANUP => 1 );
+	mkdir "$dir/inside" or die "Cannot create the directory: $!";
+
+	open my $fh, '>', "$dir/inside/marker" or die "Cannot write: $!";
+	close $fh;
+
+	my $before = Cwd::getcwd();
+
+	my $r = Fugu::Process->run(
+		cmd     => [ 'ls' ],
+		cwd     => "$dir/inside",
+		timeout => 30,
+	);
+	ok( $r->{success}, 'the child runs' );
+	like( $r->{stdout}, qr/^marker$/m, 'and lists that directory' );
+
+	is( Cwd::getcwd(), $before, 'the caller did not move' );
+
+	# A directory that does not exist must not become a silent run
+	# in the directory the caller happened to be in.
+	$r = Fugu::Process->run(
+		cmd     => [ 'ls' ],
+		cwd     => "$dir/absent",
+		timeout => 30,
+	);
+	ok( !$r->{success}, 'an absent directory fails the run' );
+	like( $r->{error}, qr/Cannot chdir to \Q$dir\E\/absent/,
+		'and the message names it' );
+
+	# The passthrough path forks its own child, so it needs the
+	# same chdir. It captures nothing, so the proof is a command
+	# that fails unless it runs in the right directory.
+	#
+	# No timeout here: a passthrough run that is given one reaps
+	# the child inside wait_exit and then reads a stale status, so
+	# every such run reports a failure. That is a separate defect
+	# and no caller in the tree hits it.
+	$r = Fugu::Process->run(
+		cmd         => [ 'test', '-f', 'marker' ],
+		cwd         => "$dir/inside",
+		passthrough => 1,
+	);
+	ok( $r->{success}, 'a passthrough child runs in the directory too' );
+
+	$r = Fugu::Process->run(
+		cmd         => [ 'test', '-f', 'marker' ],
+		cwd         => $dir,
+		passthrough => 1,
+	);
+	ok( !$r->{success}, 'and not in the one the caller was in' );
+
+	$r = Fugu::Process->run(
+		cmd         => [ 'true' ],
+		cwd         => "$dir/absent",
+		passthrough => 1,
+	);
+	ok( !$r->{success}, 'an absent directory fails a passthrough run' );
+	like( $r->{error}, qr/Cannot chdir/, 'and says why' );
+};
 
 done_testing();

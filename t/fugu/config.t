@@ -112,6 +112,36 @@ CONF
 	is_deeply( [ $config->blocks('vm') ], [], 'an unused type is empty' );
 };
 
+# Each block carries its position in the file. blocks() answers for one
+# type, so a caller that reads two types has nothing else to sort on.
+subtest 'a block knows where in the file it is' => sub {
+	my $config = fixture(<<'CONF')->load;
+manuals "First" {
+	dir = man/one
+}
+
+modules "Second" {
+	dir = lib/two
+}
+
+manuals "Third" {
+	dir = man/three
+}
+CONF
+
+	ok( $config, 'the file loaded' );
+
+	my @blocks = sort { $a->{order} <=> $b->{order} }
+	    ( $config->blocks('manuals'), $config->blocks('modules') );
+
+	is_deeply(
+		[ map { $_->{name} } @blocks ],
+		[qw(First Second Third)],
+		'two types interleave as the file wrote them'
+	);
+	is( $blocks[0]{order}, 0, 'the count starts at zero' );
+};
+
 # The FuguVM grammar: blocks addressed by name, and settings with no
 # equals sign.
 subtest 'a FuguVM named-VM file' => sub {

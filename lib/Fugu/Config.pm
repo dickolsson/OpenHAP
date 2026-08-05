@@ -44,6 +44,10 @@ use File::Spec;
 # that wants an ordered list of devices and a caller that wants the VM
 # called "default" read the same parse.
 #
+# Each block also carries its position in the file. A caller that
+# reads two types and wants them interleaved as the file wrote them
+# sorts on it; blocks() alone can only answer for one type.
+#
 # A malformed line is an error with a file and a line number. The
 # module never skips a line it did not understand: a typo that a
 # parser ignores is a setting that silently does not apply.
@@ -103,6 +107,7 @@ sub load ($self)
 
 	my $block;
 	my $lineno = 0;
+	my $order  = 0;
 
 	for my $line (@lines) {
 		$lineno++;
@@ -120,6 +125,7 @@ sub load ($self)
 				return $self->_fail( $lineno,
 					'closing brace outside a block' );
 			}
+			$block->{order} = $order++;
 			push @{ $self->{blocks}{ $block->{type} } }, $block;
 			$block = undef;
 			next;
@@ -220,9 +226,9 @@ sub parse_bool ( $self, $value, $default = 0 )
 
 # $self->blocks($type):
 #	Return every block of the type, in file order. Each entry is a
-#	hashref with type, args, name and settings. This is the view
-#	for a list where the order matters and two entries can share a
-#	name.
+#	hashref with type, args, name, settings and order. This is the
+#	view for a list where the order matters and two entries can
+#	share a name.
 sub blocks ( $self, $type )
 {
 	return @{ $self->{blocks}{$type} // [] };

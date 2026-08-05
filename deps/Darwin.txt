@@ -14,5 +14,6 @@ develop pkg libssh2
 develop pkg qemu
 develop pkg telnet
 develop pkg lowdown
+develop pkg mandoc
 develop cpan HTTP::Daemon
 develop cpan LWP::UserAgent

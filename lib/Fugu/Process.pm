@@ -191,12 +191,19 @@ sub spawn_command ( $class, %args )
 #		cmd     => \@command  # Required: the command to execute
 #		timeout => $seconds   # Optional: kill the child after this long
 #		stdin   => $string    # Optional: feed this to the child
+#		cwd     => $dir       # Optional: run the child in this directory
 #		passthrough => 0|1    # Optional: let the child write to the terminal
 #
 #	The method returns a hashref with success, stdout, stderr,
 #	exit_code, timed_out and, on a startup failure, error. It never
 #	runs a shell: the command is a list, so no argument needs
 #	quoting and no argument can become a shell operator.
+#
+#	The cwd option moves the child alone. A chdir in the parent
+#	would change the meaning of every other relative path in the
+#	program, and a second call that ran at the same time would race
+#	it. A directory that the child cannot enter is a startup
+#	failure with the reason, not a silent run in the wrong place.
 #
 #	With passthrough the child inherits the caller's output, and
 #	stdout and stderr come back empty. Use it for a command that
@@ -210,8 +217,9 @@ sub run ( $class, %args )
 	}
 	my $timeout = $args{timeout};
 	my $input   = $args{stdin};
+	my $cwd     = $args{cwd};
 
-	return $class->_run_passthrough( $cmd, $timeout, $input )
+	return $class->_run_passthrough( $cmd, $timeout, $input, $cwd )
 	    if $args{passthrough};
 
 	pipe my $out_r, my $out_w
@@ -238,6 +246,8 @@ sub run ( $class, %args )
 		    or _fail( $exec_w, "Cannot redirect stdout: $!" );
 		open STDERR, '>&', $err_w
 		    or _fail( $exec_w, "Cannot redirect stderr: $!" );
+
+		_chdir_or_fail( $exec_w, $cwd );
 
 		exec { $cmd->[0] } @$cmd
 		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
@@ -279,10 +289,10 @@ sub run ( $class, %args )
 	};
 }
 
-# $class->_run_passthrough($cmd, $timeout, $input):
+# $class->_run_passthrough($cmd, $timeout, $input, $cwd):
 #	Run a child that writes straight to the caller's output. Only
 #	the exec confirmation and the exit status come back.
-sub _run_passthrough ( $class, $cmd, $timeout, $input )
+sub _run_passthrough ( $class, $cmd, $timeout, $input, $cwd = undef )
 {
 	pipe my $in_r, my $in_w or return _run_error("Cannot create pipe: $!");
 	my ( $exec_r, $exec_w ) = _exec_pipe();
@@ -298,6 +308,8 @@ sub _run_passthrough ( $class, $cmd, $timeout, $input )
 
 		open STDIN, '<&', $in_r
 		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+
+		_chdir_or_fail( $exec_w, $cwd );
 
 		exec { $cmd->[0] } @$cmd
 		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
@@ -521,6 +533,19 @@ sub _exec_pipe()
 	};
 
 	return ( $reader, $writer );
+}
+
+# _chdir_or_fail($writer, $dir):
+#	Move the child into the directory, in the window between the
+#	fork and the exec. A failure travels back over the same pipe
+#	that an exec failure does, so the parent learns the reason and
+#	the child never runs where the caller did not ask.
+sub _chdir_or_fail ( $writer, $dir )
+{
+	return unless defined $dir && length $dir;
+
+	chdir $dir or _fail( $writer, "Cannot chdir to $dir: $!" );
+	return;
 }
 
 # _fail($writer, $message):

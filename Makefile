@@ -20,10 +20,9 @@ GITHUB_OWNER	?= dickolsson
 GITHUB_REPO		?= openhap
 GITHUB_RELEASE	= https://github.com/$(GITHUB_OWNER)/$(GITHUB_REPO)/releases/download/$(TAG)/$(TARBALL)
 
-# Build tools
-LOWDOWN			?= lowdown
+# Build tools.  mandoc renders the cat pages of the man target;
+# fuguweb runs its own renderers and needs no variable here.
 MANDOC			?= mandoc
-POD2MAN			?= pod2man
 PERLTIDY		= perl -MPerl::Tidy -e 'Perl::Tidy::perltidy()'
 # Pin the version so that local runs and CI agree on formatting
 PRETTIER		= npx prettier@3.9.6
@@ -44,13 +43,15 @@ DEPS			= scripts/deps
 
 # Man pages.  Fugu sources drop the Fugu:: prefix because a colon
 # cannot appear in a make target.  install-man puts it back.
-MAN1			= man/fuguvm/fuguvm.1
+MAN1			= man/fuguvm/fuguvm.1 man/fuguweb/fuguweb.1
+# The list is in LC_ALL=C order, which is the order fuguweb sorts a
+# manuals group by.  Thus the make list and the site index agree.
 MAN3P			= man/fugu/CLI.3p man/fugu/Config.3p \
 			  man/fugu/Control.3p man/fugu/Daemon.3p \
 			  man/fugu/EventLoop.3p man/fugu/File.3p \
 			  man/fugu/Imsg.3p \
 			  man/fugu/JSONSocket.3p man/fugu/Log.3p \
-			  man/fugu/Mdnsd.3p man/fugu/MQTT.3p \
+			  man/fugu/MQTT.3p man/fugu/Mdnsd.3p \
 			  man/fugu/Pidfile.3p man/fugu/Privdrop.3p \
 			  man/fugu/Process.3p man/fugu/Proxy.3p \
 			  man/fugu/Random.3p man/fugu/SSH.3p \
@@ -63,25 +64,10 @@ CATMAN3P		= $(MAN3P:.3p=.cat3p)
 CATMAN5			= $(MAN5:.5=.cat5)
 CATMAN8			= $(MAN8:.8=.cat8)
 
-# Website
+# Website.  .fuguwebrc describes it, and fuguweb builds it.  WEBOUT
+# stays because t/web/site.t and .github/workflows/web.yml both set it.
 WEBOUT			?= web/build
-WEBMAN			= $(WEBOUT)/.man
-MKPAGE			= web/mkpage.sh
-MKINDEX			= web/mkindex.sh
-# The Makefile finds the .pod sidecars and never lists them.  Otherwise
-# a sidecar without its own Makefile line would never reach the site.
-# An exclusion list would be one more thing to keep true.  LC_ALL=C
-# makes sure the order of the index does not depend on the builder's
-# locale.
-FINDPOD			= find lib -name '*.pod' | LC_ALL=C sort
-# mandoc resolves .Xr against the working directory.  A page named %N.%S
-# there becomes a local link.  Anything else goes to man.openbsd.org.
-# The './' matters.  A module page is Fugu::Daemon.3p.html.  The
-# browser reads a relative URL whose first segment holds a colon as a
-# scheme instead.
-# -I os= pins the footer so the site does not vary with the build host.
-MANHTML			= -Thtml -I os=OpenBSD \
-			  -O fragment,man='./%N.%S.html;https://man.openbsd.org/%N.%S'
+FUGUWEB			?= bin/fuguweb
 
 all: deps check
 
@@ -235,6 +221,7 @@ package: clean
 
 test:
 	prove -l -v t/fuguvm/*.t
+	prove -l -v t/fuguweb/*.t
 	prove -l -v t/fugu/*.t
 	prove -l -v t/protocol/*.t
 	prove -l -v t/openhap/*.t
@@ -298,65 +285,14 @@ vm-up:
 	@./scripts/vm-up
 
 web:
-	@command -v $(LOWDOWN) >/dev/null 2>&1 || \
-	    { echo "$(LOWDOWN) not found; run 'make deps-develop'" >&2; exit 1; }
-	@command -v $(MANDOC) >/dev/null 2>&1 || \
-	    { echo "$(MANDOC) not found; run 'make deps-develop'" >&2; exit 1; }
-	@command -v $(POD2MAN) >/dev/null 2>&1 || \
-	    { echo "$(POD2MAN) not found; it ships with Perl" >&2; exit 1; }
-	# A malformed page must fail the build, not render badly
-	$(MANDOC) -Tlint -W warning $(MAN1) $(MAN3P) $(MAN5) $(MAN8)
-	# Put every mdoc source in one directory.  Then mandoc can tell a
-	# local cross-reference from one that belongs on man.openbsd.org.
-	# Stage the Fugu pages under the name that .Xr refers to them by.
-	mkdir -p $(WEBMAN)
-	cp $(MAN1) $(MAN5) $(MAN8) $(WEBMAN)/
-	for f in $(MAN3P); do \
-		cp "$$f" "$(WEBMAN)/Fugu::$${f##*/}"; \
-	done
-	cp web/style.css $(WEBOUT)/style.css
-	cp web/robots.txt $(WEBOUT)/robots.txt
-	# The custom domain is a repository setting.  The deploy artifact
-	# carries it too.  Thus a rebuild can never drop it
-	cp web/CNAME $(WEBOUT)/CNAME
-	$(MKPAGE) 'HomeKit Accessory Protocol for OpenBSD' \
-	    < web/index.body.html > $(WEBOUT)/index.html
-	$(MKPAGE) 'Not found' < web/404.body.html > $(WEBOUT)/404.html
-	$(LOWDOWN) -Thtml INSTALL.md | \
-	    $(MKPAGE) 'Install' > $(WEBOUT)/install.html
-	$(MKINDEX) $(MAN1) $(MAN3P) $(MAN5) $(MAN8) `$(FINDPOD)` | \
-	    $(MKPAGE) 'Manuals' > $(WEBOUT)/manuals.html
-	$(MKPAGE) 'FuguVM' < web/fuguvm.body.html > $(WEBOUT)/fuguvm.html
-	$(MKPAGE) 'Fugu' < web/fugu.body.html > $(WEBOUT)/fugu.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.8 ) | \
-	    $(MKPAGE) 'openhapd(8)' > $(WEBOUT)/openhapd.8.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) hapctl.8 ) | \
-	    $(MKPAGE) 'hapctl(8)' > $(WEBOUT)/hapctl.8.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) openhapd.conf.5 ) | \
-	    $(MKPAGE) 'openhapd.conf(5)' > $(WEBOUT)/openhapd.conf.5.html
-	( cd $(WEBMAN) && $(MANDOC) $(MANHTML) fuguvm.1 ) | \
-	    $(MKPAGE) 'fuguvm(1)' > $(WEBOUT)/fuguvm.1.html
-	for f in $(MAN3P); do \
-		n="Fugu::$${f##*/}"; n="$${n%.3p}"; \
-		( cd $(WEBMAN) && $(MANDOC) $(MANHTML) "$$n.3p" ) | \
-		    $(MKPAGE) "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
-	done
-	# One page per .pod sidecar.  The recipe gives --name, --center
-	# and --release so the chrome matches the mdoc pages.  The date
-	# comes from the checkout, not from file mtimes.  git does not
-	# preserve mtimes.
-	d=`git log -1 --format=%cs 2>/dev/null || date +%F`; \
-	$(FINDPOD) | while read -r p; do \
-		n="$${p#lib/}"; n="$${n%.pod}"; \
-		n=`echo "$$n" | sed 's|/|::|g'`; \
-		$(POD2MAN) --section=3p --name="$$n" --date="$$d" \
-		    --center='Perl Library Manual' --release='OpenBSD' \
-		    "$$p" | \
-		    $(MANDOC) $(MANHTML) | \
-		    $(MKPAGE) "$$n(3p)" > "$(WEBOUT)/$$n.3p.html"; \
-	done
-	# Staging is a build detail and never part of the published tree
-	rm -rf $(WEBMAN)
+	@$(FUGUWEB) build --out $(WEBOUT)
 
+# The tarball ships the Makefile and no fuguweb, so clean falls back to
+# a plain removal there.  fuguweb refuses a directory that no build
+# made; the fallback is only reached where there is no site to protect.
 web-clean:
-	rm -rf $(WEBOUT)
+	@if [ -x $(FUGUWEB) ]; then \
+		$(FUGUWEB) clean --out $(WEBOUT); \
+	else \
+		rm -rf $(WEBOUT); \
+	fi
