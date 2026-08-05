@@ -15,11 +15,6 @@ use File::Path qw(make_path);
 use File::Spec;
 use File::Temp qw(tempdir);
 
-use_ok('App::FuguWeb::Config');
-use_ok('App::FuguWeb::Render');
-use_ok('App::FuguWeb::Site');
-use_ok('Fugu::Log');
-
 # have($tool):
 #	Report whether the program is on the path.
 sub have ($tool)
@@ -27,9 +22,16 @@ sub have ($tool)
 	return system("command -v $tool >/dev/null 2>&1") == 0;
 }
 
+# The whole file drives the renderers, so the skip comes before the
+# first assertion. A plan that arrives after one is not a plan.
 plan skip_all => 'mandoc not found'  unless have('mandoc');
 plan skip_all => 'lowdown not found' unless have('lowdown');
 plan skip_all => 'pod2man not found' unless have('pod2man');
+
+use_ok('App::FuguWeb::Config');
+use_ok('App::FuguWeb::Render');
+use_ok('App::FuguWeb::Site');
+use_ok('Fugu::Log');
 
 my $RC = <<'RC';
 site       = Example
