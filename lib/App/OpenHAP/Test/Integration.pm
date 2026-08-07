@@ -136,10 +136,15 @@ sub get_controller ( $self, %args )
 {
 	require Protocol::HAP::Controller;
 
+	# The timeout default is generous: under TCG emulation, one
+	# SRP modexp can take many seconds. OPENHAP_TEST_TIMEOUT
+	# raises it further.
 	my $controller = Protocol::HAP::Controller->new(
 		host => '127.0.0.1',
 		port => $self->{hap_port},
 		pin  => $self->get_config_value('hap_pin') // DEFAULT_HAP_PIN,
+		controller_id => 'openhap-test-ctrl',
+		timeout       => $ENV{OPENHAP_TEST_TIMEOUT} // 30,
 		%args,
 	);
 

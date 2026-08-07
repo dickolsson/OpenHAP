@@ -31,7 +31,7 @@ package Protocol::HAP::Store::Memory;
 # themselves. A store that skips the increment breaks c# in one
 # direction; an engine that adds one on top breaks it in the other.
 
-sub new ( $class, %args )
+sub new ($class)
 {
 	return bless {
 		ltsk          => undef,

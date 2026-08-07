@@ -69,22 +69,12 @@ sub new ( $class, %args )
 		password => normalize_setup_code( $args{password} )
 		    // $args{password},
 
-		# The RFC 5054 3072-bit group
+		# The RFC 5054 3072-bit group. The exchange methods fill
+		# in the session state as it becomes known.
 		N => Math::BigInt->from_hex(
 			unpack( 'H*', $Protocol::HAP::SRP::N_3072 )
 		),
 		g => Math::BigInt->new($Protocol::HAP::SRP::g),
-
-		# Session state
-		salt => undef,
-		v    => undef,
-		b    => undef,
-		B    => undef,
-		A    => undef,
-		S    => undef,
-		K    => undef,
-		M1   => undef,
-		M2   => undef,
 	}, $class;
 
 	return $self;
@@ -96,13 +86,12 @@ sub generate_salt ($self)
 	return $self->{salt};
 }
 
-sub compute_verifier ( $self, $salt = undef, $password = undef )
+sub compute_verifier ( $self, $salt = undef )
 {
-	$salt     //= $self->{salt};
-	$password //= $self->{password};
+	$salt //= $self->{salt};
 
 	# x = H(salt | H(username | ":" | password))
-	my $inner   = sha512( $self->{username} . ':' . $password );
+	my $inner   = sha512( $self->{username} . ':' . $self->{password} );
 	my $x_bytes = sha512( $salt . $inner );
 	my $x       = Math::BigInt->from_hex( unpack( 'H*', $x_bytes ) );
 
@@ -226,10 +215,6 @@ sub verify_client_proof ( $self, $M1_client )
 
 sub generate_server_proof ($self)
 {
-	die "SRP: M1 not set (verify_client_proof not called)"
-	    if !defined $self->{M1};
-	die "SRP: K not set (compute_session_key not called)"
-	    if !defined $self->{K};
 
 	# M2 = H(PAD(A) | M1 | K)
 	# Pad A to N_LEN per HAP-Pairing.md §2.6.
@@ -241,7 +226,9 @@ sub generate_server_proof ($self)
 	return $M2;
 }
 
-sub get_session_key ($self)
+# $self->session_key():
+#	Return the shared session key K (64 bytes).
+sub session_key ($self)
 {
 	return $self->{K};
 }
@@ -254,20 +241,17 @@ use Digest::SHA              qw(sha512);
 use Protocol::HAP::SetupCode qw(normalize_setup_code);
 
 # The controller role of the same exchange (HAP-Pairing.md §2.5). It
-# uses the same 3072-bit RFC 5054 group, SHA-512 hash, and 384-byte
-# padding rules as the accessory role above. One module holds both
-# sides, so the conformance vectors exercise them against each other.
+# reuses the group, the N_LEN padding rule, and the byte conversion
+# of the accessory role above, so the two sides cannot drift. One
+# module holds both, and the conformance vectors exercise them
+# against each other.
 
-use constant N_LEN => 384;
+# One definition of the padding rule: the accessory package's.
+use constant N_LEN => Protocol::HAP::SRP::N_LEN;
 
 sub _b2i ($bytes)
 {
 	return Math::BigInt->from_hex( unpack( 'H*', $bytes ) );
-}
-
-sub _i2b ( $int, $length = undef )
-{
-	return Protocol::HAP::SRP::_bigint_to_bytes( $int, $length );
 }
 
 sub new ( $class, %args )
@@ -281,11 +265,6 @@ sub new ( $class, %args )
 
 		N => _b2i($Protocol::HAP::SRP::N_3072),
 		g => Math::BigInt->new($Protocol::HAP::SRP::g),
-
-		a  => undef,
-		A  => undef,
-		K  => undef,
-		M1 => undef,
 	}, $class;
 
 	return $self;
@@ -300,7 +279,7 @@ sub compute_public ($self)
 	$self->{a} = _b2i($a_bytes);
 	$self->{A} = $self->{g}->copy->bmodpow( $self->{a}, $self->{N} );
 
-	return _i2b( $self->{A}, N_LEN );
+	return Protocol::HAP::SRP::_bigint_to_bytes( $self->{A}, N_LEN );
 }
 
 # $self->compute_proof($salt, $B_bytes):
@@ -312,6 +291,10 @@ sub compute_proof ( $self, $salt, $B_bytes )
 {
 	die 'SRP: compute_public not called' unless defined $self->{A};
 
+	# The accessory package's byte conversion, under a short name
+	# for the formulas below
+	my $i2b = \&Protocol::HAP::SRP::_bigint_to_bytes;
+
 	my $N = $self->{N};
 	my $g = $self->{g};
 	my $B = _b2i($B_bytes);
@@ -320,28 +303,28 @@ sub compute_proof ( $self, $salt, $B_bytes )
 
 	# u = H(PAD(A) | PAD(B))
 	my $u =
-	    _b2i( sha512( _i2b( $self->{A}, N_LEN ) . _i2b( $B, N_LEN ) ) );
+	    _b2i( sha512( $i2b->( $self->{A}, N_LEN ) . $i2b->( $B, N_LEN ) ) );
 
 	# x = H(s | H(I ":" P)), k = H(N | PAD(g))
 	my $x = _b2i(
 		sha512( $salt . sha512("$self->{username}:$self->{password}") )
 	);
-	my $k = _b2i( sha512( _i2b($N) . _i2b( $g, N_LEN ) ) );
+	my $k = _b2i( sha512( $i2b->($N) . $i2b->( $g, N_LEN ) ) );
 
 	# S = (B - k*g^x)^(a + u*x) mod N
 	my $gx   = $g->copy->bmodpow( $x, $N );
 	my $base = ( $B - ( $k * $gx ) ) % $N;
 	my $S    = $base->bmodpow( $self->{a} + $u * $x, $N );
 
-	$self->{K} = sha512( _i2b($S) );
+	$self->{K} = sha512( $i2b->($S) );
 
 	# M1 = H(H(N) xor H(g) | H(I) | s | PAD(A) | PAD(B) | K)
 	$self->{M1} =
-	    sha512( ( sha512( _i2b($N) ) ^. sha512( _i2b($g) ) )
+	    sha512( ( sha512( $i2b->($N) ) ^. sha512( $i2b->($g) ) )
 		. sha512( $self->{username} )
 		    . $salt
-		    . _i2b( $self->{A}, N_LEN )
-		    . _i2b( $B,         N_LEN )
+		    . $i2b->( $self->{A}, N_LEN )
+		    . $i2b->( $B,         N_LEN )
 		    . $self->{K} );
 
 	return $self->{M1};
@@ -354,7 +337,9 @@ sub verify_server_proof ( $self, $M2 )
 	die 'SRP: compute_proof not called' unless defined $self->{M1};
 
 	my $expected =
-	    sha512( _i2b( $self->{A}, N_LEN ) . $self->{M1} . $self->{K} );
+	    sha512(   Protocol::HAP::SRP::_bigint_to_bytes( $self->{A}, N_LEN )
+		    . $self->{M1}
+		    . $self->{K} );
 
 	return $expected eq ( $M2 // '' );
 }

@@ -26,8 +26,7 @@ subtest 'the constructor' => sub {
 	my $store = Protocol::HAP::Store::File->new( path => "$dir/state" );
 
 	isa_ok( $store, 'Protocol::HAP::Store::File' );
-	is( $store->path, "$dir/state", 'the store knows its directory' );
-	ok( -d "$dir/state", 'which the constructor created' );
+	ok( -d "$dir/state", 'the constructor created the directory' );
 	is( mode_of("$dir/state"), 0700, 'and which no other user can read' );
 
 	# The path is host policy. This module carries no default.

@@ -29,8 +29,36 @@ package Protocol::HAP;
 # timers, logging, and persistence, injected through narrow contracts.
 #
 # This module is the umbrella. It holds the null logger, the default
-# for every class that takes a logger argument. See Protocol/HAP.pod
-# for the host contracts.
+# for every class that takes a logger argument, and the short-UUID
+# rule that the data model shares. See Protocol/HAP.pod for the host
+# contracts.
+
+# The HAP base UUID suffix of every Apple-defined type
+use constant HAP_BASE_UUID => '-0000-1000-8000-0026BB765291';
+
+# uuid_to_short($uuid):
+#	Convert a full UUID to the short form for JSON. The function
+#	returns a short hex string for Apple UUIDs and the full UUID
+#	for custom ones.
+sub uuid_to_short ($uuid)
+{
+	my $base = HAP_BASE_UUID;
+	if ( $uuid =~ /^0*([0-9A-Fa-f]+)\Q$base\E$/i ) {
+		return uc($1);
+	}
+	return $uuid;
+}
+
+# device_id($ltpk):
+#	The MAC-format device id of an accessory: the first six bytes
+#	of the long-term public key, as uppercase colon-separated hex.
+#	The server advertises it and pair-setup signs over it, so both
+#	must format it the same way.
+sub device_id ($ltpk)
+{
+	my $id = uc( unpack( 'H*', substr( $ltpk, 0, 6 ) ) );
+	return join( ':', $id =~ /../g );
+}
 
 # $class->null_logger:
 #	Return the shared null logger instance. Every message

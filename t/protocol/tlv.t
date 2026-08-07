@@ -62,7 +62,7 @@ use_ok('Protocol::HAP::TLV');
 
 # Test separator encoding (for List Pairings)
 {
-    my $sep = Protocol::HAP::TLV::encode_separator();
+    my $sep = Protocol::HAP::TLV::encode(0xFF, '');
     is(length($sep), 2, 'Separator is 2 bytes');
     my ($type, $len) = unpack('CC', $sep);
     is($type, 0xFF, 'Separator type is 0xFF');
@@ -107,11 +107,6 @@ use_ok('Protocol::HAP::TLV');
         $pos += 2 + $len;
     }
     ok($sep_found, 'Separator found in encoded data');
-}
-
-# Test kTLVType_Separator constant
-{
-    is(Protocol::HAP::TLV::kTLVType_Separator(), 0xFF, 'kTLVType_Separator is 0xFF');
 }
 
 done_testing();

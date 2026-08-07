@@ -125,14 +125,6 @@ SKIP: {
     ok(defined $response, 'Invalid state returns error response');
 }
 
-# Test new TLV type constants
-{
-    ok(defined &Protocol::HAP::Pairing::kTLVType_SessionID, 'kTLVType_SessionID defined');
-    ok(defined &Protocol::HAP::Pairing::kTLVType_Flags, 'kTLVType_Flags defined');
-    is(Protocol::HAP::Pairing::kTLVType_SessionID(), 0x0E, '[HAP-TLV8 §5] kTLVType_SessionID is 0x0E');
-    is(Protocol::HAP::Pairing::kTLVType_Flags(), 0x13, '[HAP-TLV8 §5] kTLVType_Flags is 0x13');
-}
-
 # Test kTLVError_MaxTries constant
 {
     ok(defined &Protocol::HAP::Pairing::kTLVError_MaxTries, 'kTLVError_MaxTries defined');
@@ -266,8 +258,8 @@ SKIP: {
         'no Busy error crosses instances');
 
     # The counters are independent too
-    $a->_record_failed_attempt;
-    $a->_record_failed_attempt;
+    $a->_auth_failure('test probe');
+    $a->_auth_failure('test probe');
     is($a->get_failed_attempts, 2, 'instance A counts its own failures');
     is($b->get_failed_attempts, 0, 'instance B is untouched');
 }
@@ -285,7 +277,7 @@ SKIP: {
         accessory_ltsk => $ltsk,
         accessory_ltpk => $ltpk,
     );
-    $first->_record_failed_attempt for 1 .. 3;
+    $first->_auth_failure(q{test probe}) for 1 .. 3;
 
     my $second = Protocol::HAP::Pairing->new(
         pin            => '123-45-678',

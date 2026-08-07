@@ -26,6 +26,7 @@ use Protocol::HAP::Crypto;
 use Protocol::HAP::HTTP;
 use Protocol::HAP::TLV;
 use Protocol::HAP::Pairing;
+use Protocol::HAP::Session;
 
 # The controller role of SRP lives beside the accessory role
 use Protocol::HAP::SRP;
@@ -50,6 +51,11 @@ use constant MAX_MESSAGE => 1048576;
 
 sub new ( $class, %args )
 {
+	# The id goes into the pair-setup signature, so the library
+	# must not invent one
+	my $controller_id = $args{controller_id}
+	    // die 'controller_id required';
+
 	my $self = bless {
 		host      => $args{host}   // '127.0.0.1',
 		port      => $args{port}   // 51827,
@@ -58,28 +64,16 @@ sub new ( $class, %args )
 		transport => $args{transport},
 
 		# Socket read timeout. The default is correct for fast
-		# in-process and native runs. Under TCG emulation, one
-		# SRP modexp can take many seconds. Thus integration
-		# tests against a real daemon raise the timeout with
-		# OPENHAP_TEST_TIMEOUT.
-		timeout => $args{timeout} // $ENV{OPENHAP_TEST_TIMEOUT} // 5,
+		# in-process and native runs. A caller that talks to a
+		# slow accessory raises it.
+		timeout => $args{timeout} // 5,
 
-		controller_id => $args{controller_id} // 'openhap-test-ctrl',
+		controller_id => $controller_id,
 
-		# Controller long-term identity. new makes it once.
-		ltsk => undef,
-		ltpk => undef,
-
-		# pair_setup sets these values.
-		accessory_ltpk => undef,
-		accessory_id   => undef,
-
-		# Session state after pair-verify
-		encrypted     => 0,
-		encrypt_key   => undef,
-		decrypt_key   => undef,
-		encrypt_count => 0,
-		decrypt_count => 0,
+		# The session frame codec, with the key roles swapped
+		# relative to the accessory. pair_verify turns its
+		# encryption on.
+		session => Protocol::HAP::Session->new( id => 0 ),
 
 		socket     => undef,
 		inbuf      => '',
@@ -87,6 +81,8 @@ sub new ( $class, %args )
 		last_error => undef,
 	}, $class;
 
+	# Controller long-term identity. new makes it once.
+	# pair_setup later fills in accessory_ltpk and accessory_id.
 	( $self->{ltsk}, $self->{ltpk} ) =
 	    Protocol::HAP::Crypto->ed25519_keypair;
 
@@ -103,7 +99,7 @@ sub last_error ($self)
 
 sub is_encrypted ($self)
 {
-	return $self->{encrypted};
+	return $self->{session}->is_encrypted;
 }
 
 # --- transport ---------------------------------------------------------
@@ -133,19 +129,27 @@ sub close ($self)
 		$self->{socket}->close;
 		$self->{socket} = undef;
 	}
-	$self->{encrypted} = 0;
-	$self->{inbuf}     = '';
-	$self->{rawbuf}    = '';
+
+	# A fresh session: no keys, no counters, no encryption
+	$self->{session} = Protocol::HAP::Session->new( id => 0 );
+	$self->{inbuf}   = '';
+	$self->{rawbuf}  = '';
 	return 1;
 }
 
 # $self->_round_trip($request_bytes):
-#	Send the raw bytes and return the raw response bytes of one
-#	HTTP response. Encrypted responses stay encrypted.
+#	Send the raw bytes and return the plaintext of one HTTP
+#	response. On an encrypted session, the raw bytes accumulate
+#	in rawbuf and every complete frame decrypts exactly once
+#	through the session, so the nonce counter stays in sync.
 sub _round_trip ( $self, $request )
 {
 	if ( $self->{transport} ) {
-		return $self->{transport}->($request);
+		my $raw = $self->{transport}->($request);
+		return $raw unless $self->is_encrypted;
+		return      unless defined $raw;
+		$self->{rawbuf} .= $raw;
+		return $self->_drain_frames;
 	}
 
 	return unless $self->_connect;
@@ -155,7 +159,7 @@ sub _round_trip ( $self, $request )
 
 	# Read until the buffer holds a full, decodable HTTP response
 	my $select = IO::Select->new($socket);
-	my $raw    = '';
+	my $plain  = '';
 	while (1) {
 		last unless $select->can_read( $self->{timeout} );
 		my $bytes = $socket->sysread( my $chunk, 65535 );
@@ -163,102 +167,27 @@ sub _round_trip ( $self, $request )
 			$self->{last_error} = 'connection closed';
 			last;
 		}
-		$raw .= $chunk;
 
-		my $plain =
-		      $self->{encrypted}
-		    ? $self->_decrypt_peek($raw)
-		    : $raw;
+		if ( $self->is_encrypted ) {
+			$self->{rawbuf} .= $chunk;
+			my $drained = $self->_drain_frames;
+			unless ( defined $drained ) {
+				$self->{last_error} =
+				    'response decryption failed';
+				return;
+			}
+			$plain .= $drained;
+		}
+		else {
+			$plain .= $chunk;
+		}
+
 		last
-		    if defined $plain
-		    && Protocol::HAP::HTTP::message_complete( $plain,
+		    if Protocol::HAP::HTTP::message_complete( $plain,
 			max_size => MAX_MESSAGE );
 	}
 
-	return $raw;
-}
-
-# --- session framing (HAP-Encryption.md §2-§5) -------------------------
-
-sub _encrypt ( $self, $data )
-{
-	my $out = '';
-	while ( length($data) > 0 ) {
-		my $chunk = substr( $data, 0, MAX_FRAME, '' );
-		my $aad   = pack( 'v',      length($chunk) );
-		my $nonce = pack( 'x[4]Q<', $self->{encrypt_count}++ );
-		my ( $ciphertext, $tag ) =
-		    Protocol::HAP::Crypto->chacha20poly1305_encrypt(
-			$self->{encrypt_key},
-			$nonce, $chunk, $aad );
-		$out .= $aad . $ciphertext . $tag;
-	}
-	return $out;
-}
-
-# _decrypt_peek($data):
-#	Decrypt the data but do not consume the counter state. The
-#	socket read loop uses this while it accumulates frames.
-sub _decrypt_peek ( $self, $data )
-{
-	my $count = $self->{decrypt_count};
-	my $plain = $self->_decrypt($data);
-	$self->{decrypt_count} = $count;
 	return $plain;
-}
-
-sub _decrypt ( $self, $data )
-{
-	my $out = '';
-	my $pos = 0;
-	while ( $pos < length($data) ) {
-		return if $pos + 2 > length($data);
-		my $length = unpack( 'v', substr( $data, $pos, 2 ) );
-		my $aad    = substr( $data, $pos, 2 );
-		$pos += 2;
-		return if $length > MAX_FRAME;
-		return if $pos + $length + 16 > length($data);
-		my $ciphertext = substr( $data, $pos, $length );
-		$pos += $length;
-		my $tag = substr( $data, $pos, 16 );
-		$pos += 16;
-
-		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
-		my $plain =
-		    Protocol::HAP::Crypto->chacha20poly1305_decrypt(
-			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
-		return unless defined $plain;
-		$out .= $plain;
-	}
-	return $out;
-}
-
-# --- HTTP --------------------------------------------------------------
-
-sub _build_request ( $self, $method, $path, $body = undef, $headers = {} )
-{
-	return Protocol::HAP::HTTP::build_request(
-		method  => $method,
-		path    => $path,
-		body    => $body,
-		headers => { Host => "$self->{host}:$self->{port}", %$headers },
-	);
-}
-
-sub _parse_response ( $self, $raw )
-{
-	unless ( defined $raw && length $raw ) {
-		$self->{last_error} = 'no response';
-		return;
-	}
-
-	my $response = Protocol::HAP::HTTP::parse_response($raw);
-	unless ( defined $response ) {
-		$self->{last_error} = 'malformed response';
-		return;
-	}
-
-	return $response;
 }
 
 # $self->request($method, $path, $body?, $headers?):
@@ -268,19 +197,19 @@ sub _parse_response ( $self, $raw )
 #	transport error.
 sub request ( $self, $method, $path, $body = undef, $headers = {} )
 {
-	my $raw = $self->_build_request( $method, $path, $body, $headers );
-	$raw = $self->_encrypt($raw) if $self->{encrypted};
+	my $raw = Protocol::HAP::HTTP::build_request(
+		method  => $method,
+		path    => $path,
+		body    => $body,
+		headers => { Host => "$self->{host}:$self->{port}", %$headers },
+	);
+
+	# The session encrypts after pair-verify and passes the bytes
+	# through before it
+	$raw = $self->{session}->encrypt($raw);
 
 	my $response = $self->_round_trip($raw);
 	return unless defined $response && length $response;
-
-	if ( $self->{encrypted} ) {
-		$response = $self->_decrypt($response);
-		unless ( defined $response ) {
-			$self->{last_error} = 'response decryption failed';
-			return;
-		}
-	}
 
 	# Keep the bytes after the first complete message for
 	# next_event. For example, an event can arrive back-to-back
@@ -293,7 +222,13 @@ sub request ( $self, $method, $path, $body = undef, $headers = {} )
 		$response = substr( $response, 0, $length );
 	}
 
-	return $self->_parse_response($response);
+	my $parsed = Protocol::HAP::HTTP::parse_response($response);
+	unless ( defined $parsed ) {
+		$self->{last_error} = 'malformed response';
+		return;
+	}
+
+	return $parsed;
 }
 
 # --- pairing ------------------------------------------------------------
@@ -514,16 +449,17 @@ sub pair_verify ($self)
 	) or return;
 
 	# Session keys: the controller writes with the Write key and
-	# reads with the Read key (HAP-Encryption.md §1)
-	$self->{encrypt_key} =
-	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
-		'Control-Write-Encryption-Key', 32 );
-	$self->{decrypt_key} =
-	    Protocol::HAP::Crypto->hkdf_sha512( $shared, 'Control-Salt',
-		'Control-Read-Encryption-Key', 32 );
-	$self->{encrypt_count} = 0;
-	$self->{decrypt_count} = 0;
-	$self->{encrypted}     = 1;
+	# reads with the Read key (HAP-Encryption.md §1). The roles
+	# are the accessory's, swapped.
+	$self->{session}->set_encryption(
+		Protocol::HAP::Crypto->hkdf_sha512(
+			$shared,                        'Control-Salt',
+			'Control-Write-Encryption-Key', 32
+		),
+		Protocol::HAP::Crypto->hkdf_sha512(
+			$shared,                       'Control-Salt',
+			'Control-Read-Encryption-Key', 32
+		) );
 
 	return 1;
 }
@@ -534,7 +470,7 @@ sub add_pairing ( $self, $identifier, $ltpk, $permissions = 0 )
 {
 	$self->{last_error} = undef;
 
-	my $result = $self->_tlv_request(
+	$self->_tlv_request(
 		'/pairings',
 		Protocol::HAP::Pairing::kTLVType_State()  => pack( 'C', 1 ),
 		Protocol::HAP::Pairing::kTLVType_Method() => pack( 'C', 3 ),
@@ -552,7 +488,7 @@ sub remove_pairing ( $self, $identifier = undef )
 	$self->{last_error} = undef;
 	$identifier //= $self->{controller_id};
 
-	my $result = $self->_tlv_request(
+	$self->_tlv_request(
 		'/pairings',
 		Protocol::HAP::Pairing::kTLVType_State()      => pack( 'C', 1 ),
 		Protocol::HAP::Pairing::kTLVType_Method()     => pack( 'C', 4 ),
@@ -579,6 +515,15 @@ sub list_pairings ($self)
 		return;
 	}
 
+	# An error TLV means the request failed. Extract it before
+	# the separator split, over the whole body, once.
+	my %whole = Protocol::HAP::TLV::decode( $response->{body} );
+	my $error = $whole{ Protocol::HAP::Pairing::kTLVType_Error() };
+	if ( defined $error ) {
+		$self->{last_error} = unpack( 'C', $error );
+		return;
+	}
+
 	# Split the entries on the zero-length separator. Without
 	# the split, TLV::decode concatenates the repeated
 	# Identifier/PublicKey types.
@@ -587,12 +532,6 @@ sub list_pairings ($self)
 		my %tlv = Protocol::HAP::TLV::decode($entry);
 		my $id  = $tlv{ Protocol::HAP::Pairing::kTLVType_Identifier() };
 		next unless defined $id;
-
-		my $error = $tlv{ Protocol::HAP::Pairing::kTLVType_Error() };
-		if ( defined $error ) {
-			$self->{last_error} = unpack( 'C', $error );
-			return;
-		}
 
 		push @pairings,
 		    {
@@ -608,16 +547,6 @@ sub list_pairings ($self)
 				} // "\x00"
 			),
 		    };
-	}
-
-	# A lone error TLV with no identifiers means the request failed
-	if ( !@pairings ) {
-		my %tlv   = Protocol::HAP::TLV::decode( $response->{body} );
-		my $error = $tlv{ Protocol::HAP::Pairing::kTLVType_Error() };
-		if ( defined $error ) {
-			$self->{last_error} = unpack( 'C', $error );
-			return;
-		}
 	}
 
 	return \@pairings;
@@ -671,7 +600,7 @@ sub next_event ( $self, $timeout = undef )
 		my $bytes = $self->{socket}->sysread( my $chunk, 65535 );
 		return unless $bytes;
 
-		unless ( $self->{encrypted} ) {
+		unless ( $self->is_encrypted ) {
 			$self->{inbuf} .= $chunk;
 			next;
 		}
@@ -689,9 +618,11 @@ sub next_event ( $self, $timeout = undef )
 
 # $self->_drain_frames():
 #	Decrypt and consume every complete frame at the front of the
-#	raw receive buffer. A trailing partial frame stays buffered
-#	for the next read. Return the decrypted plaintext, which can
-#	be empty. Return undef on an authentication failure.
+#	raw receive buffer, one frame at a time through the session,
+#	which advances its counter per consumed frame. A trailing
+#	partial frame stays buffered for the next read. Return the
+#	decrypted plaintext, which can be empty. Return undef on an
+#	authentication failure.
 sub _drain_frames ($self)
 {
 	my $out = '';
@@ -701,14 +632,7 @@ sub _drain_frames ($self)
 		last   if length( $self->{rawbuf} ) < 2 + $length + 16;
 
 		my $frame = substr( $self->{rawbuf}, 0, 2 + $length + 16, '' );
-		my $aad        = substr( $frame, 0,           2 );
-		my $ciphertext = substr( $frame, 2,           $length );
-		my $tag        = substr( $frame, 2 + $length, 16 );
-
-		my $nonce = pack( 'x[4]Q<', $self->{decrypt_count}++ );
-		my $plain =
-		    Protocol::HAP::Crypto->chacha20poly1305_decrypt(
-			$self->{decrypt_key}, $nonce, $ciphertext, $tag, $aad );
+		my $plain = $self->{session}->decrypt($frame);
 		return unless defined $plain;
 		$out .= $plain;
 	}

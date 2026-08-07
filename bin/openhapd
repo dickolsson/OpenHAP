@@ -16,7 +16,7 @@ use Fugu::Sandbox;
 use Fugu::Signal;
 use App::OpenHAP::Devices;
 use App::OpenHAP::Host;
-use Protocol::HAP::SetupCode qw(normalize_setup_code);
+use Protocol::HAP::SetupCode qw(validate_setup_code);
 
 # Default configuration
 my $config_file  = '/etc/openhapd.conf';
@@ -43,13 +43,13 @@ if ( -f $config_file && !$config->load ) {
 
 # Refuse an unusable setup code here, before the daemonize step. The
 # engine requires a valid code, and it must not fail with a raw die
-# after the process left the terminal. The old server substituted the
-# default code silently, which had the operator serve a code they did
-# not choose.
+# after the process left the terminal. validate_setup_code also
+# rejects the trivial codes that the HAP specification disallows.
 my $config_pin = $config->get( 'hap_pin', '1995-1018' );
-unless ( defined normalize_setup_code($config_pin) ) {
+unless ( validate_setup_code($config_pin) ) {
 	print STDERR "openhapd: hap_pin \"$config_pin\" is not a valid"
-	    . " setup code: use 8 digits, for example 1995-1018\n";
+	    . " setup code: use 8 digits, not a trivial pattern, for"
+	    . " example 1995-1018\n";
 	exit 1;
 }
 
@@ -298,7 +298,6 @@ Fugu::Sandbox->unveil_lock;
 #	wpath	store writes, the daemon log
 #	cpath	store file creation and removal, make_path
 #	fattr	chmod 0600 on stored key material (the store)
-#	flock	store locking
 #	inet	the HAP listener, MQTT connects and reconnects
 #	dns	resolving mqtt_host when it is a name
 #	unix	reconnecting to mdnsd. update_txt withdraws and
@@ -308,7 +307,7 @@ Fugu::Sandbox->unveil_lock;
 #
 # proc, exec and prot_exec are deliberately absent. The daemon spawns
 # nothing, and step 1 loaded every shared object before this line.
-my $promises = 'stdio rpath wpath cpath fattr flock inet dns unix';
+my $promises = 'stdio rpath wpath cpath fattr inet dns unix';
 Fugu::Sandbox->pledge( promises => $promises );
 $log->info( 'Pledged: %s', $promises )
     if Fugu::Sandbox->is_supported;

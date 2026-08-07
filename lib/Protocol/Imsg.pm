@@ -118,8 +118,8 @@ sub next_message ($self)
 	return if $self->{failed};
 	return if length( $self->{buffer} ) < HEADER_SIZE;
 
-	my ( $type, $len, $peerid, $pid ) =
-	    _decode_header( substr( $self->{buffer}, 0, HEADER_SIZE ) );
+	my ( $type, $len, $peerid, $pid ) = unpack( HEADER_TEMPLATE,
+		substr( $self->{buffer}, 0, HEADER_SIZE ) );
 	$len &= ~FD_MARK;
 
 	if ( $len < HEADER_SIZE || $len > MAX_IMSGSIZE ) {
@@ -170,14 +170,6 @@ sub reset ($self)
 sub _encode_header ( $type, $len, $peerid, $pid )
 {
 	return pack( HEADER_TEMPLATE, $type, $len, $peerid, $pid );
-}
-
-# _decode_header($bytes):
-#	Decode one header. The function returns ($type, $len, $peerid,
-#	$pid).
-sub _decode_header ($bytes)
-{
-	return unpack( HEADER_TEMPLATE, $bytes );
 }
 
 1;

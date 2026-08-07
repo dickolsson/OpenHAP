@@ -7,9 +7,10 @@ Protocol::HAP::Controller - a blocking HAP controller client
     use Protocol::HAP::Controller;
 
     my $controller = Protocol::HAP::Controller->new(
-        host => '127.0.0.1',
-        port => 51827,
-        pin  => '123-45-678',
+        host          => '127.0.0.1',
+        port          => 51827,
+        pin           => '123-45-678',
+        controller_id => 'my-controller',
     );
 
     $controller->pair_setup  or die $controller->last_error;
@@ -32,7 +33,10 @@ directly instead.
 The constructor takes C<host>, C<port>, C<pin>, C<controller_id>,
 C<timeout>, an optional C<logger> (default: the null logger), and an
 optional C<transport> code reference that replaces the socket with an
-in-process byte exchange.
+in-process byte exchange. C<controller_id> is required and C<new>
+dies without it: the id goes into the pair-setup signature, so the
+library must not invent one. C<timeout> is the socket read timeout in
+seconds; the default is 5.
 
 =head1 EXAMPLE
 
@@ -44,9 +48,10 @@ controller. Run an unpaired C<openhapd> locally, then:
     use Protocol::HAP::Controller;
 
     my $controller = Protocol::HAP::Controller->new(
-        host => '127.0.0.1',
-        port => 51827,
-        pin  => '1995-1018',
+        host          => '127.0.0.1',
+        port          => 51827,
+        pin           => '1995-1018',
+        controller_id => 'my-controller',
     );
 
     $controller->pair_setup

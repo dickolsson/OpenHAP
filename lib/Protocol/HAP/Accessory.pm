@@ -3,6 +3,8 @@ use v5.36;
 package Protocol::HAP::Accessory;
 
 use Protocol::HAP;
+use Protocol::HAP::Service;
+use Protocol::HAP::Characteristic;
 
 sub new ( $class, %args )
 {
@@ -26,75 +28,39 @@ sub new ( $class, %args )
 
 sub _add_accessory_info_service ($self)
 {
-
-	require Protocol::HAP::Service;
-	require Protocol::HAP::Characteristic;
-
 	my $info = Protocol::HAP::Service->new(
 		type   => 'AccessoryInformation',
 		iid    => 1,
 		logger => $self->{logger},
 	);
 
-	$info->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			type   => 'Identify',
-			iid    => 2,
-			format => 'bool',
-			perms  => ['pw'],
-			logger => $self->{logger},
-			on_set => sub { $self->identify() },
-		) );
+	# One row per characteristic: type, iid, format, perms, value.
+	# Identify is write-only and carries no value.
+	my @rows = (
+		[ 'Identify',     2, 'bool',   ['pw'], undef ],
+		[ 'Manufacturer', 3, 'string', ['pr'], $self->{manufacturer} ],
+		[ 'Model',        4, 'string', ['pr'], $self->{model} ],
+		[ 'Name',         5, 'string', ['pr'], $self->{name} ],
+		[ 'SerialNumber', 6, 'string', ['pr'], $self->{serial} ],
+		[
+			'FirmwareRevision', 7,
+			'string',           ['pr'],
+			$self->{firmware_revision}
+		],
+	);
 
-	$info->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			type   => 'Manufacturer',
-			iid    => 3,
-			format => 'string',
-			perms  => ['pr'],
-			logger => $self->{logger},
-			value  => $self->{manufacturer},
-		) );
-
-	$info->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			type   => 'Model',
-			iid    => 4,
-			format => 'string',
-			perms  => ['pr'],
-			logger => $self->{logger},
-			value  => $self->{model},
-		) );
-
-	$info->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			type   => 'Name',
-			iid    => 5,
-			format => 'string',
-			perms  => ['pr'],
-			logger => $self->{logger},
-			value  => $self->{name},
-		) );
-
-	$info->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			type   => 'SerialNumber',
-			iid    => 6,
-			format => 'string',
-			perms  => ['pr'],
-			logger => $self->{logger},
-			value  => $self->{serial},
-		) );
-
-	$info->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			type   => 'FirmwareRevision',
-			iid    => 7,
-			format => 'string',
-			perms  => ['pr'],
-			logger => $self->{logger},
-			value  => $self->{firmware_revision},
-		) );
+	for my $row (@rows) {
+		my ( $type, $iid, $format, $perms, $value ) = @$row;
+		$info->add_characteristic(
+			Protocol::HAP::Characteristic->new(
+				type   => $type,
+				iid    => $iid,
+				format => $format,
+				perms  => $perms,
+				logger => $self->{logger},
+				value  => $value,
+			) );
+	}
 
 	push @{ $self->{services} }, $info;
 }
@@ -112,7 +78,6 @@ sub get_services ($self)
 sub get_service ( $self, $type )
 {
 	# Look up the full UUID when the caller gives a short name
-	require Protocol::HAP::Service;
 	my $target_uuid = $Protocol::HAP::Service::SERVICE_TYPES{$type}
 	    // $type;
 
@@ -144,12 +109,6 @@ sub to_json ($self)
 		aid      => $self->{aid},
 		services => \@services,
 	};
-}
-
-sub identify ($self)
-{
-	# Subclasses override this method to add the identify function.
-	# For example, blink an LED or sound a beep.
 }
 
 sub add_event_callback ( $self, $callback )

@@ -59,10 +59,10 @@ subtest '[HAP-TLV8 §8][HAP-TLV8 §8.2] 384-byte SRP key splits FF/81' =>
 };
 
 subtest '[HAP-TLV8 §3] separators between list items' => sub {
-	my $encoded = Protocol::HAP::TLV::encode_separator();
+	my $encoded = Protocol::HAP::TLV::encode(
+		Protocol::HAP::Pairing::kTLVType_Separator(), '' );
 	is( unpack( 'H*', $encoded ), 'ff00',
 		'separator is type 0xFF with zero length' );
-	is( Protocol::HAP::TLV::kTLVType_Separator(), 0xFF, 'separator type 0xFF' );
 };
 
 subtest '[HAP-TLV8 §4] value encodings' => sub {

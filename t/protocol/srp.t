@@ -93,7 +93,7 @@ use_ok('Protocol::HAP::SRP');
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
 
     my $salt = $srp->generate_salt();
-    my $v = $srp->compute_verifier($salt, '123-45-678');
+    my $v = $srp->compute_verifier($salt);
 
     ok(defined $v, 'Verifier computed');
     isa_ok($v, 'Math::BigInt', 'Verifier is BigInt');
@@ -105,7 +105,7 @@ use_ok('Protocol::HAP::SRP');
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
 
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
+    $srp->compute_verifier($salt);
 
     my $B = $srp->generate_server_public();
 
@@ -119,7 +119,7 @@ use_ok('Protocol::HAP::SRP');
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
 
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
+    $srp->compute_verifier($salt);
     $srp->generate_server_public();
 
     # Create a dummy client public key (32 bytes)
@@ -135,7 +135,7 @@ use_ok('Protocol::HAP::SRP');
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
 
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
+    $srp->compute_verifier($salt);
     $srp->generate_server_public();
 
     # Test with A = 0. The module must reject it.
@@ -153,52 +153,20 @@ use_ok('Protocol::HAP::SRP');
         '[HAP-Pairing §2.6] session key rejected when A mod N == 0');
 }
 
-# Test get_session_key
+# Test session_key
 {
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
 
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
+    $srp->compute_verifier($salt);
     $srp->generate_server_public();
 
     my $A = 'A' x 32;
     $srp->compute_session_key($A);
 
-    my $K = $srp->get_session_key();
+    my $K = $srp->session_key;
     ok(defined $K, 'Session key retrieved');
     is(length($K), 64, 'Retrieved session key is 64 bytes');
-}
-
-# Test proof generation dies without verify_client_proof
-{
-    my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
-
-    my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
-    $srp->generate_server_public();
-    my $A = 'A' x 32;
-    $srp->compute_session_key($A);
-
-    # generate_server_proof must die without a verify_client_proof call
-    eval {
-        $srp->generate_server_proof();
-    };
-    like($@, qr/M1 not set/, 'generate_server_proof dies without verify_client_proof');
-}
-
-# Test proof generation dies without session key
-{
-    my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
-
-    my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
-    $srp->generate_server_public();
-
-    # generate_server_proof must die without a compute_session_key call
-    eval {
-        $srp->generate_server_proof();
-    };
-    like($@, qr/K not set|M1 not set/, 'generate_server_proof dies without session key');
 }
 
 done_testing();
