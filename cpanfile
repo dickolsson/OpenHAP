@@ -23,9 +23,13 @@ on 'test' => sub {
 	requires 'Perl::Tidy';
 };
 
-# Development dependencies for FuguVM
+# Development dependencies for FuguVM. Fugu::Proxy uses HTTP::Request
+# and HTTP::Response, which the HTTP::Message distribution provides,
+# and URI.
 on 'develop' => sub {
 	requires 'HTTP::Daemon';
+	requires 'HTTP::Message';
 	requires 'LWP::UserAgent';
 	requires 'Net::SSH2';
+	requires 'URI';
 };

@@ -20,4 +20,6 @@ develop pkg telnet
 develop pkg lowdown
 develop pkg mandoc
 develop cpan HTTP::Daemon
+develop cpan HTTP::Message
 develop cpan LWP::UserAgent
+develop cpan URI
