@@ -28,6 +28,8 @@ Tooling tests are named after what they cover — `t/scripts/deps.t` for
 `scripts/deps` — and drive it as a subprocess rather than loading a module, so
 they assert on exit status and output. `t/scripts/conventions.t` covers the
 directory as a whole: exec bits, shebangs, and that every Perl script compiles.
+`t/scripts/namespaces.t` runs two sweeps over every tracked file: retired names
+from the namespace realignment, and banned compatibility vocabulary.
 
 `t/ci/` is the exception to driving anything: nothing under `.github/` runs
 outside a runner, so these tests read the workflows and composite actions as
