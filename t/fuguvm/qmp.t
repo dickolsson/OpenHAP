@@ -33,8 +33,6 @@ sub paired_qmp ()
 {
 	my $qmp = App::FuguVM::QMP->new('/tmp/test-qmp.sock');
 	ok( defined $qmp, 'QMP object created' );
-	is( $qmp->socket_path, '/tmp/test-qmp.sock', 'Socket path set correctly' );
-	ok( !$qmp->is_available, 'the socket file is absent' );
 }
 
 # Test connection failure to non-existent socket

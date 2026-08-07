@@ -74,34 +74,4 @@ ok(-x App::FuguVM::Miniroot::_ftp_script(),
     like($path, qr/miniroot78\.img$/, 'path ends with correct filename');
 }
 
-# Test list returns empty for empty cache
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = App::FuguVM::Miniroot->new($tmpdir);
-    
-    my $list = $image->list;
-    is(ref $list, 'ARRAY', 'list returns array ref');
-    is(scalar @$list, 0, 'list is empty for empty cache');
-}
-
-# Test list finds cached images
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $image = App::FuguVM::Miniroot->new($tmpdir);
-    
-    # Create fake cached images in the proxy cache structure
-    for my $ver (qw(7.7 7.8)) {
-        (my $shortver = $ver) =~ s/\.//;
-        my $cache_path = "$tmpdir/proxy/cdn.openbsd.org/pub/OpenBSD/$ver/arm64";
-        make_path($cache_path);
-        open my $fh, '>', "$cache_path/miniroot$shortver.img";
-        close $fh;
-    }
-    
-    my $list = $image->list;
-    is(scalar @$list, 2, 'list finds both images');
-    is($list->[0]{version}, '7.8', 'latest version first');
-    is($list->[1]{version}, '7.7', 'older version second');
-}
-
 done_testing();

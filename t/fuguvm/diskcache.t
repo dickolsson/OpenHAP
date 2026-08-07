@@ -35,9 +35,8 @@ my %CONFIG = (
 	my $tmp   = tempdir( CLEANUP => 1 );
 	my $cache = App::FuguVM::DiskCache->new($tmp);
 
-	is( $cache->cache_dir, $tmp, 'cache_dir is the configured path' );
 	is( $cache->installed_dir, "$tmp/installed",
-		'entries live under installed/' );
+		'entries live under installed/ in the configured path' );
 	is( $cache->entry_dir('k'), "$tmp/installed/k", 'entry_dir' );
 	is( $cache->base_path('k'), "$tmp/installed/k/base.qcow2",
 		'base_path' );
@@ -47,7 +46,7 @@ my %CONFIG = (
 {
 	local $ENV{HOME} = '/home/somebody';
 	my $cache = App::FuguVM::DiskCache->new('~/.cache/fuguvm');
-	is( $cache->cache_dir, '/home/somebody/.cache/fuguvm',
+	is( $cache->installed_dir, '/home/somebody/.cache/fuguvm/installed',
 		'leading ~ is expanded' );
 }
 
@@ -264,7 +263,7 @@ SKIP: {
 	ok( defined $base, 'base image published' );
 
 	my $disk = App::FuguVM::Disk->new("$tmp/state");
-	my $path = $disk->create( 'default', undef, $base, 'qcow2' );
+	my $path = $disk->create( 'default', undef, $base );
 	ok( defined $path, 'overlay created without an explicit size' );
 
 	is( $disk->backing_file('default'),
@@ -328,7 +327,7 @@ SKIP: {
 
 	# A working overlay, the shape a snapshot comes from
 	my $disk = App::FuguVM::Disk->new("$tmp/state");
-	$disk->create( 'default', undef, $base, 'qcow2' );
+	$disk->create( 'default', undef, $base );
 	my $disk_path = $disk->path('default');
 
 	is( $cache->snapshot_lookup( $key, 'deps' ),
@@ -358,7 +357,7 @@ SKIP: {
 	# make the snapshot its own parent. It must not stack chains
 	# without bound.
 	unlink $disk_path;
-	$disk->create( 'default', undef, $path, 'qcow2' );
+	$disk->create( 'default', undef, $path );
 	is( $disk->backing_file('default'),
 		$path, 'the working disk now hangs off the snapshot' );
 

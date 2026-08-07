@@ -17,7 +17,9 @@ L<Fugu::CLI>.
 Each subcommand declares its own options in one table beside its body,
 so no command repeats a C<Getopt::Long> block. C<_prepare> applies the
 global options and loads the project before a body runs, and C<init>
-is the one command that runs without a project.
+is the one command that runs without a project. The five lifecycle
+commands have no body of their own: their table entry names the
+L<App::FuguVM::Guest> verb, and C<run> calls it on the loaded VM.
 
 Command data goes to standard output; a diagnostic goes to the logger,
 which writes to standard error. Thus C<fuguvm snapshot list --names>
@@ -33,10 +35,7 @@ These are the codes that mean something to a VM:
 
     4   the named VM is not in the configuration
     5   the VM runs and the command needs it stopped
-    6   the VM does not run and the command needs it running
-    8   an SSH operation failed
     9   an expect script failed
-    10  a download failed
     11  the named snapshot does not exist
 
 Code 11 is scriptable: a script that runs C<snapshot restore ||

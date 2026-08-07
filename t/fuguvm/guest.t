@@ -28,7 +28,6 @@ use_ok('App::FuguVM::Guest');
 	is(App::FuguVM::Guest::EXIT_SUCCESS(), 0, 'EXIT_SUCCESS is 0');
 	is(App::FuguVM::Guest::EXIT_ERROR(), 1, 'EXIT_ERROR is 1');
 	is(App::FuguVM::Guest::EXIT_VM_RUNNING(), 5, 'EXIT_VM_RUNNING is 5');
-	is(App::FuguVM::Guest::EXIT_VM_NOT_RUNNING(), 6, 'EXIT_VM_NOT_RUNNING is 6');
 	is(App::FuguVM::Guest::EXIT_TIMEOUT(), 7, 'EXIT_TIMEOUT is 7');
 }
 
@@ -80,7 +79,7 @@ use_ok('App::FuguVM::Guest');
 {
 	my $vm = App::FuguVM::Guest->new(config => { cache_dir => '/var/cache/fuguvm' });
 	is($vm->_cache_dir, '/var/cache/fuguvm', 'configured cache_dir wins');
-	is($vm->_image_cache->cache_dir, '/var/cache/fuguvm',
+	is($vm->_image_cache->installed_dir, '/var/cache/fuguvm/installed',
 	    'the image cache uses it too');
 
 	local $ENV{HOME} = '/home/nobody';

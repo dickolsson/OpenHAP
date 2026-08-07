@@ -72,14 +72,6 @@ through its C<-pidfile> option; the proxy supervisor owns the second.
 
 The QEMU process.
 
-=head2 set_proxy_pid, get_proxy_pid, clear_proxy_pid, is_proxy_running
-
-The proxy child.
-
-=head2 set_proxy_port, get_proxy_port, clear_proxy_port
-
-The port the proxy listens on.
-
 =head2 disk_path, disk_exists
 
 The working disk of the VM.
@@ -93,7 +85,7 @@ its own disk and never attaches the miniroot again.
 
 The password that the installer set. The store writes at mode 0600.
 
-=head2 is_ssh_key_installed, mark_ssh_key_installed, get_installed_ssh_pubkey, ssh_key_matches
+=head2 mark_ssh_key_installed, get_installed_ssh_pubkey
 
 Which SSH public key the guest holds. The state records the key
 itself, not only that there is one. Thus a key that changed in the

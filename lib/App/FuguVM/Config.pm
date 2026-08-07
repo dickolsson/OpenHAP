@@ -208,9 +208,4 @@ sub ssh_pubkey ($self)
 	return $self->_setting('ssh_pubkey');
 }
 
-sub project_root ($self)
-{
-	return $self->{project_root};
-}
-
 1;

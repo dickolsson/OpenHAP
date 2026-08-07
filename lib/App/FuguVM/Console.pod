@@ -34,11 +34,11 @@ operator who waits needs to see the progress while it happens.
 
 =head2 new
 
-    App::FuguVM::Console->new(host => ..., port => ..., timeout => ...)
+    App::FuguVM::Console->new(host => ..., port => ...)
 
-The host and port name the serial console. The default timeout is 180
-seconds, or C<FUGUVM_TIMEOUT> when the environment sets it. The
-timeout travels to the script in that variable.
+The host and port name the serial console. Each script reads its
+timeout from C<FUGUVM_TIMEOUT> in the environment and carries its own
+default.
 
 =head2 script_path
 

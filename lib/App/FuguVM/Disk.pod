@@ -9,7 +9,7 @@ App::FuguVM::Disk - the qcow2 disk of a virtual machine
     my $disk = App::FuguVM::Disk->new($state_dir);
 
     $disk->create('default', '8G');
-    $disk->create('default', undef, $base_image, 'qcow2');   # an overlay
+    $disk->create('default', undef, $base_image);   # an overlay
 
     my $info = $disk->info('default');
     my $base = $disk->backing_file('default');
@@ -24,17 +24,17 @@ A disk lives at F<E<lt>state_dirE<gt>/E<lt>nameE<gt>/disk.qcow2>.
 
 =head1 METHODS
 
-=head2 new, path, disk_exists, remove
+=head2 new, path
 
 C<new> takes the directory that holds every VM's disk.
 
 =head2 create
 
-    $disk->create($name, $size, $backing_image, $backing_format)
+    $disk->create($name, $size, $backing_image)
 
 Create the disk. The size may be C<undef> for an overlay, which then
-inherits the virtual size of its backing image. The backing format is
-C<qcow2> for a cached base image or a snapshot, and C<raw> otherwise.
+inherits the virtual size of its backing image. Every backing image is
+a qcow2: a cached base image or a snapshot.
 
 The method returns the path unchanged when the file already exists.
 Thus a caller that replaces a disk with an overlay unlinks it first.

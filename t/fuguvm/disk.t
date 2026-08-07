@@ -25,23 +25,6 @@ use_ok('App::FuguVM::Disk');
     like($path, qr/test.*disk\.qcow2$/, 'path includes VM name and disk.qcow2');
 }
 
-# Test exists returns false for non-existent disk
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = App::FuguVM::Disk->new($tmpdir);
-    
-    ok(!$disk->disk_exists('test'), 'disk_exists returns false for missing disk');
-}
-
-# Test remove on non-existent disk
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $disk = App::FuguVM::Disk->new($tmpdir);
-    
-    my $result = $disk->remove('test');
-    ok($result, 'remove returns true for non-existent disk');
-}
-
 # Skip tests that require qemu-img
 SKIP: {
     my $has_qemu = `which qemu-img 2>/dev/null`;
@@ -61,15 +44,15 @@ SKIP: {
     is($disk->backing_file('missing'), undef,
 	'backing_file is undef for a missing disk');
 
-    # Overlays: no size, and a qcow2 (not raw) backing format
+    # Overlays: no size, and always a qcow2 backing format
     my $overlay_dir = tempdir(CLEANUP => 1);
     my $overlay = App::FuguVM::Disk->new($overlay_dir);
-    my $opath = $overlay->create('child', undef, $path, 'qcow2');
+    my $opath = $overlay->create('child', undef, $path);
     ok(defined $opath, 'overlay created without an explicit size');
 
     my $info = $overlay->info('child');
     is($info->{'backing-filename-format'}, 'qcow2',
-	'backing format is passed through, not hardwired to raw');
+	'the backing format is qcow2, not raw');
     is($overlay->backing_file('child'), $path,
 	'backing_file resolves the parent image');
     is($info->{'virtual-size'}, $disk->info('test')->{'virtual-size'},
@@ -100,7 +83,7 @@ SKIP: {
 
     my $overlay_dir = tempdir(CLEANUP => 1);
     my $overlay = App::FuguVM::Disk->new($overlay_dir);
-    $overlay->create('kid', undef, $parent, 'qcow2');
+    $overlay->create('kid', undef, $parent);
 
     # qemu-io holds the image, and its lock, while its stdin is open.
     my $spawned = open(my $io, '|-', "qemu-io '$path' >/dev/null 2>&1");

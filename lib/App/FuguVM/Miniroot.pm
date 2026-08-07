@@ -153,50 +153,6 @@ sub url ( $self, $version )
 	    . "/$filename";
 }
 
-# $self->list:
-#	List all the cached miniroot images. Return an arrayref of
-#	{ version, filename, path }.
-sub list ($self)
-{
-	my @images;
-
-	# The listing walks the mirror tree that the cache built. The
-	# root comes from a cache path, so this module still owns one
-	# copy of the layout and not two.
-	my $base_path = $self->_release_root;
-	return \@images if !defined $base_path || !-d $base_path;
-
-	# Scan for version directories
-	opendir my $dh, $base_path or return \@images;
-	while ( my $version = readdir $dh ) {
-		next if $version =~ /^\./;
-		next if !-d "$base_path/$version";
-
-		my $arch_path = "$base_path/$version/" . ARCH;
-		next if !-d $arch_path;
-
-		# Look for miniroot images
-		opendir my $arch_dh, $arch_path or next;
-		while ( my $file = readdir $arch_dh ) {
-			if ( $file =~ /^miniroot(\d+)\.img$/ ) {
-				push @images,
-				    {
-					version  => $version,
-					filename => $file,
-					path     => "$arch_path/$file",
-				    };
-			}
-		}
-		closedir $arch_dh;
-	}
-	closedir $dh;
-
-	# Sort by version in descending order
-	@images = sort { $b->{version} cmp $a->{version} } @images;
-
-	return \@images;
-}
-
 # $self->_image_filename($version):
 #	Make the miniroot filename for the version, for example
 #	"miniroot78.img".
@@ -216,20 +172,6 @@ sub _image_filename ( $self, $version )
 sub _image_path ( $self, $version )
 {
 	return $self->_cache->cache_path( $self->url($version) );
-}
-
-# $self->_release_root:
-#	Return the directory that holds every cached OpenBSD release,
-#	derived from where the cache puts a release URL.
-sub _release_root ($self)
-{
-	my $sample = $self->_cache->cache_path(
-		'https://' . CDN_HOST . '/pub/OpenBSD/marker' );
-	return if !defined $sample;
-
-	$sample =~ s{/marker$}{};
-
-	return $sample;
 }
 
 # $self->_cache:

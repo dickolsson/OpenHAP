@@ -455,18 +455,6 @@ is(App::FuguVM::Config::DEFAULT_VERSION(), '7.8', 'DEFAULT_VERSION is 7.8');
     is($vm->{memory}, 4096, 'project VM config overrides global');
 }
 
-# Test project_root accessor
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    make_path("$tmpdir/.fuguvm/vms");
-    
-    open my $fh, '>', "$tmpdir/.fuguvmrc";
-    close $fh;
-    
-    my $config = App::FuguVM::Config->new($tmpdir);
-    is($config->project_root, $tmpdir, 'project_root accessor');
-}
-
 # Test VM block with unquoted name
 {
     my $tmpdir = tempdir(CLEANUP => 1);

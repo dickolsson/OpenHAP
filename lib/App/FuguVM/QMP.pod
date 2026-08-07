@@ -28,11 +28,9 @@ C<qmp_capabilities> succeeds. C<open_connection> does both.
 
 =head1 METHODS
 
-=head2 new, socket_path, is_available
+=head2 new
 
-C<new> takes the socket path and opens nothing. C<is_available>
-reports if the socket file is there; QEMU creates it at startup, so
-its absence means the VM has not started.
+C<new> takes the socket path and opens nothing.
 
 =head2 open_connection, disconnect
 
@@ -67,7 +65,7 @@ stop a VM that is up.
 
 =head1 SEE ALSO
 
-L<Fugu::JSONSocket>, L<App::FuguVM::QGA>, L<App::FuguVM::Guest>
+L<Fugu::JSONSocket>, L<App::FuguVM::Guest>
 
 =head1 AUTHOR
 

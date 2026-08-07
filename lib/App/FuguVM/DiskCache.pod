@@ -11,7 +11,7 @@ App::FuguVM::DiskCache - cache of installed OpenBSD disks
 
     # Boot from a previous installation
     if (my $hit = $cache->lookup($key)) {
-        $disk->create($name, undef, $hit->{base}, 'qcow2');
+        $disk->create($name, undef, $hit->{base});
         $state->set_root_password($hit->{meta}{root_password});
     }
 
@@ -121,8 +121,6 @@ consistent.
 
 The constructor creates a cache over C<$cache_dir>. It expands a
 C<~> at the start of the path.
-
-=item cache_dir
 
 =item installed_dir
 

@@ -25,17 +25,12 @@ use v5.36;
 
 package App::FuguVM::Guest;
 
-use File::Path  qw(make_path);
-use POSIX       qw(setsid);
-use Time::HiRes qw(usleep);
-
 use App::FuguVM::Miniroot;
 use App::FuguVM::DiskCache;
 use App::FuguVM::Disk;
 use App::FuguVM::Console;
 use App::FuguVM::Proxy;
 use App::FuguVM::QMP;
-use App::FuguVM::QGA;
 
 use Fugu::Random;
 use Fugu::Process;
@@ -43,11 +38,10 @@ use Fugu::SSH;
 use Fugu::Timeout;
 
 use constant {
-	EXIT_SUCCESS        => 0,
-	EXIT_ERROR          => 1,
-	EXIT_VM_RUNNING     => 5,
-	EXIT_VM_NOT_RUNNING => 6,
-	EXIT_TIMEOUT        => 7,
+	EXIT_SUCCESS    => 0,
+	EXIT_ERROR      => 1,
+	EXIT_VM_RUNNING => 5,
+	EXIT_TIMEOUT    => 7,
 
 	# Fixed configuration for OpenBSD arm64 guests
 	QEMU_BINARY    => 'qemu-system-aarch64',
@@ -275,23 +269,9 @@ sub up ($self)
 		}
 		$log->info("Started $config->{name} (PID: $pid)");
 
-		# Wait for SSH with password authentication
-		$log->info("Waiting for SSH...");
-		if ( !$self->_wait_ssh_password( $root_password, 120 ) ) {
-			$log->error("Timeout waiting for SSH");
-			return EXIT_TIMEOUT;
-		}
-
 		# Install the SSH authorized key for future key-based
 		# authentication
-		if ( !$self->_install_ssh_key($root_password) ) {
-			$log->error("Failed to install SSH key");
-			return EXIT_ERROR;
-		}
-		$log->info("SSH key installed");
-
-		$log->info("VM ready");
-		return EXIT_SUCCESS;
+		return $self->_complete_ssh_setup;
 	}
 
 	# The VM is installed. Check if the SSH key must be installed or
@@ -381,7 +361,7 @@ sub _cache_restore ( $self, $cache, $key )
 
 	my $disk = App::FuguVM::Disk->new( $state->state_dir );
 	my $path =
-	    $disk->create( $config->{name}, undef, $hit->{base}, 'qcow2' );
+	    $disk->create( $config->{name}, undef, $hit->{base} );
 	if ( !defined $path ) {
 		$log->warning(
 			"Cannot overlay cached image $key, installing instead");
@@ -462,7 +442,7 @@ sub _reparent_disk ( $self, $base )
 	# Disk::create returns early on an existing path. Thus the
 	# rename above is what makes this call create the overlay.
 	my $disk = App::FuguVM::Disk->new( $state->state_dir );
-	my $path = $disk->create( $config->{name}, undef, $base, 'qcow2' );
+	my $path = $disk->create( $config->{name}, undef, $base );
 	if ( !defined $path ) {
 		rename $saved, $disk_path
 		    or $log->error("Cannot restore $disk_path: $!");
@@ -475,40 +455,12 @@ sub _reparent_disk ( $self, $base )
 
 sub down ($self)
 {
-	my $state  = $self->{state};
-	my $log    = $self->{log};
-	my $config = $self->{config};
-
 	# Stop the proxy if it runs
 	if ( $self->_stop_proxy ) {
-		$log->info("Proxy stopped");
+		$self->{log}->info("Proxy stopped");
 	}
 
-	if ( !$self->_is_running ) {
-		$log->info("VM '$config->{name}' is not running");
-		return EXIT_SUCCESS;
-	}
-
-	$log->info("Shutting down VM...");
-
-	# Try a graceful shutdown with a filesystem sync
-	if ( $self->_graceful_shutdown ) {
-		$state->mark_clean_shutdown;
-		$state->clear_vm_pid;
-		$log->info("VM stopped");
-		return EXIT_SUCCESS;
-	}
-
-	# Emergency force quit. The filesystem can be corrupt.
-	$log->warning(
-		"Graceful shutdown failed, force stopping (risk of corruption)"
-	);
-	$state->mark_unclean_shutdown;
-	$self->_force_stop;
-	$state->clear_vm_pid;
-	$log->info("VM stopped");
-
-	return EXIT_SUCCESS;
+	return $self->stop;
 }
 
 sub destroy ($self)
@@ -589,11 +541,7 @@ sub stop ( $self, $force = 0 )
 	if ($force) {
 		$log->warning(
 			"Force stopping VM (filesystem may be corrupted)");
-		$state->mark_unclean_shutdown;
-		$self->_force_stop;
-		$state->clear_vm_pid;
-		$log->info("VM stopped");
-		return EXIT_SUCCESS;
+		return $self->_stop_unclean;
 	}
 
 	# Try a graceful shutdown with a filesystem sync
@@ -609,10 +557,21 @@ sub stop ( $self, $force = 0 )
 	$log->warning(
 "Graceful shutdown timed out, force stopping (risk of corruption)"
 	);
+	return $self->_stop_unclean;
+}
+
+# $self->_stop_unclean:
+#	Force-stop the VM and record the unclean shutdown, so the next
+#	'up' checks the disk.
+sub _stop_unclean ($self)
+{
+	my $state = $self->{state};
+
 	$state->mark_unclean_shutdown;
 	$self->_force_stop;
 	$state->clear_vm_pid;
-	$log->info("VM stopped");
+	$self->{log}->info("VM stopped");
+
 	return EXIT_SUCCESS;
 }
 
@@ -651,11 +610,6 @@ sub is_running ($self)
 	return $self->_is_running;
 }
 
-sub pid ($self)
-{
-	return $self->{state}->get_vm_pid;
-}
-
 sub ssh_port ($self)
 {
 	return $self->{config}{ssh_port};
@@ -666,34 +620,18 @@ sub console_port ($self)
 	return $self->{config}{console_port};
 }
 
-# Wait operations
-sub wait_ssh ( $self, $timeout = 120, $sig = undef )
+# $self->wait_ssh($timeout, $password):
+#	Wait for SSH to become available. Without a password, the
+#	connection uses the SSH agent for authentication. The initial
+#	installation gives the root password, because the SSH key is
+#	not in yet.
+sub wait_ssh ( $self, $timeout = 120, $password = undef )
 {
-	my $config = $self->{config};
-
-	# The connection uses the SSH agent for authentication
 	my $ssh = Fugu::SSH->new(
 		host => '127.0.0.1',
-		port => $config->{ssh_port},
+		port => $self->{config}{ssh_port},
 		user => 'root',
-	);
-
-	return $ssh->wait_available($timeout);
-}
-
-# $self->_wait_ssh_password($password, $timeout):
-#	Wait for SSH to become available with password authentication.
-#	The initial installation uses this method before the SSH key
-#	goes in.
-sub _wait_ssh_password ( $self, $password, $timeout = 120 )
-{
-	my $config = $self->{config};
-
-	my $ssh = Fugu::SSH->new(
-		host     => '127.0.0.1',
-		port     => $config->{ssh_port},
-		user     => 'root',
-		password => $password,
+		( defined $password ? ( password => $password ) : () ),
 	);
 
 	return $ssh->wait_available($timeout);
@@ -746,7 +684,7 @@ sub _complete_ssh_setup ($self)
 
 	# Wait for SSH with password authentication
 	$log->info("Waiting for SSH...");
-	if ( !$self->_wait_ssh_password( $root_password, 120 ) ) {
+	if ( !$self->wait_ssh( 120, $root_password ) ) {
 		$log->error("Timeout waiting for SSH");
 		return EXIT_TIMEOUT;
 	}
@@ -811,11 +749,8 @@ sub _install_ssh_key ( $self, $password )
 	return 1;
 }
 
-# P1: Graceful shutdown with filesystem sync
-# The method tries these procedures in order of reliability:
-# 1. SSH sync + ACPI powerdown (sync through SSH, powerdown through QMP)
-# 2. QGA guest-shutdown (if available)
-# 3. Direct ACPI powerdown
+# Graceful shutdown with a filesystem sync: sync through SSH, then
+# power off through the ACPI power button, and report the result.
 sub _graceful_shutdown ($self)
 {
 	my $config = $self->{config};
@@ -844,19 +779,6 @@ sub _graceful_shutdown ($self)
 	if ( $self->_qmp_powerdown && $self->_wait_exit(60) ) {
 		$log->info("Shutdown via ACPI powerdown");
 		return 1;
-	}
-
-	# Do a guest-agent shutdown if the agent is available.
-	my $qga = $self->_qga_connect;
-	if ($qga) {
-		$qga->sync;
-		$qga->shutdown('powerdown');
-		$qga->disconnect;
-
-		if ( $self->_wait_exit(60) ) {
-			$log->info("Shutdown via QEMU Guest Agent");
-			return 1;
-		}
 	}
 
 	return 0;
@@ -939,19 +861,6 @@ sub _force_stop ($self)
 	return Fugu::Process->terminate( $pid, grace_period => 5 );
 }
 
-# QGA methods
-sub _qga_socket_path ($self)
-{
-	return $self->{state}{vm_state_dir} . '/qga.sock';
-}
-
-sub _qga_connect ($self)
-{
-	my $qga = App::FuguVM::QGA->new( $self->_qga_socket_path );
-	return if !$qga->is_available;
-	return $qga->open_connection ? $qga : undef;
-}
-
 # QMP methods
 sub _qmp_socket_path ($self)
 {
@@ -985,18 +894,7 @@ sub _is_running ($self)
 
 	# A QEMU that became a zombie is not running. Fugu::Process
 	# reaps it and says so; a bare kill(0) would call it alive.
-	return 0 if !Fugu::Process->is_alive($pid);
-
-	# Check through QMP when possible. QMP is more reliable.
-	my $qmp = $self->_qmp_connect;
-	if ($qmp) {
-		my $running = $qmp->is_running;
-		$qmp->disconnect;
-		return $running;
-	}
-
-	# Fall back to the process check
-	return 1;
+	return Fugu::Process->is_alive($pid) ? 1 : 0;
 }
 
 # $self->_wait_exit($timeout):
@@ -1045,15 +943,6 @@ sub _start_qemu ( $self, $boot_image = undef )
 		    "file=$boot_image,format=raw,if=virtio,readonly=on";
 	}
 
-	# QEMU Guest Agent virtio-serial channel
-	my $qga_path = $self->_qga_socket_path;
-	unlink $qga_path if -S $qga_path;
-	push @cmd, '-device', 'virtio-serial-pci';
-	push @cmd, '-chardev',
-	    "socket,path=$qga_path,server=on,wait=off,id=qga0";
-	push @cmd, '-device',
-	    'virtserialport,chardev=qga0,name=org.qemu.guest_agent.0';
-
 	# Network with port forwarding
 	my $ssh_port = $config->{ssh_port};
 	push @cmd, '-device', 'virtio-net-pci,netdev=net0';
@@ -1086,42 +975,33 @@ sub _start_qemu ( $self, $boot_image = undef )
 	return unless $result->{success};
 
 	# Wait until QEMU writes the PID file
-	my $start = time;
-	my $pid;
-	while ( time - $start < 5 ) {
-		if ( defined $state->get_vm_pid ) {
+	my $pid = Fugu::Timeout::wait_until(
+		5, 0.1,
+		sub {
 			my $qemu_pid = $state->get_vm_pid;
-			if ( defined $qemu_pid
-				&& Fugu::Process->is_alive($qemu_pid) )
-			{
-				$pid = $qemu_pid;
-				last;
-			}
-		}
-		usleep(100_000);    # 0.1 seconds
-	}
-
-	# Fallback: use the forked PID from Fugu::Process
-	unless ( defined $pid ) {
-		my $forked = $result->{pid};
-		if ( Fugu::Process->is_alive($forked) ) {
-			$state->set_vm_pid($forked);
-			$state->mark_running;
-			$pid = $forked;
-		}
-	}
+			return $qemu_pid
+			    if defined $qemu_pid
+			    && Fugu::Process->is_alive($qemu_pid);
+			return;
+		} );
 
 	unless ( defined $pid ) {
 		$self->_dump_qemu_log($log_file);
 		return;
 	}
 
+	# Arm the crash detection: was_unclean_shutdown reports true
+	# when the state says running and the process is gone.
+	$state->mark_running;
+
 	# Make sure that QEMU accepts console connections before the
 	# installer tries to attach. A QEMU that exited at startup, for
 	# example with a bad accelerator or missing firmware, leaves the
 	# port closed. This check fails fast with the QEMU log, not with
 	# a long telnet timeout later.
-	unless ( $self->_wait_console_ready( $config->{console_port}, 30 ) ) {
+	if ( defined $boot_image
+		&& !$self->_wait_console_ready( $config->{console_port}, 30 ) )
+	{
 		$self->{log}
 		    ->error( 'QEMU console port %d not listening after start',
 			$config->{console_port} );

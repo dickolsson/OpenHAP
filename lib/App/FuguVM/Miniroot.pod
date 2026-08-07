@@ -39,10 +39,9 @@ The download runs the F<scripts/ftp> helper, which falls back through
 C<curl>, C<wget> and C<ftp>. It is a passthrough, because an image is
 a hundred megabytes and an operator who waits needs to see it move.
 
-=head2 url, list
+=head2 url
 
-C<url> is the mirror URL of a version. C<list> returns the cached
-images, newest version first.
+C<url> is the mirror URL of a version.
 
 =head1 SEE ALSO
 

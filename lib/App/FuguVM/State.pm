@@ -141,51 +141,6 @@ sub is_vm_running ($self)
 	return $self->{vm_pid}->is_running ? 1 : 0;
 }
 
-# Proxy PID management
-sub set_proxy_pid ( $self, $pid )
-{
-	$self->{proxy_pid}->write_pid($pid) or do {
-		Fugu::Log->default->warning( '%s', $self->{proxy_pid}->error );
-		return;
-	};
-
-	return $self;
-}
-
-sub get_proxy_pid ($self)
-{
-	return $self->{proxy_pid}->read_pid;
-}
-
-sub clear_proxy_pid ($self)
-{
-	$self->{proxy_pid}->remove;
-	return $self;
-}
-
-sub is_proxy_running ($self)
-{
-	return $self->{proxy_pid}->is_running ? 1 : 0;
-}
-
-# Proxy port management
-sub set_proxy_port ( $self, $port )
-{
-	$self->{store}->set( proxy_port => $port );
-	return $self;
-}
-
-sub get_proxy_port ($self)
-{
-	return $self->{store}->get('proxy_port');
-}
-
-sub clear_proxy_port ($self)
-{
-	$self->{store}->delete('proxy_port');
-	return $self;
-}
-
 # Disk state
 sub disk_path ($self)
 {
@@ -226,14 +181,9 @@ sub get_root_password ($self)
 }
 
 # SSH key installation state
-# The state tracks whether an SSH key is installed, and also which
-# specific key. Thus the system can detect when the configured SSH key
-# changed. Then it automatically installs the new key.
-sub is_ssh_key_installed ($self)
-{
-	return $self->{store}->get('ssh_key_installed') ? 1 : 0;
-}
-
+# The state tracks which SSH key is installed. Thus the system can
+# detect when the configured SSH key changed. Then it automatically
+# installs the new key.
 sub mark_ssh_key_installed ( $self, $ssh_pubkey = undef )
 {
 	my $data = $self->{store}->data;
@@ -248,16 +198,6 @@ sub mark_ssh_key_installed ( $self, $ssh_pubkey = undef )
 sub get_installed_ssh_pubkey ($self)
 {
 	return $self->{store}->get('installed_ssh_pubkey');
-}
-
-sub ssh_key_matches ( $self, $ssh_pubkey )
-{
-	return 0 if !$self->is_ssh_key_installed;
-
-	my $installed = $self->get_installed_ssh_pubkey;
-	return 0 if !defined $installed;
-
-	return $installed eq $ssh_pubkey;
 }
 
 sub vm_state_dir ($self)
