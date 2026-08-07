@@ -19,24 +19,14 @@ use v5.36;
 
 package App::OpenHAP::Test::Integration;
 
-use Exporter 'import';
 use IO::Socket::INET;
 use Time::HiRes qw(sleep);
 
+use App::OpenHAP::Devices;
 use Fugu::Config;
 use Protocol::HAP::HTTP;
 use Fugu::Log;
 use Fugu::Process;
-
-our @EXPORT_OK = qw(
-    setup teardown
-    http_request parse_http_response
-    get_config_value get_device_topics
-    get_controller ensure_unpaired
-    clear_logs get_log_lines
-    ensure_daemon_running ensure_daemon_stopped
-    ensure_mqtt_running
-);
 
 use constant {
 	DEFAULT_CONFIG    => '/etc/openhapd.conf',
@@ -65,14 +55,13 @@ use constant STATE_FILE => DB_PATH . '/state.json';
 sub new ( $class, %options )
 {
 	my $self = bless {
-		config_file  => $options{config_file} // DEFAULT_CONFIG,
-		hap_port     => $options{hap_port}    // DEFAULT_HAP_PORT,
-		mqtt_host    => $options{mqtt_host}   // DEFAULT_MQTT_HOST,
-		mqtt_port    => $options{mqtt_port}   // DEFAULT_MQTT_PORT,
-		log_baseline => 0,
-		sockets      => [],
-		controllers  => [],
-		mqtt         => undef,
+		config_file => $options{config_file} // DEFAULT_CONFIG,
+		hap_port    => $options{hap_port}    // DEFAULT_HAP_PORT,
+		mqtt_host   => $options{mqtt_host}   // DEFAULT_MQTT_HOST,
+		mqtt_port   => $options{mqtt_port}   // DEFAULT_MQTT_PORT,
+		sockets     => [],
+		controllers => [],
+		mqtt        => undef,
 	}, $class;
 
 	return $self;
@@ -102,9 +91,6 @@ sub setup ($self)
 
 	# Make sure the daemon is running
 	$self->ensure_daemon_running or die "Cannot start openhapd daemon\n";
-
-	# Record the log baseline for this test
-	$self->{log_baseline} = $self->_count_log_lines;
 
 	return 1;
 }
@@ -286,14 +272,96 @@ sub parse_http_response ($response)
 	return ( $parsed->{status}, $parsed->{headers}, $parsed->{body} );
 }
 
+# status($response):
+#	Return the status code of an HTTP response, for the tests
+#	that need nothing else from it.
+sub status ($response)
+{
+	my ($status) = parse_http_response($response);
+
+	return $status;
+}
+
+# $self->find_char($database, $type, %opt):
+#	Find a characteristic by its short type string in a decoded
+#	/accessories structure. The walk skips the bridge (aid 1).
+#	The option name limits the walk to the accessory whose Name
+#	characteristic holds that value. The option ev demands the ev
+#	permission. Return (aid, iid, characteristic) on a match.
+#	Return the empty list when there is no match.
+sub find_char ( $self, $database, $type, %opt )
+{
+	for my $accessory ( @{ $database->{accessories} // [] } ) {
+		next if $accessory->{aid} == 1;
+		next
+		    if defined $opt{name}
+		    && !_accessory_named( $accessory, $opt{name} );
+		for my $service ( @{ $accessory->{services} } ) {
+			for my $char ( @{ $service->{characteristics} } ) {
+				next unless $char->{type} eq $type;
+				next
+				    if $opt{ev}
+				    && !grep { $_ eq 'ev' }
+				    @{ $char->{perms} // [] };
+				return ( $accessory->{aid}, $char->{iid},
+					$char );
+			}
+		}
+	}
+
+	return;
+}
+
+# _accessory_named($accessory, $name):
+#	Return true when the accessory's Name characteristic (type
+#	23) holds $name.
+sub _accessory_named ( $accessory, $name )
+{
+	for my $service ( @{ $accessory->{services} } ) {
+		for my $char ( @{ $service->{characteristics} } ) {
+			return 1
+			    if $char->{type} eq '23'
+			    && ( $char->{value} // '' ) eq $name;
+		}
+	}
+
+	return 0;
+}
+
+# $self->wait_value($code, $want, $timeout):
+#	Poll $code->() every quarter second, up to $timeout seconds
+#	(default 10). A code reference in $want is the predicate over
+#	the polled value. Any other $want stops the poll when the
+#	value equals it as a string. Return 1 on success. Return
+#	undef on the deadline.
+sub wait_value ( $self, $code, $want, $timeout = 10 )
+{
+	my $deadline = time + $timeout;
+
+	while (1) {
+		my $value = $code->();
+		if ( ref $want eq 'CODE' ) {
+			return 1 if $want->($value);
+		}
+		elsif ( defined $value && "$value" eq "$want" ) {
+			return 1;
+		}
+		return if time >= $deadline;
+		sleep 0.25;
+	}
+}
+
 sub get_config_value ( $self, $key )
 {
 	return $self->{config}{$key};
 }
 
+# $self->get_device_topics():
+#	Return the MQTT topic of each configured device that has one.
 sub get_device_topics ($self)
 {
-	return @{ $self->{device_topics} // [] };
+	return
+	    map { $_->{topic} } grep { defined $_->{topic} } $self->get_devices;
 }
 
 # $self->get_devices():
@@ -356,6 +424,18 @@ sub ensure_daemon_stopped ($self)
 	return !_rcctl( 'check', 'openhapd' );
 }
 
+# $self->restart_daemon():
+#	Restart openhapd through rcctl. Then wait until the HAP port
+#	serves again. Return 1 when the daemon serves. Return undef
+#	on failure.
+sub restart_daemon ($self)
+{
+	_rcctl( 'restart', 'openhapd' );
+	$self->wait_for_hap_port or return;
+
+	return 1;
+}
+
 # $self->ensure_mdnsd_running():
 #	Make sure that mdnsd runs and continues to run. Start it if
 #	necessary. Then check again across a settle window. A
@@ -381,6 +461,22 @@ sub ensure_mdnsd_running ($self)
 	}
 
 	return 1;
+}
+
+# $self->browse():
+#	Return one bounded mdnsctl observation of the advertised HAP
+#	services.
+sub browse ($self)
+{
+	return `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+}
+
+# $self->browse_txt():
+#	Return one bounded mdnsctl observation with the TXT strings
+#	resolved.
+sub browse_txt ($self)
+{
+	return `timeout 5 mdnsctl browse -r hap tcp 2>&1 || true`;
 }
 
 # $self->_warn_mdnsd_diagnostics($reason):
@@ -452,36 +548,6 @@ sub ensure_mqtt_running ($self)
 	return _rcctl( 'check', 'mosquitto' );
 }
 
-sub clear_logs ($self)
-{
-	return unless -w SYSLOG_FILE;
-
-	# A truncate requires root. Thus record a new baseline instead.
-	$self->{log_baseline} = $self->_count_log_lines;
-
-	return 1;
-}
-
-sub get_log_lines ( $self, $pattern = undef )
-{
-	return () unless -r SYSLOG_FILE;
-
-	my @lines;
-	open my $fh, '<', SYSLOG_FILE or return ();
-
-	my $line_num = 0;
-	while (<$fh>) {
-		$line_num++;
-		next if $line_num <= $self->{log_baseline};
-		next unless /openhapd/;
-		next if defined $pattern && !/$pattern/;
-		push @lines, $_;
-	}
-	close $fh;
-
-	return @lines;
-}
-
 sub get_mqtt ($self)
 {
 	return $self->{mqtt} if defined $self->{mqtt};
@@ -525,6 +591,7 @@ sub _verify_system ($self)
 
 # $self->_parse_config:
 #	Read the daemon's own configuration through the parser the
+#	daemon uses, and the device blocks through the reader the
 #	daemon uses. A second parser here would let the test agree
 #	with itself while it disagreed with openhapd.
 sub _parse_config ($self)
@@ -534,42 +601,11 @@ sub _parse_config ($self)
 
 	my %settings = map { $_ => $config->get($_) } $config->setting_names;
 
-	my @devices;
-	my @device_topics;
-	for my $block ( $config->blocks('device') ) {
-		my ( $type, $subtype, $id ) = @{ $block->{args} };
-		push @devices,
-		    {
-			%{ $block->{settings} },
-			type    => $type,
-			subtype => $subtype,
-			id      => $id,
-		    };
-		push @device_topics, $block->{settings}{topic}
-		    if defined $block->{settings}{topic};
-	}
-
 	$self->{hap_port} = $settings{hap_port} if defined $settings{hap_port};
 	$self->{config}   = \%settings;
-	$self->{device_topics} = \@device_topics;
-	$self->{devices}       = \@devices;
+	$self->{devices}  = [ App::OpenHAP::Devices->devices($config) ];
 
 	return 1;
-}
-
-sub _count_log_lines ($self)
-{
-	return 0 unless -r SYSLOG_FILE;
-
-	my $count = 0;
-	if ( open my $fh, '<', SYSLOG_FILE ) {
-		while (<$fh>) {
-			$count++ if /openhapd/;
-		}
-		close $fh;
-	}
-
-	return $count;
 }
 
 1;

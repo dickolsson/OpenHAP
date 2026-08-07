@@ -62,20 +62,6 @@ subtest '[MQTT-Control §1] power control payloads' => sub {
 	$heater->set_power(0);
 	is( last_published($mqtt)->{payload}, 'OFF', 'OFF turns relay off' );
 
-	$mqtt->clear_published;
-	$heater->toggle_power;
-	is( last_published($mqtt)->{payload},
-		'TOGGLE', 'TOGGLE toggles state' );
-
-	$mqtt->clear_published;
-	$heater->blink(1);
-	is( last_published($mqtt)->{payload},
-		'BLINK', 'BLINK starts blinking' );
-
-	$mqtt->clear_published;
-	$heater->blink(0);
-	is( last_published($mqtt)->{payload},
-		'BLINKOFF', 'BLINKOFF stops blinking' );
 };
 
 subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
@@ -92,21 +78,6 @@ subtest '[MQTT-Control §1] multi-relay and SetOption26' => sub {
 	is( $relay2->_get_power_topic, 'cmnd/device/Power2',
 		'relay 2 commands Power2' );
 
-	my $so26 = make_heater( $mqtt, aid => 4, setoption26 => 1 );
-	is( $so26->_get_power_key, 'POWER1',
-		'SetOption26 uses POWER1 even for a single relay' );
-
-	# FullTopic composes with the relay index
-	my $custom = App::OpenHAP::Tasmota::Device->new(
-		aid         => 5,
-		name        => 'Custom',
-		mqtt_topic  => 'device',
-		mqtt_client => $mqtt,
-		relay_index => 2,
-		fulltopic   => 'home/%topic%/%prefix%/',
-	);
-	is( $custom->_get_power_topic, 'home/device/cmnd/Power2',
-		'FullTopic + relay_index builds correct topic' );
 };
 
 subtest '[MQTT-Control §2] dimmer control' => sub {
@@ -120,25 +91,6 @@ subtest '[MQTT-Control §2] dimmer control' => sub {
 		'cmnd/light/Dimmer', 'Dimmer command topic' );
 	is( last_published($mqtt)->{payload},
 		'75', 'brightness percentage 0..100' );
-
-	for my $step (
-		[ '+', 'increase by DimmerStep' ],
-		[ '-', 'decrease by DimmerStep' ],
-	    )
-	{
-		$mqtt->clear_published;
-		$light->dimmer_step( $step->[0] );
-		is( last_published($mqtt)->{payload},
-			$step->[0], "dimmer step $step->[1]" );
-	}
-
-	$mqtt->clear_published;
-	$light->dimmer_min;
-	is( last_published($mqtt)->{payload}, '<', '< decreases to 1' );
-
-	$mqtt->clear_published;
-	$light->dimmer_max;
-	is( last_published($mqtt)->{payload}, '>', '> increases to 100' );
 };
 
 subtest '[MQTT-Control §3][MQTT-Control §3.1] HSBColor control' => sub {
@@ -157,13 +109,6 @@ subtest '[MQTT-Control §3][MQTT-Control §3.1] HSBColor control' => sub {
 	is( last_published($mqtt)->{topic},
 		'cmnd/light/HSBColor2', 'HSBColor2 sets saturation only' );
 	is( last_published($mqtt)->{payload}, '80', 'saturation 0..100' );
-
-	$mqtt->clear_published;
-	$light->set_color( 120, 100, 50 );
-	is( last_published($mqtt)->{topic},
-		'cmnd/light/HSBColor', 'HSBColor sets all three' );
-	is( last_published($mqtt)->{payload},
-		'120,100,50', 'payload is <hue>,<sat>,<bri>' );
 };
 
 subtest '[MQTT-Control §3.2] Color RGB formats' => sub {

@@ -45,11 +45,28 @@ if ( -f $config_file && !$config->load ) {
 # engine requires a valid code, and it must not fail with a raw die
 # after the process left the terminal. validate_setup_code also
 # rejects the trivial codes that the HAP specification disallows.
-my $config_pin = $config->get( 'hap_pin', '1995-1018' );
-unless ( validate_setup_code($config_pin) ) {
-	print STDERR "openhapd: hap_pin \"$config_pin\" is not a valid"
+my $hap_pin = $config->get( 'hap_pin', '1995-1018' );
+unless ( validate_setup_code($hap_pin) ) {
+	print STDERR "openhapd: hap_pin \"$hap_pin\" is not a valid"
 	    . " setup code: use 8 digits, not a trivial pattern, for"
 	    . " example 1995-1018\n";
+	exit 1;
+}
+
+# Refuse an unknown log level or facility the same way, and name the
+# value. openhapd.conf(5) lists exactly these spellings; a daemon
+# that silently mapped an unknown one to a default would serve a
+# level the operator did not choose.
+my $log_level    = $config->get( 'log_level',    'info' );
+my $log_facility = $config->get( 'log_facility', 'daemon' );
+unless ( $log_level =~ /^(?:debug|info|notice|warning|error)$/ ) {
+	print STDERR "openhapd: log_level \"$log_level\" is not one of"
+	    . " debug, info, notice, warning, error\n";
+	exit 1;
+}
+unless ( $log_facility =~ /^(?:daemon|user|local[0-7])$/ ) {
+	print STDERR "openhapd: log_facility \"$log_facility\" is not"
+	    . " daemon, user, or local0 through local7\n";
 	exit 1;
 }
 
@@ -75,9 +92,7 @@ if ( !$foreground ) {
 }
 
 # Set up logging after the daemonize step
-my $log_level    = $config->get( 'log_level',    'info' );
-my $log_facility = $config->get( 'log_facility', 'daemon' );
-my $log_mode     = $foreground ? 'stderr' : 'syslog';
+my $log_mode = $foreground ? 'stderr' : 'syslog';
 
 # Create the logger and make it the process default. Library code
 # that gets no logger of its own reports through it.
@@ -91,10 +106,10 @@ Fugu::Log->set_default($log);
 
 $log->info('OpenHAP daemon initializing');
 
-# Get the HAP settings
+# Get the HAP settings. hap_pin was read and validated above,
+# before the -n exit and the daemonize.
 my $hap_name = $config->get( 'hap_name', 'OpenHAP Bridge' );
 my $hap_port = $config->get( 'hap_port', 51827 );
-my $hap_pin  = $config->get( 'hap_pin',  '1995-1018' );
 my $db_path  = $config->get( 'db_path',  '/var/db/openhapd' );
 
 # Where hapctl asks the running daemon what it is doing. The value

@@ -100,9 +100,7 @@ use_ok('Fugu::Log');
 	}
 
 	is( Fugu::Log->new( mode => 'quiet', level => 'warn' )->level,
-		'warning', 'the warn spelling parses as warning' );
-	is( Fugu::Log->new( mode => 'quiet', level => 'err' )->level,
-		'error', 'the err spelling parses as error' );
+		'info', 'an unknown spelling falls back to info' );
 }
 
 # Test 9: level and mode accessors

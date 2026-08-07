@@ -39,16 +39,15 @@ die "mdnsctl required to observe advertisements\n" unless $mdnsctl_available;
 # Restart openhapd so that it re-registers with the running mdnsd.
 # The listener opens after the publish conversation. Thus a daemon
 # that serves has published the service.
-system('rcctl restart openhapd >/dev/null 2>&1');
-$env->wait_for_hap_port or die "daemon not serving after restart\n";
+$env->restart_daemon or die "daemon not serving after restart\n";
 
 # Test 4: mdnsctl browse works
-my $mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+my $mdns_output = $env->browse;
 ok(length($mdns_output) > 0, 'mdnsctl browse produces output');
 
 # Test 5: The daemon advertises the HAP service ([HAP-mDNS §1] _hap._tcp)
 sleep 1;    # Give time for the registration
-$mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+$mdns_output = $env->browse;
 my $hap_found = $mdns_output =~ /hap.*tcp/i;
 ok($hap_found, '[HAP-mDNS §1] HAP service advertised via mDNS');
 
@@ -58,22 +57,17 @@ ok($mdns_output =~ /\Q$hap_name\E/i,
    '[HAP-mDNS §4] service instance name matches configured name');
 
 # Test 7: Daemon restart re-advertises service
-system('rcctl restart openhapd >/dev/null 2>&1');
-$env->wait_for_hap_port;
-
-$daemon_running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
-ok($daemon_running, 'daemon running after restart');
+ok($env->restart_daemon, 'daemon serves again after restart');
 
 # Test 8: Service still browsable after restart ([HAP-mDNS §8])
-$mdns_output = `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+$mdns_output = $env->browse;
 ok($mdns_output =~ /hap.*tcp/i,
    '[HAP-mDNS §8] service re-advertised after daemon restart');
 
 # Test 9: The port that the daemon advertises matches the configuration
 my $hap_port = $env->get_config_value('hap_port')
     // App::OpenHAP::Test::Integration::DEFAULT_HAP_PORT;
-my $lookup_output =
-    `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
+my $lookup_output = $env->browse;
 if ($lookup_output =~ /(\d{4,5})/) {
 	ok($lookup_output =~ /\b\Q$hap_port\E\b/,
 	   '[HAP-mDNS §6] advertised port matches configured hap_port');
@@ -91,14 +85,8 @@ if ($lookup_output =~ /(\d{4,5})/) {
 	$listening->close if defined $listening;
 }
 
-# browse_txt(): resolved browse output including TXT strings
-sub browse_txt
-{
-	return `timeout 5 mdnsctl browse -r hap tcp 2>&1 || true`;
-}
-
 # Test 10: sf=1 advertised while unpaired
-my $txt_output = browse_txt();
+my $txt_output = $env->browse_txt;
 like($txt_output, qr/sf=1/,
    '[HAP-mDNS §3.7] sf=1 advertised while unpaired');
 
@@ -110,19 +98,18 @@ $controller->pair_setup
     or die 'pair-setup failed: ' . ( $controller->last_error // '?' ) . "\n";
 
 my $deadline = time + 30;
-$txt_output = browse_txt();
+$txt_output = $env->browse_txt;
 while ($txt_output !~ /sf=0/ && time < $deadline) {
 	sleep 1;
-	$txt_output = browse_txt();
+	$txt_output = $env->browse_txt;
 }
 like($txt_output, qr/sf=0/,
    '[HAP-mDNS §8] sf flips to 0 in the browsed TXT after pairing');
 
 # Test 12: c# persists across a daemon restart
 my ($config_number) = $txt_output =~ /c#=(\d+)/;
-system('rcctl restart openhapd >/dev/null 2>&1');
-$env->wait_for_hap_port;
-$txt_output = browse_txt();
+$env->restart_daemon;
+$txt_output = $env->browse_txt;
 my ($config_number_after) = $txt_output =~ /c#=(\d+)/;
 is($config_number_after, $config_number,
    '[HAP-mDNS §3.1] c# persisted across daemon restart');

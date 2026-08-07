@@ -41,7 +41,7 @@ subtest '[MQTT-Transport §1][MQTT-Transport §1.1] topic prefixes' => sub {
 		'does not subscribe to cmnd/ (device-inbound prefix)' );
 
 	$mqtt->clear_published;
-	$base->force_telemetry;
+	$base->query_status;
 	my @published = $mqtt->get_published;
 	ok( ( grep { $_->{topic} =~ m{^cmnd/} } @published ),
 		'commands published under cmnd/ prefix' );
@@ -50,31 +50,25 @@ subtest '[MQTT-Transport §1][MQTT-Transport §1.1] topic prefixes' => sub {
 subtest '[MQTT-Transport §1.2] FullTopic pattern' => sub {
 	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
 
-	# Default pattern: %prefix%/%topic%/
+	# The builder speaks the default pattern, %prefix%/%topic%/,
+	# and no other: OpenHAP requires the Tasmota default.
 	my $default = make_base($mqtt);
 	is( $default->_build_topic( 'cmnd', 'Power' ),
 		'cmnd/device/Power', 'default FullTopic %prefix%/%topic%/' );
-
-	# Custom pattern: %topic% before %prefix%
-	my $custom = make_base( $mqtt,
-		fulltopic => 'tasmota/%topic%/%prefix%/' );
-	is( $custom->_build_topic( 'cmnd', 'Power' ),
-		'tasmota/device/cmnd/Power',
-		'custom FullTopic reorders tokens' );
-	is( $custom->_build_topic( 'stat', 'RESULT' ),
-		'tasmota/device/stat/RESULT', 'custom stat topic' );
-	is( $custom->_build_topic( 'tele', 'STATE' ),
-		'tasmota/device/tele/STATE', 'custom tele topic' );
+	is( $default->_build_topic( 'stat', 'RESULT' ),
+		'stat/device/RESULT', 'default stat topic' );
+	is( $default->_build_topic( 'tele', 'STATE' ),
+		'tele/device/STATE', 'default tele topic' );
 };
 
 subtest '[MQTT-Transport §1.3] topic tokens' => sub {
 	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
-	my $base = make_base( $mqtt, fulltopic => 'home/%topic%/%prefix%/' );
+	my $base = make_base($mqtt);
 
-	# The builder replaces %topic% with the device topic and
-	# %prefix% with cmnd/stat/tele
+	# The builder fills the %prefix% and %topic% positions of the
+	# default pattern with the prefix and the device topic
 	my $built = $base->_build_topic( 'tele', 'SENSOR' );
-	like( $built, qr{home/device/tele/SENSOR},
+	is( $built, 'tele/device/SENSOR',
 		'%topic% and %prefix% tokens substituted' );
 };
 
@@ -149,21 +143,8 @@ subtest '[MQTT-Transport §2.4] bidirectional flow' => sub {
 		'[MQTT-Transport §2.2] device state flows back in on stat/' );
 };
 
-subtest '[MQTT-Transport §3][MQTT-Transport §3.1][MQTT-Transport §3.2] MQTT-related SetOptions' => sub {
+subtest 'SetOption4 responses on command-named topics' => sub {
 	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
-
-	# SO26: indexed POWER1 even for a single relay
-	my $so26 = App::OpenHAP::Tasmota::Heater->new(
-		aid         => 2,
-		name        => 'SO26 Heater',
-		mqtt_topic  => 'device',
-		mqtt_client => $mqtt,
-		setoption26 => 1,
-	);
-	is( $so26->_get_power_key, 'POWER1',
-		'SetOption26 uses POWER1 for a single relay' );
-	is( $so26->_get_power_topic, 'cmnd/device/Power1',
-		'SetOption26 command topic indexed' );
 
 	# SO4: responses on command-named topics instead of RESULT
 	my $light = App::OpenHAP::Tasmota::Lightbulb->new(

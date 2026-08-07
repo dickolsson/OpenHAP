@@ -44,18 +44,11 @@ The MQTT client. Required.
 The relay of a multi-relay device, counted from 1. The default 0 means
 that the device has one relay and no index.
 
-=item C<fulltopic>
-
-The Tasmota C<FullTopic> pattern. The default is C<%prefix%/%topic%/>.
-The class substitutes C<%prefix%> and C<%topic%> for every topic it
-builds.
-
-=item C<setoption26>
-
-True when the device runs with C<SetOption26>. Tasmota then uses the
-indexed C<POWER1> name even for a device with one relay.
-
 =back
+
+Every topic follows the default Tasmota C<FullTopic> pattern,
+C<%prefix%/%topic%/>. OpenHAP requires the device to run with that
+default.
 
 =head1 THE MQTT TOPIC CONTRACT
 
@@ -89,9 +82,8 @@ C<StatusSTS> and hands the content to C<_process_state_data>.
 
 =back
 
-The class publishes to C<cmnd/Power>, C<cmnd/Status>, and
-C<cmnd/TelePeriod>. The power topic carries the relay index, or the
-C<SetOption26> name, when either applies.
+The class publishes to C<cmnd/Power> and C<cmnd/Status>. The power
+topic carries the relay index, when it applies.
 
 =head1 METHODS
 
@@ -107,19 +99,13 @@ Ask the device for its full state with C<Status 11>.
 
 Report if the last C<LWT> message said C<Online>.
 
-=head2 get_availability()
-
-Return the availability as C<AVAILABILITY_UNKNOWN>,
-C<AVAILABILITY_ONLINE>, or C<AVAILABILITY_OFFLINE>.
-
-=head2 set_power($state), toggle_power(), blink($on)
+=head2 set_power($state)
 
 Publish a power command. C<$state> is 1 for on and 0 for off.
 
-=head2 query_status($type), force_telemetry()
+=head2 query_status($type)
 
-Ask the device for a status report, or for an immediate telemetry
-message.
+Ask the device for a status report.
 
 =head2 convert_temperature($temp)
 
@@ -135,8 +121,8 @@ needs.
 
 =item C<_process_state_data($data)>
 
-The decoded C<STATE> or C<STATUS11> payload. The default caches it and
-extracts the power state, so an override calls C<SUPER> first.
+The decoded C<STATE> or C<STATUS11> payload. The default extracts the
+power state, so an override calls C<SUPER> first.
 
 =item C<_process_result_data($data)>
 
@@ -149,10 +135,6 @@ The decoded C<SENSOR> payload.
 =item C<_on_power_update($state)>
 
 The power state changed. C<$state> is 1 for on and 0 for off.
-
-=item C<_on_availability_changed($old, $new)>
-
-The availability changed. Both arguments are C<AVAILABILITY_*> values.
 
 =back
 

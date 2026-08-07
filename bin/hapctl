@@ -60,7 +60,7 @@ exit $cli->run(@ARGV);
 #	Parse the configuration file and report what it holds.
 sub cmd_check ( $cli, @ )
 {
-	my $file = config_file($cli);
+	my $file = $cli->option('config') // DEFAULT_CONFIG;
 	unless ( -f $file ) {
 
 		# A fresh install has no file, and the daemon then runs
@@ -86,7 +86,8 @@ sub cmd_check ( $cli, @ )
 #	daemon is an answer, not a failure of the tool.
 sub cmd_status ( $cli, @ )
 {
-	my $client = Fugu::Control::Client->new( path => control_path($cli) );
+	my $client = Fugu::Control::Client->new( path => $cli->option('socket')
+		    // DEFAULT_CONTROL );
 	my $status = $client->request('status');
 
 	if ($status) {
@@ -107,12 +108,52 @@ sub cmd_status ( $cli, @ )
 #	there.
 sub cmd_devices ( $cli, @ )
 {
-	my $client  = Fugu::Control::Client->new( path => control_path($cli) );
-	my $devices = $client->request('devices');
+	my $client = Fugu::Control::Client->new( path => $cli->option('socket')
+		    // DEFAULT_CONTROL );
 
-	return print_live_devices($devices) if $devices;
+	# The running daemon knows which devices actually loaded
+	if ( my $devices = $client->request('devices') ) {
+		return print_devices(
+			'loaded', $devices,
+			[
+				[ 'AID:' => sub ($d) { $d->{aid} } ],
+				[
+					'Class:' => sub ($d) {
+						$d->{class} // 'unknown';
+					}
+				],
+				[
+					'Topic:' =>
+					    sub ($d) { $d->{topic} // '<none>' }
+				],
+				[
+					'ID:' => sub ($d) {
+						$d->{serial} // '<none>';
+					}
+				],
+			] );
+	}
 
-	return print_configured_devices($cli);
+	# The daemon is not there: read the configuration file instead
+	my $config = load_config($cli)
+	    or return Fugu::CLI::EXIT_CONFIG_ERROR;
+	my @devices = App::OpenHAP::Devices->devices($config);
+
+	return print_devices(
+		'configured',
+		\@devices,
+		[ [
+				'Type:' => sub ($d) {
+					( $d->{type} // 'unknown' ) . '/'
+					    . ( $d->{subtype} // 'unknown' );
+				}
+			],
+			[
+				'Topic:' =>
+				    sub ($d) { $d->{topic} // '<no topic>' }
+			],
+			[ 'ID:' => sub ($d) { $d->{id} // '<no id>' } ],
+		] );
 }
 
 # print_status($status):
@@ -164,49 +205,22 @@ sub print_pidfile_status ( $cli, $client )
 	return;
 }
 
-# print_live_devices($devices):
-#	The accessories that the running daemon holds.
-sub print_live_devices ($devices)
+# print_devices($label, $devices, $fields):
+#	One formatter for both device listings. Each field row is
+#	[$tag, $code], and $code->($device) supplies the value.
+sub print_devices ( $label, $devices, $fields )
 {
 	unless (@$devices) {
-		print "No devices loaded\n";
+		print "No devices $label\n";
 		return Fugu::CLI::EXIT_SUCCESS;
 	}
 
-	printf "Loaded devices: %d\n\n", scalar @$devices;
+	printf "%s devices: %d\n\n", ucfirst $label, scalar @$devices;
 	for my $device (@$devices) {
-		printf "  %s\n",            $device->{name} // '<unnamed>';
-		printf "    AID:   %d\n",   $device->{aid};
-		printf "    Class: %s\n",   $device->{class}  // 'unknown';
-		printf "    Topic: %s\n",   $device->{topic}  // '<none>';
-		printf "    ID:    %s\n\n", $device->{serial} // '<none>';
-	}
-
-	return Fugu::CLI::EXIT_SUCCESS;
-}
-
-# print_configured_devices($cli):
-#	The device blocks of the configuration file, for a stopped
-#	daemon.
-sub print_configured_devices ($cli)
-{
-	my $config = load_config($cli)
-	    or return Fugu::CLI::EXIT_CONFIG_ERROR;
-
-	my @devices = App::OpenHAP::Devices->devices($config);
-	unless (@devices) {
-		print "No devices configured\n";
-		return Fugu::CLI::EXIT_SUCCESS;
-	}
-
-	printf "Configured devices: %d\n\n", scalar @devices;
-	for my $device (@devices) {
 		printf "  %s\n", $device->{name} // '<unnamed>';
-		printf "    Type:  %s/%s\n",
-		    $device->{type}    // 'unknown',
-		    $device->{subtype} // 'unknown';
-		printf "    Topic: %s\n",   $device->{topic} // '<no topic>';
-		printf "    ID:    %s\n\n", $device->{id}    // '<no id>';
+		printf "    %-6s %s\n", $_->[0], $_->[1]->($device)
+		    for @$fields;
+		print "\n";
 	}
 
 	return Fugu::CLI::EXIT_SUCCESS;
@@ -231,18 +245,6 @@ sub uptime ($started)
 	return sprintf '%dm', $mins;
 }
 
-# config_file($cli), control_path($cli):
-#	The paths this run works with.
-sub config_file ($cli)
-{
-	return $cli->option('config') // DEFAULT_CONFIG;
-}
-
-sub control_path ($cli)
-{
-	return $cli->option('socket') // DEFAULT_CONTROL;
-}
-
 # load_config($cli):
 #	Parse the configuration file. An absent file is normal on a
 #	fresh install and gives empty settings. A file that exists but
@@ -250,7 +252,7 @@ sub control_path ($cli)
 #	function returns nothing.
 sub load_config ($cli)
 {
-	my $file   = config_file($cli);
+	my $file   = $cli->option('config') // DEFAULT_CONFIG;
 	my $config = Fugu::Config->new( file => $file );
 	return $config unless -f $file;
 

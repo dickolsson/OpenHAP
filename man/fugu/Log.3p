@@ -50,11 +50,11 @@ The levels, from lowest to highest, are
 .Cm debug ,
 .Cm info ,
 .Cm notice ,
-.Cm warning ,
-.Cm error
+.Cm warning
 and
-.Cm crit .
-Each level is a method of the same name.
+.Cm error .
+Each level is a method of the same name, and there is one spelling
+for each level.
 .Pp
 The module also holds one process default logger.
 Library code that gets no logger asks for it with
@@ -117,7 +117,7 @@ through
 The default is
 .Dv LOG_DAEMON .
 .El
-.Ss debug, info, notice, warning, error, crit
+.Ss debug, info, notice, warning, error
 .Bd -literal -offset indent
 $log->info($fmt, @args);
 .Ed
@@ -135,15 +135,7 @@ is empty, the method uses
 .Fa $fmt
 as a literal string.
 .Pp
-There is one method for each level.
-The spellings
-.Cm warn
-and
-.Cm err
-parse as level
-.Em names ,
-because a configuration file can hold either one.
-They are not methods.
+There is one method for each level, and no other spelling parses.
 .Ss set_level
 .Fn set_level "$level"
 changes the lowest level to emit on a logger after its creation.

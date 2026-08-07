@@ -35,10 +35,7 @@ is($owner, 0, 'the PID file is root-owned');
 ok($env->wait_for_hap_port, 'daemon accepts connections');
 
 # Test 5: Daemon restart works
-system('rcctl restart openhapd >/dev/null 2>&1');
-sleep 1;
-$running = system('rcctl check openhapd >/dev/null 2>&1') == 0;
-ok($running, 'daemon restarts successfully');
+ok($env->restart_daemon, 'daemon restarts successfully');
 
 # Test 6: The restarted daemon owns the file
 my $new_pid = $pidfile->read_pid;

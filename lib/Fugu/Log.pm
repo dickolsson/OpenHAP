@@ -47,6 +47,59 @@ use constant {
 # on the first call, so the accessor always answers with a logger.
 my $default;
 
+# Level parsing and mapping. One spelling per level: the five method
+# names above are the whole vocabulary, and the daemon validates its
+# configuration against them at startup.
+my %level_map = (
+	debug   => 0,
+	info    => 1,
+	notice  => 2,
+	warning => 3,
+	error   => 4,
+);
+
+my %priority_map = (
+	debug   => LOG_DEBUG,
+	info    => LOG_INFO,
+	notice  => LOG_NOTICE,
+	warning => LOG_WARNING,
+	error   => LOG_ERR,
+);
+
+my %facility_map = (
+	daemon => LOG_DAEMON,
+	user   => LOG_USER,
+	local0 => LOG_LOCAL0,
+	local1 => LOG_LOCAL1,
+	local2 => LOG_LOCAL2,
+	local3 => LOG_LOCAL3,
+	local4 => LOG_LOCAL4,
+	local5 => LOG_LOCAL5,
+	local6 => LOG_LOCAL6,
+	local7 => LOG_LOCAL7,
+);
+
+# _parse_level($level):
+#	The canonical level name. An unknown one falls back to info:
+#	the boundary validates, and the library stays usable.
+sub _parse_level ($level)
+{
+	$level = lc($level);
+	return exists $level_map{$level} ? $level : 'info';
+}
+
+sub _level_to_priority ($level)
+{
+	$level = lc($level);
+	return $priority_map{$level} // LOG_INFO;
+}
+
+sub _parse_facility ($facility)
+{
+	$facility = lc($facility);
+	return $facility_map{$facility} // LOG_DAEMON;
+}
+
 sub new ( $class, %args )
 {
 	my $mode  = $args{mode}  // MODE_STDERR;
@@ -64,10 +117,12 @@ sub new ( $class, %args )
 		$facility = _parse_facility($facility);
 	}
 
+	my $name = _parse_level($level);
+
 	my $self = bless {
 		mode       => $mode,
-		level      => _parse_level($level),
-		level_name => _canonical_level($level),
+		level      => $level_map{$name},
+		level_name => $name,
 		ident      => $ident,
 		facility   => $facility,
 		opened     => 0,
@@ -128,8 +183,7 @@ sub _log ( $self, $level, $fmt, @args )
 {
 	return if $self->{mode} eq MODE_QUIET;
 
-	my $level_num = _parse_level($level);
-	return if $level_num < $self->{level};
+	return if $level_map{$level} < $self->{level};
 
 	my $message = @args ? sprintf( $fmt, @args ) : $fmt;
 
@@ -148,13 +202,14 @@ sub _log ( $self, $level, $fmt, @args )
 #	Change the minimum log level
 sub set_level ( $self, $level )
 {
-	$self->{level}      = _parse_level($level);
-	$self->{level_name} = _canonical_level($level);
+	my $name = _parse_level($level);
+
+	$self->{level}      = $level_map{$name};
+	$self->{level_name} = $name;
 }
 
 # $self->level:
-#	Return the minimum log level by name. The name is one of the
-#	six canonical levels, whatever spelling the caller used.
+#	Return the minimum log level by name, one of the five levels.
 sub level ($self)
 {
 	return $self->{level_name};
@@ -181,72 +236,6 @@ sub reopen ($self)
 	}
 
 	return $self;
-}
-
-# Level parsing and mapping. The warn and err spellings parse, because
-# a configuration file can hold either one. They are not methods: the
-# module has one name for each level.
-my %level_map = (
-	debug   => 0,
-	info    => 1,
-	notice  => 2,
-	warning => 3,
-	warn    => 3,
-	error   => 4,
-	err     => 4,
-	crit    => 5,
-);
-
-my %level_name = (
-	warn => 'warning',
-	err  => 'error',
-);
-
-my %priority_map = (
-	debug   => LOG_DEBUG,
-	info    => LOG_INFO,
-	notice  => LOG_NOTICE,
-	warning => LOG_WARNING,
-	error   => LOG_ERR,
-	crit    => LOG_CRIT,
-);
-
-my %facility_map = (
-	daemon => LOG_DAEMON,
-	user   => LOG_USER,
-	local0 => LOG_LOCAL0,
-	local1 => LOG_LOCAL1,
-	local2 => LOG_LOCAL2,
-	local3 => LOG_LOCAL3,
-	local4 => LOG_LOCAL4,
-	local5 => LOG_LOCAL5,
-	local6 => LOG_LOCAL6,
-	local7 => LOG_LOCAL7,
-);
-
-sub _parse_level ($level)
-{
-	$level = lc($level);
-	return $level_map{$level} // 1;    # The default is info
-}
-
-sub _canonical_level ($level)
-{
-	$level = lc($level);
-	return 'info' unless exists $level_map{$level};
-	return $level_name{$level} // $level;
-}
-
-sub _level_to_priority ($level)
-{
-	$level = lc($level);
-	return $priority_map{$level} // LOG_INFO;
-}
-
-sub _parse_facility ($facility)
-{
-	$facility = lc($facility);
-	return $facility_map{$facility} // LOG_DAEMON;
 }
 
 sub _timestamp()

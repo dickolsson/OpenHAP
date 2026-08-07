@@ -40,17 +40,7 @@ is(scalar @bridged, scalar @device_topics,
    'all configured devices have accessory objects');
 
 # Find a readable/writable bool characteristic (On, type 25)
-my ($aid, $iid);
-OUTER: for my $accessory (@bridged) {
-	for my $service (@{ $accessory->{services} }) {
-		for my $char (@{ $service->{characteristics} }) {
-			if ($char->{type} eq '25') {
-				($aid, $iid) = ($accessory->{aid}, $char->{iid});
-				last OUTER;
-			}
-		}
-	}
-}
+my ($aid, $iid) = $env->find_char($database, '25');
 ok(defined $iid, 'found an On characteristic to exercise') or do {
 	$env->teardown;
 	die "No On characteristic found in the accessory database\n";

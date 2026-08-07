@@ -43,24 +43,6 @@ sub port_open ()
 	return 1;
 }
 
-# wait_for($seconds, $code): poll until the condition holds
-sub wait_for ( $seconds, $code )
-{
-	my $deadline = time + $seconds;
-	while ( time < $deadline ) {
-		return 1 if $code->();
-		sleep 0.25;
-	}
-
-	return $code->() ? 1 : 0;
-}
-
-# browse(): one bounded observation of the advertised services
-sub browse ()
-{
-	return `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
-}
-
 die "mdnsd required for the withdraw assertion\n"
     unless $env->ensure_mdnsd_running;
 
@@ -105,14 +87,15 @@ is( $pidfile->read_pid, $before, 'still the same process' );
 my $pid = $pidfile->read_pid;
 kill 'TERM', $pid or die "cannot signal $pid: $!\n";
 
-ok( wait_for( 30, sub { !$pidfile->is_running } ),
+ok( $env->wait_value( sub { !$pidfile->is_running }, 1, 30 ),
 	'the daemon exits on SIGTERM' );
-ok( wait_for( 30, sub  { !port_open() } ), 'and the HAP port closes' );
+ok( $env->wait_value( sub { !port_open() }, 1, 30 ),
+	'and the HAP port closes' );
 
 # The shutdown runs the withdraw before it returns. A daemon that
 # died inside a signal handler would leave the advertisement to the
 # kernel closing its socket, which is slower and less certain.
-ok( wait_for( 30, sub { browse() !~ /\Q$hap_name\E/i } ),
+ok( $env->wait_value( sub { $env->browse !~ /\Q$hap_name\E/i }, 1, 30 ),
 	'the mDNS advertisement is withdrawn' );
 
 # The PID file stays. An unlink in root-owned /var/run needs a

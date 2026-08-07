@@ -11,17 +11,10 @@ use Protocol::HAP::Characteristic;
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(
-		logger       => $args{logger},
-		aid          => $args{aid},
-		name         => $args{name},
+		%args,
 		model        => 'Tasmota Switch',
 		manufacturer => 'OpenHAP',
 		serial       => $args{serial} // 'HEAT-001',
-		mqtt_topic   => $args{mqtt_topic},
-		mqtt_client  => $args{mqtt_client},
-		relay_index  => $args{relay_index} // 0,
-		fulltopic    => $args{fulltopic},              # H2
-		setoption26  => $args{setoption26},            # M1
 	);
 
 	$self->{power_state} = 0;
@@ -62,16 +55,8 @@ sub subscribe_mqtt ($self)
 		'Heater %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# M2: Subscribe to the plain-text POWER response
-	# (SetOption4 support)
-	$self->{mqtt_client}->subscribe(
-		$self->_build_topic( 'stat', $self->_get_power_key() ),
-		sub ( $recv_topic, $payload ) {
-			$self->{power_state} = ( $payload eq 'ON' ) ? 1 : 0;
-			Fugu::Log->default->debug( 'Heater %s power state: %s',
-				$self->{name}, $payload );
-			$self->notify_change(11);
-		} );
+	# M2: The plain-text POWER response (SetOption4 support)
+	$self->_subscribe_plain_power( power_state => 11 );
 }
 
 # Override _on_power_update to update the power state
@@ -86,4 +71,3 @@ sub _on_power_update ( $self, $state )
 }
 
 1;
-

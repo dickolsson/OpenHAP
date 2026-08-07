@@ -37,7 +37,7 @@ sub restore ($config_file, $saved)
 {
 	system("cp $saved $config_file");
 	unlink $saved;
-	system('rcctl restart openhapd >/dev/null 2>&1');
+	$env->restart_daemon;
 	return;
 }
 
@@ -52,8 +52,7 @@ my $switched = do {
 };
 ok($switched, 'mqtt_host switched to a resolvable name');
 
-system('rcctl restart openhapd >/dev/null 2>&1');
-unless ($env->wait_for_hap_port) {
+unless ($env->restart_daemon) {
 	restore($config_file, $saved);
 	die "daemon not serving with mqtt_host = localhost\n";
 }
@@ -70,19 +69,7 @@ $controller->pair_verify
 my $database =
     decode_json($controller->request('GET', '/accessories')->{body});
 
-my ($aid, $iid);
-for my $accessory (@{ $database->{accessories} }) {
-	my $named = grep {
-		$_->{type} eq '23' && ($_->{value} // '') eq $light->{name}
-	} map { @{ $_->{characteristics} } } @{ $accessory->{services} };
-	next unless $named;
-	for my $service (@{ $accessory->{services} }) {
-		for my $char (@{ $service->{characteristics} }) {
-			($aid, $iid) = ($accessory->{aid}, $char->{iid})
-			    if $char->{type} eq '25';    # On
-		}
-	}
-}
+my ($aid, $iid) = $env->find_char($database, '25', name => $light->{name});
 ok(defined $iid, 'light On characteristic located') or do {
 	restore($config_file, $saved);
 	die "cannot locate the On characteristic\n";
@@ -108,9 +95,7 @@ sub on_value ($controller, $aid, $iid)
 # hostname.
 my $mqtt = $env->get_mqtt or die "cannot connect test MQTT client\n";
 $mqtt->publish("stat/$light->{topic}/POWER", 'ON');
-my $deadline = time + 15;
-sleep 0.5 while time < $deadline
-    && (on_value($controller, $aid, $iid) // -1) ne '1';
+$env->wait_value(sub { on_value($controller, $aid, $iid) }, 1, 15);
 is(on_value($controller, $aid, $iid), 1,
    'baseline round trip: POWER ON visible via HAP');
 
@@ -125,7 +110,7 @@ $env->{mqtt} = undef;    # the cached test client died with the broker
 # The daemon retries every 30 seconds. Publish OFF repeatedly on a
 # fresh client until the flip is visible through HAP. The loop waits
 # well past one retry interval before it gives up.
-$deadline = time + 120;
+my $deadline = time + 120;
 my $recovered = 0;
 while (time < $deadline) {
 	my $fresh = $env->get_mqtt;

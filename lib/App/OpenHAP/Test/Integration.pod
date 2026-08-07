@@ -144,7 +144,14 @@ daemon until the teardown.
     my ($status, $headers, $body) =
         App::OpenHAP::Test::Integration::parse_http_response($response);
 
-The method parses an HTTP response.
+The function parses an HTTP response.
+
+=head2 status
+
+    my $status = App::OpenHAP::Test::Integration::status($response);
+
+The function returns the status code of an HTTP response. Use it in
+the tests that do not need the headers or the body.
 
 =head2 get_config_value
 
@@ -164,8 +171,40 @@ The method gets all the MQTT topics of the devices.
 
     my ($light) = grep { $_->{subtype} eq 'lightbulb' } $env->get_devices;
 
-The method gets the configured device records. Each record is a hash
-with C<type>, C<subtype>, C<id>, C<name>, and C<topic>.
+The method gets the configured device records, read through
+L<App::OpenHAP::Devices>. Each record is a hash with C<type>,
+C<subtype>, C<id>, and the settings of the device block.
+
+=head2 find_char
+
+    my ($aid, $iid, $char) = $env->find_char($database, $type, %options);
+    my ($aid, $iid) = $env->find_char($database, '25', name => 'Light');
+
+The method finds a characteristic by its short type string in a
+decoded /accessories structure. The walk skips the bridge (aid 1).
+The method returns the accessory id, the instance id, and the
+characteristic hash of the first match. It returns the empty list
+when there is no match. These are the options:
+
+=over 4
+
+=item name - only search the accessory whose Name characteristic
+holds this value
+
+=item ev - only match a characteristic with the ev permission
+
+=back
+
+=head2 wait_value
+
+    $env->wait_value($code, $want, $timeout) or die 'no match';
+    $env->wait_value(sub { current_value() }, 42);
+
+The method polls C<< $code->() >> each quarter second, up to
+C<$timeout> seconds (default 10). A code reference in C<$want> is the
+predicate over the polled value. Any other C<$want> stops the poll
+when the value equals it as a string. The method returns 1 on
+success, and undef on the deadline.
 
 =head2 ensure_daemon_running
 
@@ -191,6 +230,15 @@ method, not a fixed sleep, after you restart the daemon.
 
 The method makes sure that openhapd is stopped.
 
+=head2 restart_daemon
+
+    $env->restart_daemon or die 'daemon not serving';
+
+The method restarts openhapd through rcctl. It then waits for the
+HAP port, because the daemon publishes its mDNS advertisement before
+it opens the listener. The method returns 1 when the daemon serves,
+and undef on failure.
+
 =head2 ensure_mqtt_running
 
     $env->ensure_mqtt_running or die "MQTT required";
@@ -208,12 +256,19 @@ green when mdnsd starts and then exits a short time after that. On a
 failure, the method sends the captured diagnostics as warnings: the
 rcctl state, the process list, and recent syslog lines.
 
-=head2 get_log_lines
+=head2 browse
 
-    my @lines = $env->get_log_lines($pattern);
+    my $output = $env->browse;
 
-The method gets the log lines that match the pattern and that come
-after the baseline.
+The method makes one bounded mdnsctl observation of the advertised
+HAP services, and returns the output.
+
+=head2 browse_txt
+
+    my $output = $env->browse_txt;
+
+The method makes one bounded mdnsctl observation with the TXT
+strings resolved, and returns the output.
 
 =head2 get_mqtt
 

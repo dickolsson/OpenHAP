@@ -8,27 +8,14 @@ our @ISA = qw(App::OpenHAP::Tasmota::Device);
 use Protocol::HAP::Service;
 use Protocol::HAP::Characteristic;
 
-use JSON::XS;
-
-# Supported sensor types for thermostat
-use constant SENSOR_TYPES =>
-    qw(DS18B20 DHT11 DHT22 AM2301 BME280 BMP280 SHT3X SI7021);
-
 sub new ( $class, %args )
 {
 
 	my $self = $class->SUPER::new(
-		logger       => $args{logger},
-		aid          => $args{aid},
-		name         => $args{name},
+		%args,
 		model        => 'Tasmota Thermostat',
 		manufacturer => 'OpenHAP',
 		serial       => $args{serial} // 'TSTAT-001',
-		mqtt_topic   => $args{mqtt_topic},
-		mqtt_client  => $args{mqtt_client},
-		relay_index  => $args{relay_index} // 0,
-		fulltopic    => $args{fulltopic},               # H2
-		setoption26  => $args{setoption26},             # M1
 	);
 
 	# Sensor configuration (H5)
@@ -41,71 +28,71 @@ sub new ( $class, %args )
 	$self->{heating_state}        = 0;              # 0=Off, 1=Heat, 2=Cool
 	$self->{target_heating_state} = 0;
 
-	# Add the Thermostat service
+	# Add the Thermostat service. One row per characteristic:
+	# type, iid, format, perms, and the extra arguments.
 	my $thermostat = Protocol::HAP::Service->new(
 		logger => $self->{logger},
 		type   => 'Thermostat',
 		iid    => 10,
 	);
 
-	$thermostat->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			logger => $self->{logger},
-			type   => 'CurrentHeatingCoolingState',
-			iid    => 11,
-			format => 'uint8',
-			perms  => [ 'pr', 'ev' ],
-			value  => \$self->{heating_state},
-		) );
+	my @rows = ( [
+			'CurrentHeatingCoolingState', 11,
+			'uint8',                      [ 'pr', 'ev' ],
+			{ value => \$self->{heating_state} },
+		],
+		[
+			'TargetHeatingCoolingState',
+			12, 'uint8',
+			[ 'pr', 'pw', 'ev' ],
+			{
+				value  => \$self->{target_heating_state},
+				on_set => sub { $self->_set_target_state(@_) },
+			},
+		],
+		[
+			'CurrentTemperature',
+			13, 'float',
+			[ 'pr', 'ev' ],
+			{
+				unit  => 'celsius',
+				value => \$self->{current_temp},
+				min   => -40,
+				max   => 100,
+			},
+		],
+		[
+			'TargetTemperature',
+			14, 'float',
+			[ 'pr', 'pw', 'ev' ],
+			{
+				unit   => 'celsius',
+				value  => \$self->{target_temp},
+				min    => 10,
+				max    => 38,
+				step   => 0.5,
+				on_set => sub { $self->_set_target_temp(@_) },
+			},
+		],
+		[
+			'TemperatureDisplayUnits', 15, 'uint8',
+			[ 'pr', 'pw', 'ev' ],
+			{ value => 0 },    # 0=Celsius, 1=Fahrenheit
+		],
+	);
 
-	$thermostat->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			logger => $self->{logger},
-			type   => 'TargetHeatingCoolingState',
-			iid    => 12,
-			format => 'uint8',
-			perms  => [ 'pr', 'pw', 'ev' ],
-			value  => \$self->{target_heating_state},
-			on_set => sub { $self->_set_target_state(@_) },
-		) );
-
-	$thermostat->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			logger => $self->{logger},
-			type   => 'CurrentTemperature',
-			iid    => 13,
-			format => 'float',
-			perms  => [ 'pr', 'ev' ],
-			unit   => 'celsius',
-			value  => \$self->{current_temp},
-			min    => -40,
-			max    => 100,
-		) );
-
-	$thermostat->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			logger => $self->{logger},
-			type   => 'TargetTemperature',
-			iid    => 14,
-			format => 'float',
-			perms  => [ 'pr', 'pw', 'ev' ],
-			unit   => 'celsius',
-			value  => \$self->{target_temp},
-			min    => 10,
-			max    => 38,
-			step   => 0.5,
-			on_set => sub { $self->_set_target_temp(@_) },
-		) );
-
-	$thermostat->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			logger => $self->{logger},
-			type   => 'TemperatureDisplayUnits',
-			iid    => 15,
-			format => 'uint8',
-			perms  => [ 'pr', 'pw', 'ev' ],
-			value  => 0,    # 0=Celsius, 1=Fahrenheit
-		) );
+	for my $row (@rows) {
+		my ( $type, $iid, $format, $perms, $extra ) = @$row;
+		$thermostat->add_characteristic(
+			Protocol::HAP::Characteristic->new(
+				logger => $self->{logger},
+				type   => $type,
+				iid    => $iid,
+				format => $format,
+				perms  => $perms,
+				%$extra,
+			) );
+	}
 
 	$self->add_service($thermostat);
 
@@ -124,45 +111,31 @@ sub subscribe_mqtt ($self)
 		'Thermostat %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# M2: Subscribe to the plain-text POWER response
-	# (SetOption4 support)
-	$self->{mqtt_client}->subscribe(
-		$self->_build_topic( 'stat', $self->_get_power_key() ),
-		sub ( $recv_topic, $payload ) {
-			my $new_state = ( $payload eq 'ON' ) ? 1 : 0;
-			if ( $self->{heating_state} != $new_state ) {
-				$self->{heating_state} = $new_state;
-				Fugu::Log->default->debug(
-					'Thermostat %s heating state: %s',
-					$self->{name}, $payload );
-				$self->notify_change(11);
-			}
-		} );
+	# M2: The plain-text POWER response (SetOption4 support)
+	$self->_subscribe_plain_power( heating_state => 11 );
 
-	# Subscribe to STATUS8 for sensor data
-	$self->{mqtt_client}->subscribe(
-		$self->_build_topic( 'stat', 'STATUS8' ),
-		sub ( $recv_topic, $payload ) {
-			$self->_handle_status8($payload);
-		} );
-
-	# Subscribe to STATUS10 for sensor data. The spec recommends
-	# this query.
-	$self->{mqtt_client}->subscribe(
-		$self->_build_topic( 'stat', 'STATUS10' ),
-		sub ( $recv_topic, $payload ) {
-			$self->_handle_status10($payload);
-		} );
+	# STATUS8 answers an active query; the spec recommends STATUS10
+	$self->_subscribe_status_sns($_) for qw(STATUS8 STATUS10);
 
 	# Query the sensor status immediately
 	$self->query_status(10);
 }
 
 # Override the base method to process the sensor data from
-# SENSOR messages
+# SENSOR messages and the STATUS8/STATUS10 responses (H4, H5)
 sub _process_sensor_data ( $self, $data )
 {
-	$self->_extract_temperature($data);
+	my ($temp) = $self->_find_sensor_values($data);
+	return unless defined $temp;
+
+	# Convert the value to Celsius if necessary (H4)
+	$temp = $self->convert_temperature($temp);
+
+	Fugu::Log->default->debug( 'Thermostat %s temperature updated: %.1f°C',
+		$self->{name}, $temp );
+	$self->{current_temp} = $temp;
+	$self->notify_change(13);
+	$self->_check_thermostat_logic();
 }
 
 # Override the base method to process the power state updates
@@ -174,111 +147,6 @@ sub _on_power_update ( $self, $state )
 			$self->{name}, $state ? 'ON' : 'OFF' );
 		$self->notify_change(11);
 	}
-}
-
-# Process the STATUS8 response
-sub _handle_status8 ( $self, $payload )
-{
-	eval {
-		my $data = decode_json($payload);
-
-		if ( exists $data->{StatusSNS} ) {
-
-			# Extract the temperature unit if it is
-			# present (H4)
-			if ( exists $data->{StatusSNS}{TempUnit} ) {
-				$self->{temp_unit} =
-				    $data->{StatusSNS}{TempUnit};
-			}
-
-			$self->_extract_temperature( $data->{StatusSNS} );
-		}
-	};
-
-	if ($@) {
-		Fugu::Log->default->error( 'Error parsing STATUS8 for %s: %s',
-			$self->{name}, $@ );
-	}
-}
-
-# Process the STATUS10 response (recommended sensor query)
-sub _handle_status10 ( $self, $payload )
-{
-	eval {
-		my $data = decode_json($payload);
-
-		if ( exists $data->{StatusSNS} ) {
-			if ( exists $data->{StatusSNS}{TempUnit} ) {
-				$self->{temp_unit} =
-				    $data->{StatusSNS}{TempUnit};
-			}
-			$self->_extract_temperature( $data->{StatusSNS} );
-		}
-	};
-
-	if ($@) {
-		Fugu::Log->default->error( 'Error parsing STATUS10 for %s: %s',
-			$self->{name}, $@ );
-	}
-}
-
-# $self->_extract_temperature($data):
-#	Extract the temperature from the sensor data (H4, H5).
-sub _extract_temperature ( $self, $data )
-{
-	my $temp = $self->_find_temperature($data);
-
-	if ( defined $temp ) {
-
-		# Convert the value to Celsius if necessary (H4)
-		$temp = $self->convert_temperature($temp);
-
-		Fugu::Log->default->debug(
-			'Thermostat %s temperature updated: %.1f°C',
-			$self->{name}, $temp );
-		$self->{current_temp} = $temp;
-		$self->notify_change(13);
-		$self->_check_thermostat_logic();
-	}
-}
-
-# $self->_find_temperature($data):
-#	Find the temperature value in the sensor data (H5).
-sub _find_temperature ( $self, $data )
-{
-	# If the configuration sets a sensor type, look for that sensor
-	if ( defined $self->{sensor_type} ) {
-		my $key = $self->{sensor_type};
-
-		# Add the index for indexed sensors, for example DS18B20-1
-		if ( defined $self->{sensor_index} ) {
-			$key .= '-' . $self->{sensor_index};
-		}
-
-		if ( exists $data->{$key} ) {
-			return $data->{$key}{Temperature};
-		}
-	}
-
-	# Auto-detect: try each known sensor type (H5)
-	for my $type (SENSOR_TYPES) {
-		if ( exists $data->{$type} ) {
-			$self->{sensor_type} = $type;
-			return $data->{$type}{Temperature};
-		}
-
-		# Check for indexed sensors, for example DS18B20-1
-		for my $i ( 1 .. 8 ) {
-			my $indexed = "$type-$i";
-			if ( exists $data->{$indexed} ) {
-				$self->{sensor_type}  = $type;
-				$self->{sensor_index} = $i;
-				return $data->{$indexed}{Temperature};
-			}
-		}
-	}
-
-	return;
 }
 
 sub _set_target_temp ( $self, $temp )
