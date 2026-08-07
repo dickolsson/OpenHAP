@@ -80,7 +80,6 @@ sub project ()
 		'web/index.body.html' => "<h1>Home</h1>\n",
 		'web/footer.body.html' => "<p>ISC.</p>\n",
 		'web/robots.txt'      => "User-agent: *\n",
-		'web/extra.css'       => "body { color: red }\n",
 
 		# Not an asset: a note for the maintainers, not content
 		'web/CLAUDE.md' => "# web/\n\nNotes.\n",
@@ -138,8 +137,8 @@ my $OUT  = tempdir( CLEANUP => 1 ) . '/out';
 
 subtest 'the build makes the site and nothing else' => sub {
 	my $site = site( $ROOT, $OUT );
-	is( $site->missing_tool, undef, 'every renderer is installed' );
 	ok( $site->build, 'the build succeeds' );
+	is( $site->missing_tool, undef, 'and records no missing tool' );
 
 	# The probe is the first step, so the failure names the tool
 	# that is missing. Without it the build reaches the lint and
@@ -153,19 +152,22 @@ subtest 'the build makes the site and nothing else' => sub {
 	close STDERR;
 	open STDERR, '>', \$said or die 'Cannot capture stderr';
 
-	my $failed = App::FuguWeb::Site->new(
+	my $broken = App::FuguWeb::Site->new(
 		config => $config,
 		out    => $absent,
 		render => App::FuguWeb::Render->new(
 			config => $config,
 			mandoc => '/nonexistent/mandoc',
 		),
-	)->build;
+	);
+	my $failed = $broken->build;
 
 	close STDERR;
 	open STDERR, '>&', $saved or die "Cannot restore stderr: $!";
 
 	ok( !$failed, 'a build with no mandoc fails' );
+	is( $broken->missing_tool, '/nonexistent/mandoc',
+		'and the build records the missing tool' );
 	like( $said, qr{/nonexistent/mandoc is not installed},
 		'and names the tool that is missing' );
 	unlike( $said, qr/rejected a manual source/,
@@ -177,7 +179,7 @@ subtest 'the build makes the site and nothing else' => sub {
 	my @expected = qw(
 	    index.html readme.html manuals.html
 	    tool.1.html Thing::Depot.3p.html
-	    style.css robots.txt extra.css
+	    style.css robots.txt
 	);
 	ok( -s "$OUT/$_", "$_ exists and is not empty" ) for @expected;
 

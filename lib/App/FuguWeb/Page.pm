@@ -25,7 +25,7 @@ use Fugu::File;
 # App::FuguWeb::Page - the shared chrome around one body fragment.
 #
 # Every source format is reduced to one HTML body fragment, and this
-# module wraps it: the head, the banner, the navigation, the fragment,
+# module wraps it: the head, the header, the navigation, the fragment,
 # and the footer. The layout is fixed. What a project decides is the
 # site name, the language, the navigation, and the footer prose.
 #
@@ -44,14 +44,6 @@ use constant {
 	MIDDLE_DOT => "\xc2\xb7",
 };
 
-# The base stylesheet, and the sheet that a project may add beside it.
-# Both are file names in the output directory: the site is served from
-# one flat directory.
-use constant {
-	BASE_STYLESHEET  => 'style.css',
-	EXTRA_STYLESHEET => 'extra.css',
-};
-
 # The optional fragment that carries the footer prose. The text
 # belongs to the project, not to the tool, so it is content in the
 # source directory and not a setting.
@@ -68,100 +60,63 @@ sub new ( $class, %args )
 	return bless { config => $config }, $class;
 }
 
-# $self->config:
-#	Return the site description.
-sub config ($self)
-{
-	return $self->{config};
-}
-
-# $self->document($title, $fragment):
-#	Return the whole page as bytes. The fragment goes in
-#	unchanged: it is already HTML, from a renderer or from the
-#	project's own source directory.
-sub document ( $self, $title, $fragment )
-{
-	return $self->_head($title) . ( $fragment // '' ) . $self->_foot;
-}
-
 # $self->write($path, $title, $fragment):
-#	Write the page. The method returns true on success, and undef
-#	with a message in the log otherwise.
+#	Write the whole page: the chrome around the fragment, as
+#	bytes. The fragment goes in unchanged: it is already HTML,
+#	from a renderer or from the project's own source directory.
+#	The method returns true on success, and undef with a message
+#	in the log otherwise.
 sub write ( $self, $path, $title, $fragment )
 {
-	return Fugu::File->write( $path, $self->document( $title, $fragment ) );
+	return Fugu::File->write( $path,
+		$self->_head($title) . ( $fragment // '' ) . $self->_foot );
 }
 
 # $self->_head($title):
-#	Everything before the fragment.
+#	Everything before the fragment. Every value is escaped before
+#	the heredoc reads it, so nothing raw reaches the markup.
 sub _head ( $self, $title )
 {
 	my $config = $self->{config};
-	my $site   = App::FuguWeb::escape_html( $config->site );
 
-	my $html = "<!DOCTYPE html>\n";
-	$html .=
-	      '<html lang="'
-	    . App::FuguWeb::escape_attr( $config->lang )
-	    . qq{">\n};
-	$html .= "<head>\n";
-	$html .= qq{<meta charset="utf-8">\n};
-	$html .= '<meta name="viewport"'
-	    . qq{ content="width=device-width, initial-scale=1">\n};
-	$html .=
-	      '<title>'
-	    . App::FuguWeb::escape_html($title) . ' '
-	    . EM_DASH
-	    . " $site</title>\n";
-	$html .= $self->_stylesheets;
-	$html .= "</head>\n<body>\n";
-	$html .=
-	      '<header class="banner"><a href="'
-	    . App::FuguWeb::escape_attr( $config->entry ) . '">'
-	    . App::FuguWeb::escape_html( $config->banner )
-	    . "</a></header>\n";
-	$html .= $self->_nav;
-	$html .= "<hr>\n<main>\n";
+	my $site  = App::FuguWeb::escape_html( $config->site );
+	my $lang  = App::FuguWeb::escape_attr( $config->lang );
+	my $entry = App::FuguWeb::escape_attr( $config->entry );
+	my $full = App::FuguWeb::escape_html($title) . ' ' . EM_DASH . " $site";
+	my $sheet = App::FuguWeb::STYLESHEET;
 
-	return $html;
-}
-
-# $self->_stylesheets:
-#	The link elements. The base sheet ships with the tool. A
-#	project sheet comes after it, so a project rule wins over the
-#	rule it overrides.
-sub _stylesheets ($self)
-{
-	my $html =
-	    qq{<link rel="stylesheet" href="} . BASE_STYLESHEET . qq{">\n};
-
-	$html .= qq{<link rel="stylesheet" href="} . EXTRA_STYLESHEET . qq{">\n}
-	    if -f $self->{config}->source_path(EXTRA_STYLESHEET);
-
-	return $html;
+	return <<"HTML" . $self->_nav . "<hr>\n<main>\n";
+<!DOCTYPE html>
+<html lang="$lang">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$full</title>
+<link rel="stylesheet" href="$sheet">
+</head>
+<body>
+<header class="banner"><a href="$entry">$site</a></header>
+HTML
 }
 
 # $self->_nav:
-#	The navigation. Every entry but the last carries the
-#	separator, so the row does not end in a dangling dot.
+#	The navigation. The separator joins the entries, so the row
+#	does not end in a dangling dot.
 sub _nav ($self)
 {
 	my @entries = $self->{config}->nav;
 	return "" unless @entries;
 
-	my $html = "<nav>\n";
-	for my $index ( 0 .. $#entries ) {
-		my $entry = $entries[$index];
-		$html .=
+	my @links = map {
 		      '<a href="'
-		    . App::FuguWeb::escape_attr( $entry->{href} ) . '">'
-		    . App::FuguWeb::escape_html( $entry->{label} ) . '</a>';
-		$html .= ' ' . MIDDLE_DOT if $index < $#entries;
-		$html .= "\n";
-	}
-	$html .= "</nav>\n";
+		    . App::FuguWeb::escape_attr( $_->{href} ) . '">'
+		    . App::FuguWeb::escape_html( $_->{label} ) . '</a>'
+	} @entries;
 
-	return $html;
+	return
+	      "<nav>\n"
+	    . join( ' ' . MIDDLE_DOT . "\n", @links )
+	    . "\n</nav>\n";
 }
 
 # $self->_foot:

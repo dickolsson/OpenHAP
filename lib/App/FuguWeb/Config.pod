@@ -110,20 +110,18 @@ The project root, and the F<.fuguwebrc> that this object read.
 
 The source directory, or one file in it.
 
-=head2 site, banner, lang, out_dir, source_dir, entry, module_root, pod_center, pod_release, mandoc_os, man_url, stylesheet
+=head2 site, lang, out_dir, source_dir, entry, module_root, mandoc_os, man_url, stylesheet
 
 The settings. C<site> is the only one a project must give.
 
-    site            (required)  the name in the title of every page
-    banner          site        the text of the header link
+    site            (required)  the name in the title of every page,
+                                and the text of the header link
     lang            en          the lang attribute of the document
     out_dir         web/build   where the build writes
     source_dir      web         the fragments and the assets
-    entry           index.html  the front page, and the banner link
+    entry           index.html  the front page, and the header link
     module_root     lib         the prefix a module name drops
                                 (a trailing slash is dropped)
-    pod_center      Perl Library Manual   the pod2man --center
-    pod_release     OpenBSD     the pod2man --release
     mandoc_os       OpenBSD     the mandoc -I os=, which pins the footer
     man_url         https://man.openbsd.org/   where a remote .Xr goes
     stylesheet      (searched)  the base stylesheet
@@ -131,6 +129,10 @@ The settings. C<site> is the only one a project must give.
 C<stylesheet> overrides the search that L<Fugu::File/share_path> does.
 A project that installs the tool from CPAN needs it, because the search
 finds the sheet in a checkout only.
+
+The C<pod2man> C<--center> and C<--release> values are not settings.
+They are constants of L<App::FuguWeb::Render>: they pin the C<pod2man>
+output so the site does not vary with the build host.
 
 =head2 nav
 
@@ -153,6 +155,13 @@ The manual groups, in file order. Each entry is an
 C<App::FuguWeb::Config::Group>, and the two block types interleave as
 the description wrote them.
 
+=head2 inventory
+
+Every name that the output directory must hold after a build: the
+pages of the description, one page for each manual of each group, the
+stylesheet, and the assets. The build and the checks read the same
+list, so the two can never disagree about what the site holds.
+
 =head1 GROUPS
 
 A C<manuals> or C<modules> block becomes one group. A group never holds
@@ -163,11 +172,10 @@ A group whose directory does not exist fails the load and names the
 directory. A silent empty group hides a typo in a path, and a rename
 that nothing catches is what this file exists to prevent.
 
-=head2 kind, heading, anchor, dir, namespace, module_root
+=head2 kind, heading, anchor, namespace
 
 C<kind> is C<manuals> or C<modules>. C<heading> is the block name, which
-becomes the C<< <h2> >>, and C<anchor> its C<id>. C<dir> is the
-directory, resolved against the project root.
+becomes the C<< <h2> >>, and C<anchor> its C<id>.
 
 =head2 manuals
 

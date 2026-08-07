@@ -35,9 +35,6 @@ use Fugu::File;
 # writes one.
 use constant OPENING_FRAGMENT => 'manuals.body.html';
 
-# The title of the page when no page block claims the index.
-use constant DEFAULT_TITLE => 'Manuals';
-
 # App::FuguWeb::Index->new(%args):
 #	config => $config	the site description (required)
 sub new ( $class, %args )
@@ -49,24 +46,18 @@ sub new ( $class, %args )
 	return bless { config => $config }, $class;
 }
 
-# $self->config:
-#	Return the site description.
-sub config ($self)
-{
-	return $self->{config};
-}
-
 # $self->title:
 #	The title of the index page. It comes from the page block that
 #	names the index as its source, so the heading and the browser
-#	tab always agree.
+#	tab always agree. The build renders the index for such a block
+#	only, so the block is always there.
 sub title ($self)
 {
 	for my $page ( $self->{config}->pages ) {
 		return $page->{title} if $page->{source} eq 'index';
 	}
 
-	return DEFAULT_TITLE;
+	return;
 }
 
 # $self->body:

@@ -73,13 +73,11 @@ sub from_pod ( $class, $path, $group, $module_root )
 	}, $class;
 }
 
-# $self->path, $self->name, $self->section, $self->group:
-#	The source, the manual name, its section, and the group that
-#	the description put it in.
+# $self->path, $self->name, $self->section:
+#	The source, the manual name, and its section.
 sub path    ($self) { return $self->{path}; }
 sub name    ($self) { return $self->{name}; }
 sub section ($self) { return $self->{section}; }
-sub group   ($self) { return $self->{group}; }
 
 # $self->is_pod:
 #	Report whether the source is a POD sidecar. A sidecar goes

@@ -278,6 +278,11 @@ subtest 'an empty group leaves no heading behind' => sub {
 	my ( $config, $reason ) = load( <<'RC' );
 site = Example
 
+page "manuals.html" {
+	title = Manuals
+	index = yes
+}
+
 manuals "Empty" {
 	dir    = web
 	anchor = empty
@@ -288,7 +293,7 @@ RC
 	my $body = App::FuguWeb::Index->new( config => $config )->body;
 	unlike( $body, qr/Empty/, 'no heading and no list' );
 	like( $body, qr/<h1>Manuals<\/h1>/,
-		'the opening still has the default title' );
+		'the opening still has the title' );
 };
 
 subtest 'two manuals may not become the same page' => sub {

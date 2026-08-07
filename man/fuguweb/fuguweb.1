@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: August 4 2026 $
+.Dd $Mdocdate: August 7 2026 $
 .Dt FUGUWEB 1
 .Os
 .Sh NAME
@@ -77,7 +77,7 @@ Show the usage message.
 .El
 .Pp
 These commands are available:
-.Bl -tag -width "page title"
+.Bl -tag -width Ds
 .It Cm init Op Ar dir
 Write a starter
 .Pa .fuguwebrc
@@ -146,20 +146,7 @@ It says nothing and exits 0 when the site is good.
 also notes every external link.
 The command never fetches one:
 the build and its checks touch no network.
-.It Cm page Ar title
-Read an HTML body fragment on standard input,
-wrap it in the shared chrome,
-and write the page to standard output.
-.It Cm index
-Write the body fragment of the manual index to standard output.
 .El
-.Pp
-.Cm page
-and
-.Cm index
-exist because a project may want one page out of the set.
-.Cm build
-calls the same code.
 .Sh FILES
 .Bl -tag -width "share/fuguweb/style.css" -compact
 .It Pa .fuguwebrc
@@ -197,11 +184,6 @@ Build the site and check it:
 .Bd -literal -offset indent
 $ fuguweb build --out web/build
 $ fuguweb check --out web/build
-.Ed
-.Pp
-Wrap one fragment by hand:
-.Bd -literal -offset indent
-$ lowdown -Thtml INSTALL.md | fuguweb page Install > install.html
 .Ed
 .Sh SEE ALSO
 .Xr lowdown 1 ,

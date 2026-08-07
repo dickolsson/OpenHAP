@@ -52,10 +52,9 @@ absolute, or both relative to the same directory.
 
 =head1 METHODS
 
-=head2 path, name, section, group
+=head2 path, name, section
 
-The source, the manual name, its section, and the group that the site
-description put it in.
+The source, the manual name, and its section.
 
 =head2 is_pod
 

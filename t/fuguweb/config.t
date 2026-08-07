@@ -45,7 +45,6 @@ subtest 'the defaults' => sub {
 	    or diag $reason;
 
 	is( $config->site,        'Example',   'site' );
-	is( $config->banner,      'Example',   'banner defaults to site' );
 	is( $config->lang,        'en',        'lang' );
 	is( $config->out_dir,     'web/build', 'out_dir' );
 	is( $config->source_dir,  'web',       'source_dir' );
@@ -53,8 +52,6 @@ subtest 'the defaults' => sub {
 	is( $config->module_root, 'lib',        'module_root' );
 	is( $config->mandoc_os,   'OpenBSD',    'mandoc_os' );
 	is( $config->man_url, 'https://man.openbsd.org/', 'man_url' );
-	is( $config->pod_center,  'Perl Library Manual', 'pod_center' );
-	is( $config->pod_release, 'OpenBSD',             'pod_release' );
 	is( $config->stylesheet,  undef, 'stylesheet is searched for' );
 	is( scalar $config->nav,   0, 'no navigation' );
 	is( scalar $config->pages, 0, 'no page' );
@@ -63,28 +60,22 @@ subtest 'the defaults' => sub {
 subtest 'every setting overrides its default' => sub {
 	my ( $config, $reason ) = load_rc( <<'RC' );
 site        = Example
-banner      = Example Project
 lang        = sv
 out_dir     = out
 source_dir  = site
 entry       = home.html
 module_root = code
-pod_center  = Example Library Manual
-pod_release = Example
 mandoc_os   = Example OS
 man_url     = https://man.example.org/
 stylesheet  = site/base.css
 RC
 	ok( $config, 'the description loads' ) or diag $reason;
 
-	is( $config->banner,      'Example Project',   'banner' );
 	is( $config->lang,        'sv',                'lang' );
 	is( $config->out_dir,     'out',               'out_dir' );
 	is( $config->source_dir,  'site',              'source_dir' );
 	is( $config->entry,       'home.html',         'entry' );
 	is( $config->module_root, 'code',              'module_root' );
-	is( $config->pod_center, 'Example Library Manual', 'pod_center' );
-	is( $config->pod_release, 'Example',           'pod_release' );
 	is( $config->mandoc_os,   'Example OS',        'mandoc_os' );
 	is( $config->man_url, 'https://man.example.org/', 'man_url' );
 	is( $config->stylesheet,  'site/base.css',     'stylesheet' );
@@ -97,8 +88,56 @@ subtest 'root, path and source_path' => sub {
 	is( $config->root, $root,                 'root' );
 	is( $config->path, "$root/.fuguwebrc",    'path' );
 	is( $config->source_path, "$root/web",    'the source directory' );
-	is( $config->source_path('extra.css'), "$root/web/extra.css",
+	is( $config->source_path('footer.body.html'),
+		"$root/web/footer.body.html",
 		'one file in the source directory' );
+};
+
+subtest 'the inventory holds the whole site, once' => sub {
+	my $root = write_rc( <<'RC' );
+site = Example
+
+page "index.html" {
+	title = Home
+	body  = index.body.html
+}
+
+page "manuals.html" {
+	title = Manuals
+	index = yes
+}
+
+manuals "Manuals" {
+	dir    = man
+	anchor = manuals
+}
+RC
+	mkdir "$root/man" or die "Cannot create the directory: $!";
+	mkdir "$root/web" or die "Cannot create the directory: $!";
+
+	for my $pair (
+		[ 'man/tool.1'          => ".Sh NAME\n.Nd a tool\n" ],
+		[ 'web/index.body.html' => "<h1>Home</h1>\n" ],
+		[ 'web/robots.txt'      => "User-agent: *\n" ] )
+	{
+		open my $fh, '>', "$root/$pair->[0]"
+		    or die "Cannot write $pair->[0]: $!";
+		print {$fh} $pair->[1];
+		close $fh;
+	}
+
+	my $config =
+	    App::FuguWeb::Config->load( root => $root, error => \my $reason );
+	ok( $config, 'the description loads' ) or diag $reason;
+
+	# The pages, one page per manual, the stylesheet, and the
+	# assets. The body fragment is a source and never an asset.
+	is_deeply(
+		[ $config->inventory ],
+		[ qw(index.html manuals.html tool.1.html style.css
+		    robots.txt) ],
+		'every name the output must hold, and nothing else'
+	);
 };
 
 subtest 'the navigation keeps its file order' => sub {

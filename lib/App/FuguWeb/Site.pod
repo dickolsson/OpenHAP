@@ -11,10 +11,12 @@ App::FuguWeb::Site - the whole build, from the description to the pages
         out    => 'web/build',
     );
 
-    my $missing = $site->missing_tool;
-    die "$missing not found\n" if defined $missing;
+    unless ($site->build) {
+        my $missing = $site->missing_tool;
+        die "$missing not found\n" if defined $missing;
+        die "the build failed\n";
+    }
 
-    $site->build or die "the build failed\n";
     $site->clean;
 
 =head1 DESCRIPTION
@@ -31,21 +33,21 @@ output directory, and gives the same bytes for the same checkout.
 
     App::FuguWeb::Site->new(
         config => $config,      # required
-        out    => $dir,         # default: the out_dir setting
+        out    => $dir,         # required: the output directory
         log    => $logger,      # default: Fugu::Log->default
         render => $render,      # default: one over the same description
     )
 
-=head2 config, out, render, staging
+=head2 config, staging
 
-The site description, the output directory, the renderers, and the mdoc
-staging directory.
+The site description, and the mdoc staging directory.
 
 =head2 missing_tool
 
-The name of the first renderer that is not installed, or C<undef>. The
-caller reports it before the build starts, so an operator learns which
-package to install.
+The renderer that failed the probe of the last L</build>, or C<undef>.
+The build probes once and names the tool in the log; the caller maps
+this value to its own exit code, so an operator learns which package
+to install.
 
 =head2 build
 
