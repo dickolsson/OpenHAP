@@ -15,21 +15,11 @@ severity = 4
 # Multiple packages per file is fine for related classes
 [-Modules::ProhibitMultiplePackages]
 
-# OpenBSD style prefers our @ISA over 'use parent'
-[-ClassHierarchies::ProhibitExplicitISA]
-
 # File handles must stay open during flock operations
 [-InputOutput::RequireBriefOpen]
 
 # Modern Perl signatures use the prototype syntax in a different way
 [-Subroutines::ProhibitSubroutinePrototypes]
-
-# Postfix if/unless is fine for simple statements
-[-ControlStructures::ProhibitPostfixControls]
-
-# OpenBSD style discourages empty parentheses on method calls
-# without args: $obj->method not $obj->method()
-[-CodeLayout::ProhibitParensWithBuiltins]
 
 #-----------------------------------------------------------------------------
 # The configuration relaxes these rules for practical reasons
@@ -37,24 +27,3 @@ severity = 4
 
 # Void subroutines do not need explicit return statements
 [-Subroutines::RequireFinalReturn]
-
-# Allow unless for simple conditions
-[-ControlStructures::ProhibitUnlessBlocks]
-
-# A regex can use modifiers without /x for simple patterns
-[-RegularExpressions::RequireExtendedFormatting]
-
-# Magic numbers are acceptable in context
-[-ValuesAndExpressions::ProhibitMagicNumbers]
-
-#-----------------------------------------------------------------------------
-# style(9) requires tabs of 8 characters
-#-----------------------------------------------------------------------------
-[CodeLayout::ProhibitHardTabs]
-allow_leading_tabs = 1
-
-#-----------------------------------------------------------------------------
-# POD documentation. Separate .pod files are acceptable.
-#-----------------------------------------------------------------------------
-[-Documentation::RequirePodSections]
-[-Documentation::RequirePodAtEnd]
