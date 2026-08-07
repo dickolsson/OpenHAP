@@ -141,9 +141,41 @@ my @RETIRED = (
 	{ name => 'web/style.css', pattern => qr{\bweb/style\.css\b} },
 );
 
+# The vocabulary gate. The project has no users, so no code path stays
+# for an old consumer, and no prose apologizes for one. A line that
+# reaches for this vocabulary marks a shim, an alias, or a kept old
+# path, and those go outright.
+#
+# The gate reads line by line, so a phrase split across a comment wrap
+# escapes it. Accepted: the gate catches vocabulary, review catches
+# intent. The bare word "legacy" is not banned: the Tasmota and HAP
+# specs use it as a term of art, and a conformance test quotes a spec
+# table.
+my @BANNED = (
+	{ name => 'deprecation', pattern => qr/\bdeprecat/i },
+	{
+		name    => 'backward compatibility',
+		pattern => qr/backwards?[ -]compat/i,
+	},
+	{
+		name    => 'for compatibility',
+		pattern => qr/for compatibility/i,
+	},
+	{
+		name    => 'compatibility shim',
+		pattern => qr/compatibility (?:shim|layer|alias|wrapper|path)/i,
+	},
+);
+
 # plans/001 to plans/008 record what was true when they were written.
 # Do not rewrite them.
 my $SKIP_DIR = qr{\A plans/ }x;
+
+# The banned-vocabulary sweep also skips spec/: the specs quote other
+# projects' deprecations, and spec/MQTT-Transport.md recommends
+# defaults with the banned phrase. The retired-name sweep keeps
+# reading spec/, so this skip applies to @BANNED only.
+my $SKIP_SPEC = qr{\A spec/ }x;
 
 # This file lists the retired names, so it names them by definition.
 my %SKIP_FILE = ( 't/scripts/namespaces.t' => 1 );
@@ -171,6 +203,10 @@ for my $retired (@RETIRED) {
 	like( $retired->{name}, $retired->{pattern},
 		"the $retired->{name} pattern matches its own name" );
 }
+for my $banned (@BANNED) {
+	like( $banned->{name}, $banned->{pattern},
+		"the $banned->{name} pattern matches its own name" );
+}
 
 my @files = grep { !/$SKIP_DIR/ && !$SKIP_FILE{$_} } @tracked;
 
@@ -195,10 +231,18 @@ for my $file (@files) {
 		push @violations, "$file: cannot read: $!";
 		next;
 	};
+	my $sweep_banned = $file !~ $SKIP_SPEC;
 	while ( my $line = <$fh> ) {
 		for my $retired (@RETIRED) {
 			next unless $line =~ $retired->{pattern};
 			push @violations, "$file:$.: names $retired->{name}";
+		}
+		next unless $sweep_banned;
+		for my $banned (@BANNED) {
+			next unless $line =~ $banned->{pattern};
+			push @violations,
+			    "$file:$.: uses the banned vocabulary"
+			    . " '$banned->{name}'";
 		}
 	}
 	close $fh;

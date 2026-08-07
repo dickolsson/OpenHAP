@@ -354,8 +354,7 @@ sub _dispatch ( $self, $request, $session )
 	}
 
 	# Timed write preparation. The spec shows POST in the
-	# table, but the later text uses PUT. Accept both methods
-	# for compatibility.
+	# table, but the later text uses PUT. Accept both.
 	if ( $path eq '/prepare' && ( $method eq 'PUT' || $method eq 'POST' ) )
 	{
 		return $self->_handle_prepare( $request, $session );
