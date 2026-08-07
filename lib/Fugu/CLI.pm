@@ -19,8 +19,11 @@ use v5.36;
 
 package Fugu::CLI;
 
+use Exporter qw(import);
 use Fugu::Log;
 use Getopt::Long ();
+
+our @EXPORT_OK = qw(EXIT_SUCCESS EXIT_ERROR);
 
 # Fugu::CLI - subcommand dispatch for a command-line tool.
 #
@@ -36,7 +39,9 @@ use Getopt::Long ();
 # tool starts to warn about something.
 
 # The exit codes that every tool shares. A domain code belongs to the
-# tool, not here, and starts above these.
+# tool, not here, and starts above these. EXIT_SUCCESS and EXIT_ERROR
+# are importable: they are the two codes that non-CLI modules also
+# return.
 use constant {
 	EXIT_SUCCESS      => 0,
 	EXIT_ERROR        => 1,
@@ -189,21 +194,34 @@ sub run ( $self, @argv )
 	return $entry->{run}->( $self, @argv );
 }
 
+# $self->_usage_line($command):
+#	The usage line: of one command when the caller names one it
+#	has, of the whole tool otherwise. The four printers below
+#	share this one formatter.
+sub _usage_line ( $self, $command = undef )
+{
+	if ( defined $command && $self->{commands}{$command} ) {
+		my $entry = $self->{commands}{$command};
+		return sprintf 'usage: %s %s%s', $self->{name}, $command,
+		    defined $entry->{usage} ? " $entry->{usage}" : '';
+	}
+
+	return sprintf 'usage: %s %s', $self->{name},
+	    $self->{usage} // '[options] <command> [arguments]';
+}
+
 # $self->print_help($command):
 #	Print the help for one command, or for the whole tool. The help
 #	is what the user asked for, so it goes to standard output.
 sub print_help ( $self, $command = undef )
 {
+	say $self->_usage_line($command);
+
 	if ( defined $command && $self->{commands}{$command} ) {
 		my $entry = $self->{commands}{$command};
-		printf "usage: %s %s%s\n", $self->{name}, $command,
-		    defined $entry->{usage} ? " $entry->{usage}" : '';
 		print "\n$entry->{summary}\n" if defined $entry->{summary};
 		return EXIT_SUCCESS;
 	}
-
-	printf "usage: %s %s\n", $self->{name},
-	    $self->{usage} // '[options] <command> [arguments]';
 
 	print "\nCommands:\n";
 	my $width = 0;
@@ -226,8 +244,7 @@ sub print_help ( $self, $command = undef )
 #	output that a script reads.
 sub usage_error ($self)
 {
-	printf STDERR "usage: %s %s\n", $self->{name},
-	    $self->{usage} // '[options] <command> [arguments]';
+	say STDERR $self->_usage_line;
 
 	return EXIT_INVALID_ARGS;
 }
@@ -236,9 +253,7 @@ sub usage_error ($self)
 #	Print the usage line of one command on standard error.
 sub command_usage_error ( $self, $command )
 {
-	my $entry = $self->{commands}{$command} // {};
-	printf STDERR "usage: %s %s%s\n", $self->{name}, $command,
-	    defined $entry->{usage} ? " $entry->{usage}" : '';
+	say STDERR $self->_usage_line($command);
 
 	return EXIT_INVALID_ARGS;
 }

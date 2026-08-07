@@ -17,32 +17,38 @@ use Socket      qw(SOCK_STREAM);
 use Time::HiRes qw(sleep);
 
 use_ok('Fugu::Control');
+use_ok('Fugu::EventLoop');
 use_ok('Fugu::Imsg');
 
 my $dir = tempdir( CLEANUP => 1 );
 my $n   = 0;
 
-# start_server($setup): fork a server that serves connections until
-#	the parent kills it. $setup->($control) registers the
-#	commands. The function returns ($path, $pid).
+# start_server($setup): fork a server that serves connections over a
+#	real event loop until the parent kills it. $setup->($control)
+#	registers the commands. The function returns ($path, $pid).
 sub start_server ($setup)
 {
 	my $path = sprintf '%s/control%d.sock', $dir, $n++;
-
-	my $control = Fugu::Control->new( path => $path );
-	$setup->($control);
-	$control->listen or die 'listen: ' . $control->error;
 
 	my $pid = fork // die "fork: $!";
 	if ( $pid == 0 ) {
 		local $SIG{ALRM} = sub { _exit(1) };
 		alarm 30;
-		$control->accept_one while 1;
+
+		my $loop    = Fugu::EventLoop->new;
+		my $control = Fugu::Control->new( path => $path );
+		$setup->($control);
+		$control->listen( loop => $loop ) or _exit(1);
+		$loop->run;
 		_exit(0);
 	}
 
-	# The parent holds no listener: only the child accepts
-	close $control->{listener};
+	# Wait until the child has bound the socket
+	for ( 1 .. 100 ) {
+		last if -S $path;
+		sleep 0.05;
+	}
+	die 'the server never bound its socket' unless -S $path;
 
 	return ( $path, $pid );
 }
@@ -66,7 +72,6 @@ subtest 'a command answers' => sub {
 		} );
 
 	my $client = Fugu::Control::Client->new( path => $path );
-	ok( $client->exists, 'the socket is there' );
 
 	is_deeply( $client->request('ping'), { pong => 1 }, 'a reply decodes' );
 	is( $client->error, undef, 'and no error is recorded' );
@@ -81,19 +86,16 @@ subtest 'a command answers' => sub {
 	stop_server( $pid, $path );
 };
 
-subtest 'the registry is readable' => sub {
+subtest 'the constructor contracts hold' => sub {
 	my $control = Fugu::Control->new( path => "$dir/unused.sock" );
-	$control->register( b => sub ($) { } );
-	$control->register( a => sub ($) { } );
-
-	is_deeply( [ $control->commands ], [qw(a b)], 'the names, sorted' );
-	is( $control->path, "$dir/unused.sock", 'and the path' );
+	is( $control->path, "$dir/unused.sock", 'the server knows its path' );
 
 	ok( !eval { $control->register( c => 'not code' ); 1 },
 		'a handler must be code' );
 	ok( !eval { Fugu::Control->new; 1 }, 'a server needs a path' );
 	ok( !eval { Fugu::Control::Client->new; 1 },
 		'and so does a client' );
+	ok( !eval { $control->listen; 1 }, 'and listen needs a loop' );
 };
 
 subtest 'an unknown command is refused, not fatal' => sub {
@@ -266,7 +268,6 @@ subtest 'an absent socket is not a refusal' => sub {
 	my $client =
 	    Fugu::Control::Client->new( path => "$dir/never-made.sock" );
 
-	ok( !$client->exists, 'the socket is not there' );
 	is( $client->request('ping'), undef, 'the request fails' );
 	ok( $client->socket_absent, 'and the client says the daemon is absent' );
 	like( $client->error, qr/never-made\.sock/, 'the reason names the path' );
@@ -286,7 +287,8 @@ subtest 'a socket behind a closed directory is a permission problem' => sub {
 
 	my $control = Fugu::Control->new( path => $path );
 	$control->register( ping => sub ($) { { pong => 1 } } );
-	ok( $control->listen, 'the server bound inside the directory' );
+	ok( $control->listen( loop => Fugu::EventLoop->new ),
+		'the server bound inside the directory' );
 
 	chmod 0000, $closed or die "chmod: $!";
 
@@ -309,7 +311,8 @@ subtest 'a listen refuses to take a live socket' => sub {
 		} );
 
 	my $second = Fugu::Control->new( path => $path );
-	is( $second->listen, undef, 'a second server does not bind' );
+	is( $second->listen( loop => Fugu::EventLoop->new ),
+		undef, 'a second server does not bind' );
 	like( $second->error, qr/Another process serves/,
 		'and it says why' );
 
@@ -337,7 +340,8 @@ subtest 'a stale socket is replaced' => sub {
 	ok( -e $path, 'the stale socket is on disk' );
 
 	my $control = Fugu::Control->new( path => $path );
-	ok( $control->listen, 'the server takes the name' )
+	ok( $control->listen( loop => Fugu::EventLoop->new ),
+		'the server takes the name' )
 	    or diag( $control->error // 'no error recorded' );
 
 	$control->shutdown;
@@ -348,7 +352,8 @@ subtest 'the socket is 0600 from birth' => sub {
 	my $path = "$dir/mode.sock";
 
 	my $control = Fugu::Control->new( path => $path );
-	ok( $control->listen, 'the server bound' );
+	ok( $control->listen( loop => Fugu::EventLoop->new ),
+		'the server bound' );
 
 	my $mode = ( stat $path )[2] & 07777;
 	is( $mode, 0600, 'no other user can connect' );

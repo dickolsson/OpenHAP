@@ -25,10 +25,6 @@
 use Fugu::Signal;
 
 my $sig = Fugu::Signal->new;
-$sig->add_cleanup(sub ($signal) { unlink $tempfile });
-$sig->setup_graceful_exit('INT', 'TERM');
-
-# or, to decide when to stop:
 $sig->setup_interrupt_flag('INT', 'TERM');
 until ($sig->interrupted) {
     do_some_work();
@@ -41,61 +37,30 @@ safely.
 The program does not leave temporary files, child processes or
 half-written state behind.
 .Pp
-There are two shapes.
-.Fn setup_graceful_exit
-runs the cleanup handlers and exits from inside the signal handler.
-This shape is correct for a program that can stop its work at all
-times.
 .Fn setup_interrupt_flag
 only sets a flag.
 The program must do a check of the flag and stop where a stop is safe.
 .Pp
-In each shape, the object keeps the previous handlers.
+The object keeps the previous handlers.
 .Fn restore
 puts them back,
 and the destructor calls
 .Fn restore .
 Thus a scoped object leaves the process in its initial state.
 .Pp
-Each manager owns its handlers, its cleanups and its interrupt flag.
+Each manager owns its handlers and its interrupt flag.
 Two managers in one process do not see each other's state.
 The installed handlers close over the object, so a handler always
 finds the manager that installed it.
 .Ss new
-.Fn new "%args"
+.Fn new
 creates a signal handler manager.
 It does not install handlers.
-.Pp
-This is the argument:
-.Bl -tag -width "exit_statusXX"
-.It Fa exit_status
-The exit code of a graceful exit.
-The default is 130, the conventional code for
-.Dv SIGINT .
-.El
-.Ss setup_graceful_exit
-.Fn setup_graceful_exit "@signals"
-installs a handler for each named signal.
-The handler sets the interrupt flag of this manager,
-runs the cleanup handlers of this manager,
-and exits with
-.Fa exit_status .
 .Ss setup_interrupt_flag
 .Fn setup_interrupt_flag "@signals"
 installs a handler for each named signal.
 The handler sets the interrupt flag and returns.
 No other action occurs until the program reads the flag.
-.Ss add_cleanup
-.Fn add_cleanup "$handler"
-adds a code reference that runs,
-with the signal name as its argument,
-before
-.Fn setup_graceful_exit
-exits.
-The handlers run in the sequence in which you add them.
-Each handler runs inside an
-.Ic eval .
-Thus a handler that dies does not stop the others.
 .Ss restore
 .Fn restore
 puts back the handlers that this object replaced.
@@ -113,17 +78,10 @@ It serves code that runs far from the object, for example a poll loop
 deep in a library.
 Code that holds the object uses
 .Fn interrupted .
-.Ss reset_all_interrupted
-.Fn reset_all_interrupted
-clears the interrupt flag of every live manager.
-It is a plain function, not a method.
-Tests use it between cases.
 .Sh RETURN VALUES
 .Fn new
 returns a signal handler manager.
-.Fn setup_graceful_exit ,
 .Fn setup_interrupt_flag ,
-.Fn add_cleanup ,
 .Fn reset_interrupted
 and
 .Fn restore
@@ -147,7 +105,6 @@ for my $item (@items) {
 .Ed
 .Sh ERRORS
 No method dies.
-If a cleanup handler dies, the module catches the error and ignores it.
 .Sh SEE ALSO
 .Xr perlipc 1 ,
 .Xr kill 2 ,
@@ -156,11 +113,6 @@ If a cleanup handler dies, the module catches the error and ignores it.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-The cleanup list survives the run.
-A second signal that comes after the start of a graceful exit finds the
-same handlers and runs them again.
-Thus a cleanup handler must be safe to run twice.
-.Pp
 .Fn check_interrupted
 answers for the whole process.
 It returns true when any live manager saw a signal, and it cannot tell

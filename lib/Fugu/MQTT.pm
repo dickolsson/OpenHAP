@@ -33,6 +33,20 @@ use Fugu::Timeout;
 # core-Perl load contract of Fugu, and a daemon whose broker is
 # optional still runs without the library.
 
+# _log_warnings($format, \@warnings):
+#	Send the warnings that Net::MQTT::Simple emitted to the
+#	logger, without the program name it prefixes.
+sub _log_warnings ( $format, $warnings )
+{
+	for my $warning (@$warnings) {
+		chomp $warning;
+		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
+		Fugu::Log->default->debug( $format, $warning );
+	}
+
+	return;
+}
+
 sub new ( $class, %args )
 {
 	my $self = bless {
@@ -109,16 +123,7 @@ sub mqtt_connect ( $self, $timeout = 10 )
 			} );
 	};
 
-	# Send the captured warnings to the logger
-	for my $warning (@warnings) {
-		chomp $warning;
-
-		# Remove the program name if it is present, for
-		# example "/usr/local/bin/openhapd: "
-		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
-		Fugu::Log->default->debug( 'MQTT connection warning: %s',
-			$warning );
-	}
+	_log_warnings( 'MQTT connection warning: %s', \@warnings );
 
 	if ( $@ || !$success ) {
 		my $err = $@ || "no answer within ${timeout}s";
@@ -139,10 +144,17 @@ sub subscribe ( $self, $topic, $callback )
 
 	return unless $self->{connected} && $self->{client};
 
-	# Net::MQTT::Simple uses a different subscription model.
-	# The module registers the topics and polls for messages in
-	# tick(). Since 1.33, Net::MQTT::Simple passes a retain flag
-	# as a third argument. Accept and ignore all extra arguments.
+	$self->_register($topic);
+}
+
+# $self->_register($topic):
+#	Register one topic with the client. Net::MQTT::Simple uses a
+#	different subscription model: the module registers the topics
+#	and polls for messages in tick(). Since 1.33,
+#	Net::MQTT::Simple passes a retain flag as a third argument.
+#	Accept and ignore all extra arguments.
+sub _register ( $self, $topic )
+{
 	eval {
 		$self->{client}->subscribe(
 			$topic,
@@ -156,17 +168,8 @@ sub subscribe ( $self, $topic, $callback )
 		Fugu::Log->default->error( 'MQTT subscribe error for %s: %s',
 			$topic, $@ );
 	}
-}
 
-# $self->unsubscribe($topic):
-#	Unsubscribe from an MQTT topic.
-sub unsubscribe ( $self, $topic )
-{
-	delete $self->{subscriptions}{$topic};
-
-	return unless $self->{connected} && $self->{client};
-
-	eval { $self->{client}->unsubscribe($topic); };
+	return;
 }
 
 sub publish ( $self, $topic, $payload, $retain = 0 )
@@ -214,15 +217,7 @@ sub tick ( $self, $timeout = 0 )
 
 	eval { $self->{client}->tick($timeout); };
 
-	# Send the captured warnings to the logger
-	for my $warning (@warnings) {
-		chomp $warning;
-
-		# Remove the program name if it is present, for
-		# example "/usr/local/bin/openhapd: "
-		$warning =~ s{^(?:.*/)?[^/]+:\s+}{};
-		Fugu::Log->default->debug( 'MQTT: %s', $warning );
-	}
+	_log_warnings( 'MQTT: %s', \@warnings );
 
 	if ($@) {
 
@@ -315,22 +310,7 @@ sub resubscribe ($self)
 {
 	return unless $self->{connected} && $self->{client};
 
-	for my $topic ( keys %{ $self->{subscriptions} } ) {
-		my $callback = $self->{subscriptions}{$topic};
-		eval {
-			$self->{client}->subscribe(
-				$topic,
-				sub ( $topic_received, $payload, @ ) {
-					push @{ $self->{pending_messages} },
-					    [ $topic_received, $payload ];
-				} );
-		};
-		if ($@) {
-			Fugu::Log->default->error(
-				'MQTT resubscribe error for %s: %s',
-				$topic, $@ );
-		}
-	}
+	$self->_register($_) for keys %{ $self->{subscriptions} };
 }
 
 # $self->reconnect():

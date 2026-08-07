@@ -76,7 +76,6 @@ use Fugu::Daemon;
 Fugu::Daemon->daemonize(
 	logfile => '/dev/null',
 	pidfile => '$pidfile',
-	umask   => 027,
 );
 open my \$fh, '>', '$report' or exit 1;
 printf {\$fh} "cwd=%s\\numask=%04o\\npid=%d\\n",
@@ -96,7 +95,7 @@ CODE
 
 	my $state = slurp($report);
 	like( $state, qr{^cwd=/$}m,      'the daemon changed to /' );
-	like( $state, qr/^umask=0027$/m, 'the daemon applied the umask' );
+	like( $state, qr/^umask=0022$/m, 'the daemon applied the umask' );
 	like( $state, qr/^pid=\Q$pid\E$/m,
 		'the PID file names the daemon itself' );
 
@@ -139,33 +138,6 @@ CODE
 
 	stop($pid);
 	$lock->remove;
-}
-
-# Test 3: on_fork runs in the parent with the child's PID
-{
-	my $marker = "$dir/on-fork.txt";
-
-	my $status = start_daemon(<<"CODE");
-use v5.36;
-use Fugu::Daemon;
-Fugu::Daemon->daemonize(
-	logfile => '/dev/null',
-	on_fork => sub (\$pid) {
-		open my \$fh, '>', '$marker' or exit 1;
-		print {\$fh} \$pid;
-		close \$fh;
-	},
-);
-sleep 10;
-CODE
-
-	is( $status, 0, 'the parent exits with status 0' );
-	ok( wait_for($marker), 'on_fork ran in the parent' );
-
-	my $child = slurp($marker);
-	like( $child, qr/^\d+$/, 'on_fork received a PID' );
-
-	stop($child);
 }
 
 # Test 4: with no pidfile argument, daemonize creates nothing

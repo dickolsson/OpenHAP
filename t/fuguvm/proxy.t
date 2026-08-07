@@ -73,8 +73,6 @@ Fugu::Log->set_default( Fugu::Log->new( mode => 'quiet' ) );
 	$store->set( proxy_port => 8080 );
 	is( $proxy->guest_url, 'http://10.0.2.2:8080',
 	    'the guest URL names the gateway' );
-	is( $proxy->host_url, 'http://127.0.0.1:8080',
-	    'and the host URL names the loopback' );
 }
 
 

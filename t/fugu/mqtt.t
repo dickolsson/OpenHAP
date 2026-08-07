@@ -161,22 +161,6 @@ SKIP: {
         'Single then multi wildcard multiple levels');
 }
 
-# Test unsubscribe
-{
-    my $mqtt = Fugu::MQTT->new();
-    
-    $mqtt->subscribe('topic1', sub { });
-    $mqtt->subscribe('topic2', sub { });
-    
-    is(scalar keys %{$mqtt->{subscriptions}}, 2, 'Two subscriptions');
-    
-    $mqtt->unsubscribe('topic1');
-    
-    is(scalar keys %{$mqtt->{subscriptions}}, 1, 'One subscription after unsubscribe');
-    ok(!exists $mqtt->{subscriptions}{'topic1'}, 'topic1 removed');
-    ok(exists $mqtt->{subscriptions}{'topic2'}, 'topic2 still exists');
-}
-
 # Test subscriptions accessor
 {
     my $mqtt = Fugu::MQTT->new();

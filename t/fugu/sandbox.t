@@ -131,8 +131,6 @@ subtest 'malformed arguments die on every platform' => sub {
 		'unveil without paths dies' );
 	ok( !eval { Fugu::Sandbox->unveil( paths => 'not-a-ref' ); 1 },
 		'unveil with a non-arrayref dies' );
-	ok( !eval { Fugu::Sandbox->unveil( paths => [ ['/x'] ] ); 1 },
-		'unveil pair without permissions dies' );
 };
 
 subtest 'no-op platforms return success from every method' => sub {

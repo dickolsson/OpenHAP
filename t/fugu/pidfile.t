@@ -116,13 +116,11 @@ sub next_path()
 
 	is( $held->read_pid, 4242, 'the content survives the refused acquire' );
 
-	$held->release;
-
-	# After the release the file is free again
+	# Destroying the holder drops the lock and frees the file
+	undef $held;
 	my $again = Fugu::Pidfile->new( path => $path );
-	ok( $again->acquire(99), 'acquire succeeds after release' );
+	ok( $again->acquire(99), 'acquire succeeds after the holder is gone' );
 	is( $again->read_pid, 99, 'the new holder replaced the PID' );
-	$again->release;
 }
 
 # Test 10: A second acquire on the same object is refused
@@ -131,7 +129,6 @@ sub next_path()
 	ok( $pidfile->acquire, 'first acquire' );
 	is( $pidfile->acquire, undef, 'second acquire on the same object' );
 	like( $pidfile->error, qr/already acquired/, 'and it says why' );
-	$pidfile->release;
 }
 
 # Test 11: path accessor

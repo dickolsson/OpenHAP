@@ -67,7 +67,6 @@ subtest 'wait_until gives up at the deadline' => sub {
 };
 
 subtest 'wait_until stops on an interrupt' => sub {
-	Fugu::Signal::reset_all_interrupted();
 
 	my $sig = Fugu::Signal->new;
 	$sig->setup_interrupt_flag('USR1');
@@ -86,7 +85,6 @@ subtest 'wait_until stops on an interrupt' => sub {
 	ok( $elapsed < 5, 'it returned at once' ) or diag("took ${elapsed}s");
 
 	$sig->restore;
-	Fugu::Signal::reset_all_interrupted();
 };
 
 done_testing();

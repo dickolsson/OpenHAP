@@ -129,14 +129,6 @@ sub unveil ( $class, %args )
 	die 'paths parameter required (arrayref of pairs)'
 	    unless ref $paths eq 'ARRAY';
 
-	for my $entry (@$paths) {
-		die 'unveil entry must be [$path, $perms]'
-		    unless ref $entry eq 'ARRAY'
-		    && defined $entry->[0]
-		    && defined $entry->[1]
-		    && ( @$entry < 3 || ref $entry->[2] eq 'HASH' );
-	}
-
 	return 1 unless SUPPORTED;
 
 	# Settle every disposition before the first unveil(2) call.

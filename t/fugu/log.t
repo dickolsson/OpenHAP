@@ -92,10 +92,10 @@ use_ok('Fugu::Log');
 {
 	my $log = Fugu::Log->new( mode => 'quiet' );
 
-	for my $level (qw(debug info notice warning error crit)) {
+	for my $level (qw(debug info notice warning error)) {
 		ok( $log->can($level), "$level is a method" );
 	}
-	for my $alias (qw(warn err)) {
+	for my $alias (qw(warn err crit)) {
 		ok( !$log->can($alias), "$alias is not a method" );
 	}
 
@@ -111,8 +111,8 @@ use_ok('Fugu::Log');
 	is( $log->level, 'notice',                 'level returns the name' );
 	is( $log->mode, Fugu::Log::MODE_QUIET(), 'mode returns the mode' );
 
-	$log->set_level('crit');
-	is( $log->level, 'crit', 'set_level updates the name' );
+	$log->set_level('debug');
+	is( $log->level, 'debug', 'set_level updates the name' );
 
 	$log->set_level('nonsense');
 	is( $log->level, 'info', 'an unknown level falls back to info' );

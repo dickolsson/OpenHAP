@@ -921,7 +921,6 @@ sub _proxy ($self)
 		cache   => App::FuguVM::Proxy::Cache->new( $self->_cache_dir ),
 		pidfile => $state->proxy_pidfile,
 		store   => $state->store,
-		child   => 'App::FuguVM::Proxy',
 		logfile => $state->vm_state_dir . '/proxy.log',
 		log     => $self->{log},
 	);
@@ -1078,11 +1077,10 @@ sub _start_qemu ( $self, $boot_image = undef )
 	# Use Fugu::Process to spawn QEMU
 	my $log_file = $state->vm_state_dir . '/qemu.log';
 	my $result   = Fugu::Process->spawn_command(
-		cmd         => \@cmd,
-		daemonize   => 1,
-		stdout      => $log_file,
-		stderr      => $log_file,
-		check_alive => 0,   # Do not check. QEMU writes its own PID file
+		cmd       => \@cmd,
+		daemonize => 1,
+		stdout    => $log_file,
+		stderr    => $log_file,
 	);
 
 	return unless $result->{success};

@@ -28,8 +28,8 @@ use Sys::Syslog qw(:standard :macros);
 # daemons) and stderr (for CLI tools). It filters messages by level
 # and formats them printf-style.
 #
-# The levels are debug, info, notice, warning, error and crit. Each
-# one is a method of the same name.
+# The levels are debug, info, notice, warning and error. Each one is
+# a method of the same name.
 #
 # The module also holds one process default. Library code that gets no
 # logger asks for it, so no library has to die for the lack of one.
@@ -121,7 +121,6 @@ sub info    ( $self, $fmt, @args ) { $self->_log( 'info',    $fmt, @args ); }
 sub notice  ( $self, $fmt, @args ) { $self->_log( 'notice',  $fmt, @args ); }
 sub warning ( $self, $fmt, @args ) { $self->_log( 'warning', $fmt, @args ); }
 sub error   ( $self, $fmt, @args ) { $self->_log( 'error',   $fmt, @args ); }
-sub crit    ( $self, $fmt, @args ) { $self->_log( 'crit',    $fmt, @args ); }
 
 # $self->_log($level, $fmt, @args):
 #	Internal logging method

@@ -13,8 +13,7 @@ use_ok('Fugu::Process');
 # Test 2: Basic spawn and terminate
 {
 	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'sleep', '300' ],
-		check_alive => 1,
+		cmd => [ 'sleep', '300' ],
 	);
 
 	ok( $result->{success}, 'Spawned sleep process' );
@@ -29,32 +28,17 @@ use_ok('Fugu::Process');
 	ok( !Fugu::Process->is_alive($pid), 'Process is dead' );
 }
 
-# Test 3: A process that exits at once with a non-zero code is a
-# failure. The check_alive window makes the outcome deterministic.
+# Test 3: a process that exits at once still spawned successfully.
+# The exec resolved, so the spawn is a success; the caller that needs
+# the outcome uses run.
 {
 	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'sh', '-c', 'exit 1' ],
-		check_alive => 1,
+		cmd => [ 'sh', '-c', 'exit 1' ],
 	);
 
-	ok( !$result->{success}, 'Detected immediate failure' );
-	like( $result->{error}, qr/died immediately/,
-		'Error message mentions death' );
-	is( $result->{exit_code}, 1, 'Exit code captured' );
-}
-
-# Test 3b: A process that exits at once with code 0 is not a failure.
-# It did its work and left.
-{
-	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'sh', '-c', 'exit 0' ],
-		check_alive => 1,
-	);
-
-	ok( $result->{success},  'A clean fast exit is a success' );
-	ok( $result->{exited},   'and the result says the child exited' );
-	is( $result->{exit_code}, 0, 'with code 0' );
-	ok( !defined $result->{error}, 'and carries no error' );
+	ok( $result->{success}, 'A fast exit is still a successful spawn' );
+	ok( defined $result->{pid}, 'and carries the PID' );
+	Fugu::Process->wait_exit( $result->{pid}, 2 );
 }
 
 # Test 3c: An exec that fails reports its own reason at once, through
@@ -79,54 +63,13 @@ use_ok('Fugu::Process');
 
 # Test 4: Invalid command
 {
-	my $result = Fugu::Process->spawn_command(
-		cmd         => [],
-		check_alive => 0,
-	);
+	my $result = Fugu::Process->spawn_command( cmd => [] );
 
 	ok( !$result->{success}, 'Rejected empty command' );
-}
+	like( $result->{error}, qr/non-empty arrayref/, 'and says why' );
 
-# Test 5: Callbacks
-{
-	my $success_called = 0;
-	my $result         = Fugu::Process->spawn_command(
-		cmd         => [ 'sleep', '1' ],
-		check_alive => 0,
-		on_success  => sub($pid) { $success_called = $pid; },
-	);
-
-	ok( $result->{success}, 'Spawn with callback succeeded' );
-	is( $success_called, $result->{pid}, 'Success callback called with PID' );
-
-	Fugu::Process->terminate( $result->{pid} );
-}
-
-# Test 6: Error callback
-{
-	my $error_msg = '';
-	my $result    = Fugu::Process->spawn_command(
-		cmd         => [ 'sh', '-c', 'exit 1' ],
-		check_alive => 1,
-		on_error    => sub($err) { $error_msg = $err; },
-	);
-
-	ok( !$result->{success}, 'Detected immediate death with callback' );
-	like( $error_msg, qr/died immediately/, 'Error callback called' );
-}
-
-# Test 7: Zombie reaping
-{
-	# Spawn a process and let it exit
-	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'true' ],
-		check_alive => 0,
-	);
-
-	sleep 1;    # Let the process exit
-
-	my $reaped = Fugu::Process->reap( $result->{pid} );
-	ok( $reaped, 'Reaped zombie process' );
+	my $scalar = Fugu::Process->spawn_command( cmd => 'sleep 1' );
+	ok( !$scalar->{success}, 'Rejected a non-arrayref command' );
 }
 
 # Test 8: is_alive edge cases
@@ -141,8 +84,7 @@ use_ok('Fugu::Process');
 # Test 9: wait_exit
 {
 	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'sleep', '1' ],
-		check_alive => 0,
+		cmd => [ 'sleep', '1' ],
 	);
 
 	my $exited = Fugu::Process->wait_exit( $result->{pid}, 5 );
@@ -152,8 +94,7 @@ use_ok('Fugu::Process');
 # Test 10: wait_exit timeout
 {
 	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'sleep', '10' ],
-		check_alive => 0,
+		cmd => [ 'sleep', '10' ],
 	);
 
 	my $exited = Fugu::Process->wait_exit( $result->{pid}, 1 );
@@ -166,8 +107,7 @@ use_ok('Fugu::Process');
 {
 	# A process that ignores SIGTERM (sleep handles it)
 	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'sleep', '300' ],
-		check_alive => 0,
+		cmd => [ 'sleep', '300' ],
 	);
 
 	my $start  = time;
@@ -178,28 +118,14 @@ use_ok('Fugu::Process');
 	ok( $elapsed < 5, 'Terminated quickly (graceful)' );
 }
 
-# Test 12: reap_all
-{
-	# Spawn multiple short-lived processes
-	for ( 1 .. 3 ) {
-		Fugu::Process->spawn_command( cmd => ['true'], check_alive => 0 );
-	}
-
-	sleep 1;    # Let all the processes exit
-
-	my $count = Fugu::Process->reap_all();
-	cmp_ok( $count, '>=', 0, 'Reaped zombies' );
-}
-
 # Test 13: I/O redirection
 {
 	my $tmpdir  = tempdir( CLEANUP => 1 );
 	my $outfile = "$tmpdir/fugu-process-test.txt";
 
 	my $result = Fugu::Process->spawn_command(
-		cmd         => [ 'echo', 'test output' ],
-		stdout      => $outfile,
-		check_alive => 0,
+		cmd    => [ 'echo', 'test output' ],
+		stdout => $outfile,
 	);
 
 	sleep 1;

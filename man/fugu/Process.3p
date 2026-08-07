@@ -68,7 +68,7 @@ redirects the standard descriptors,
 and runs a command.
 .Pp
 These are the arguments:
-.Bl -tag -width "check_aliveXX"
+.Bl -tag -width "daemonizeXX"
 .It Fa cmd
 An array reference that holds the command and its arguments.
 This argument is necessary and must not be empty.
@@ -81,20 +81,6 @@ The default is false.
 The paths for the child's standard descriptors.
 The default for each path is
 .Pa /dev/null .
-.It Fa check_alive
-The number of seconds to wait before the check that the child continues
-to run.
-The default is 0, which skips the check.
-The
-.Xr execve 2
-outcome does not need this wait: the method always has it before it
-returns.
-.It Fa on_success
-A code reference that the method calls with the child's process ID when
-the spawn is successful.
-.It Fa on_error
-A code reference that the method calls with a message when the spawn
-fails.
 .El
 .Pp
 The parent always waits for the
@@ -107,28 +93,6 @@ closes that end, and the parent reads end-of-file.
 A failure leaves a message in the pipe, and the parent returns it in
 .Fa error .
 Thus a command that does not exist reports its own reason at once.
-.Pp
-.Fa check_alive
-answers a different question:
-.Em is the child still there after N seconds .
-When it is not zero, the parent waits that long and then does two
-tests.
-A
-.Xr waitpid 2
-call that does not block reaps the child and shows that it exited.
-A
-.Xr kill 2
-call with signal 0 shows that the child is still there.
-.Pp
-A child that exits at once with status 0 is not a failure.
-The result carries
-.Fa success
-set to 1,
-.Fa exited
-set to 1 and
-.Fa exit_code
-set to 0.
-Thus a caller that expects a long-lived child can tell the two apart.
 .Ss run
 .Fn run "%args"
 runs a command to completion and captures what it wrote.
@@ -216,13 +180,6 @@ A code reference that the method calls when the process is gone.
 .Pp
 The wait polls with sub-second granularity.
 Thus a child that stops at once does not cost a whole second.
-.Ss reap
-.Fn reap "$pid"
-reaps one zombie child and does not block.
-.Ss reap_all
-.Fn reap_all
-reaps each zombie child that is ready and does not block.
-It returns the number of children that it reaped.
 .Ss wait_exit
 .Fn wait_exit "$pid" "$timeout"
 polls until the process exits or until the timeout ends.
@@ -262,11 +219,6 @@ On failure,
 is 0 and
 .Fa error
 gives the cause.
-When the spawn makes a child and the child exits at once,
-the hash also holds
-.Fa exited
-and
-.Fa exit_code .
 .Pp
 .Fn run
 returns a hash reference that holds
@@ -292,12 +244,6 @@ returns 1 if the process is gone.
 It returns 0 if the process continues after
 .Dv SIGKILL .
 .Pp
-.Fn reap
-returns 1 when it reaps the child or when the child does not exist.
-It returns 0 when the child continues to run.
-.Fn reap_all
-returns a count.
-.Pp
 .Fn wait_exit
 returns 1 if the process exits in the timeout period.
 If not, it returns 0.
@@ -305,8 +251,7 @@ If not, it returns 0.
 This example runs a helper and then stops it:
 .Bd -literal -offset indent
 my $r = Fugu::Process->spawn_command(
-    cmd      => [ 'mdnsctl', 'publish', $name, '_hap', 'tcp', $port ],
-    on_error => sub ($err) { $log->err('mdnsctl: %s', $err) },
+    cmd => [ 'mdnsctl', 'publish', $name, '_hap', 'tcp', $port ],
 );
 
 Fugu::Process->terminate($r->{pid}, grace_period => 10)
@@ -316,9 +261,6 @@ Fugu::Process->terminate($r->{pid}, grace_period => 10)
 No method dies.
 The methods report failures through the hash reference or the boolean
 value that they return.
-When you give an
-.Fa on_error
-callback, the methods also report the failure through it.
 .Sh SEE ALSO
 .Xr execve 2 ,
 .Xr kill 2 ,
@@ -329,26 +271,15 @@ callback, the methods also report the failure through it.
 .Sh AUTHORS
 .An Dick Olsson Aq Mt hi@senzilla.io
 .Sh CAVEATS
-.Fn spawn_command
-blocks the caller for
-.Fa check_alive
-seconds when that argument is not zero.
-Thus a program that spawns several children waits the full time for
-each child in sequence.
-Leave the argument at its default of 0 unless the question it answers
-is the one you have.
-.Pp
 .Fn run
 holds the whole output of the child in memory.
 Do not use it for a command that writes without a bound.
 .Pp
 .Fn is_alive
-and
-.Fn reap
-call
+calls
 .Xr waitpid 2 .
 That call reaps only the children of the caller.
-For all other processes, they use
+For all other processes, it uses
 .Xr kill 2
 with signal 0.
 This signal cannot show the difference between a live process and a

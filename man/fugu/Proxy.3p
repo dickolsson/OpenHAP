@@ -35,7 +35,6 @@ my $proxy = Fugu::Proxy->new(
     cache   => $cache,
     pidfile => Fugu::Pidfile->new(path => "$dir/proxy.pid"),
     store   => Fugu::StateFile->new(path => "$dir/state.json")->load,
-    child   => 'MyApp::Proxy',
 );
 
 my $port = $proxy->start or die $proxy->error . "\en";
@@ -81,11 +80,6 @@ A
 .Xr Fugu::StateFile 3p
 that holds the port.
 This argument is necessary.
-.It Fa child
-The class whose
-.Fn run_child
-the spawned child calls.
-The default is the class of the supervisor.
 .It Fa logfile
 Where the output of the child goes.
 The default is
@@ -115,11 +109,9 @@ through
 .Fn is_running
 reports if the child is alive.
 The check reaps, so a child that became a zombie reads as stopped.
-.Ss port , host_url
+.Ss port
 .Fn port
 returns the port the running proxy listens on.
-.Fn host_url
-returns the URL that reaches it from this machine.
 .Ss wait_ready
 .Fn wait_ready "$timeout"
 polls until the proxy takes a connection.
@@ -232,11 +224,7 @@ returns the entry, or
 An entry whose file is gone, or whose size or modification time
 changed, is not valid and reads as absent.
 Thus a file that changed under the proxy invalidates its own entry.
-.Ss remove , clear , count , warm
-.Fn remove "$url"
-forgets one URL.
-.Fn clear
-forgets them all.
+.Ss count , warm
 .Fn count
 returns the number of entries.
 .Fn warm "$cache"

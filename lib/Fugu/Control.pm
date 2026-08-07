@@ -105,22 +105,13 @@ sub register ( $self, $command, $code )
 	return $self;
 }
 
-# $self->commands:
-#	The registered command names, sorted.
-sub commands ($self)
-{
-	return sort keys %{ $self->{commands} };
-}
-
-# $self->path:
-#	The socket path.
+# $self->path: the socket path.
 sub path ($self)
 {
 	return $self->{path};
 }
 
-# $self->error:
-#	The most recent failure.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};
@@ -141,6 +132,8 @@ sub error ($self)
 #	that needs a hand at every reboot.
 sub listen ( $self, %args )
 {
+	my $loop = $args{loop} // die 'loop parameter required';
+
 	$self->{error} = undef;
 
 	$self->_remove_stale or return;
@@ -161,25 +154,18 @@ sub listen ( $self, %args )
 	$self->{listener} = $listener;
 	$self->_log->debug( 'Control socket listening on %s', $self->{path} );
 
-	my $loop = $args{loop};
-	$loop->add_fd( $listener, read => sub ($) { $self->accept_one($loop) } )
-	    if $loop;
+	$loop->add_fd( $listener,
+		read => sub ($) { $self->accept_one($loop) } );
 
 	return $self;
 }
 
 # $self->accept_one($loop):
-#	Take one connection. With a loop, the connection registers as
-#	a read handler; without one, the method serves the connection
-#	to its end and returns.
-sub accept_one ( $self, $loop = undef )
+#	Take one connection and register it as a read handler on the
+#	loop.
+sub accept_one ( $self, $loop )
 {
 	my $client = $self->{listener}->accept or return;
-
-	unless ($loop) {
-		$self->serve_client($client);
-		return;
-	}
 
 	my $imsg = Fugu::Imsg->new( fh => $client );
 	$self->{clients}{ fileno $client } = $imsg;
@@ -190,25 +176,9 @@ sub accept_one ( $self, $loop = undef )
 	$loop->add_fd(
 		$client,
 		read => sub ($fh) {
-			$self->_serve_one( $imsg, 0 )
+			$self->_serve_one($imsg)
 			    or $self->_drop_client( $fh, $loop );
 		} );
-
-	return;
-}
-
-# $self->serve_client($client):
-#	Serve one connection until the peer goes away. This is the
-#	form for a caller with no event loop, and for a test.
-#
-#	The read blocks here. There is no loop to come back to, so a
-#	poll would be a spin.
-sub serve_client ( $self, $client )
-{
-	my $imsg = Fugu::Imsg->new( fh => $client );
-
-	while ( $self->_serve_one( $imsg, undef ) ) { }
-	$imsg->close;
 
 	return;
 }
@@ -237,12 +207,13 @@ sub shutdown ( $self, %args )
 	return $self;
 }
 
-# $self->_serve_one($imsg, $timeout):
+# $self->_serve_one($imsg):
 #	Read one request and answer it. The method returns 1 when the
-#	connection can carry another, and 0 when it is finished.
-sub _serve_one ( $self, $imsg, $timeout )
+#	connection can carry another, and 0 when it is finished. The
+#	read never blocks: the loop calls again when more arrives.
+sub _serve_one ( $self, $imsg )
 {
-	my $message = $imsg->recv( timeout => $timeout );
+	my $message = $imsg->recv( timeout => 0 );
 	unless ($message) {
 		return 0 if $imsg->is_dead;
 
@@ -342,11 +313,12 @@ sub _send_error ( $self, $imsg, $peerid, $reason )
 #	Forget a connection that ended.
 sub _drop_client ( $self, $fh, $loop )
 {
-	my $key  = fileno $fh;
-	my $imsg = defined $key ? delete $self->{clients}{$key} : undef;
+	# The handle is still open here: recv marks {dead} without
+	# closing, so fileno answers and the client entry is there.
+	my $imsg = delete $self->{clients}{ fileno $fh };
 
 	$loop->remove_fd($fh);
-	$imsg ? $imsg->close : CORE::close $fh;
+	$imsg->close;
 
 	return;
 }
@@ -419,16 +391,7 @@ sub new ( $class, %args )
 	}, $class;
 }
 
-# $self->exists:
-#	Report if the socket file is there. This is not the same
-#	question as whether the daemon answers.
-sub exists ($self)
-{
-	return -S $self->{path} ? 1 : 0;
-}
-
-# $self->error:
-#	The most recent failure.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};

@@ -30,7 +30,7 @@ my $store = Fugu::StateFile->new(
 )->load;
 
 $store->set(installed => 1);
-my $config_number = $store->increment('config_number');
+my $installed = $store->get('installed');
 .Ed
 .Sh DESCRIPTION
 .Nm
@@ -94,22 +94,6 @@ instead of one call for each.
 .Ss delete
 .Fn delete "$key"
 removes one value and saves.
-.Ss exists
-.Fn exists "$key"
-reports if the key is present.
-This is not the same question as a defined value: a stored
-.Dv undef
-is still a stored answer.
-.Ss increment
-.Fn increment "$key" "$step"
-adds to a counter and saves.
-An absent counter starts at 0, so the first call gives
-.Fa $step ,
-whose default is 1.
-.Pp
-This is the configuration number of a HomeKit accessory, the
-failed-attempt counter, and any other count that must survive a
-restart.
 .Ss data
 .Fn data
 returns the state hash reference itself.
@@ -133,12 +117,6 @@ return the object on success and
 on failure, with the reason in
 .Fn error .
 .Pp
-.Fn increment
-returns the new value, or
-.Dv undef
-when the save failed.
-.Fn exists
-returns 1 or 0.
 .Fn get
 returns a value or
 .Dv undef .

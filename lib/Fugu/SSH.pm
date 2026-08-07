@@ -19,7 +19,8 @@ use v5.36;
 
 package Fugu::SSH;
 
-use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_TRUNC);
+use Fcntl     qw(O_RDONLY O_WRONLY O_CREAT O_TRUNC);
+use Fugu::CLI qw(EXIT_SUCCESS EXIT_ERROR);
 use Fugu::Process;
 use Fugu::Timeout;
 
@@ -36,8 +37,6 @@ use Fugu::Timeout;
 # clear message at the first connect.
 
 use constant {
-	EXIT_SUCCESS    => 0,
-	EXIT_ERROR      => 1,
 	DEFAULT_TIMEOUT => 10,
 	BUFFER_SIZE     => 32768,
 };
@@ -103,59 +102,73 @@ sub wait_available ( $self, $timeout = 120 )
 	    : 0;
 }
 
-sub run_command ( $self, $command )
+# $self->_with_connection($code):
+#	Open the connection, run $code->($ssh2), disconnect, and
+#	return what $code returned. The method returns undef when the
+#	connect fails, so every remote operation shares one
+#	connect-run-disconnect shape.
+sub _with_connection ( $self, $code )
 {
 	my $ssh2 = $self->_connect;
-	if ( !defined $ssh2 ) {
-		return {
-			stdout    => '',
-			stderr    => 'Failed to connect',
-			exit_code => 1,
-		};
-	}
+	return unless defined $ssh2;
 
-	my $channel = $ssh2->channel;
-	if ( !defined $channel ) {
-		$ssh2->disconnect;
-		return {
-			stdout    => '',
-			stderr    => 'Failed to open channel',
-			exit_code => 1,
-		};
-	}
-
-	$channel->exec($command);
-
-	my $stdout = '';
-	my $stderr = '';
-
-	# Read stdout
-	while ( !$channel->eof ) {
-		my $buf;
-		my $len = $channel->read( $buf, BUFFER_SIZE );
-		last if !defined $len || $len <= 0;
-		$stdout .= $buf;
-	}
-
-	# Read stderr
-	while (1) {
-		my $buf;
-		my $len =
-		    $channel->read( $buf, BUFFER_SIZE, 1 );   # ext=1 for stderr
-		last if !defined $len || $len <= 0;
-		$stderr .= $buf;
-	}
-
-	$channel->wait_closed;
-	my $exit_code = $channel->exit_status // 255;
-
-	$channel->close;
+	my $result = $code->($ssh2);
 	$ssh2->disconnect;
 
-	return {
-		stdout    => $stdout,
-		stderr    => $stderr,
-		exit_code => $exit_code,
+	return $result;
+}
+
+sub run_command ( $self, $command )
+{
+	my $result = $self->_with_connection(
+		sub ($ssh2) {
+			my $channel = $ssh2->channel;
+			if ( !defined $channel ) {
+				return {
+					stdout    => '',
+					stderr    => 'Failed to open channel',
+					exit_code => 1,
+				};
+			}
+
+			$channel->exec($command);
+
+			my $stdout = '';
+			my $stderr = '';
+
+			# Read stdout
+			while ( !$channel->eof ) {
+				my $buf;
+				my $len = $channel->read( $buf, BUFFER_SIZE );
+				last if !defined $len || $len <= 0;
+				$stdout .= $buf;
+			}
+
+			# Read stderr (ext=1)
+			while (1) {
+				my $buf;
+				my $len =
+				    $channel->read( $buf, BUFFER_SIZE, 1 );
+				last if !defined $len || $len <= 0;
+				$stderr .= $buf;
+			}
+
+			$channel->wait_closed;
+			my $exit_code = $channel->exit_status // 255;
+
+			$channel->close;
+
+			return {
+				stdout    => $stdout,
+				stderr    => $stderr,
+				exit_code => $exit_code,
+			};
+		} );
+
+	return $result // {
+		stdout    => '',
+		stderr    => 'Failed to connect',
+		exit_code => 1,
 	};
 }
 
@@ -190,67 +203,36 @@ sub interactive ($self)
 #	Write the content directly to a remote file with SFTP
 sub write_file ( $self, $remote_path, $content, $mode = 0644 )
 {
-	my $ssh2 = $self->_connect;
-	if ( !defined $ssh2 ) {
-		return EXIT_ERROR;
-	}
+	my $result = $self->_with_connection(
+		sub ($ssh2) {
+			my $sftp = $ssh2->sftp;
+			return EXIT_ERROR if !defined $sftp;
 
-	my $sftp = $ssh2->sftp;
-	if ( !defined $sftp ) {
-		$ssh2->disconnect;
-		return EXIT_ERROR;
-	}
+			my $remote_fh =
+			    $sftp->open( $remote_path,
+				O_WRONLY | O_CREAT | O_TRUNC, $mode );
+			return EXIT_ERROR if !defined $remote_fh;
 
-	my $remote_fh =
-	    $sftp->open( $remote_path, O_WRONLY | O_CREAT | O_TRUNC, $mode );
+			# A short write leaves a truncated remote file. A
+			# provisioning script that arrives half-written is
+			# worse than one that never arrived, so the return
+			# value is checked.
+			my $written = $remote_fh->write($content);
+			undef $remote_fh;    # Close the file handle
 
-	if ( !defined $remote_fh ) {
-		$ssh2->disconnect;
-		return EXIT_ERROR;
-	}
+			return EXIT_ERROR
+			    if !defined $written
+			    || $written != length $content;
 
-	# A short write leaves a truncated remote file. A provisioning
-	# script that arrives half-written is worse than one that never
-	# arrived, so the return value is checked.
-	my $written = $remote_fh->write($content);
-	undef $remote_fh;    # Close the file handle
-	$ssh2->disconnect;
+			return EXIT_SUCCESS;
+		} );
 
-	return EXIT_ERROR
-	    if !defined $written || $written != length $content;
-
-	return EXIT_SUCCESS;
-}
-
-# $self->make_remote_dir($remote_path, $mode):
-#	Create a remote directory
-sub make_remote_dir ( $self, $remote_path, $mode = 0755 )
-{
-	my $ssh2 = $self->_connect;
-	if ( !defined $ssh2 ) {
-		return EXIT_ERROR;
-	}
-
-	my $sftp = $ssh2->sftp;
-	if ( !defined $sftp ) {
-		$ssh2->disconnect;
-		return EXIT_ERROR;
-	}
-
-	my $result = $sftp->mkdir( $remote_path, $mode );
-	$ssh2->disconnect;
-
-	return $result ? EXIT_SUCCESS : EXIT_ERROR;
+	return $result // EXIT_ERROR;
 }
 
 sub is_available ($self)
 {
-	my $ssh2 = $self->_connect;
-	if ( !defined $ssh2 ) {
-		return 0;
-	}
-	$ssh2->disconnect;
-	return 1;
+	return $self->_with_connection( sub ($) { 1 } ) ? 1 : 0;
 }
 
 1;

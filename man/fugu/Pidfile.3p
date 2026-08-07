@@ -70,8 +70,7 @@ is the process ID of the caller.
 .Ss acquire
 .Fn acquire "$pid"
 writes the PID and keeps the locked handle open.
-The lock lives until
-.Fn release ,
+The lock lives until the object is destroyed,
 or until the process exits.
 While one process holds the lock, an
 .Fn acquire
@@ -81,12 +80,6 @@ Thus
 has an authoritative answer that no
 .Fn read_pid
 race can spoil.
-.Ss release
-.Fn release
-drops a lock that
-.Fn acquire
-holds.
-The file itself stays.
 .Ss read_pid
 .Fn read_pid
 returns the process ID that the file holds.
@@ -123,9 +116,6 @@ They return
 .Dv undef
 on failure and put the reason in
 .Fn error .
-.Pp
-.Fn release
-returns 1.
 .Pp
 .Fn read_pid
 and

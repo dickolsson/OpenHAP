@@ -52,16 +52,15 @@ sub path ($self)
 	return $self->{path};
 }
 
-# $self->error:
-#	Return the most recent failure. The caller can log it.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};
 }
 
 # $self->write_pid($pid):
-#	Write the PID and release the lock. The default PID is the
-#	caller's. The method returns 1, or undef with ->error set.
+#	Write the PID and drop the lock at once. The default PID is
+#	the caller's. The method returns 1, or undef with ->error set.
 sub write_pid ( $self, $pid = $$ )
 {
 	my $fh = $self->_open_locked(0) or return;
@@ -74,7 +73,8 @@ sub write_pid ( $self, $pid = $$ )
 
 # $self->acquire($pid):
 #	Write the PID and keep the locked handle open. The lock lives
-#	until release, or until the process exits. A second acquire on
+#	until the object is destroyed, or until the process exits. A
+#	second acquire on
 #	the same file, from any process, fails while the first holds
 #	it. The method returns 1, or undef with ->error set.
 sub acquire ( $self, $pid = $$ )
@@ -92,19 +92,6 @@ sub acquire ( $self, $pid = $$ )
 	}
 
 	$self->{fh} = $fh;
-
-	return 1;
-}
-
-# $self->release:
-#	Drop a lock that acquire holds. The file itself stays. The
-#	method returns 1.
-sub release ($self)
-{
-	if ( $self->{fh} ) {
-		close $self->{fh};
-		$self->{fh} = undef;
-	}
 
 	return 1;
 }

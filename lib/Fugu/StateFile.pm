@@ -58,8 +58,7 @@ sub path ($self)
 	return $self->{path};
 }
 
-# $self->error:
-#	Return the most recent failure.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};
@@ -132,32 +131,6 @@ sub delete ( $self, $key )
 	delete $self->{data}{$key};
 
 	return $self->save;
-}
-
-# $self->exists($key):
-#	Report if the key is present. This is not the same question as
-#	a defined value: a stored undef is still a stored answer.
-sub exists ( $self, $key )
-{
-	return CORE::exists $self->{data}{$key} ? 1 : 0;
-}
-
-# $self->increment($key, $step):
-#	Add to a counter and save. An absent counter starts at 0, so
-#	the first increment gives $step. The method returns the new
-#	value, or undef when the save failed.
-#
-#	This is the configuration number and the failed-attempt counter
-#	of a HomeKit accessory, and any other count that must survive a
-#	restart.
-sub increment ( $self, $key, $step = 1 )
-{
-	my $value = ( $self->{data}{$key} // 0 ) + $step;
-	$self->{data}{$key} = $value;
-
-	return unless $self->save;
-
-	return $value;
 }
 
 # $self->data:
