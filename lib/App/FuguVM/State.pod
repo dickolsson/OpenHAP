@@ -9,7 +9,6 @@ App::FuguVM::State - what FuguVM remembers about one VM between runs
     my $state = App::FuguVM::State->new($state_dir, 'default')
         or die "cannot open the state of 'default'\n";
 
-    $state->set_vm_pid($pid);
     $state->mark_running;
 
     if ($state->was_unclean_shutdown) {
@@ -68,9 +67,10 @@ state hash reference for a caller that changes several keys at once.
 Return the L<Fugu::Pidfile> objects. QEMU writes the first itself,
 through its C<-pidfile> option; the proxy supervisor owns the second.
 
-=head2 set_vm_pid, get_vm_pid, clear_vm_pid, is_vm_running
+=head2 get_vm_pid, clear_vm_pid, is_vm_running
 
-The QEMU process.
+The QEMU process. QEMU writes the pid file itself, through its
+C<-pidfile> option, so there is no setter.
 
 =head2 disk_path, disk_exists
 

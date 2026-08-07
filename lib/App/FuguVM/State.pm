@@ -111,17 +111,8 @@ sub proxy_pidfile ($self)
 	return $self->{proxy_pid};
 }
 
-# VM PID management
-sub set_vm_pid ( $self, $pid )
-{
-	$self->{vm_pid}->write_pid($pid) or do {
-		Fugu::Log->default->warning( '%s', $self->{vm_pid}->error );
-		return;
-	};
-
-	return $self;
-}
-
+# VM PID management. QEMU writes the pid file itself, so the module
+# only reads and clears it.
 sub get_vm_pid ($self)
 {
 	return $self->{vm_pid}->read_pid;

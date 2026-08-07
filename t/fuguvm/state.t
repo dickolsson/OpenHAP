@@ -24,7 +24,7 @@ use_ok('App::FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
-    $state->set_vm_pid(12345);
+    $state->vm_pidfile->write_pid(12345);
     is($state->get_vm_pid, 12345, 'VM PID stored and retrieved');
     
     $state->clear_vm_pid;
@@ -36,7 +36,7 @@ use_ok('App::FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
-    $state->set_vm_pid(54321);
+    $state->vm_pidfile->write_pid(54321);
     
     # Make sure that the vm.pid file exists and contains the PID
     my $pid_file = "$tmpdir/test/vm.pid";
@@ -67,7 +67,7 @@ use_ok('App::FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
-    $state->set_vm_pid($$);
+    $state->vm_pidfile->write_pid($$);
     is($state->get_vm_pid, $$, 'VM PID set to current process');
     
     # Reload the state. The PID stays readable from the pid file.
@@ -86,11 +86,11 @@ use_ok('App::FuguVM::State');
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
     # Use the current process PID, which is running
-    $state->set_vm_pid($$);
+    $state->vm_pidfile->write_pid($$);
     ok($state->is_vm_running, 'is_vm_running returns true for running process');
     
     # Use an invalid PID
-    $state->set_vm_pid(99999999);
+    $state->vm_pidfile->write_pid(99999999);
     ok(!$state->is_vm_running, 'is_vm_running returns false for non-running process');
 }
 
