@@ -49,8 +49,7 @@ subtest 'a descriptor dispatches to its callback' => sub {
 			$loop->stop if @got == 2;
 		} );
 
-	ok( $loop->has_fd($reader), 'the loop watches the handle' );
-	ok( !$loop->is_running,     'and it is not running yet' );
+	ok( !$loop->is_running, 'the loop is not running yet' );
 
 	# A backstop, so a broken dispatch fails the test, not hangs it
 	$loop->after( 5, sub { $loop->stop } );
@@ -63,7 +62,6 @@ subtest 'a descriptor dispatches to its callback' => sub {
 	ok( !$loop->is_running, 'run returned with the loop stopped' );
 
 	$loop->remove_fd($reader);
-	ok( !$loop->has_fd($reader), 'remove_fd stops the watch' );
 };
 
 subtest 'a second add_fd replaces the callback' => sub {
@@ -178,7 +176,6 @@ subtest 'run returns when nothing is left to wait for' => sub {
 };
 
 subtest 'an interrupt flag ends the loop' => sub {
-	Fugu::Signal::reset_all_interrupted();
 
 	my $signal = Fugu::Signal->new;
 	$signal->setup_interrupt_flag('USR2');
@@ -202,7 +199,6 @@ subtest 'an interrupt flag ends the loop' => sub {
 	cmp_ok( $ticks, '>=', 1, 'it ran until then' );
 
 	$signal->restore;
-	Fugu::Signal::reset_all_interrupted();
 };
 
 subtest 'a callback that dies does not stop the loop' => sub {

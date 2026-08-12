@@ -98,10 +98,6 @@ The default mode is 0644.
 The method checks the length that the write reported.
 A provisioning script that arrives half-written is worse than one that
 never arrived.
-.Ss make_remote_dir
-.Fn make_remote_dir "$remote_path" "$mode"
-creates a directory over SFTP.
-The default mode is 0755.
 .Ss is_available
 .Fn is_available
 reports if the host takes an authenticated connection now.
@@ -132,9 +128,7 @@ read as a success.
 returns a hash reference.
 .Pp
 .Fn write_file
-and
-.Fn make_remote_dir
-return 0 on success and 1 on failure, like a command.
+returns 0 on success and 1 on failure, like a command.
 .Pp
 .Fn is_available
 and

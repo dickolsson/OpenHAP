@@ -27,7 +27,7 @@ use_ok('Protocol::HAP::Crypto');
 {
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
+    $srp->compute_verifier($salt);
     my $B = $srp->generate_server_public();
 
     # Create a client public key A that encodes to less than 384
@@ -54,7 +54,7 @@ use_ok('Protocol::HAP::Crypto');
 {
     my $srp = Protocol::HAP::SRP->new(password => '123-45-678');
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, '123-45-678');
+    $srp->compute_verifier($salt);
     $srp->generate_server_public();
     
     # Create two different encodings of the same A value. One
@@ -73,7 +73,7 @@ use_ok('Protocol::HAP::Crypto');
     # Use a fresh SRP instance for the second test
     my $srp2 = Protocol::HAP::SRP->new(password => '123-45-678');
     $srp2->generate_salt();
-    $srp2->compute_verifier($salt, '123-45-678');
+    $srp2->compute_verifier($salt);
     # Copy the same b and B to keep the server state identical
     $srp2->{b} = $srp->{b};
     $srp2->{B} = $srp->{B};
@@ -97,7 +97,7 @@ use_ok('Protocol::HAP::Crypto');
     # Generate a known salt. For reproducibility, use a fixed value
     # in a real test.
     my $salt = $srp->generate_salt();
-    $srp->compute_verifier($salt, $password);
+    $srp->compute_verifier($salt);
     my $B = $srp->generate_server_public();
     
     # Create a valid client public key A. It must be non-zero mod N.
@@ -131,7 +131,7 @@ use_ok('Protocol::HAP::Crypto');
 subtest '[HAP-Pairing §2.4] the M2 public key is padded to N' => sub {
 	my $srp = Protocol::HAP::SRP->new( password => '123-45-678' );
 	my $salt = $srp->generate_salt();
-	$srp->compute_verifier( $salt, '123-45-678' );
+	$srp->compute_verifier($salt);
 	$srp->generate_server_public();
 
 	is( length( $srp->server_public_bytes ),

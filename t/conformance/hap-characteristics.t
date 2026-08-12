@@ -134,26 +134,26 @@ subtest '[HAP-Characteristics §6] characteristic UUID table' => sub {
 	}
 };
 
-subtest '[HAP-Characteristics §2] data formats' => sub {
-	my @spec_formats =
+# Every catalog row must draw its format from the §2 table and its
+# permissions from the §3 table. The device subtest below then holds
+# every characteristic instance to its catalog row, so the two spec
+# vocabularies bound what the implementation can emit.
+subtest '[HAP-Characteristics §2][HAP-Characteristics §3] catalog rows'
+    => sub {
+	my %spec_formats = map { $_ => 1 }
 	    qw(bool uint8 uint16 uint32 uint64 int float string tlv8 data);
-	for my $format (@spec_formats) {
-		ok( $Protocol::HAP::Characteristic::FORMATS{$format},
-			"format $format recognized" );
-	}
-	is( scalar keys %Protocol::HAP::Characteristic::FORMATS,
-		scalar @spec_formats, 'no formats beyond the spec table' );
-};
+	my %spec_perms = map { $_ => 1 } qw(pr pw ev aa tw hd wr);
 
-subtest '[HAP-Characteristics §3] permissions' => sub {
-	my @spec_perms = qw(pr pw ev aa tw hd wr);
-	for my $perm (@spec_perms) {
-		ok( $Protocol::HAP::Characteristic::PERMISSIONS{$perm},
-			"permission $perm recognized" );
+	for my $name ( sort keys %catalog ) {
+		ok( $spec_formats{ $catalog{$name}{format} },
+			"[HAP-Characteristics §2] $name format is a"
+			    . ' spec format' );
+		my @bad =
+		    grep { !$spec_perms{$_} } @{ $catalog{$name}{perms} };
+		is( "@bad", '',
+			"[HAP-Characteristics §3] $name permissions are"
+			    . ' spec permissions' );
 	}
-	is( scalar keys %Protocol::HAP::Characteristic::PERMISSIONS,
-		scalar @spec_perms,
-		'no permissions beyond the spec table' );
 };
 
 subtest '[HAP-Characteristics §1][HAP-Characteristics §7] JSON shape' =>

@@ -9,7 +9,6 @@ App::FuguVM::State - what FuguVM remembers about one VM between runs
     my $state = App::FuguVM::State->new($state_dir, 'default')
         or die "cannot open the state of 'default'\n";
 
-    $state->set_vm_pid($pid);
     $state->mark_running;
 
     if ($state->was_unclean_shutdown) {
@@ -68,17 +67,10 @@ state hash reference for a caller that changes several keys at once.
 Return the L<Fugu::Pidfile> objects. QEMU writes the first itself,
 through its C<-pidfile> option; the proxy supervisor owns the second.
 
-=head2 set_vm_pid, get_vm_pid, clear_vm_pid, is_vm_running
+=head2 get_vm_pid, clear_vm_pid, is_vm_running
 
-The QEMU process.
-
-=head2 set_proxy_pid, get_proxy_pid, clear_proxy_pid, is_proxy_running
-
-The proxy child.
-
-=head2 set_proxy_port, get_proxy_port, clear_proxy_port
-
-The port the proxy listens on.
+The QEMU process. QEMU writes the pid file itself, through its
+C<-pidfile> option, so there is no setter.
 
 =head2 disk_path, disk_exists
 
@@ -93,7 +85,7 @@ its own disk and never attaches the miniroot again.
 
 The password that the installer set. The store writes at mode 0600.
 
-=head2 is_ssh_key_installed, mark_ssh_key_installed, get_installed_ssh_pubkey, ssh_key_matches
+=head2 mark_ssh_key_installed, get_installed_ssh_pubkey
 
 Which SSH public key the guest holds. The state records the key
 itself, not only that there is one. Thus a key that changed in the

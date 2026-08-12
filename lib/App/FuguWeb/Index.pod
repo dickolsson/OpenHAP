@@ -28,15 +28,12 @@ L<App::FuguWeb::Manual>, and that reads the source.
 
 C<config> is an L<App::FuguWeb::Config> and is required.
 
-=head2 config
-
-Return the site description.
-
 =head2 title
 
 The title of the index page. It comes from the C<page> block that names
 the index as its source, so the heading and the browser tab always
-agree. A description with no such block gives C<Manuals>.
+agree. The build renders the index for such a block only, so the block
+is always there.
 
 =head2 body
 

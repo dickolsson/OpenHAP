@@ -70,19 +70,34 @@ use constant EVENT_COALESCE_DELAY => 0.250;
 # _response(%args):
 #	Build a response with the HAP defaults: the connection stays
 #	open, because a controller sends every request of a session
-#	over one connection, and the 470 code carries a reason phrase
-#	that only HAP defines.
+#	over one connection.
 sub _response (%args)
 {
 	my %headers = %{ $args{headers} // {} };
 	$headers{Connection} //= 'keep-alive';
 
-	my $status = $args{status} // 200;
-	$args{status_text} //= 'Connection Authorization Required'
-	    if $status == STATUS_INSUFFICIENT_PRIVILEGES;
-
 	return Protocol::HAP::HTTP::build_response( %args,
 		headers => \%headers );
+}
+
+# _tlv_response($body):
+#	A 200 response with the pairing TLV content type. Every
+#	pairing and pairings-management reply uses it.
+sub _tlv_response ($body)
+{
+	return _response(
+		status  => 200,
+		headers => { 'Content-Type' => 'application/pairing+tlv8' },
+		body    => $body,
+	);
+}
+
+# _char_status($aid, $iid, $code):
+#	One per-characteristic result entry for the characteristics
+#	endpoints [HAP-HTTP].
+sub _char_status ( $aid, $iid, $code )
+{
+	return { aid => $aid + 0, iid => $iid + 0, status => $code };
 }
 
 # $class->new(%args):
@@ -169,9 +184,10 @@ sub _initialize ($self)
 	# Deliver device-side changes as EVENT/1.0 notifications.
 	# The bridge forwards the notify_change of each bridged
 	# accessory and keeps the device aid (HAP-HTTP.md §14).
+	# queue_event resolves the current value itself.
 	$self->{bridge}->add_event_callback(
 		sub ( $aid, $iid ) {
-			$self->_queue_change_event( $aid, $iid );
+			$self->queue_event( $aid, $iid );
 		} );
 
 	# The paired state at construction, so the first flip calls
@@ -293,7 +309,7 @@ sub _serve_request ( $self, $session, $message, $was_encrypted )
 sub _notify_pairing_changed ($self)
 {
 	my $paired = $self->is_paired ? 1 : 0;
-	return if ( $self->{last_paired_state} // -1 ) == $paired;
+	return if $self->{last_paired_state} == $paired;
 
 	$self->{last_paired_state} = $paired;
 	$self->{on_pairing_changed}->($paired)
@@ -323,10 +339,13 @@ sub _dispatch ( $self, $request, $session )
 		return $self->_handle_identify( $request, $session );
 	}
 
-	# All other endpoints need a verified session
+	# All other endpoints need a verified session. The 470 code
+	# carries a reason phrase that only HAP defines, so the codec
+	# does not know it.
 	unless ( $session->is_verified ) {
 		return _response(
-			status  => STATUS_INSUFFICIENT_PRIVILEGES,
+			status      => STATUS_INSUFFICIENT_PRIVILEGES,
+			status_text => 'Connection Authorization Required',
 			headers => { 'Content-Type' => 'application/hap+json' },
 		);
 	}
@@ -354,8 +373,7 @@ sub _dispatch ( $self, $request, $session )
 	}
 
 	# Timed write preparation. The spec shows POST in the
-	# table, but the later text uses PUT. Accept both methods
-	# for compatibility.
+	# table, but the later text uses PUT. Accept both.
 	if ( $path eq '/prepare' && ( $method eq 'PUT' || $method eq 'POST' ) )
 	{
 		return $self->_handle_prepare( $request, $session );
@@ -372,27 +390,17 @@ sub _dispatch ( $self, $request, $session )
 sub _handle_pair_setup ( $self, $request, $session )
 {
 	$self->{logger}->debug('Handling pair-setup request');
-	my $response_body =
-	    $self->{pairing}->handle_pair_setup( $request->{body}, $session );
 
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $response_body,
-	);
+	return _tlv_response( $self->{pairing}
+		    ->handle_pair_setup( $request->{body}, $session ) );
 }
 
 sub _handle_pair_verify ( $self, $request, $session )
 {
 	$self->{logger}->debug('Handling pair-verify request');
-	my $response_body =
-	    $self->{pairing}->handle_pair_verify( $request->{body}, $session );
 
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $response_body,
-	);
+	return _tlv_response( $self->{pairing}
+		    ->handle_pair_verify( $request->{body}, $session ) );
 }
 
 sub _handle_accessories ( $self, $, $ )
@@ -404,6 +412,17 @@ sub _handle_accessories ( $self, $, $ )
 		headers => { 'Content-Type' => 'application/hap+json' },
 		body    => $json,
 	);
+}
+
+# $self->_resolve_char($aid, $iid):
+#	The accessory-then-characteristic lookup that both
+#	characteristics endpoints perform.
+sub _resolve_char ( $self, $aid, $iid )
+{
+	my $accessory = $self->{bridge}->get_accessory($aid);
+	return unless $accessory;
+
+	return $accessory->get_characteristic($iid);
 }
 
 sub _handle_characteristics_get ( $self, $request, $ )
@@ -431,26 +450,10 @@ sub _handle_characteristics_get ( $self, $request, $ )
 	for my $id (@ids) {
 		my ( $aid, $iid ) = split /\./, $id;
 
-		my $accessory = $self->{bridge}->get_accessory($aid);
-		unless ($accessory) {
-			push @characteristics,
-			    {
-				aid    => $aid + 0,
-				iid    => $iid + 0,
-				status => -70409
-			    };
-			$has_errors = 1;
-			next;
-		}
-
-		my $char = $accessory->get_characteristic($iid);
+		my $char = $self->_resolve_char( $aid, $iid );
 		unless ($char) {
 			push @characteristics,
-			    {
-				aid    => $aid + 0,
-				iid    => $iid + 0,
-				status => -70409
-			    };
+			    _char_status( $aid, $iid, -70409 );
 			$has_errors = 1;
 			next;
 		}
@@ -516,26 +519,9 @@ sub _handle_characteristics_put ( $self, $request, $session )
 		my $iid   = $item->{iid};
 		my $value = $item->{value};
 
-		my $accessory = $self->{bridge}->get_accessory($aid);
-		unless ($accessory) {
-			push @results,
-			    {
-				aid    => $aid + 0,
-				iid    => $iid + 0,
-				status => -70409
-			    };
-			$has_errors = 1;
-			next;
-		}
-
-		my $char = $accessory->get_characteristic($iid);
+		my $char = $self->_resolve_char( $aid, $iid );
 		unless ($char) {
-			push @results,
-			    {
-				aid    => $aid + 0,
-				iid    => $iid + 0,
-				status => -70409
-			    };
+			push @results, _char_status( $aid, $iid, -70409 );
 			$has_errors = 1;
 			next;
 		}
@@ -543,12 +529,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 		# Check if the characteristic is writable
 		my $is_writable = grep { $_ eq 'pw' } @{ $char->{perms} // [] };
 		if ( defined $value && !$is_writable ) {
-			push @results,
-			    {
-				aid    => $aid + 0,
-				iid    => $iid + 0,
-				status => -70404
-			    };
+			push @results, _char_status( $aid, $iid, -70404 );
 			$has_errors = 1;
 			next;
 		}
@@ -558,11 +539,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 			eval { $char->set_value($value) };
 			if ($@) {
 				push @results,
-				    {
-					aid    => $aid + 0,
-					iid    => $iid + 0,
-					status => -70402
-				    };
+				    _char_status( $aid, $iid, -70402 );
 				$has_errors = 1;
 				next;
 			}
@@ -580,11 +557,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 			    grep { $_ eq 'ev' } @{ $char->{perms} // [] };
 			if ( !$has_ev ) {
 				push @results,
-				    {
-					aid    => $aid + 0,
-					iid    => $iid + 0,
-					status => -70406
-				    };
+				    _char_status( $aid, $iid, -70406 );
 				$has_errors = 1;
 				next;
 			}
@@ -602,8 +575,7 @@ sub _handle_characteristics_put ( $self, $request, $session )
 		}
 
 		# Success for this characteristic
-		push @results,
-		    { aid => $aid + 0, iid => $iid + 0, status => 0 };
+		push @results, _char_status( $aid, $iid, 0 );
 	}
 
 	# Return 204 No Content when all writes succeed
@@ -632,20 +604,6 @@ sub _handle_identify ( $self, $, $ )
 
 	$self->{logger}->info('Identify request received (unpaired)');
 
-	# Start identification on the bridge
-	my $bridge = $self->{bridge};
-	if ($bridge) {
-		my $info_service = $bridge->get_service('AccessoryInformation');
-		if ($info_service) {
-			my $identify_char =
-			    $info_service->get_characteristic_by_type(
-				'Identify');
-			if ( $identify_char && $identify_char->{on_set} ) {
-				$identify_char->{on_set}->(1);
-			}
-		}
-	}
-
 	return _response( status => 204 );
 }
 
@@ -670,32 +628,34 @@ sub _handle_pairings ( $self, $request, $session )
 	}
 
 	# Unknown method
-	my $error = Protocol::HAP::TLV::encode(
-		Protocol::HAP::Pairing::kTLVType_State(),
-		pack( 'C', 2 ),
-		Protocol::HAP::Pairing::kTLVType_Error(),
-		pack( 'C', Protocol::HAP::Pairing::kTLVError_Unknown() ),
-	);
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $error,
-	);
+	return $self->_pairings_error(
+		Protocol::HAP::Pairing::kTLVError_Unknown() );
 }
 
 # $self->_pairings_error($code):
-#	One admin-check failure response for the pairings endpoints.
+#	One failure response for the pairings endpoints.
 sub _pairings_error ( $self, $code )
 {
-	my $error = Protocol::HAP::TLV::encode(
-		Protocol::HAP::Pairing::kTLVType_State(), pack( 'C', 2 ),
-		Protocol::HAP::Pairing::kTLVType_Error(), pack( 'C', $code ),
-	);
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $error,
-	);
+	return _tlv_response(
+		Protocol::HAP::TLV::encode(
+			Protocol::HAP::Pairing::kTLVType_State(),
+			pack( 'C', 2 ),
+			Protocol::HAP::Pairing::kTLVType_Error(),
+			pack( 'C', $code ),
+		) );
+}
+
+# $self->_require_admin($session):
+#	The admin check of the pairings endpoints (HAP-Pairing.md §7).
+#	Return the loaded pairings when the session's controller is an
+#	admin, or undef.
+sub _require_admin ( $self, $session )
+{
+	my $pairings = $self->{store}->load_pairings;
+	my $current  = $pairings->{ $session->controller_id };
+	return unless $current && $current->{permissions};
+
+	return $pairings;
 }
 
 sub _handle_add_pairing ( $self, $tlv, $session )
@@ -710,11 +670,9 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	$self->{logger}
 	    ->debug( 'Add pairing request for: %s', $identifier // 'unknown' );
 
-	# Check the admin permissions. Only admins can add pairings.
-	my $pairings           = $self->{store}->load_pairings;
-	my $current_controller = $session->controller_id;
-	my $current_pairing    = $pairings->{$current_controller};
-	unless ( $current_pairing && $current_pairing->{permissions} ) {
+	# Only admins can add pairings
+	my $pairings = $self->_require_admin($session);
+	unless ($pairings) {
 		return $self->_pairings_error(
 			Protocol::HAP::Pairing::kTLVError_Authentication() );
 	}
@@ -733,15 +691,11 @@ sub _handle_add_pairing ( $self, $tlv, $session )
 	$self->{logger}
 	    ->info( 'Added pairing for controller: %s', $identifier );
 
-	my $response = Protocol::HAP::TLV::encode(
-		Protocol::HAP::Pairing::kTLVType_State(),
-		pack( 'C', 2 ),
-	);
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $response,
-	);
+	return _tlv_response(
+		Protocol::HAP::TLV::encode(
+			Protocol::HAP::Pairing::kTLVType_State(),
+			pack( 'C', 2 ),
+		) );
 }
 
 sub _handle_remove_pairing ( $self, $tlv, $session )
@@ -752,11 +706,7 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 	$self->{logger}->debug( 'Remove pairing request for: %s',
 		$identifier // 'unknown' );
 
-	# Check the admin permissions
-	my $pairings           = $self->{store}->load_pairings;
-	my $current_controller = $session->controller_id;
-	my $current_pairing    = $pairings->{$current_controller};
-	unless ( $current_pairing && $current_pairing->{permissions} ) {
+	unless ( $self->_require_admin($session) ) {
 		return $self->_pairings_error(
 			Protocol::HAP::Pairing::kTLVError_Authentication() );
 	}
@@ -779,26 +729,19 @@ sub _handle_remove_pairing ( $self, $tlv, $session )
 		$self->_regenerate_identity;
 	}
 
-	my $response = Protocol::HAP::TLV::encode(
-		Protocol::HAP::Pairing::kTLVType_State(),
-		pack( 'C', 2 ),
-	);
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $response,
-	);
+	return _tlv_response(
+		Protocol::HAP::TLV::encode(
+			Protocol::HAP::Pairing::kTLVType_State(),
+			pack( 'C', 2 ),
+		) );
 }
 
 sub _handle_list_pairings ( $self, $, $session )
 {
 	$self->{logger}->debug('List pairings request');
 
-	# Check the admin permissions
-	my $pairings           = $self->{store}->load_pairings;
-	my $current_controller = $session->controller_id;
-	my $current_pairing    = $pairings->{$current_controller};
-	unless ( $current_pairing && $current_pairing->{permissions} ) {
+	my $pairings = $self->_require_admin($session);
+	unless ($pairings) {
 		return $self->_pairings_error(
 			Protocol::HAP::Pairing::kTLVError_Authentication() );
 	}
@@ -827,41 +770,23 @@ sub _handle_list_pairings ( $self, $, $session )
 		    pack( 'C', $pairing->{permissions} );
 	}
 
-	my $response = Protocol::HAP::TLV::encode(@response_items);
-	return _response(
-		status  => 200,
-		headers => { 'Content-Type' => 'application/pairing+tlv8' },
-		body    => $response,
-	);
+	return _tlv_response( Protocol::HAP::TLV::encode(@response_items) );
 }
 
-sub _handle_prepare ( $self, $request, $session )
+sub _handle_prepare ( $self, $request, $ )
 {
 	$self->{logger}->debug('Timed write prepare request');
 	my $data = eval { $self->{json}->decode( $request->{body} ) };
 	return _response( status => 400 ) unless $data;
 
-	my $ttl = $data->{ttl};    # Time to live in ms
-	my $pid = $data->{pid};    # Process ID
-	my $aid = $data->{aid};
-	my $iid = $data->{iid};
-
 	# Validate the request
-	unless ( defined $ttl && defined $pid ) {
+	unless ( defined $data->{ttl} && defined $data->{pid} ) {
 		return _response(
 			status  => 400,
 			headers => { 'Content-Type' => 'application/hap+json' },
 			body => $self->{json}->encode( { status => -70410 } ),
 		);
 	}
-
-	# Store the timed write context in the session
-	$session->{timed_write} = {
-		ttl => $ttl,
-		pid => $pid,
-		aid => $aid,
-		iid => $iid,
-	};
 
 	return _response(
 		status  => 200,
@@ -871,21 +796,6 @@ sub _handle_prepare ( $self, $request, $session )
 }
 
 # --- events ---------------------------------------------------------------
-
-# $self->_queue_change_event($aid, $iid):
-#	Queue an event with the current value of the characteristic
-sub _queue_change_event ( $self, $aid, $iid )
-{
-	my $accessory = $self->{bridge}->get_accessory($aid);
-	return unless $accessory;
-
-	my $char = $accessory->get_characteristic($iid);
-	return unless $char;
-
-	$self->queue_event( $aid, $iid, $char->json_value );
-
-	return;
-}
 
 # Event subscription tracking. A subscription is filed twice: under
 # the characteristic, for delivery, and on the session, so that a
@@ -928,21 +838,19 @@ sub _purge_event_subscriptions ( $self, $session )
 }
 
 # Queue an event for delivery. Coalesce all events except the
-# immediate-delivery characteristic types. The optional
+# immediate-delivery characteristic types. Without a $value, the
+# current value of the characteristic goes out. The optional
 # $originator is the session whose request caused the change.
 # That session never receives the event (HAP-HTTP.md §14).
-sub queue_event ( $self, $aid, $iid, $value, $originator = undef )
+sub queue_event ( $self, $aid, $iid, $value = undef, $originator = undef )
 {
-	my $accessory = $self->{bridge}->get_accessory($aid);
-	return unless $accessory;
-
-	my $char = $accessory->get_characteristic($iid);
+	my $char = $self->_resolve_char( $aid, $iid );
 	return unless $char;
 
+	$value //= $char->json_value;
+
 	# The immediate types bypass coalescing
-	my $char_type =
-	    Protocol::HAP::Characteristic::_uuid_to_short( $char->{type}
-		    // '' );
+	my $char_type = Protocol::HAP::uuid_to_short( $char->{type} // '' );
 	if ( IMMEDIATE_EVENT_TYPES->{$char_type} ) {
 		$self->send_event( $aid, $iid, $value, $originator );
 		return;
@@ -1093,9 +1001,7 @@ sub update_config_number ($self)
 
 sub get_device_id ($self)
 {
-	# Generate a device ID from the public key in uppercase MAC format
-	my $id = uc( unpack( 'H*', substr( $self->{accessory_ltpk}, 0, 6 ) ) );
-	return join( ':', $id =~ /../g );
+	return Protocol::HAP::device_id( $self->{accessory_ltpk} );
 }
 
 # $self->mdns_txt_records:

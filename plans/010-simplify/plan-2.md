@@ -71,10 +71,13 @@ already moved `get_failed_attempts`, the `Session` guards, and the
   `handle_pair_verify` into another.
 - Keep one copy of the MAC-format rule: `Server::get_device_id` calls it;
   `Pairing::_get_accessory_pairing_id` goes.
-- Delete the constants nothing references: `kTLVType_RetryDelay`,
-  `kTLVType_Certificate`, `kTLVType_FragmentData`, `kTLVType_FragmentLast`, and
-  the four referenced only by existence asserts in `t/protocol/pairing.t` (those
-  asserts go too).
+- ~~Delete the constants nothing references~~ **Stopped by the grep rule.**
+  `t/conformance/hap-tlv8.t` §5 pins the whole pairing TLV type enum via
+  `Pairing->can("kTLVType_$name")` with one `[HAP-TLV8 §5/<row>]` citation per
+  constant — a dynamic reference the literal grep missed. The constants stay,
+  like the `IMSG_*` enum in the verified-keeps list. Only the duplicate
+  existence asserts in `t/protocol/pairing.t` go; their `[HAP-TLV8 §5]`
+  citations survive in the conformance catalog.
 - In `SRP.pm`: drop the Client's duplicate `N_LEN` and `_i2b`; drop the
   pre-declared `undef` state slots; drop the redundant parameters of
   `compute_verifier`; keep one accessor name for the session key and update the

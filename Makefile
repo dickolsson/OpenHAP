@@ -73,7 +73,9 @@ all: deps check
 
 build: package
 
-check: lint test tidy
+# prettier stays out of check: it runs through npx, and no deps/
+# manifest provides node. CI runs it in its own job.
+check: lint test tidy spec-coverage
 
 clean: clean-man web-clean
 	rm -rf build

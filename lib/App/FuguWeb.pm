@@ -29,13 +29,19 @@ package App::FuguWeb;
 # core Perl. It never uses App::OpenHAP or App::FuguVM, and neither of
 # them uses it: a sibling application is not a library.
 #
-# This file holds what every module in the namespace needs: the name
-# of the configuration file, and the escape that guards a value on its
-# way into HTML.
+# This file holds what more than one module in the namespace needs:
+# the name of the configuration file, the name of the stylesheet in
+# the output, the escapes that guard a value on its way into HTML,
+# the directory listing, and the prefix test.
 
 # The configuration file, at the project root. The name and the
 # discovery match .fuguvmrc.
 use constant CONFIG_FILE => '.fuguwebrc';
+
+# The stylesheet, as the output directory holds it and as every page
+# links it. The site is served from one flat directory, so the name
+# is a file name there.
+use constant STYLESHEET => 'style.css';
 
 # escape_html($text):
 #	Escape the three characters that change the meaning of HTML
@@ -68,6 +74,38 @@ sub escape_attr ($text)
 	$escaped =~ s/"/&quot;/g;
 
 	return $escaped;
+}
+
+# list_dir($dir):
+#	The names in one directory, sorted, without '.' and '..'. The
+#	function returns an array reference, or undef with the reason
+#	in $!, so a caller can tell an empty directory from one it
+#	cannot read.
+#
+#	The sort compares bytes and never reads the locale of the
+#	builder: a site must not depend on the machine that built it.
+sub list_dir ($dir)
+{
+	opendir my $dh, $dir or return;
+	my @names = sort grep { $_ ne '.' && $_ ne '..' } readdir $dh;
+	closedir $dh;
+
+	return \@names;
+}
+
+# path_below($path, $root):
+#	Report whether $path is $root or lies below it. A trailing
+#	slash on either does not change the answer. Both paths must be
+#	of the same kind: both absolute, or both relative to the same
+#	directory.
+sub path_below ( $path, $root )
+{
+	my $one = $path =~ s{/+$}{}r;
+	my $two = $root =~ s{/+$}{}r;
+
+	return 1 if $one eq $two;
+
+	return index( $one, "$two/" ) == 0 ? 1 : 0;
 }
 
 1;

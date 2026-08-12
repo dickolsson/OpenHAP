@@ -38,56 +38,23 @@ $controller->pair_verify
 my $result   = $controller->request('GET', '/accessories');
 my $database = decode_json($result->{body});
 
-# find_char($device, $type): (aid, iid) of a characteristic by short
-# type on the accessory whose Name matches the device's config name
-sub find_char ($device, $type)
+# value_of($aid, $iid): the current value through the paired session,
+# with JSON booleans folded to 1/0
+sub value_of ($aid, $iid)
 {
-	for my $accessory (@{ $database->{accessories} }) {
-		my $named = 0;
-		for my $service (@{ $accessory->{services} }) {
-			for my $char (@{ $service->{characteristics} }) {
-				$named = 1
-				    if $char->{type} eq '23'
-				    && ($char->{value} // '') eq
-				    $device->{name};
-			}
-		}
-		next unless $named;
-		for my $service (@{ $accessory->{services} }) {
-			for my $char (@{ $service->{characteristics} }) {
-				return ($accessory->{aid}, $char->{iid})
-				    if $char->{type} eq $type;
-			}
-		}
-	}
-	return;
+	my $res = $controller->request('GET', "/characteristics?id=$aid.$iid");
+	my $value = decode_json($res->{body})->{characteristics}[0]{value};
+	return JSON::PP::is_bool($value) ? ( $value ? 1 : 0 ) : $value;
 }
 
-# poll_value($aid, $iid, $expected): poll the paired GET endpoint until
-# the value matches (JSON-encoded comparison) or 5 seconds pass
-sub poll_value ($aid, $iid, $expected)
-{
-	my $deadline = time + 5;
-	my $seen;
-	while (time < $deadline) {
-		my $res = $controller->request('GET',
-			"/characteristics?id=$aid.$iid");
-		my $data = decode_json($res->{body});
-		$seen = $data->{characteristics}[0]{value};
-		my $normalized =
-		    JSON::PP::is_bool($seen) ? ( $seen ? 1 : 0 ) : $seen;
-		return $normalized
-		    if defined $normalized && "$normalized" eq "$expected";
-		sleep 0.25;
-	}
-	return $seen;
-}
-
-my ($light_aid, $on_iid) = find_char($light, '25');
+my ($light_aid, $on_iid) =
+    $env->find_char($database, '25', name => $light->{name});
 ok(defined $on_iid, 'lightbulb On characteristic located');
-my (undef, $brightness_iid) = find_char($light, '8');
+my (undef, $brightness_iid) =
+    $env->find_char($database, '8', name => $light->{name});
 ok(defined $brightness_iid, 'lightbulb Brightness characteristic located');
-my ($sensor_aid, $temp_iid) = find_char($sensor, '11');
+my ($sensor_aid, $temp_iid) =
+    $env->find_char($database, '11', name => $sensor->{name});
 ok(defined $temp_iid, 'sensor CurrentTemperature located');
 
 die "Accessory database missing expected characteristics\n"
@@ -95,25 +62,25 @@ die "Accessory database missing expected characteristics\n"
 
 # Test 1: stat/POWER -> HAP On ([MQTT-State §1] -> [MQTT §4])
 $mqtt->publish("stat/$light->{topic}/POWER", 'ON');
-is(poll_value($light_aid, $on_iid, 1), 1,
+ok($env->wait_value(sub { value_of($light_aid, $on_iid) }, 1),
    '[MQTT-State §1] published POWER ON visible as HAP On=true');
 
 # Test 2: tele/STATE -> HAP Brightness ([MQTT-State §3])
 $mqtt->publish("tele/$light->{topic}/STATE",
 	'{"POWER":"ON","Dimmer":42}');
-is(poll_value($light_aid, $brightness_iid, 42), 42,
+ok($env->wait_value(sub { value_of($light_aid, $brightness_iid) }, 42),
    '[MQTT-State §3] STATE Dimmer visible as HAP Brightness');
 
 # Test 3: tele/SENSOR -> HAP CurrentTemperature ([MQTT-Sensors §1])
 $mqtt->publish("tele/$sensor->{topic}/SENSOR",
 	'{"DS18B20":{"Temperature":23.5},"TempUnit":"C"}');
-is(poll_value($sensor_aid, $temp_iid, 23.5), 23.5,
+ok($env->wait_value(sub { value_of($sensor_aid, $temp_iid) }, 23.5),
    '[MQTT-Sensors §1] SENSOR temperature visible via HAP');
 
 # Test 4: Fahrenheit SENSOR converted ([MQTT-Sensors §3])
 $mqtt->publish("tele/$sensor->{topic}/SENSOR",
 	'{"DS18B20":{"Temperature":77},"TempUnit":"F"}');
-is(poll_value($sensor_aid, $temp_iid, 25), 25,
+ok($env->wait_value(sub { value_of($sensor_aid, $temp_iid) }, 25),
    '[MQTT-Sensors §3] Fahrenheit reading converted to Celsius');
 
 # Test 5: HAP write -> cmnd publish ([MQTT-Control §1])

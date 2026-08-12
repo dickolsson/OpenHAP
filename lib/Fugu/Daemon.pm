@@ -39,8 +39,6 @@ my $held_pidfile;
 #	%args:
 #		logfile => $path  # Target of stdout/stderr (default: /dev/null)
 #		pidfile => $path  # PID file the child acquires and holds
-#		umask   => $mode  # File creation mask (default: 022)
-#		on_fork => sub($) # Runs in the parent after the fork, with the PID
 #
 #	The method returns the Fugu::Pidfile object when the caller
 #	gives a pidfile. Otherwise it returns nothing.
@@ -48,20 +46,14 @@ sub daemonize ( $class, %args )
 {
 	my $logfile = $args{logfile} // '/dev/null';
 	my $pidfile = $args{pidfile};
-	my $umask   = $args{umask} // 022;
-	my $on_fork = $args{on_fork};
 
 	my $pid = fork;
 	unless ( defined $pid ) {
 		die "Cannot fork: $!";
 	}
 
-	if ($pid) {
-
-		# Parent process
-		$on_fork->($pid) if $on_fork;
-		exit 0;
-	}
+	# Parent process
+	exit 0 if $pid;
 
 	# Child process
 	$DB::inhibit_exit = 0;
@@ -76,7 +68,7 @@ sub daemonize ( $class, %args )
 	# Release the directory the caller started in, as daemon(3)
 	# does. A daemon must never keep a filesystem busy.
 	chdir '/' or die "Cannot chdir to /: $!";
-	umask $umask;
+	umask 022;
 
 	return unless defined $pidfile;
 

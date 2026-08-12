@@ -83,26 +83,16 @@ reply, which must encode as JSON.
 A handler that dies gives the caller an error reply.
 .It Fn listen "%args"
 Bind the socket and start accepting.
-With
-.Fa loop ,
-the listener and every accepted connection register with that event
-loop.
-Without it, the caller drives
-.Fn accept_one
-itself.
+The listener and every accepted connection register with the event
+loop that
+.Fa loop
+names.
+That argument is necessary, and the method dies without it.
 .It Fn accept_one "$loop"
-Take one connection.
-With a loop, the connection registers as a read handler.
-Without one, the method serves the connection to its end.
-.It Fn serve_client "$client"
-Serve one connection until the peer goes away.
-This is the form for a caller with no event loop.
-The read blocks, because there is no loop to come back to.
+Take one connection and register it as a read handler on the loop.
 .It Fn shutdown "%args"
 Close every connection, close the listener, and remove the socket.
 A socket left behind names a daemon that is not there.
-.It Fn commands
-The registered command names, sorted.
 .It Fn path
 The socket path.
 .It Fn error
@@ -125,9 +115,6 @@ The method connects if it is not connected.
 .It Fn connect , Fn disconnect
 Open and close the connection by hand.
 Both are idempotent.
-.It Fn exists
-Report if the socket file is there.
-This is not the same question as whether the daemon answers.
 .It Fn socket_absent
 Report if the most recent failure was an absent socket, and not a
 refusal.
@@ -158,10 +145,8 @@ with the reason in
 .Fn request
 returns the decoded reply, or
 .Dv undef .
-.Fn exists
-and
 .Fn socket_absent
-return 1 or 0.
+returns 1 or 0.
 Every other method returns its object.
 .Sh FILES
 The socket that the caller names.

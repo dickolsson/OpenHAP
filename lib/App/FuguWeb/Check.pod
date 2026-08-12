@@ -29,19 +29,16 @@ reports them, because the build and its checks touch no network.
 
     App::FuguWeb::Check->new(
         config => $config,      # required
-        out    => $dir,         # default: the out_dir setting
+        out    => $dir,         # required: the built site
     )
 
-=head2 config, out
+=head2 pages
 
-The site description and the directory that holds the site.
-
-=head2 pages, assets
-
-Everything the site must hold: the pages of the description, one page
-for each manual of each group, the stylesheet, and every asset. Both
-lists come from the description, so the build and the checks can never
-disagree about what the site is.
+Every page that the site must hold, in a stable order: the pages of
+the description, then one page for each manual of each group. The full
+expectation, assets included, comes from
+L<App::FuguWeb::Config/inventory>, so the build and the checks can
+never disagree about what the site is.
 
 =head2 run
 
@@ -62,12 +59,6 @@ every page has a title;
 
 =item *
 
-no page holds an unsubstituted C<@TITLE@> placeholder, outside an
-element that marks the text as literal code: a page that documents the
-placeholder is not a broken page;
-
-=item *
-
 every page carries the whole navigation;
 
 =item *
@@ -81,7 +72,8 @@ no reference uses a C<file:> URL;
 
 =item *
 
-every relative reference resolves to a file in the output;
+every relative reference resolves to a file in the output, a manual
+cross-reference included;
 
 =item *
 
@@ -91,10 +83,6 @@ every fragment resolves to an C<id> on the target page;
 
 no relative href reads as a URL scheme, so every local link keeps its
 C<./>;
-
-=item *
-
-no local C<.Xr> cross-reference dangles;
 
 =item *
 

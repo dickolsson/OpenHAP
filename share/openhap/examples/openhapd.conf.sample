@@ -7,8 +7,6 @@
 hap_name = "Home Bridge"
 hap_port = 51827
 hap_pin = 1995-1018
-hap_model = "OpenHAP"
-hap_manufacturer = "OpenBSD"
 
 # Storage
 db_path = /var/db/openhapd
@@ -46,8 +44,10 @@ device tasmota lightbulb kitchen {
     topic = tasmota_LIGHT1
 }
 
-# Temperature sensor example
+# Temperature sensor example.  Set has_humidity = 1 for a sensor
+# that also reports humidity, for example a DHT22.
 device tasmota sensor outdoor {
     name = "Outdoor Sensor"
     topic = tasmota_SENS01
+    has_humidity = 1
 }

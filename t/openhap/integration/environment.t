@@ -3,46 +3,27 @@
 # Integration test: System prerequisites and environment validation
 
 use v5.36;
-use Test::More tests => 11;
+use Test::More tests => 4;
 use FindBin qw($RealBin);
 use lib "$RealBin/../../../lib";
 
 use App::OpenHAP::Test::Integration;
 
+# The binary, configuration, user, and data-directory checks live in
+# the harness: _verify_system dies in every file's setup when one is
+# missing. This file keeps only what the harness does not check.
+
 # Test 1: Environment variable set
 ok($ENV{OPENHAP_INTEGRATION_TEST}, 'OPENHAP_INTEGRATION_TEST is set');
 
-# Test 2: rcctl available
-ok(-x '/usr/sbin/rcctl', 'rcctl command available');
-
-# Test 3: openhapd binary installed
-ok(-x '/usr/local/bin/openhapd', 'openhapd binary installed');
-
-# Test 4: hapctl binary installed
-ok(-x '/usr/local/bin/hapctl', 'hapctl binary installed');
-
-# Test 5: OpenHAP modules available
+# Test 2: OpenHAP modules available
 eval { require App::OpenHAP::Host; };
 ok(!$@, 'App::OpenHAP::Host module available');
 
-# Test 6: Configuration file exists
-my $config_file = '/etc/openhapd.conf';
-ok(-f $config_file, 'configuration file exists');
-
-# Test 7: Configuration file readable
-ok(-r $config_file, 'configuration file readable');
-
-# Test 8: System user exists
-my $user_exists = system('id _openhap >/dev/null 2>&1') == 0;
-ok($user_exists, '_openhap system user exists');
-
-# Test 9: Data directory exists
-ok(-d '/var/db/openhapd', 'data directory exists');
-
-# Test 10: rc.d script installed
+# Test 3: rc.d script installed
 ok(-f '/etc/rc.d/openhapd', 'rc.d script installed');
 
-# Test 11: SRP obtains the GMP Math::BigInt backend. The try => 'GMP'
+# Test 4: SRP obtains the GMP Math::BigInt backend. The try => 'GMP'
 # selection falls back silently to pure Perl. The pure Perl path
 # reintroduces multi-minute pair-setups under TCG emulation. A
 # missing backend must be a hard, visible failure here, not a

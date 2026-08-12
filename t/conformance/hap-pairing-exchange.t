@@ -60,8 +60,9 @@ sub make_pair ( %controller_args )
 	};
 
 	my $controller = Protocol::HAP::Controller->new(
-		pin       => $PIN,
-		transport => $transport,
+		pin           => $PIN,
+		transport     => $transport,
+		controller_id => 'openhap-test-ctrl',
 		%controller_args,
 	);
 
@@ -219,9 +220,10 @@ subtest '[HAP-Pairing §2.2][HAP-Pairing §3] socket transport against a '
 	}
 
 	my $controller = Protocol::HAP::Controller->new(
-		host => '127.0.0.1',
-		port => $port,
-		pin  => $PIN,
+		host          => '127.0.0.1',
+		port          => $port,
+		pin           => $PIN,
+		controller_id => 'openhap-test-ctrl',
 	);
 
 	ok( $controller->pair_setup, 'pair-setup completes over TCP' );

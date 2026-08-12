@@ -73,6 +73,22 @@ record.
 This method returns the shared null logger. The null logger answers the
 four logger methods and drops every message.
 
+=head1 FUNCTIONS
+
+=head2 uuid_to_short($uuid)
+
+This function converts a full UUID to the short form for JSON. It
+returns a short hex string for Apple-defined UUIDs and the full UUID
+for custom ones. The data model and the server share this one copy of
+the rule.
+
+=head2 device_id($ltpk)
+
+This function returns the MAC-format device id of an accessory: the
+first six bytes of the long-term public key, as uppercase
+colon-separated hex. The server advertises it and pair-setup signs
+over it.
+
 =head1 MODULES
 
 =over 4

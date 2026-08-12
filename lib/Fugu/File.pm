@@ -89,7 +89,7 @@ sub write ( $class, $path, $data, %args )
 	};
 	binmode $fh;
 
-	my $ok = _write_all( $fh, $data, $path );
+	my $ok = $class->_write_all( $fh, $data, $path );
 	close $fh or $ok = undef;
 
 	return $ok;
@@ -113,7 +113,7 @@ sub write_atomic ( $class, $path, $data, %args )
 	};
 	binmode $fh;
 
-	unless ( _write_all( $fh, $data, $temp ) && close $fh ) {
+	unless ( $class->_write_all( $fh, $data, $temp ) && close $fh ) {
 		close $fh;
 		unlink $temp;
 		return;
@@ -343,10 +343,13 @@ sub valid_name ( $class, $name )
 	return 1;
 }
 
-# _write_all($fh, $data, $path):
-#	Write every byte. A short syswrite is not an error by itself,
-#	so the loop continues until the data is gone.
-sub _write_all ( $fh, $data, $path )
+# $class->_write_all($fh, $data, $name):
+#	Write every byte to a handle or a socket. A short syswrite is
+#	not an error by itself, so the loop continues until the data is
+#	gone. $name labels the destination in the error log. The method
+#	is a class method so the daemon host and the proxy share this
+#	one loop. It returns 1, or undef on a write error.
+sub _write_all ( $class, $fh, $data, $name )
 {
 	$data //= '';
 	my $offset = 0;
@@ -355,13 +358,21 @@ sub _write_all ( $fh, $data, $path )
 		unless ( defined $n ) {
 			next if $!{EINTR};
 			Fugu::Log->default->error( 'Cannot write %s: %s',
-				$path, $! );
+				$name, $! );
 			return;
 		}
 		$offset += $n;
 	}
 
 	return 1;
+}
+
+# _candidates($prefix):
+#	The candidate names of one temporary sibling: ten numbered
+#	attempts. Both temporary forms draw from this one loop.
+sub _candidates ($prefix)
+{
+	return map { "$prefix.$$.$_" } 1 .. 10;
 }
 
 # _temp_name($path):
@@ -373,8 +384,7 @@ sub _temp_name ($path)
 	my $dir  = dirname($path);
 	my $base = ( File::Spec->splitpath($path) )[2];
 
-	for my $attempt ( 1 .. 10 ) {
-		my $temp = sprintf '%s/.%s.%d.%d', $dir, $base, $$, $attempt;
+	for my $temp ( _candidates("$dir/.$base") ) {
 		return $temp unless -e $temp;
 	}
 
@@ -387,8 +397,7 @@ sub _temp_name ($path)
 #	else's business.
 sub _make_temp_dir ($parent)
 {
-	for my $attempt ( 1 .. 10 ) {
-		my $dir = sprintf '%s/.tmp.%d.%d', $parent, $$, $attempt;
+	for my $dir ( _candidates("$parent/.tmp") ) {
 		next if -e $dir;
 		if ( mkdir $dir, 0700 ) {
 			$pending{$dir} = 1;

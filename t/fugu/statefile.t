@@ -26,11 +26,9 @@ subtest 'set, get and persist' => sub {
 	my $store = Fugu::StateFile->new( path => $path )->load;
 
 	is( $store->get('missing'), undef, 'an unset key is undef' );
-	ok( !$store->exists('missing'), 'and does not exist' );
 
 	ok( $store->set( 'count', 3 ), 'set reports success' );
 	is( $store->get('count'), 3, 'get returns it' );
-	ok( $store->exists('count'), 'and it exists' );
 
 	# A second object over the same file sees the same state
 	my $reader = Fugu::StateFile->new( path => $path )->load;
@@ -44,8 +42,8 @@ subtest 'set, get and persist' => sub {
 	);
 
 	ok( $store->delete('count'), 'delete reports success' );
-	ok( !Fugu::StateFile->new( path => $path )->load->exists('count'),
-		'and the key is gone from the file' );
+	is( Fugu::StateFile->new( path => $path )->load->get('count'),
+		undef, 'and the key is gone from the file' );
 };
 
 subtest 'a stored undef is still a stored answer' => sub {
@@ -54,19 +52,7 @@ subtest 'a stored undef is still a stored answer' => sub {
 
 	$store->set( 'seen', undef );
 	is( $store->get('seen'), undef, 'the value is undef' );
-	ok( $store->exists('seen'), 'but the key exists' );
-};
-
-subtest 'increment' => sub {
-	my $store = Fugu::StateFile->new( path => next_path() )->load;
-
-	is( $store->increment('c'), 1, 'an absent counter starts at 0' );
-	is( $store->increment('c'), 2, 'and counts up' );
-	is( $store->increment( 'c', 5 ), 7, 'a step is possible' );
-	is( $store->get('c'), 7, 'the value persists in memory' );
-
-	is( Fugu::StateFile->new( path => $store->path )->load->get('c'),
-		7, 'and on disk' );
+	ok( exists $store->data->{seen}, 'but the key is stored' );
 };
 
 subtest 'load tolerates a missing and a corrupt file' => sub {

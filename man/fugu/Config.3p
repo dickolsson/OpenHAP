@@ -113,9 +113,10 @@ returns a top-level setting, or the default.
 .Ss setting_names
 .Fn setting_names
 returns the names of the top-level settings, sorted.
-.Ss bool
-.Fn bool "$key" "$default"
-returns a top-level setting as a switch.
+.Ss parse_bool
+.Fn parse_bool "$value" "$default"
+parses a value as a switch.
+A setting inside a block comes through here.
 .Pp
 The accepted spellings are
 .Cm yes ,
@@ -134,11 +135,6 @@ The comparison ignores case.
 Any other value returns the default and records an error.
 Thus a caller that checks gets told, and a caller that does not still
 gets a defined answer instead of the opposite of what the file said.
-.Ss parse_bool
-.Fn parse_bool "$value" "$default"
-applies the same switch grammar to a value that the caller already
-holds.
-A setting inside a block comes through here.
 .Ss blocks
 .Fn blocks "$type"
 returns every block of the type, in file order.
@@ -165,9 +161,6 @@ returns the block of the type whose name matches, or
 .Dv undef .
 When two blocks share a name, the last one in the file wins, as an
 assignment does.
-.Ss block_types
-.Fn block_types
-returns the block types that the file used, sorted.
 .Ss find_project_root
 .Fn find_project_root "$marker"
 walks up from the working directory to the first directory that holds
@@ -190,14 +183,11 @@ and
 .Fn error
 return a string or
 .Dv undef .
-.Fn bool
-and
 .Fn parse_bool
-return 1 or 0.
-.Fn blocks ,
-.Fn setting_names
+returns 1 or 0.
+.Fn blocks
 and
-.Fn block_types
+.Fn setting_names
 return a list.
 .Fn block
 returns a hash reference or
@@ -241,7 +231,7 @@ The module does not convert a number, and
 .Ql 0
 as a string is true in Perl.
 Use
-.Fn bool
+.Fn parse_bool
 for a switch.
 .Pp
 A key with no value is not a setting, and the parser rejects the line.

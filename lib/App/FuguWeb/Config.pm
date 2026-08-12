@@ -45,8 +45,6 @@ use constant {
 	DEFAULT_MODULE_ROOT => 'lib',
 	DEFAULT_MANDOC_OS   => 'OpenBSD',
 	DEFAULT_MAN_URL     => 'https://man.openbsd.org/',
-	DEFAULT_POD_CENTER  => 'Perl Library Manual',
-	DEFAULT_POD_RELEASE => 'OpenBSD',
 };
 
 # The settings that name a path inside the project. Each one is
@@ -117,8 +115,7 @@ sub load ( $class, %args )
 }
 
 # App::FuguWeb::Config->anonymous($root):
-#	A description that names nothing: every setting takes its
-#	default, and there is no navigation, no page and no group.
+#	A description that names nothing but the project root.
 #
 #	'fuguweb clean --out <dir>' uses it. Removing a directory that
 #	the caller named needs a project root and nothing else, and
@@ -126,20 +123,7 @@ sub load ( $class, %args )
 #	description is the thing that is broken.
 sub anonymous ( $class, $root )
 {
-	my $self = bless {
-		root => $root,
-		path => undef,
-		file => Fugu::Config->new(
-			file => "$root/" . App::FuguWeb::CONFIG_FILE
-		),
-		nav   => [],
-		page  => [],
-		group => [],
-	}, $class;
-
-	$self->_apply_settings;
-
-	return $self;
+	return bless { root => $root }, $class;
 }
 
 # $self->root, $self->path:
@@ -150,14 +134,11 @@ sub path ($self) { return $self->{path}; }
 # The settings. Each one is a plain accessor over the merged value, so
 # a caller never repeats a default.
 sub site        ($self) { return $self->{site}; }
-sub banner      ($self) { return $self->{banner}; }
 sub lang        ($self) { return $self->{lang}; }
 sub out_dir     ($self) { return $self->{out_dir}; }
 sub source_dir  ($self) { return $self->{source_dir}; }
 sub entry       ($self) { return $self->{entry}; }
 sub module_root ($self) { return $self->{module_root}; }
-sub pod_center  ($self) { return $self->{pod_center}; }
-sub pod_release ($self) { return $self->{pod_release}; }
 sub mandoc_os   ($self) { return $self->{mandoc_os}; }
 sub man_url     ($self) { return $self->{man_url}; }
 sub stylesheet  ($self) { return $self->{stylesheet}; }
@@ -208,11 +189,24 @@ sub assets ($self)
 	my $dir = $self->source_path;
 	return () unless -d $dir;
 
-	opendir my $dh, $dir or return ();
-	my @names = sort grep { !/^\./ } readdir $dh;
-	closedir $dh;
+	my $names = App::FuguWeb::list_dir($dir) or return ();
 
-	return grep { !/\.body\.html$/ && !/\.md$/ && -f "$dir/$_" } @names;
+	return
+	    grep { !/^\./ && !/\.body\.html$/ && !/\.md$/ && -f "$dir/$_" }
+	    @$names;
+}
+
+# $self->inventory:
+#	Every name that the output directory must hold after a build:
+#	the pages of the description, one page for each manual of each
+#	group, the stylesheet, and the assets. The build and the
+#	checks read the same list, so the two can never disagree about
+#	what the site holds.
+sub inventory ($self)
+{
+	return ( map { $_->{file} } $self->pages ),
+	    ( map { $_->page } map { $_->manuals } $self->groups ),
+	    App::FuguWeb::STYLESHEET, $self->assets;
 }
 
 # $self->groups:
@@ -230,7 +224,6 @@ sub _apply_settings ($self)
 	my $file = $self->{file};
 
 	$self->{site}        = $file->get('site');
-	$self->{banner}      = $file->get( 'banner',      $self->{site} );
 	$self->{lang}        = $file->get( 'lang',        DEFAULT_LANG );
 	$self->{out_dir}     = $file->get( 'out_dir',     DEFAULT_OUT_DIR );
 	$self->{source_dir}  = $file->get( 'source_dir',  DEFAULT_SOURCE_DIR );
@@ -240,11 +233,9 @@ sub _apply_settings ($self)
 	# A trailing slash would survive into the prefix that a module
 	# name drops, and the name would then keep the whole path.
 	$self->{module_root} =~ s{/+$}{};
-	$self->{pod_center}  = $file->get( 'pod_center',  DEFAULT_POD_CENTER );
-	$self->{pod_release} = $file->get( 'pod_release', DEFAULT_POD_RELEASE );
-	$self->{mandoc_os}   = $file->get( 'mandoc_os',   DEFAULT_MANDOC_OS );
-	$self->{man_url}     = $file->get( 'man_url',     DEFAULT_MAN_URL );
-	$self->{stylesheet}  = $file->get('stylesheet');
+	$self->{mandoc_os}  = $file->get( 'mandoc_os', DEFAULT_MANDOC_OS );
+	$self->{man_url}    = $file->get( 'man_url',   DEFAULT_MAN_URL );
+	$self->{stylesheet} = $file->get('stylesheet');
 
 	return $self;
 }
@@ -400,7 +391,8 @@ sub _read_groups ( $self, $reason )
 		# name to turn into, and the build would publish the
 		# whole absolute path instead.
 		if ( $kind eq 'modules'
-			&& !_below( $dir, $self->{module_root} ) )
+			&& !App::FuguWeb::path_below( $dir,
+				$self->{module_root} ) )
 		{
 			return $self->_fail( $reason,
 				      "modules \"$heading\" names $dir, which"
@@ -486,12 +478,10 @@ sub _check_source_dir ( $self, $reason )
 	my $dir = $self->source_path;
 	return $self unless -d $dir;
 
-	opendir my $dh, $dir
+	my $names = App::FuguWeb::list_dir($dir)
 	    or return $self->_fail( $reason, "cannot read $dir: $!" );
-	my @names = sort grep { $_ ne '.' && $_ ne '..' } readdir $dh;
-	closedir $dh;
 
-	for my $name (@names) {
+	for my $name (@$names) {
 		next unless -l "$dir/$name";
 		return $self->_fail( $reason,
 			      "$self->{source_dir}/$name is a symlink;"
@@ -522,20 +512,6 @@ sub _unsafe_output_name ($name)
 	return 'leaves the output directory' if _has_parent_step($name);
 
 	return;
-}
-
-# _below($path, $root):
-#	Report whether $path is $root or lies below it. Both are
-#	relative to the project, and a trailing slash on either does
-#	not change the answer.
-sub _below ( $path, $root )
-{
-	my $one = $path =~ s{/+$}{}r;
-	my $two = $root =~ s{/+$}{}r;
-
-	return 1 if $one eq $two;
-
-	return index( $one, "$two/" ) == 0 ? 1 : 0;
 }
 
 # $self->_fail($reason, $message):
@@ -583,12 +559,10 @@ sub new ( $class, %args )
 	}, $class;
 }
 
-sub kind        ($self) { return $self->{kind}; }
-sub heading     ($self) { return $self->{heading}; }
-sub anchor      ($self) { return $self->{anchor}; }
-sub dir         ($self) { return $self->{dir}; }
-sub namespace   ($self) { return $self->{namespace}; }
-sub module_root ($self) { return $self->{module_root}; }
+sub kind      ($self) { return $self->{kind}; }
+sub heading   ($self) { return $self->{heading}; }
+sub anchor    ($self) { return $self->{anchor}; }
+sub namespace ($self) { return $self->{namespace}; }
 
 # $self->manuals:
 #	The manuals of the group, in the order the index shows them.
@@ -616,9 +590,8 @@ sub manuals ($self)
 #	and a directory named tool.1 is not a manual.
 sub _mdoc_manuals ($self)
 {
-	opendir my $dh, $self->{dir} or return ();
-	my @names = sort grep { !/^\./ } readdir $dh;
-	closedir $dh;
+	my $names = App::FuguWeb::list_dir( $self->{dir} ) or return ();
+	my @names = grep { !/^\./ } @$names;
 
 	my @manuals;
 	for my $section (@SECTIONS) {

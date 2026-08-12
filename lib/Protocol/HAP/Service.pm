@@ -3,9 +3,7 @@ use v5.36;
 package Protocol::HAP::Service;
 
 use Protocol::HAP;
-
-# HAP Base UUID suffix for Apple-defined services
-use constant HAP_BASE_UUID => '-0000-1000-8000-0026BB765291';
+use Protocol::HAP::Characteristic;
 
 # HAP Service Type UUIDs
 our %SERVICE_TYPES = (
@@ -18,18 +16,6 @@ our %SERVICE_TYPES = (
 	'Outlet'               => '00000047-0000-1000-8000-0026BB765291',
 	'Lightbulb'            => '00000043-0000-1000-8000-0026BB765291',
 );
-
-# _uuid_to_short($uuid) - Convert the full UUID to the short form
-# for JSON. The function returns a short hex string for Apple
-# UUIDs. It returns the full UUID for custom UUIDs.
-sub _uuid_to_short ($uuid)
-{
-	my $base = HAP_BASE_UUID;
-	if ( $uuid =~ /^0*([0-9A-Fa-f]+)\Q$base\E$/i ) {
-		return uc($1);
-	}
-	return $uuid;
-}
 
 sub new ( $class, %args )
 {
@@ -66,7 +52,6 @@ sub get_characteristic ( $self, $iid )
 
 sub get_characteristic_by_type ( $self, $type )
 {
-	require Protocol::HAP::Characteristic;
 	my $target_uuid = $Protocol::HAP::Characteristic::CHAR_TYPES{$type}
 	    // $type;
 
@@ -91,8 +76,8 @@ sub to_json ($self)
 	}
 
 	my $json = {
-		type            => _uuid_to_short( $self->{type} ),
-		iid             => $self->{iid},
+		type => Protocol::HAP::uuid_to_short( $self->{type} ),
+		iid  => $self->{iid},
 		characteristics => \@chars,
 	};
 

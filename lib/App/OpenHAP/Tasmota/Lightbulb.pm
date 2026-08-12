@@ -25,7 +25,7 @@ our @ISA = qw(App::OpenHAP::Tasmota::Device);
 use Protocol::HAP::Service;
 use Protocol::HAP::Characteristic;
 
-use JSON::XS;
+use POSIX qw(fmod);
 
 # Light capabilities
 use constant {
@@ -34,20 +34,19 @@ use constant {
 	CAP_CT     => 4,    # Color temperature control
 };
 
+# The Tasmota color-temperature range in mireds (M4)
+use constant {
+	CT_MIN => 153,
+	CT_MAX => 500,
+};
+
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(
-		logger       => $args{logger},
-		aid          => $args{aid},
-		name         => $args{name},
+		%args,
 		model        => 'Tasmota Light',
 		manufacturer => 'OpenHAP',
 		serial       => $args{serial} // 'LIGHT-001',
-		mqtt_topic   => $args{mqtt_topic},
-		mqtt_client  => $args{mqtt_client},
-		relay_index  => $args{relay_index} // 0,
-		fulltopic    => $args{fulltopic},               # H2
-		setoption26  => $args{setoption26},             # M1
 	);
 
 	# Light state
@@ -59,14 +58,10 @@ sub new ( $class, %args )
 
 	# Capabilities (H2)
 	$self->{capabilities} = $args{capabilities} // CAP_DIMMER;
-	$self->{has_dimmer} =
-	    ( $self->{capabilities} & CAP_DIMMER ) ? 1 : 0;
-	$self->{has_color} =
-	    ( $self->{capabilities} & CAP_COLOR ) ? 1 : 0;
-	$self->{has_ct} =
-	    ( $self->{capabilities} & CAP_CT ) ? 1 : 0;
 
-	# Add the Lightbulb service
+	# Add the Lightbulb service. One row per characteristic:
+	# capability mask (0 = always), type, iid, format, and the
+	# extra arguments.
 	my $lightbulb = Protocol::HAP::Service->new(
 		logger  => $self->{logger},
 		type    => 'Lightbulb',
@@ -74,83 +69,77 @@ sub new ( $class, %args )
 		primary => 1,
 	);
 
-	# On characteristic (required)
-	$lightbulb->add_characteristic(
-		Protocol::HAP::Characteristic->new(
-			logger => $self->{logger},
-			type   => 'On',
-			iid    => 11,
-			format => 'bool',
-			perms  => [ 'pr', 'pw', 'ev' ],
-			value  => \$self->{power_state},
-			on_set => sub { $self->set_power(@_) },
-		) );
-
-	# Brightness characteristic (optional, for dimmers)
-	if ( $self->{has_dimmer} ) {
-		$lightbulb->add_characteristic(
-			Protocol::HAP::Characteristic->new(
-				logger => $self->{logger},
-				type   => 'Brightness',
-				iid    => 12,
-				format => 'int',
-				perms  => [ 'pr', 'pw', 'ev' ],
+	my @rows = ( [
+			0, 'On', 11, 'bool',
+			{
+				value  => \$self->{power_state},
+				on_set => sub { $self->set_power(@_) },
+			},
+		],
+		[
+			CAP_DIMMER,
+			'Brightness',
+			12, 'int',
+			{
 				unit   => 'percentage',
 				value  => \$self->{brightness},
 				min    => 0,
 				max    => 100,
 				step   => 1,
 				on_set => sub { $self->_set_brightness(@_) },
-			) );
-	}
-
-	# Color characteristics (optional, for RGB lights)
-	if ( $self->{has_color} ) {
-		$lightbulb->add_characteristic(
-			Protocol::HAP::Characteristic->new(
-				logger => $self->{logger},
-				type   => 'Hue',
-				iid    => 13,
-				format => 'float',
-				perms  => [ 'pr', 'pw', 'ev' ],
+			},
+		],
+		[
+			CAP_COLOR,
+			'Hue', 13, 'float',
+			{
 				unit   => 'arcdegrees',
 				value  => \$self->{hue},
 				min    => 0,
 				max    => 360,
 				step   => 1,
 				on_set => sub { $self->_set_hue(@_) },
-			) );
-
-		$lightbulb->add_characteristic(
-			Protocol::HAP::Characteristic->new(
-				logger => $self->{logger},
-				type   => 'Saturation',
-				iid    => 14,
-				format => 'float',
-				perms  => [ 'pr', 'pw', 'ev' ],
+			},
+		],
+		[
+			CAP_COLOR,
+			'Saturation',
+			14, 'float',
+			{
 				unit   => 'percentage',
 				value  => \$self->{saturation},
 				min    => 0,
 				max    => 100,
 				step   => 1,
 				on_set => sub { $self->_set_saturation(@_) },
-			) );
-	}
+			},
+		],
+		[
+			CAP_CT,
+			'ColorTemperature',
+			15, 'uint32',
+			{
+				value  => \$self->{ct},
+				min    => CT_MIN,      # M4: Match Tasmota range
+				max    => CT_MAX,
+				step   => 1,
+				on_set => sub { $self->_set_ct(@_) },
+			},
+		],
+	);
 
-	# Color temperature characteristic (optional, for CCT lights)
-	if ( $self->{has_ct} ) {
+	for my $row (@rows) {
+		my ( $cap, $type, $iid, $format, $extra ) = @$row;
+		next if $cap && !( $self->{capabilities} & $cap );
+
 		$lightbulb->add_characteristic(
 			Protocol::HAP::Characteristic->new(
 				logger => $self->{logger},
-				type   => 'ColorTemperature',
-				iid    => 15,
-				format => 'uint32',
+				type   => $type,
+				iid    => $iid,
+				format => $format,
 				perms  => [ 'pr', 'pw', 'ev' ],
-				value  => \$self->{ct},
-				min    => 153,    # M4: Match Tasmota range
-				max    => 500,
-				step   => 1,
-				on_set => sub { $self->_set_ct(@_) },
+				%$extra,
 			) );
 	}
 
@@ -171,20 +160,11 @@ sub subscribe_mqtt ($self)
 		'Lightbulb %s subscribing to additional MQTT topics',
 		$self->{name} );
 
-	# M2: Subscribe to the plain-text POWER response
-	# (SetOption4 support)
-	$self->{mqtt_client}->subscribe(
-		$self->_build_topic( 'stat', $self->_get_power_key() ),
-		sub ( $recv_topic, $payload ) {
-			$self->{power_state} = ( $payload eq 'ON' ) ? 1 : 0;
-			Fugu::Log->default->debug(
-				'Lightbulb %s power state: %s',
-				$self->{name}, $payload );
-			$self->notify_change(11);
-		} );
+	# M2: The plain-text POWER response (SetOption4 support)
+	$self->_subscribe_plain_power( power_state => 11 );
 
 	# M2: Subscribe to the DIMMER topic for SetOption4 devices
-	if ( $self->{has_dimmer} ) {
+	if ( $self->{capabilities} & CAP_DIMMER ) {
 		$self->{mqtt_client}->subscribe(
 			$self->_build_topic( 'stat', 'DIMMER' ),
 			sub ( $recv_topic, $payload ) {
@@ -199,7 +179,7 @@ sub subscribe_mqtt ($self)
 	}
 
 	# M2: Subscribe to the HSBCOLOR topic for SetOption4 devices
-	if ( $self->{has_color} ) {
+	if ( $self->{capabilities} & CAP_COLOR ) {
 		$self->{mqtt_client}->subscribe(
 			$self->_build_topic( 'stat', 'HSBCOLOR' ),
 			sub ( $recv_topic, $payload ) {
@@ -208,14 +188,12 @@ sub subscribe_mqtt ($self)
 	}
 
 	# M2: Subscribe to the CT topic for SetOption4 devices
-	if ( $self->{has_ct} ) {
+	if ( $self->{capabilities} & CAP_CT ) {
 		$self->{mqtt_client}->subscribe(
 			$self->_build_topic( 'stat', 'CT' ),
 			sub ( $recv_topic, $payload ) {
 				if ( $payload =~ /^\d+$/ ) {
-					my $ct = int($payload);
-					$ct         = 153 if $ct < 153;
-					$ct         = 500 if $ct > 500;
+					my $ct = _clamp_ct( int($payload) );
 					$self->{ct} = $ct;
 					Fugu::Log->default->debug(
 						'Lightbulb %s CT: %d',
@@ -256,14 +234,22 @@ sub _on_power_update ( $self, $state )
 	}
 }
 
+# _clamp_ct($value):
+#	Clamp a color temperature to the Tasmota/HomeKit range (M4).
+sub _clamp_ct ($value)
+{
+	return CT_MIN if $value < CT_MIN;
+	return CT_MAX if $value > CT_MAX;
+
+	return $value;
+}
+
 # $self->_extract_light_state($data):
 #	Extract the light state from the JSON data.
 sub _extract_light_state ( $self, $data )
 {
-	my $changed = 0;
-
 	# Brightness (Dimmer in Tasmota)
-	if ( exists $data->{Dimmer} && $self->{has_dimmer} ) {
+	if ( exists $data->{Dimmer} && $self->{capabilities} & CAP_DIMMER ) {
 		my $brightness = $data->{Dimmer};
 		if ( $self->{brightness} != $brightness ) {
 			$self->{brightness} = $brightness;
@@ -275,22 +261,18 @@ sub _extract_light_state ( $self, $data )
 	}
 
 	# HSB Color. The Tasmota HSBColor value is a "h,s,b" string.
-	if ( exists $data->{HSBColor} && $self->{has_color} ) {
+	if ( exists $data->{HSBColor} && $self->{capabilities} & CAP_COLOR ) {
 		$self->_parse_hsbcolor( $data->{HSBColor} );
 	}
 
 	# M3: Process the Color field for the SetOption17 decimal format
-	if ( exists $data->{Color} && $self->{has_color} ) {
+	if ( exists $data->{Color} && $self->{capabilities} & CAP_COLOR ) {
 		$self->_parse_color( $data->{Color} );
 	}
 
 	# Color Temperature (CT in Tasmota)
-	if ( exists $data->{CT} && $self->{has_ct} ) {
-		my $ct = $data->{CT};
-
-		# Clamp to the Tasmota/HomeKit range (153-500)
-		$ct = 153 if $ct < 153;
-		$ct = 500 if $ct > 500;
+	if ( exists $data->{CT} && $self->{capabilities} & CAP_CT ) {
+		my $ct = _clamp_ct( $data->{CT} );
 
 		if ( $self->{ct} != $ct ) {
 			$self->{ct} = $ct;
@@ -342,8 +324,7 @@ sub _set_saturation ( $self, $value )
 sub _set_ct ( $self, $value )
 {
 	# The Tasmota CT range is 153-500. Clamp the value to it.
-	$value = 153 if $value < 153;
-	$value = 500 if $value > 500;
+	$value = _clamp_ct($value);
 
 	Fugu::Log->default->debug( 'Lightbulb %s CT set to %d mireds',
 		$self->{name}, $value );
@@ -352,59 +333,11 @@ sub _set_ct ( $self, $value )
 	    ->publish( $self->_build_topic( 'cmnd', 'CT' ), "$value" );
 }
 
-# $self->set_color($hue, $saturation, $brightness):
-#	Set the color with HSB values.
-sub set_color ( $self, $hue, $saturation, $brightness )
-{
-	$hue = int($hue) % 360;
-
-	Fugu::Log->default->debug( 'Lightbulb %s color set to HSB(%d,%d,%d)',
-		$self->{name}, $hue, $saturation, $brightness );
-
-	$self->{mqtt_client}
-	    ->publish( $self->_build_topic( 'cmnd', 'HSBColor' ),
-		"$hue,$saturation,$brightness" );
-}
-
-# $self->dimmer_step($direction):
-#	Increase or decrease the dimmer by one step (L3).
-#	$direction: '+' to increase, '-' to decrease
-sub dimmer_step ( $self, $direction = '+' )
-{
-	Fugu::Log->default->debug( 'Lightbulb %s dimmer step %s',
-		$self->{name}, $direction );
-
-	$self->{mqtt_client}
-	    ->publish( $self->_build_topic( 'cmnd', 'Dimmer' ), $direction );
-}
-
-# $self->dimmer_min():
-#	Set the dimmer to the minimum (L3).
-sub dimmer_min ($self)
-{
-	Fugu::Log->default->debug( 'Lightbulb %s dimmer to minimum',
-		$self->{name} );
-
-	$self->{mqtt_client}
-	    ->publish( $self->_build_topic( 'cmnd', 'Dimmer' ), '<' );
-}
-
-# $self->dimmer_max():
-#	Set the dimmer to the maximum (L3).
-sub dimmer_max ($self)
-{
-	Fugu::Log->default->debug( 'Lightbulb %s dimmer to maximum',
-		$self->{name} );
-
-	$self->{mqtt_client}
-	    ->publish( $self->_build_topic( 'cmnd', 'Dimmer' ), '>' );
-}
-
 # $self->_parse_hsbcolor($value):
 #	Parse the HSBColor string "h,s,b". Update the state.
 sub _parse_hsbcolor ( $self, $value )
 {
-	return unless $self->{has_color};
+	return unless $self->{capabilities} & CAP_COLOR;
 
 	my @hsb = split /,/, $value;
 	return unless @hsb == 3;
@@ -422,7 +355,9 @@ sub _parse_hsbcolor ( $self, $value )
 	}
 
 	# The brightness value from HSB also updates the Dimmer
-	if ( $self->{has_dimmer} && $self->{brightness} != $b ) {
+	if (       $self->{capabilities} & CAP_DIMMER
+		&& $self->{brightness} != $b )
+	{
 		$self->{brightness} = $b;
 		$self->notify_change(12);
 	}
@@ -434,7 +369,7 @@ sub _parse_hsbcolor ( $self, $value )
 #	formats.
 sub _parse_color ( $self, $value )
 {
-	return unless $self->{has_color};
+	return unless $self->{capabilities} & CAP_COLOR;
 
 	my ( $r, $g, $b );
 
@@ -489,11 +424,13 @@ sub _rgb_to_hsb ( $self, $r, $g, $b )
 	# Saturation
 	my $s = ( $max == 0 ) ? 0 : int( ( $delta / $max ) * 100 );
 
-	# Hue
+	# Hue. The sector arithmetic is floating-point: Perl's % would
+	# truncate the red sector's fraction to 0 and report hue 0 for
+	# every red-dominant color, so the wrap uses fmod.
 	my $h = 0;
 	if ( $delta != 0 ) {
 		if ( $max == $rn ) {
-			$h = 60 * ( ( ( $gn - $bn ) / $delta ) % 6 );
+			$h = 60 * fmod( ( $gn - $bn ) / $delta, 6 );
 		}
 		elsif ( $max == $gn ) {
 			$h = 60 * ( ( ( $bn - $rn ) / $delta ) + 2 );

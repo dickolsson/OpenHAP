@@ -31,37 +31,23 @@ use Fugu::File;
 # The class never fetches a link. It collects the external ones and
 # reports them, because the build and its checks touch no network.
 
-# The placeholder that a template-driven chrome substitutes. A page
-# that still carries it was never substituted.
-use constant TITLE_PLACEHOLDER => '@TITLE@';
-
-# The elements that mark text as literal code. A page that documents
-# the placeholder shows it inside one of them, and that page is not a
-# broken page. lowdown writes <code>; mandoc writes the second form
-# for a .Ql or a POD C<>.
-my @LITERAL =
-    ( qr{<code\b[^>]*>.*?</code>}s, qr{<span class="Li">.*?</span>}s );
-
 # App::FuguWeb::Check->new(%args):
 #	config => $config	the site description (required)
-#	out    => $dir		the built site (default: out_dir)
+#	out    => $dir		the built site (required)
 sub new ( $class, %args )
 {
 	my $config = $args{config};
 	die 'config parameter required'
 	    unless defined $config;
+	die 'out parameter required'
+	    unless defined $args{out};
 
 	return bless {
-		config => $config,
-		out => $args{out} // ( $config->root . '/' . $config->out_dir ),
+		config   => $config,
+		out      => $args{out},
 		external => {},
 	}, $class;
 }
-
-# $self->config, $self->out:
-#	The site description and the directory that holds the site.
-sub config ($self) { return $self->{config}; }
-sub out    ($self) { return $self->{out}; }
 
 # $self->pages:
 #	Every page that the site must hold, in a stable order: the
@@ -70,13 +56,6 @@ sub pages ($self)
 {
 	return ( map { $_->{file} } $self->{config}->pages ),
 	    ( map { $_->page } map { $_->manuals } $self->{config}->groups );
-}
-
-# $self->assets:
-#	Every file that the site must hold beside its pages.
-sub assets ($self)
-{
-	return 'style.css', $self->{config}->assets;
 }
 
 # $self->external:
@@ -117,7 +96,7 @@ sub _check_inventory ($self)
 		return "$self->{out}: the site is not built";
 	}
 
-	my @expected = ( $self->pages, $self->assets );
+	my @expected = $self->{config}->inventory;
 	for my $name (@expected) {
 		my $path = $self->{out} . "/$name";
 		push @problems, "$name: missing from the output"
@@ -125,15 +104,12 @@ sub _check_inventory ($self)
 		push @problems, "$name: empty" if -e $path && !-s $path;
 	}
 
-	opendir my $dh, $self->{out} or do {
-		return "$self->{out}: cannot read the output directory: $!";
-	};
-	my @entries = grep { $_ ne '.' && $_ ne '..' } readdir $dh;
-	closedir $dh;
+	my $entries = App::FuguWeb::list_dir( $self->{out} )
+	    or return "$self->{out}: cannot read the output directory: $!";
 
 	my %expected = map { $_ => 1 } @expected;
 	push @problems, "$_: in the output but not in the site"
-	    for grep { !$expected{$_} } sort @entries;
+	    for grep { !$expected{$_} } @$entries;
 
 	return @problems;
 }
@@ -149,12 +125,6 @@ sub _check_page ( $self, $page )
 	push @problems, "$page: has no title"
 	    unless defined $title && length $title;
 
-	# The whole page, not the title alone: a project writes its own
-	# body fragments, and a placeholder that reached one is as
-	# unsubstituted as one in the chrome.
-	push @problems, "$page: holds an unsubstituted " . TITLE_PLACEHOLDER
-	    if index( _without_literals($html), TITLE_PLACEHOLDER ) >= 0;
-
 	for my $entry ( $self->{config}->nav ) {
 		my $href = $entry->{href};
 
@@ -167,7 +137,6 @@ sub _check_page ( $self, $page )
 	}
 
 	push @problems, $self->_check_references( $page, $html );
-	push @problems, $self->_check_xrefs( $page, $html );
 
 	return @problems;
 }
@@ -225,18 +194,6 @@ sub _check_references ( $self, $page, $html )
 	return @problems;
 }
 
-# _without_literals($html):
-#	The page with every literal-code element removed. A page that
-#	documents a placeholder is not a page that failed to
-#	substitute one.
-sub _without_literals ($html)
-{
-	my $text = $html;
-	$text =~ s/$_//g for @LITERAL;
-
-	return $text;
-}
-
 # _unescape($text):
 #	Turn the four attribute entities back into their characters. A
 #	reference is compared against a file name, and the file holds
@@ -250,26 +207,6 @@ sub _unescape ($text)
 	$plain =~ s/&amp;/&/g;
 
 	return $plain;
-}
-
-# $self->_check_xrefs($page, $html):
-#	A manual cross-reference that mandoc made local must resolve.
-#	One that left for the manual host is not this tool's business.
-sub _check_xrefs ( $self, $page, $html )
-{
-	my @problems;
-
-	for my $xref ( map { _unescape($_) }
-		$html =~ m{<a class="Xr" href="([^"]+)"}g )
-	{
-		next if $xref =~ m{^[a-z]+://};
-
-		my $path = $xref =~ s{^\./}{}r;
-		push @problems, "$page: the cross-reference $xref dangles"
-		    unless -e $self->{out} . "/$path";
-	}
-
-	return @problems;
 }
 
 # $self->_check_reachable:

@@ -88,15 +88,9 @@ the dashes):
 00000000, 11111111, 22222222, 33333333, 44444444,
 55555555, 66666666, 77777777, 88888888, 99999999,
 12345678, 87654321.
+The daemon refuses a malformed or not-permitted code at startup,
+before it detaches from the terminal.
 Default: 1995-1018.
-.It Ic hap_model Ar string
-The model name that the daemon sends to HomeKit.
-Default:
-.Dq OpenHAP .
-.It Ic hap_manufacturer Ar string
-The manufacturer name that the daemon sends to HomeKit.
-Default:
-.Dq OpenBSD .
 .It Ic db_path Ar path
 The directory that holds the pairing database and the cryptographic
 keys.
@@ -135,7 +129,8 @@ MQTT password, and no key.
 .It Ic log_level Ar level
 The log verbosity level.
 The valid values are:
-.Cm debug , info , notice , warning , err , crit , alert , emerg .
+.Cm debug , info , notice , warning , error .
+The daemon refuses any other value at startup and names it.
 Default:
 .Cm info .
 .It Ic log_facility Ar facility
@@ -197,30 +192,14 @@ This option is necessary.
 .El
 .Pp
 The other options are different for each device subtype:
-.Ss Thermostat Options
-Tasmota thermostat devices have these options:
-.Bl -tag -width "target_temp_topicXX"
-.It Ic current_temp_topic Ar topic
-The MQTT topic for the current temperature values.
-Default:
-.Ar topic Ns /SENSOR .
-.It Ic target_temp_topic Ar topic
-The MQTT topic for the target temperature.
-Default:
-.Ar topic Ns /TARGET .
-.It Ic state_topic Ar topic
-The MQTT topic for the heater state (on or off).
-Default:
-.Ar topic Ns /STATE .
-.It Ic min_temp Ar celsius
-The minimum temperature in Celsius.
-Default: 10.0.
-.It Ic max_temp Ar celsius
-The maximum temperature in Celsius.
-Default: 30.0.
-.It Ic temp_step Ar celsius
-The step size for temperature adjustment.
-Default: 0.5.
+.Ss Sensor Options
+Tasmota sensor devices have this option:
+.Bl -tag -width "has_humidityXX"
+.It Ic has_humidity Cm 0 | 1
+Add a HomeKit humidity service beside the temperature service.
+Set it to 1 for a sensor that reports a Humidity field, for example
+a DHT22.
+Default: 0.
 .El
 .Sh FILES
 .Bl -tag -width "/var/db/openhapd/XX" -compact
@@ -262,8 +241,6 @@ log_facility = local0
 device tasmota thermostat bedroom {
     name = "Bedroom"
     topic = tasmota_AABBCC
-    min_temp = 15.0
-    max_temp = 25.0
 }
 
 device tasmota thermostat living_room {

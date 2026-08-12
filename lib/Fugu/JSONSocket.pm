@@ -80,8 +80,7 @@ sub path ($self)
 	return $self->{path};
 }
 
-# $self->error:
-#	Return the most recent failure.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};

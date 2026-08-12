@@ -150,22 +150,13 @@ subtest 'a page that is missing or empty' => sub {
 		'an empty page' );
 };
 
-subtest 'a page with no title, or an unsubstituted one' => sub {
+subtest 'a page with no title' => sub {
 	my @problems = built( 'other.html' =>
 		    "<a href=\"index.html\">Home</a>\n"
 		    . "<a href=\"https://example.org/\">Elsewhere</a>\n"
 		    . "<h2 id=\"here\">Here</h2>\n" )->run;
 	like( join( "\n", @problems ), qr/other\.html: has no title/,
 		'no title' );
-
-	@problems = built( 'other.html' => <<'HTML' )->run;
-<title>@TITLE@ &#8212; Example</title>
-<a href="index.html">Home</a>
-<a href="https://example.org/">Elsewhere</a>
-<h2 id="here">Here</h2>
-HTML
-	like( join( "\n", @problems ), qr/unsubstituted \@TITLE\@/,
-		'a title that was never substituted' );
 };
 
 subtest 'a page that drops the navigation' => sub {
@@ -240,6 +231,8 @@ HTML
 };
 
 subtest 'a cross-reference that dangles' => sub {
+	# A local .Xr link is a reference like any other, and the
+	# reference check catches it.
 	my @problems = built( 'other.html' => <<'HTML' )->run;
 <title>Other &#8212; Example</title>
 <a href="index.html">Home</a>
@@ -248,7 +241,7 @@ subtest 'a cross-reference that dangles' => sub {
 <h2 id="here">Here</h2>
 HTML
 	my $joined = join "\n", @problems;
-	like( $joined, qr{the cross-reference \./gone\.1\.html dangles},
+	like( $joined, qr{other\.html: \./gone\.1\.html leads nowhere},
 		'a local .Xr that leads nowhere' );
 };
 
@@ -287,31 +280,6 @@ HTML
 		'a mailto: link is not a dead local link' );
 	unlike( $joined, qr/man\.openbsd\.org/,
 		'a cross-reference that left for the host does not dangle' );
-};
-
-subtest 'the placeholder is caught anywhere but in a literal' => sub {
-	# The chrome is built in code, so a placeholder can only reach
-	# a page through a project's own body fragment.
-	my @problems = built( 'other.html' => <<'HTML' )->run;
-<title>Other &#8212; Example</title>
-<a href="index.html">Home</a>
-<a href="https://example.org/">Elsewhere</a>
-<h1>@TITLE@</h1>
-<h2 id="here">Here</h2>
-HTML
-	like( join( "\n", @problems ), qr/holds an unsubstituted \@TITLE\@/,
-		'a placeholder in the body is a problem' );
-
-	# A page that documents the placeholder is not a broken page.
-	@problems = built( 'other.html' => <<'HTML' )->run;
-<title>Other &#8212; Example</title>
-<a href="index.html">Home</a>
-<a href="https://example.org/">Elsewhere</a>
-<p>The chrome substitutes <code>@TITLE@</code>.</p>
-<h2 id="here">Here</h2>
-HTML
-	is( scalar @problems, 0, 'a documented placeholder is not' )
-	    or diag join "\n", @problems;
 };
 
 subtest 'a stray file in the output' => sub {

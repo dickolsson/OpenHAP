@@ -19,7 +19,8 @@ use v5.36;
 
 package Fugu::Process;
 
-use Fcntl qw(F_SETFD FD_CLOEXEC);
+use Fcntl     qw(F_SETFD FD_CLOEXEC);
+use Fugu::CLI qw(EXIT_ERROR);
 use IO::Select;
 use POSIX       qw(setsid WNOHANG);
 use Time::HiRes qw(time);
@@ -30,10 +31,6 @@ use Time::HiRes qw(time);
 # start a child: spawn_command leaves it running, and run waits for it
 # and captures its output. Both report an exec failure exactly, over a
 # close-on-exec pipe, and never by a wait-and-guess sleep.
-
-# The exit code of a child that could not start at all. The value
-# matches the shell convention that a caller of exit_code expects.
-use constant EXIT_ERROR => 1;
 
 # How often terminate looks again while it waits for a child to go.
 use constant POLL_INTERVAL => 0.05;
@@ -49,138 +46,42 @@ use constant POLL_INTERVAL => 0.05;
 #		stdout    => $path|undef # Optional: redirect stdout (default: /dev/null)
 #		stderr    => $path|undef # Optional: redirect stderr (default: /dev/null)
 #		stdin     => $path|undef # Optional: redirect stdin (default: /dev/null)
-#		on_error  => sub($err)  # Optional: error callback
-#		on_success => sub($pid) # Optional: success callback
-#		check_alive => $seconds # Optional: wait, then make sure the process is alive
 #
 #	The method always waits for the exec to resolve, so a command
-#	that does not exist reports its own error message. The
-#	check_alive wait is a separate question - is the child still
-#	there after N seconds - and is off by default.
-#
-#	A child that exits at once with status 0 is not a failure. The
-#	result carries exited => 1 and exit_code => 0, so a caller that
-#	expects a long-lived child can tell the two apart.
+#	that does not exist reports its own error message.
 sub spawn_command ( $class, %args )
 {
-	my $cmd = $args{cmd}
-	    or return { success => 0, error => 'No command specified' };
-	my $daemonize   = $args{daemonize} // 0;
-	my $stdout      = $args{stdout}    // '/dev/null';
-	my $stderr      = $args{stderr}    // '/dev/null';
-	my $stdin       = $args{stdin}     // '/dev/null';
-	my $on_error    = $args{on_error};
-	my $on_success  = $args{on_success};
-	my $check_alive = $args{check_alive} // 0;
+	my $cmd       = $args{cmd};
+	my $daemonize = $args{daemonize} // 0;
+	my $stdout    = $args{stdout}    // '/dev/null';
+	my $stderr    = $args{stderr}    // '/dev/null';
+	my $stdin     = $args{stdin}     // '/dev/null';
 
 	unless ( ref $cmd eq 'ARRAY' && @$cmd > 0 ) {
-		my $err = 'Command must be non-empty arrayref';
-		$on_error->($err) if $on_error;
-		return { success => 0, error => $err };
+		return {
+			success => 0,
+			error   => 'Command must be non-empty arrayref'
+		};
 	}
 
-	my ( $exec_r, $exec_w ) = _exec_pipe();
-	unless ($exec_r) {
-		my $err = "Cannot create pipe: $!";
-		$on_error->($err) if $on_error;
-		return { success => 0, error => $err };
-	}
+	my ( $pid, $error ) = _fork_exec(
+		$cmd, undef,
+		sub ($exec_w) {
+			if ($daemonize) {
 
-	my $pid = fork;
-	unless ( defined $pid ) {
-		close $exec_r;
-		close $exec_w;
-		my $err = "Cannot fork: $!";
-		$on_error->($err) if $on_error;
-		return { success => 0, error => $err };
-	}
-
-	if ( $pid == 0 ) {
-
-		# Child process
-		$DB::inhibit_exit = 0;
-		close $exec_r;
-
-		if ($daemonize) {
-
-			# Become the session leader
-			setsid() or _fail( $exec_w, "setsid: $!" );
-		}
-
-		# Redirect the file descriptors
-		open STDIN, '<', $stdin
-		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
-		open STDOUT, '>', $stdout
-		    or _fail( $exec_w, "Cannot redirect stdout: $!" );
-		open STDERR, '>', $stderr
-		    or _fail( $exec_w, "Cannot redirect stderr: $!" );
-
-		# Execute the command. The pipe is close-on-exec, so a
-		# successful exec closes it and the parent reads EOF.
-		exec { $cmd->[0] } @$cmd
-		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
-	}
-
-	# Parent process
-	close $exec_w;
-	my $exec_error = do { local $/; <$exec_r> };
-	close $exec_r;
-
-	if ( defined $exec_error && length $exec_error ) {
-		waitpid $pid, 0;
-		$on_error->($exec_error) if $on_error;
-		return { success => 0, error => $exec_error, pid => $pid };
-	}
-
-	if ($check_alive) {
-
-		# Give the process time to start
-		select undef, undef, undef, $check_alive;
-
-		my $reaped = waitpid( $pid, WNOHANG );
-		if ( $reaped == $pid ) {
-			my $exit_status = $? >> 8;
-			if ( $exit_status == 0 ) {
-
-				# A short command that did its work and
-				# left. The caller decides whether that
-				# is what it wanted.
-				my $result = {
-					success   => 1,
-					pid       => $pid,
-					exited    => 1,
-					exit_code => 0,
-				};
-				$on_success->($pid) if $on_success;
-				return $result;
+				# Become the session leader
+				setsid() or _fail( $exec_w, "setsid: $!" );
 			}
 
-			my $err =
-"Process $pid died immediately with exit code $exit_status";
-			$on_error->($err) if $on_error;
-			return {
-				success   => 0,
-				error     => $err,
-				pid       => $pid,
-				exited    => 1,
-				exit_code => $exit_status,
-			};
-		}
+			open STDIN, '<', $stdin
+			    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+			open STDOUT, '>', $stdout
+			    or _fail( $exec_w, "Cannot redirect stdout: $!" );
+			open STDERR, '>', $stderr
+			    or _fail( $exec_w, "Cannot redirect stderr: $!" );
+		} );
+	return { success => 0, error => $error } if $error;
 
-		unless ( kill( 0, $pid ) ) {
-			my $err =
-"Process $pid is not alive (not reaped, possible race)";
-			$on_error->($err) if $on_error;
-			return {
-				success   => 0,
-				error     => $err,
-				pid       => $pid,
-				exit_code => -1,
-			};
-		}
-	}
-
-	$on_success->($pid) if $on_success;
 	return { success => 1, pid => $pid };
 }
 
@@ -227,43 +128,28 @@ sub run ( $class, %args )
 	pipe my $err_r, my $err_w
 	    or return _run_error("Cannot create pipe: $!");
 	pipe my $in_r, my $in_w or return _run_error("Cannot create pipe: $!");
-	my ( $exec_r, $exec_w ) = _exec_pipe();
-	return _run_error("Cannot create pipe: $!") unless $exec_r;
 
-	my $pid = fork;
-	return _run_error("Cannot fork: $!") unless defined $pid;
+	my ( $pid, $error ) = _fork_exec(
+		$cmd, $cwd,
+		sub ($exec_w) {
+			close $out_r;
+			close $err_r;
+			close $in_w;
 
-	if ( $pid == 0 ) {
-		$DB::inhibit_exit = 0;
-		close $out_r;
-		close $err_r;
-		close $in_w;
-		close $exec_r;
-
-		open STDIN, '<&', $in_r
-		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
-		open STDOUT, '>&', $out_w
-		    or _fail( $exec_w, "Cannot redirect stdout: $!" );
-		open STDERR, '>&', $err_w
-		    or _fail( $exec_w, "Cannot redirect stderr: $!" );
-
-		_chdir_or_fail( $exec_w, $cwd );
-
-		exec { $cmd->[0] } @$cmd
-		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
-	}
+			open STDIN, '<&', $in_r
+			    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+			open STDOUT, '>&', $out_w
+			    or _fail( $exec_w, "Cannot redirect stdout: $!" );
+			open STDERR, '>&', $err_w
+			    or _fail( $exec_w, "Cannot redirect stderr: $!" );
+		} );
 
 	close $out_w;
 	close $err_w;
 	close $in_r;
-	close $exec_w;
-
-	my $exec_error = do { local $/; <$exec_r> };
-	close $exec_r;
-	if ( defined $exec_error && length $exec_error ) {
+	if ($error) {
 		close $in_w;
-		waitpid $pid, 0;
-		return _run_error($exec_error);
+		return _run_error($error);
 	}
 
 	# Write the input first. A child that reads nothing gets EPIPE
@@ -295,35 +181,20 @@ sub run ( $class, %args )
 sub _run_passthrough ( $class, $cmd, $timeout, $input, $cwd = undef )
 {
 	pipe my $in_r, my $in_w or return _run_error("Cannot create pipe: $!");
-	my ( $exec_r, $exec_w ) = _exec_pipe();
-	return _run_error("Cannot create pipe: $!") unless $exec_r;
 
-	my $pid = fork;
-	return _run_error("Cannot fork: $!") unless defined $pid;
+	my ( $pid, $error ) = _fork_exec(
+		$cmd, $cwd,
+		sub ($exec_w) {
+			close $in_w;
 
-	if ( $pid == 0 ) {
-		$DB::inhibit_exit = 0;
-		close $in_w;
-		close $exec_r;
-
-		open STDIN, '<&', $in_r
-		    or _fail( $exec_w, "Cannot redirect stdin: $!" );
-
-		_chdir_or_fail( $exec_w, $cwd );
-
-		exec { $cmd->[0] } @$cmd
-		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
-	}
+			open STDIN, '<&', $in_r
+			    or _fail( $exec_w, "Cannot redirect stdin: $!" );
+		} );
 
 	close $in_r;
-	close $exec_w;
-
-	my $exec_error = do { local $/; <$exec_r> };
-	close $exec_r;
-	if ( defined $exec_error && length $exec_error ) {
+	if ($error) {
 		close $in_w;
-		waitpid $pid, 0;
-		return _run_error($exec_error);
+		return _run_error($error);
 	}
 
 	{
@@ -412,7 +283,6 @@ sub is_alive ( $class, $pid )
 #	stops at once does not cost a whole second.
 sub terminate ( $class, $pid, %args )
 {
-	return 1 unless defined $pid;
 	return 1 unless $class->is_alive($pid);
 
 	my $grace_period = $args{grace_period} // 5;
@@ -440,35 +310,6 @@ sub terminate ( $class, $pid, %args )
 
 	$on_kill->() if $on_kill;
 	return 1;
-}
-
-# $class->reap($pid):
-#	Try to reap a zombie process.
-#	The method returns 1 if the process is reaped or does not
-#	exist. It returns 0 if the process still runs.
-sub reap ( $class, $pid )
-{
-	return 1 unless defined $pid;
-	return 1 unless $pid =~ /^\d+$/;
-
-	my $result = waitpid( $pid, WNOHANG );
-
-	# $result > 0: waitpid reaped the child
-	# $result == -1: there is no such child
-	# $result == 0: the child still runs
-	return $result != 0;
-}
-
-# $class->reap_all():
-#	Reap all zombie children without blocking.
-#	The method returns the count of reaped children.
-sub reap_all ($class)
-{
-	my $count = 0;
-	while ( waitpid( -1, WNOHANG ) > 0 ) {
-		$count++;
-	}
-	return $count;
 }
 
 # $class->wait_exit($pid, $timeout):
@@ -515,6 +356,53 @@ sub spawn_perl ( $class, %args )
 	$args{cmd} = [ $^X, @inc_flags, '-e', $code, @$extra_args ];
 
 	return $class->spawn_command(%args);
+}
+
+# _fork_exec($cmd, $cwd, $redirect):
+#	The shared fork-and-exec step. Fork the child, run $redirect in
+#	it to set up the standard handles (failures go through _fail),
+#	move it into $cwd, and exec the command over the close-on-exec
+#	failure pipe. Return ($pid, undef) when the exec resolved, or
+#	(undef, $error) when the machinery or the exec failed - the
+#	child is already reaped in that case.
+sub _fork_exec ( $cmd, $cwd, $redirect )
+{
+	my ( $exec_r, $exec_w ) = _exec_pipe();
+	return ( undef, "Cannot create pipe: $!" ) unless $exec_r;
+
+	my $pid = fork;
+	unless ( defined $pid ) {
+		close $exec_r;
+		close $exec_w;
+		return ( undef, "Cannot fork: $!" );
+	}
+
+	if ( $pid == 0 ) {
+
+		# Child process
+		$DB::inhibit_exit = 0;
+		close $exec_r;
+
+		$redirect->($exec_w);
+		_chdir_or_fail( $exec_w, $cwd );
+
+		# The pipe is close-on-exec, so a successful exec closes
+		# it and the parent reads EOF.
+		exec { $cmd->[0] } @$cmd
+		    or _fail( $exec_w, "Cannot exec $cmd->[0]: $!" );
+	}
+
+	# Parent process
+	close $exec_w;
+	my $exec_error = do { local $/; <$exec_r> };
+	close $exec_r;
+
+	if ( defined $exec_error && length $exec_error ) {
+		waitpid $pid, 0;
+		return ( undef, $exec_error );
+	}
+
+	return ( $pid, undef );
 }
 
 # _exec_pipe():

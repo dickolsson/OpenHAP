@@ -33,6 +33,11 @@ use constant {
 	AVAILABILITY_OFFLINE => 2,
 };
 
+# The sensor types the walk below knows (H5). Thermostat and Sensor
+# share this one list.
+use constant SENSOR_TYPES =>
+    qw(DS18B20 DHT11 DHT22 AM2301 BME280 BMP280 SHT3X SI7021);
+
 sub new ( $class, %args )
 {
 	my $self = $class->SUPER::new(%args);
@@ -42,13 +47,6 @@ sub new ( $class, %args )
 	$self->{relay_index}  = $args{relay_index} // 0;    # 0 = no index
 	$self->{availability} = AVAILABILITY_UNKNOWN;
 	$self->{temp_unit}    = 'C';                        # Default to Celsius
-	$self->{last_state}   = {};    # Cache of last known state
-
-	# FullTopic pattern (H2). The default is %prefix%/%topic%/
-	$self->{fulltopic} = $args{fulltopic} // '%prefix%/%topic%/';
-
-	# SetOption26: use the indexed POWER1 for single-relay devices (M1)
-	$self->{setoption26} = $args{setoption26} // 0;
 
 	return $self;
 }
@@ -58,8 +56,6 @@ sub new ( $class, %args )
 #	Subclasses must call SUPER::subscribe_mqtt() first.
 sub subscribe_mqtt ($self)
 {
-	my $topic = $self->{mqtt_topic};
-
 	return unless $self->{mqtt_client}->is_connected();
 
 	Fugu::Log->default->debug(
@@ -77,21 +73,33 @@ sub subscribe_mqtt ($self)
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'tele', 'STATE' ),
 		sub ( $recv_topic, $payload ) {
-			$self->_handle_state($payload);
+			my $data = $self->_decode( $payload, 'STATE' )
+			    or return;
+			$self->_process_state_data($data);
 		} );
 
 	# C3: Subscribe to stat/RESULT for command responses
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'stat', 'RESULT' ),
 		sub ( $recv_topic, $payload ) {
-			$self->_handle_result($payload);
+			my $data = $self->_decode( $payload, 'RESULT' )
+			    or return;
+			$self->_process_result_data($data);
 		} );
 
 	# Subscribe to tele/SENSOR for sensor data
 	$self->{mqtt_client}->subscribe(
 		$self->_build_topic( 'tele', 'SENSOR' ),
 		sub ( $recv_topic, $payload ) {
-			$self->_handle_sensor($payload);
+			my $data = $self->_decode( $payload, 'SENSOR' )
+			    or return;
+
+			# Extract the temperature unit if it is present (H4)
+			if ( exists $data->{TempUnit} ) {
+				$self->{temp_unit} = $data->{TempUnit};
+			}
+
+			$self->_process_sensor_data($data);
 		} );
 
 	# C1/H1: Subscribe to STATUS11 for full state reconciliation
@@ -100,6 +108,35 @@ sub subscribe_mqtt ($self)
 		sub ( $recv_topic, $payload ) {
 			$self->_handle_status11($payload);
 		} );
+}
+
+# $self->_subscribe_status_sns($status):
+#	Subscribe to one STATUS8/STATUS10 sensor response (H5). The
+#	device sends STATUS8 after an active query, and the spec
+#	recommends STATUS10. Both wrap the sensor data in StatusSNS.
+sub _subscribe_status_sns ( $self, $status )
+{
+	$self->{mqtt_client}->subscribe(
+		$self->_build_topic( 'stat', $status ),
+		sub ( $recv_topic, $payload ) {
+			$self->_handle_status_sns( $payload, $status );
+		} );
+}
+
+# $self->_handle_status_sns($payload, $label):
+#	Process one STATUS8/STATUS10 response: unwrap StatusSNS, track
+#	the temperature unit (H4), and hand the data to the sensor
+#	extractor of the subclass.
+sub _handle_status_sns ( $self, $payload, $label )
+{
+	my $data = $self->_decode( $payload, $label ) or return;
+	my $sns  = $data->{StatusSNS}                 or return;
+
+	if ( exists $sns->{TempUnit} ) {
+		$self->{temp_unit} = $sns->{TempUnit};
+	}
+
+	$self->_process_sensor_data($sns);
 }
 
 # $self->query_initial_state():
@@ -115,8 +152,7 @@ sub query_initial_state ($self)
 
 	# Request the full status (Status 11). Spec §6.1 recommends
 	# this query.
-	$self->{mqtt_client}
-	    ->publish( $self->_build_topic( 'cmnd', 'Status' ), '11' );
+	$self->query_status(11);
 }
 
 # $self->is_online():
@@ -126,19 +162,10 @@ sub is_online ($self)
 	return $self->{availability} == AVAILABILITY_ONLINE;
 }
 
-# $self->get_availability():
-#	Get the device availability state.
-sub get_availability ($self)
-{
-	return $self->{availability};
-}
-
 # $self->_handle_lwt($payload):
 #	Process the LWT (Last Will and Testament) message (C1).
 sub _handle_lwt ( $self, $payload )
 {
-	my $prev = $self->{availability};
-
 	if ( $payload eq 'Online' ) {
 		$self->{availability} = AVAILABILITY_ONLINE;
 		Fugu::Log->default->info( 'Device %s is online',
@@ -156,91 +183,37 @@ sub _handle_lwt ( $self, $payload )
 		Fugu::Log->default->debug( 'Unknown LWT payload for %s: %s',
 			$self->{name}, $payload );
 	}
-
-	# Notify the subclass if the availability changed
-	if ( $prev != $self->{availability} ) {
-		$self->_on_availability_changed( $prev, $self->{availability} );
-	}
 }
 
-# $self->_handle_state($payload):
-#	Process the periodic STATE message from the tele/ topic (C2).
-sub _handle_state ( $self, $payload )
+# $self->_decode($payload, $label):
+#	Decode one JSON payload from the device. The method returns
+#	the decoded data, or undef with the parse error in the log.
+#	Everything from the broker is external input, so a payload
+#	that does not parse is logged and dropped, never fatal.
+sub _decode ( $self, $payload, $label )
 {
-	eval {
-		my $data = decode_json($payload);
-		$self->_process_state_data($data);
-	};
-
+	my $data = eval { decode_json($payload) };
 	if ($@) {
-		Fugu::Log->default->error( 'Error parsing STATE for %s: %s',
-			$self->{name}, $@ );
+		Fugu::Log->default->error( 'Error parsing %s for %s: %s',
+			$label, $self->{name}, $@ );
+		return;
 	}
-}
 
-# $self->_handle_result($payload):
-#	Process the RESULT message from the stat/ topic (C3).
-sub _handle_result ( $self, $payload )
-{
-	eval {
-		my $data = decode_json($payload);
-		$self->_process_result_data($data);
-	};
-
-	if ($@) {
-		Fugu::Log->default->error( 'Error parsing RESULT for %s: %s',
-			$self->{name}, $@ );
-	}
-}
-
-# $self->_handle_sensor($payload):
-#	Process the SENSOR message from the tele/ topic.
-sub _handle_sensor ( $self, $payload )
-{
-	eval {
-		my $data = decode_json($payload);
-
-		# Extract the temperature unit if it is present (H4)
-		if ( exists $data->{TempUnit} ) {
-			$self->{temp_unit} = $data->{TempUnit};
-		}
-
-		$self->_process_sensor_data($data);
-	};
-
-	if ($@) {
-		Fugu::Log->default->error( 'Error parsing SENSOR for %s: %s',
-			$self->{name}, $@ );
-	}
+	return $data;
 }
 
 # $self->_handle_status11($payload):
 #	Process the STATUS11 response for state reconciliation (C1/H1).
 sub _handle_status11 ( $self, $payload )
 {
-	eval {
-		my $data = decode_json($payload);
+	my $data = $self->_decode( $payload, 'STATUS11' ) or return;
 
-		# STATUS11 wraps the data in StatusSTS. The format is
-		# the same as the periodic STATE.
-		if ( exists $data->{StatusSTS} ) {
-			my $sts = $data->{StatusSTS};
-
-			Fugu::Log->default->debug( 'STATUS11 received for %s',
-				$self->{name} );
-
-			# Cache the state data
-			$self->{last_state} =
-			    { %{ $self->{last_state} }, %$sts };
-
-			# Process the data as state data
-			$self->_process_state_data($sts);
-		}
-	};
-
-	if ($@) {
-		Fugu::Log->default->error( 'Error parsing STATUS11 for %s: %s',
-			$self->{name}, $@ );
+	# STATUS11 wraps the data in StatusSTS. The format is the
+	# same as the periodic STATE.
+	if ( exists $data->{StatusSTS} ) {
+		Fugu::Log->default->debug( 'STATUS11 received for %s',
+			$self->{name} );
+		$self->_process_state_data( $data->{StatusSTS} );
 	}
 }
 
@@ -249,9 +222,6 @@ sub _handle_status11 ( $self, $payload )
 #	this method.
 sub _process_state_data ( $self, $data )
 {
-	# Cache the state data
-	$self->{last_state} = { %{ $self->{last_state} }, %$data };
-
 	# The default implementation checks for the POWER state
 	$self->_extract_power_state($data);
 }
@@ -288,18 +258,12 @@ sub _extract_power_state ( $self, $data )
 }
 
 # $self->_get_power_key():
-#	Get the power key name for this device.
-#	The method supports multi-relay (H1) and SetOption26 (M1).
+#	Get the power key name for this device (H1 multi-relay
+#	support).
 sub _get_power_key ($self)
 {
 	if ( $self->{relay_index} && $self->{relay_index} > 0 ) {
 		return 'POWER' . $self->{relay_index};
-	}
-
-	# M1: SetOption26 uses the indexed format even for
-	# single-relay devices
-	if ( $self->{setoption26} ) {
-		return 'POWER1';
 	}
 
 	return 'POWER';
@@ -314,46 +278,42 @@ sub _get_power_topic ($self)
 			'Power' . $self->{relay_index} );
 	}
 
-	# M1: SetOption26 uses the indexed format even for
-	# single-relay devices
-	if ( $self->{setoption26} ) {
-		return $self->_build_topic( 'cmnd', 'Power1' );
-	}
-
 	return $self->_build_topic( 'cmnd', 'Power' );
 }
 
 # $self->_build_topic($prefix, $command):
-#	Build a topic with the FullTopic pattern (H2).
+#	Build a topic with the default Tasmota FullTopic pattern,
+#	%prefix%/%topic%/ (H2).
 #	$prefix: 'cmnd', 'stat', or 'tele'
 #	$command: The command/topic suffix
 sub _build_topic ( $self, $prefix, $command )
 {
-	my $fulltopic = $self->{fulltopic};
-	my $topic     = $self->{mqtt_topic};
+	return "$prefix/$self->{mqtt_topic}/$command";
+}
 
-	# Replace the tokens
-	$fulltopic =~ s/%prefix%/$prefix/g;
-	$fulltopic =~ s/%topic%/$topic/g;
+# $self->_subscribe_plain_power($field, $iid):
+#	Subscribe to the plain-text POWER response (M2, SetOption4
+#	support). The payload updates $self->{$field} and notifies
+#	the characteristic $iid on a change.
+sub _subscribe_plain_power ( $self, $field, $iid )
+{
+	$self->{mqtt_client}->subscribe(
+		$self->_build_topic( 'stat', $self->_get_power_key() ),
+		sub ( $recv_topic, $payload ) {
+			my $state = ( $payload eq 'ON' ) ? 1 : 0;
+			return if $self->{$field} == $state;
 
-	# Remove the trailing slash. Then append the command.
-	$fulltopic =~ s{/$}{};
-
-	return "$fulltopic/$command";
+			$self->{$field} = $state;
+			Fugu::Log->default->debug( '%s power state: %s',
+				$self->{name}, $payload );
+			$self->notify_change($iid);
+		} );
 }
 
 # $self->_on_power_update($state):
 #	The base class calls this method when the power state
 #	updates. Subclasses can override it.
 sub _on_power_update ( $self, $state )
-{
-	# Default: no-op
-}
-
-# $self->_on_availability_changed($old, $new):
-#	The base class calls this method when the device
-#	availability changes. Subclasses can override it.
-sub _on_availability_changed ( $self, $old, $new )
 {
 	# Default: no-op
 }
@@ -373,6 +333,50 @@ sub convert_temperature ( $self, $temp )
 	return $temp;
 }
 
+# $self->_find_sensor_values($data):
+#	Find the temperature and the humidity in the sensor data
+#	(H5). The method supports multiple sensor types and indexed
+#	sensors, and remembers the type it detected.
+sub _find_sensor_values ( $self, $data )
+{
+	# If the configuration sets a sensor type, look for that sensor
+	if ( defined $self->{sensor_type} ) {
+		my $key = $self->{sensor_type};
+
+		# Add the index for indexed sensors, for example DS18B20-1
+		if ( defined $self->{sensor_index} ) {
+			$key .= '-' . $self->{sensor_index};
+		}
+
+		return unless exists $data->{$key};
+		return ( $data->{$key}{Temperature}, $data->{$key}{Humidity} );
+	}
+
+	# Auto-detect: try each known sensor type (H5)
+	for my $type (SENSOR_TYPES) {
+		if ( exists $data->{$type} ) {
+			$self->{sensor_type} = $type;
+			return (
+				$data->{$type}{Temperature},
+				$data->{$type}{Humidity} );
+		}
+
+		# Check for indexed sensors, for example DS18B20-1
+		for my $i ( 1 .. 8 ) {
+			my $indexed = "$type-$i";
+			next unless exists $data->{$indexed};
+
+			$self->{sensor_type}  = $type;
+			$self->{sensor_index} = $i;
+			return (
+				$data->{$indexed}{Temperature},
+				$data->{$indexed}{Humidity} );
+		}
+	}
+
+	return;
+}
+
 # $self->set_power($state):
 #	Set the power state (0=OFF, 1=ON).
 sub set_power ( $self, $state )
@@ -385,27 +389,6 @@ sub set_power ( $self, $state )
 	$self->{mqtt_client}->publish( $topic, $command );
 }
 
-# $self->toggle_power():
-#	Toggle the power state (L1).
-sub toggle_power ($self)
-{
-	my $topic = $self->_get_power_topic();
-
-	Fugu::Log->default->debug( '%s power toggled', $self->{name} );
-	$self->{mqtt_client}->publish( $topic, 'TOGGLE' );
-}
-
-# $self->blink($on):
-#	Start or stop blinking (L2).
-sub blink ( $self, $on = 1 )
-{
-	my $topic   = $self->_get_power_topic();
-	my $command = $on ? 'BLINK' : 'BLINKOFF';
-
-	Fugu::Log->default->debug( '%s blink %s', $self->{name}, $command );
-	$self->{mqtt_client}->publish( $topic, $command );
-}
-
 # $self->query_status($type):
 #	Query the device status.
 #	$type: 0 = all, 8 = sensors, 11 = full state, and other STATUS codes
@@ -413,16 +396,6 @@ sub query_status ( $self, $type = 11 )
 {
 	$self->{mqtt_client}
 	    ->publish( $self->_build_topic( 'cmnd', 'Status' ), "$type" );
-}
-
-# $self->force_telemetry():
-#	Force an immediate telemetry update (L1).
-#	The device then sends STATE and SENSOR messages.
-sub force_telemetry ($self)
-{
-	Fugu::Log->default->debug( 'Forcing telemetry for %s', $self->{name} );
-	$self->{mqtt_client}
-	    ->publish( $self->_build_topic( 'cmnd', 'TelePeriod' ), '' );
 }
 
 1;

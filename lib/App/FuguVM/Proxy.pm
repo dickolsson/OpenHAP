@@ -60,8 +60,8 @@ sub run_child ( $class, $port, $cache_dir )
 
 # $self->guest_url:
 #	Return the proxy URL as the guest reaches it, through the QEMU
-#	gateway. The host_url of the parent class is the same proxy on
-#	the loopback address, which a guest cannot reach.
+#	gateway. The loopback address serves the same proxy, but a
+#	guest cannot reach it.
 sub guest_url ($self)
 {
 	my $port = $self->port;

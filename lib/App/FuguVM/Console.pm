@@ -36,9 +36,8 @@ use constant SCRIPT_DIR => 'share/fuguvm/expect';
 sub new ( $class, %args )
 {
 	my $self = bless {
-		host    => $args{host} // 'localhost',
-		port    => $args{port},
-		timeout => $args{timeout} // $ENV{FUGUVM_TIMEOUT} // 180,
+		host => $args{host} // 'localhost',
+		port => $args{port},
 	}, $class;
 
 	return $self;
@@ -94,16 +93,14 @@ sub run_install ( $self, $config )
 
 # $self->_expect($script, @args):
 #	Run expect(1) on the script, with the host and the port first.
-#	The timeout travels in the environment, because the scripts
-#	read it there.
+#	The scripts read their timeout from FUGUVM_TIMEOUT in the
+#	environment themselves, and each carries its own default.
 #
 #	The run is a passthrough. An installation writes for tens of
 #	minutes, and an operator who waits needs to see the progress
 #	while it happens, not after.
 sub _expect ( $self, $script, @args )
 {
-	local $ENV{FUGUVM_TIMEOUT} = $self->{timeout};
-
 	my $result = Fugu::Process->run(
 		cmd =>
 		    [ 'expect', $script, $self->{host}, $self->{port}, @args ],

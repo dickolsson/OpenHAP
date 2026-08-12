@@ -14,7 +14,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: July 27 2026 $
+.Dd $Mdocdate: August 7 2026 $
 .Dt FUGUVM 1
 .Os
 .Sh NAME
@@ -42,6 +42,9 @@ and console automation.
 You need only one command to go from nothing to a machine that accepts
 .Xr ssh 1 .
 A second run of the command does nothing.
+.Pp
+The guest architecture is fixed:
+every VM is an arm64 (aarch64) machine.
 .Pp
 The host does not have to run
 .Ox .
@@ -79,7 +82,10 @@ The options are:
 .Bl -tag -width Ds
 .It Fl Fl vm Ar name
 Operate on the named VM.
-The default is
+The default comes from the
+.Ar default_vm
+directive,
+or it is
 .Dq default .
 VM definitions are in
 .Pa .fuguvm/vms/ Ns Ar name Ns Pa .conf .
@@ -110,7 +116,10 @@ These commands are available:
 Initialize a project in
 .Ar dir
 (default: the current directory).
-The command creates the
+The command creates
+.Ar dir
+if it is absent.
+It also creates the
 .Pa .fuguvmrc
 project configuration,
 the
@@ -189,15 +198,6 @@ script against the VM console.
 .It Cm wait Op Fl Fl timeout Ns = Ns Ar seconds
 Block until the VM accepts SSH connections
 (default timeout: 120 seconds).
-.It Cm image Cm download | list
-Manage cached installation images.
-.Cm list
-shows the cached images.
-.Cm download Op Ar version
-shows the cache path or the download URL for
-.Ar version
-(default: 7.8).
-The built-in proxy downloads the images when the VM boots.
 .It Cm cache Cm list | clear Op Fl Fl stale
 Manage all data under
 .Ar cache_dir :
@@ -477,16 +477,10 @@ project.
 VM not found.
 .It 5
 The VM runs.
-.It 6
-The VM does not run.
 .It 7
 Timeout in the wait for the VM.
-.It 8
-SSH connection failed.
 .It 9
 Expect script failed.
-.It 10
-Image download failed.
 .It 11
 Snapshot not found.
 .El

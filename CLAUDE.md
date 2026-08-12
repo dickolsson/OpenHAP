@@ -45,7 +45,7 @@ never `App::`. `App::` uses both. A sibling application is not a library: no
 ## Commands
 
 ```sh
-make check          # tidy + lint + test; MUST pass before every commit
+make check          # tidy + lint + test + spec-coverage; MUST pass before every commit
 make test           # prove -l -v t/{fuguvm,fuguweb,fugu,protocol,openhap,conformance,scripts,web,ci}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
@@ -146,6 +146,15 @@ sub method($self, $param)
 - Fail cleanly: diagnose invalid input in a human-readable message, never a
   stack trace; leave no partial files, orphaned processes, or corrupt state
   behind; make repeatable operations truly idempotent
+
+## Simplicity
+
+- The project has no users. Delete old code paths outright; never keep an alias,
+  a bridge, or a migration.
+- Do not keep test-only API. Delete a sub or option that only tests use,
+  together with its test.
+- Validate each input once, at its boundary. Do not check the same invariant
+  again downstream.
 
 ## Testing
 

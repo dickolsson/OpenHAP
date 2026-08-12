@@ -9,7 +9,7 @@ Protocol::HAP::SRP - SRP-6a implementation for HAP pairing
     # Server side
     my $srp = Protocol::HAP::SRP->new(password => $pin);
     my $salt = $srp->generate_salt();
-    my $v = $srp->compute_verifier($salt, $password);
+    my $v = $srp->compute_verifier;
     my $B = $srp->generate_server_public();
     my $B_bytes = $srp->server_public_bytes();   # 384 bytes, for M2
 

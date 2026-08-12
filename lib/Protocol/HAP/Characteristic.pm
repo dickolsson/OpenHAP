@@ -4,9 +4,6 @@ package Protocol::HAP::Characteristic;
 
 use Protocol::HAP;
 
-# HAP Base UUID suffix for Apple-defined characteristics
-use constant HAP_BASE_UUID => '-0000-1000-8000-0026BB765291';
-
 # HAP Characteristic Type UUIDs
 our %CHAR_TYPES = (
 
@@ -42,43 +39,6 @@ our %CHAR_TYPES = (
 	'Version' => '00000037-0000-1000-8000-0026BB765291',
 );
 
-# _uuid_to_short($uuid) - Convert the full UUID to the short form
-# for JSON. The function returns a short hex string for Apple
-# UUIDs. It returns the full UUID for custom UUIDs.
-sub _uuid_to_short ($uuid)
-{
-	my $base = HAP_BASE_UUID;
-	if ( $uuid =~ /^0*([0-9A-Fa-f]+)\Q$base\E$/i ) {
-		return uc($1);
-	}
-	return $uuid;
-}
-
-# HAP Characteristic Formats
-our %FORMATS = (
-	'bool'   => 1,
-	'uint8'  => 1,
-	'uint16' => 1,
-	'uint32' => 1,
-	'uint64' => 1,
-	'int'    => 1,
-	'float'  => 1,
-	'string' => 1,
-	'tlv8'   => 1,
-	'data'   => 1,
-);
-
-# HAP Permissions
-our %PERMISSIONS = (
-	'pr' => 1,    # Paired Read
-	'pw' => 1,    # Paired Write
-	'ev' => 1,    # Events (notifications)
-	'aa' => 1,    # Additional Authorization
-	'tw' => 1,    # Timed Write
-	'hd' => 1,    # Hidden
-	'wr' => 1,    # Write Response
-);
-
 sub new ( $class, %args )
 {
 
@@ -96,11 +56,10 @@ sub new ( $class, %args )
 		value => $args{value},
 
 		# Optional metadata
-		unit   => $args{unit},
-		min    => $args{min},
-		max    => $args{max},
-		step   => $args{step},
-		maxLen => $args{maxLen},
+		unit => $args{unit},
+		min  => $args{min},
+		max  => $args{max},
+		step => $args{step},
 
 		# Callbacks
 		on_get => $args{on_get},
@@ -162,26 +121,24 @@ sub events_enabled ($self)
 	return $self->{event_enabled};
 }
 
-sub to_json ( $self, $include_value = 1 )
+sub to_json ($self)
 {
 
 	my $json = {
-		type   => _uuid_to_short( $self->{type} ),
+		type   => Protocol::HAP::uuid_to_short( $self->{type} ),
 		iid    => $self->{iid},
 		format => $self->{format},
 		perms  => $self->{perms},
 	};
 
 	# Add the optional metadata
-	$json->{unit}     = $self->{unit}   if defined $self->{unit};
-	$json->{minValue} = $self->{min}    if defined $self->{min};
-	$json->{maxValue} = $self->{max}    if defined $self->{max};
-	$json->{minStep}  = $self->{step}   if defined $self->{step};
-	$json->{maxLen}   = $self->{maxLen} if defined $self->{maxLen};
+	$json->{unit}     = $self->{unit} if defined $self->{unit};
+	$json->{minValue} = $self->{min}  if defined $self->{min};
+	$json->{maxValue} = $self->{max}  if defined $self->{max};
+	$json->{minStep}  = $self->{step} if defined $self->{step};
 
-	# Add the value if the caller requests it and the
-	# characteristic is readable
-	if ( $include_value && grep { $_ eq 'pr' } @{ $self->{perms} } ) {
+	# Add the value if the characteristic is readable
+	if ( grep { $_ eq 'pr' } @{ $self->{perms} } ) {
 		$json->{value} = $self->json_value;
 	}
 

@@ -22,8 +22,6 @@ package App::FuguWeb::CLI;
 use App::FuguWeb;
 use App::FuguWeb::Check;
 use App::FuguWeb::Config;
-use App::FuguWeb::Index;
-use App::FuguWeb::Page;
 use App::FuguWeb::Site;
 use File::Spec;
 use Fugu::File;
@@ -54,15 +52,6 @@ use constant {
 # The subcommands. Each entry names the method that runs it, its own
 # options, and whether it runs without a loaded project.
 my %COMMANDS = (
-	page => {
-		summary => 'Wrap a body fragment from standard input',
-		usage   => '<title>',
-		method  => 'cmd_page',
-	},
-	index => {
-		summary => 'Write the body of the manual index',
-		method  => 'cmd_index',
-	},
 	build => {
 		summary => 'Render the whole site',
 		usage   => '[--out <dir>]',
@@ -98,56 +87,31 @@ my %COMMANDS = (
 	},
 );
 
-# The description that 'fuguweb init' writes. A new project gets a
-# file that builds, not a file that it has to repair first.
+# The description that 'fuguweb init' writes: the smallest site that
+# builds, once web/index.body.html exists. The other settings keep
+# their defaults, which App::FuguWeb::Config documents.
 my $STARTER = <<'RC';
 # The website, built by fuguweb(1).
 
-site       = Example
-out_dir    = web/build
-source_dir = web
-entry      = index.html
+site = Example
 
 nav "index.html" {
 	label = Home
-}
-
-# Every page needs a way in, or 'fuguweb check' reports it as
-# unreachable. A page that nothing links to says 'unlinked = yes'.
-nav "manuals.html" {
-	label = Manuals
 }
 
 page "index.html" {
 	title = Home
 	body  = index.body.html
 }
-
-page "manuals.html" {
-	title = Manuals
-	index = yes
-}
-
-# A manuals block globs its directory for the mdoc sources. A modules
-# block finds the POD sidecars below its own. Never name a directory
-# that holds more than one namespace.
-#manuals "Manuals" {
-#	dir    = man
-#	anchor = manuals
-#}
 RC
 
-sub new ( $class, %opts )
+sub new ($class)
 {
-	my $mode =
-	    $opts{quiet} ? Fugu::Log::MODE_QUIET : Fugu::Log::MODE_STDERR;
-
 	return bless {
-		project => $opts{project},
-		quiet   => $opts{quiet} // 0,
+		project => undef,
 		config  => undef,
 		log     => Fugu::Log->new(
-			mode  => $mode,
+			mode  => Fugu::Log::MODE_STDERR,
 			level => 'info',
 			ident => 'fuguweb',
 		),
@@ -208,8 +172,7 @@ sub _prepare ( $self, $cli, $entry )
 	$self->{project} = $cli->option('project');
 
 	if ( $cli->option('quiet') ) {
-		$self->{quiet} = 1;
-		$self->{log}   = Fugu::Log->new(
+		$self->{log} = Fugu::Log->new(
 			mode  => Fugu::Log::MODE_QUIET,
 			ident => 'fuguweb',
 		);
@@ -238,50 +201,18 @@ sub _load_config ($self)
 	return;
 }
 
-# Wrap a body fragment from standard input in the shared chrome
-sub cmd_page ( $self, $cli, @args )
-{
-	my $title = shift @args;
-	unless ( defined $title && length $title ) {
-		return $cli->command_usage_error('page');
-	}
-
-	binmode STDIN;
-	binmode STDOUT;
-	my $fragment = do { local $/; <STDIN> };
-
-	my $page = App::FuguWeb::Page->new( config => $self->{config} );
-	print $page->document( $title, $fragment );
-
-	return EXIT_SUCCESS;
-}
-
-# Write the body fragment of the manual index
-sub cmd_index ( $self, $cli, @args )
-{
-	binmode STDOUT;
-	my $index = App::FuguWeb::Index->new( config => $self->{config} );
-	print $index->body;
-
-	return EXIT_SUCCESS;
-}
-
 # Render the whole site
 sub cmd_build ( $self, $cli, @args )
 {
 	my $site = $self->_site($cli);
+	return EXIT_SUCCESS if $site->build;
 
-	my $missing = $site->missing_tool;
-	if ( defined $missing ) {
-		$self->{log}->error(
-			"%s not found; the build needs it. Run"
-			    . " 'make deps-develop'",
-			$missing
-		);
-		return EXIT_TOOL_MISSING;
-	}
-
-	return $site->build ? EXIT_SUCCESS : EXIT_RENDER_FAILED;
+	# The build probes the renderers first and names the one that
+	# is missing; here that result becomes the exit code a script
+	# reads.
+	return defined $site->missing_tool
+	    ? EXIT_TOOL_MISSING
+	    : EXIT_RENDER_FAILED;
 }
 
 # Remove the output directory

@@ -85,7 +85,7 @@ my $CAP_CT     = App::OpenHAP::Tasmota::Lightbulb::CAP_CT();
 	ok( defined $heater, 'Heater created' );
 	is( $heater->{power_state}, 0, 'Initial power state is off' );
 	ok( $heater->can($_), "Heater has $_ method" )
-	    for qw(set_power toggle_power blink subscribe_mqtt);
+	    for qw(set_power subscribe_mqtt);
 }
 
 # Test Sensor construction and initial state
@@ -163,6 +163,12 @@ my $CAP_CT     = App::OpenHAP::Tasmota::Lightbulb::CAP_CT();
 	( $h, $s, $b ) = $lightbulb->_rgb_to_hsb( 128, 128, 128 );
 	is( $s, 0,  'RGB gray: saturation=0' );
 	is( $b, 50, 'RGB gray: brightness=50' );
+
+	# A red-dominant mixed color. The hue arithmetic is
+	# floating-point: an integer modulus would truncate the red
+	# sector to hue 0.
+	( $h, $s, $b ) = $lightbulb->_rgb_to_hsb( 255, 128, 0 );
+	is( $h, 30, 'RGB orange: hue=30' );
 }
 
 # A characteristic that a driver creates carries the injected logger.

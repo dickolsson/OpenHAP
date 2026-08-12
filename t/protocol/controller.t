@@ -29,7 +29,9 @@ use_ok('Protocol::HAP::Pairing');
 
 # Constructor defaults and identity generation
 {
-	my $controller = Protocol::HAP::Controller->new;
+	my $controller =
+	    Protocol::HAP::Controller->new(
+		controller_id => 'openhap-test-ctrl' );
 
 	ok( defined $controller, 'controller created with defaults' );
 	is( $controller->{host}, '127.0.0.1', 'default host' );
@@ -38,6 +40,12 @@ use_ok('Protocol::HAP::Pairing');
 	is( length( $controller->{ltpk} ), 32, 'LTPK is 32 bytes' );
 	ok( !$controller->is_encrypted, 'session starts unencrypted' );
 	is( $controller->last_error, undef, 'no error initially' );
+
+	# controller_id is required: it goes into the pair-setup
+	# signature, so the library must not invent one
+	my $ok = eval { Protocol::HAP::Controller->new; 1 };
+	ok( !$ok, 'new without controller_id dies' );
+	like( $@, qr/controller_id required/, 'and says why' );
 }
 
 # Transport injection: requests flow through the code ref
@@ -48,7 +56,10 @@ use_ok('Protocol::HAP::Pairing');
 		return "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
 	};
 	my $controller =
-	    Protocol::HAP::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new(
+	    transport     => $transport,
+	    controller_id => 'openhap-test-ctrl',
+	    );
 
 	my $response = $controller->request( 'GET', '/accessories' );
 	like( $seen, qr{^GET /accessories HTTP/1\.1\r\n},
@@ -62,9 +73,10 @@ use_ok('Protocol::HAP::Pairing');
 # Connection refused: pair_setup fails and sets last_error
 {
 	my $controller = Protocol::HAP::Controller->new(
-		host    => '127.0.0.1',
-		port    => 1,      # nothing listens here
-		timeout => 1,
+		host          => '127.0.0.1',
+		port          => 1,               # nothing listens here
+		timeout       => 1,
+		controller_id => 'openhap-test-ctrl',
 	);
 
 	ok( !$controller->pair_setup, 'pair_setup fails without server' );
@@ -86,7 +98,10 @@ use_ok('Protocol::HAP::Pairing');
 		    . $body;
 	};
 	my $controller =
-	    Protocol::HAP::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new(
+	    transport     => $transport,
+	    controller_id => 'openhap-test-ctrl',
+	    );
 
 	ok( !$controller->pair_setup, 'malformed TLV response fails' );
 	ok( defined $controller->last_error, 'last_error set' );
@@ -109,7 +124,10 @@ use_ok('Protocol::HAP::Pairing');
 		    . $body;
 	};
 	my $controller =
-	    Protocol::HAP::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new(
+	    transport     => $transport,
+	    controller_id => 'openhap-test-ctrl',
+	    );
 
 	ok( !$controller->pair_setup, 'error TLV fails the exchange' );
 	is( $controller->last_error,
@@ -124,7 +142,10 @@ use_ok('Protocol::HAP::Pairing');
 		    . "Content-Length: 0\r\n\r\n";
 	};
 	my $controller =
-	    Protocol::HAP::Controller->new( transport => $transport );
+	    Protocol::HAP::Controller->new(
+	    transport     => $transport,
+	    controller_id => 'openhap-test-ctrl',
+	    );
 
 	ok( !$controller->pair_setup, 'non-200 status fails' );
 	is( $controller->last_error, 'HTTP 470', 'status in last_error' );

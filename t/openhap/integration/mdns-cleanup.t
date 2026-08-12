@@ -27,24 +27,17 @@ my $hap_name = $env->get_config_value('hap_name') // 'OpenHAP';
 unlink "$db_path/mdnsctl.log";
 
 # Restart openhapd so it publishes against the running mdnsd
-system('rcctl restart openhapd >/dev/null 2>&1');
-$env->wait_for_hap_port or die "daemon not serving after restart\n";
+$env->restart_daemon or die "daemon not serving after restart\n";
 
 ok(system('rcctl check openhapd >/dev/null 2>&1') == 0,
    'daemon is running');
 
-# browse(): one bounded observation of the advertised services
-sub browse
-{
-	return `timeout 5 mdnsctl browse hap tcp 2>&1 || true`;
-}
-
 # The advertisement is visible while the daemon holds its socket
 my $deadline = time + 30;
-my $output   = browse();
+my $output   = $env->browse;
 while ($output !~ /\Q$hap_name\E/i && time < $deadline) {
 	sleep 1;
-	$output = browse();
+	$output = $env->browse;
 }
 like($output, qr/\Q$hap_name\E/i,
      'service advertised while the daemon runs');
@@ -69,10 +62,10 @@ ok(system('rcctl check openhapd >/dev/null 2>&1') != 0,
    'daemon stopped');
 
 $deadline = time + 30;
-$output   = browse();
+$output   = $env->browse;
 while ($output =~ /\Q$hap_name\E/i && time < $deadline) {
 	sleep 1;
-	$output = browse();
+	$output = $env->browse;
 }
 unlike($output, qr/\Q$hap_name\E/i,
        'advertisement withdrawn after the daemon exits');

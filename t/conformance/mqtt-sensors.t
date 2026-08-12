@@ -102,12 +102,6 @@ subtest '[MQTT-Sensors §3] temperature sensors' => sub {
 		    . '"DS18B20-2":{"Temperature":25},"TempUnit":"C"}' );
 	is( $indexed->{current_temp}, 25,
 		'indexed sensor DS18B20-2 selected' );
-
-	# The module tracks the sensor Id field
-	$mqtt->simulate_message( 'tele/sensor/SENSOR',
-		'{"DS18B20":{"Id":"01131B123456","Temperature":22.5},'
-		    . '"TempUnit":"C"}' );
-	is( $sensor->{sensor_id}, '01131B123456', 'sensor Id tracked' );
 };
 
 subtest '[MQTT-Sensors §4] humidity sensors' => sub {
@@ -121,20 +115,41 @@ subtest '[MQTT-Sensors §4] humidity sensors' => sub {
 	is( $sensor->{current_humidity}, 65,   'humidity from DHT22' );
 };
 
-subtest '[MQTT-Sensors §5][MQTT-Sensors §5.1] TelePeriod forces telemetry' => sub {
-	my $mqtt = App::OpenHAP::TestMock::MQTT->new;
-	my $base = App::OpenHAP::Tasmota::Device->new(
-		aid         => 2,
-		name        => 'Tele',
-		mqtt_topic  => 'device',
-		mqtt_client => $mqtt,
-	);
+# The has_humidity key must reach the sensor through the same path
+# the daemon uses: a device block in the configuration file, read by
+# the device loader.
+subtest '[MQTT-Sensors §4] has_humidity through the configuration' => sub {
+	require File::Temp;
+	require Fugu::Config;
+	require App::OpenHAP::Devices;
 
-	$mqtt->clear_published;
-	$base->force_telemetry;
-	ok( ( grep { $_->{topic} eq 'cmnd/device/TelePeriod' }
-		    $mqtt->get_published ),
-		'TelePeriod command forces a telemetry report' );
+	my ( $fh, $file ) = File::Temp::tempfile( UNLINK => 1 );
+	print {$fh} <<'CONF';
+device tasmota sensor s1 {
+    name = "Humid Sensor"
+    topic = tas_humid
+    has_humidity = 1
+}
+CONF
+	close $fh;
+
+	my $config = Fugu::Config->new( file => $file );
+	ok( $config->load, 'the configuration parses' )
+	    or diag( $config->error );
+
+	my $loader = App::OpenHAP::Devices->new;
+	my ($record) = App::OpenHAP::Devices->devices($config);
+	my $accessory =
+	    $loader->_create_device( $record,
+		App::OpenHAP::TestMock::MQTT->new, 0 );
+
+	ok( $accessory, 'the sensor built from the device block' );
+	ok( $accessory->get_service('HumiditySensor'),
+		'has_humidity 1 builds a HumiditySensor service' );
+
+	my $char = $accessory->get_service('HumiditySensor')
+	    ->get_characteristic_by_type('CurrentRelativeHumidity');
+	ok( $char, 'with the CurrentRelativeHumidity characteristic' );
 };
 
 done_testing();

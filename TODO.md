@@ -800,5 +800,4 @@ When working on items from this TODO list:
 - Items marked with specific file locations should be addressed in those files
 - Some items require new files/directories to be created
 - Test coverage should increase with each implementation
-- Maintain backward compatibility where possible
 - Document all new features in README.md and relevant docs

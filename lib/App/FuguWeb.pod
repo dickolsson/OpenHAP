@@ -25,8 +25,9 @@ root, keeps its body fragments and its assets in one source directory,
 and runs C<fuguweb build>. See L<fuguweb(1)> for the subcommands and
 the exit codes.
 
-This file holds what every module in the namespace needs. The rest of
-the work is split by concern:
+This file holds what more than one module in the namespace needs: two
+constants and four functions, documented below. The rest of the work
+is split by concern:
 
 =over 4
 
@@ -130,12 +131,38 @@ double-quoted attribute: a value that holds a quote ends the attribute
 early, and everything after it becomes markup. L</escape_html> alone
 does not guard an attribute.
 
+=head2 list_dir
+
+    my $names = App::FuguWeb::list_dir($dir) or die "cannot read: $!";
+
+The names in one directory, sorted, without C<.> and C<..>. The
+function returns an array reference, or C<undef> with the reason in
+C<$!>, so a caller can tell an empty directory from one it cannot
+read.
+
+The sort compares bytes and never reads the locale of the builder: a
+site must not depend on the machine that built it.
+
+=head2 path_below
+
+    App::FuguWeb::path_below($path, $root)
+
+Report whether C<$path> is C<$root> or lies below it. A trailing slash
+on either does not change the answer. Both paths must be of the same
+kind: both absolute, or both relative to the same directory.
+
 =head1 CONSTANTS
 
 =head2 CONFIG_FILE
 
 The name of the configuration file, F<.fuguwebrc>. The name and the
 discovery match F<.fuguvmrc>.
+
+=head2 STYLESHEET
+
+The name of the stylesheet in the output directory, F<style.css>. The
+site is served from one flat directory, so every page links it under
+that name and the build writes it there.
 
 =head1 SEE ALSO
 

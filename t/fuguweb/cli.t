@@ -103,14 +103,10 @@ subtest 'the exit codes are the documented ones' => sub {
 	is( App::FuguWeb::CLI::EXIT_TOOL_MISSING(),  6, 'a tool is absent' );
 };
 
-subtest 'an unknown command and a missing argument' => sub {
+subtest 'an unknown command' => sub {
 	my ( $exit, $out, $err ) = run('nonesuch');
 	is( $exit, 2, 'an unknown command gives EXIT_INVALID_ARGS' );
 	like( $err, qr/unknown command: nonesuch/, 'and says which' );
-
-	( $exit, $out, $err ) = run( '--project', project(), 'page' );
-	is( $exit, 2, 'page with no title gives EXIT_INVALID_ARGS' );
-	like( $err, qr/usage: fuguweb page/, 'and prints the usage' );
 
 	( $exit, $out ) = run('help');
 	is( $exit, 0, 'asking for help is not a failure' );
@@ -119,33 +115,21 @@ subtest 'an unknown command and a missing argument' => sub {
 
 subtest 'a description that is absent or broken' => sub {
 	my $empty = tempdir( CLEANUP => 1 );
-	my ( $exit, $out, $err ) = run( '--project', $empty, 'index' );
+	my ( $exit, $out, $err ) = run( '--project', $empty, 'check' );
 	is( $exit, 3, 'no description gives EXIT_CONFIG_ERROR' );
 	like( $err, qr/\.fuguwebrc/, 'and names the file it looked for' );
 
 	my $root = project( '.fuguwebrc' => "site = Example\n}\n" );
-	( $exit, $out, $err ) = run( '--project', $root, 'index' );
+	( $exit, $out, $err ) = run( '--project', $root, 'check' );
 	is( $exit, 3, 'a malformed description gives EXIT_CONFIG_ERROR' );
 	like( $err, qr/\.fuguwebrc:2:/, 'and carries the line number' );
-};
-
-subtest 'page and index write to standard output' => sub {
-	my $root = project();
-
-	my ( $exit, $out ) = run( '--project', $root, 'page', 'A & B' );
-	is( $exit, 0, 'page succeeds' );
-	like( $out, qr/<title>A &amp; B /, 'and escapes the title' );
-
-	( $exit, $out ) = run( '--project', $root, 'index' );
-	is( $exit, 0, 'index succeeds' );
-	like( $out, qr{^<h1>Manuals</h1>}, 'and writes the body fragment' );
 };
 
 subtest 'quiet keeps a diagnostic off standard error' => sub {
 	my $empty = tempdir( CLEANUP => 1 );
 
 	my ( $exit, $out, $err ) = run( '--quiet', '--project', $empty,
-		'index' );
+		'check' );
 	is( $exit, 3,  'the exit code still reports the failure' );
 	is( $err,  '', 'and nothing is written' );
 };
@@ -284,7 +268,7 @@ subtest 'build reports a renderer that is not installed' => sub {
 	my ( $exit, $out, $err ) = run( '--project', $root, 'build' );
 
 	is( $exit, 6, 'an absent renderer gives EXIT_TOOL_MISSING' );
-	like( $err, qr/mandoc not found/, 'and names the tool' );
+	like( $err, qr/mandoc is not installed/, 'and names the tool' );
 	ok( !-e "$root/out", 'and the build wrote nothing' );
 };
 

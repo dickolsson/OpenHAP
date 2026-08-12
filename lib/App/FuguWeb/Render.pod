@@ -98,6 +98,12 @@ as a link. POD pages therefore cross-reference as plain text while mdoc
 pages link. Making it work would mean post-processing the HTML of
 C<mandoc>.
 
+The C<--center> and C<--release> values are the C<POD_CENTER> and
+C<POD_RELEASE> constants. They are constants and not settings: they
+pin the C<pod2man> output so the site does not vary with the build
+host. Without them, C<pod2man> writes its own center text and the perl
+version of the machine that built the site.
+
 =head2 html_options
 
 The C<mandoc> options that every page shares.

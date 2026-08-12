@@ -23,6 +23,7 @@ use IO::Socket::INET;
 use Time::HiRes qw(time);
 
 use Fugu::EventLoop;
+use Fugu::File;
 use Fugu::Log;
 use Fugu::Mdnsd;
 use Protocol::HAP::Server;
@@ -46,12 +47,12 @@ use constant MQTT_RECONNECT_INTERVAL => 30;
 
 sub new ( $class, %args )
 {
+	# The other fields - the storage, the engine, the MQTT client,
+	# the mDNS handle, the loop and the listening socket - appear
+	# when their setters and accessors run.
 	my $self = bless {
 		port         => $args{port} // 51827,
 		storage_path => $args{storage_path},
-
-		storage => undef,
-		engine  => undef,
 
 		# Each connection is filed under its session id: the
 		# session and its socket together. A fileno index
@@ -60,13 +61,7 @@ sub new ( $class, %args )
 		connections => {},
 		by_fileno   => {},
 
-		mqtt_client        => undef,
-		mqtt_tick_interval => 0.1,     # MQTT poll interval in seconds
-
-		mdns => undef,
-
-		loop   => $args{loop},         # The caller can supply one
-		server => undef,               # The listening socket
+		mqtt_tick_interval => 0.1,    # MQTT poll interval in seconds
 
 		# For the uptime in a control status. Time::HiRes::time
 		# is imported here, and it gives a float; a whole second
@@ -199,15 +194,6 @@ sub run ($self)
 	return $self;
 }
 
-# $self->stop:
-#	Ask the loop to end after the current pass.
-sub stop ($self)
-{
-	$self->loop->stop;
-
-	return $self;
-}
-
 # $self->shutdown:
 #	Close the listener and every client connection. The caller
 #	calls this after run returns.
@@ -215,7 +201,6 @@ sub shutdown ($self)
 {
 	for my $conn ( values %{ $self->{connections} } ) {
 		my $socket = $conn->{socket};
-		next unless ref $socket;
 
 		$self->loop->remove_fd($socket);
 		$socket->close;
@@ -263,10 +248,10 @@ sub _accept ($self)
 #	connection.
 sub _handle_client ( $self, $sock )
 {
-	my $sid     = $self->{by_fileno}{ fileno $sock };
-	my $conn    = defined $sid ? $self->{connections}{$sid} : undef;
-	my $session = $conn        ? $conn->{session}           : undef;
-	return unless $session;
+	# _accept installs the fileno row and the connection together,
+	# so a fileno the loop reports always resolves
+	my $sid     = $self->{by_fileno}{ fileno $sock } // return;
+	my $session = $self->{connections}{$sid}{session};
 
 	my $data  = '';
 	my $bytes = $sock->sysread( $data, READ_SIZE );
@@ -293,17 +278,22 @@ sub _handle_client ( $self, $sock )
 
 # $self->_write($session, $bytes):
 #	The output contract of the engine: write the bytes to the
-#	connection that the session is filed under.
+#	connection that the session is filed under, whole. A
+#	controller that closes mid-write raises SIGPIPE, which would
+#	kill the daemon; the local guard turns it into an EPIPE that
+#	the checked loop reports. A connection the host cannot write
+#	is a connection it drops.
 sub _write ( $self, $session, $bytes )
 {
-	my $conn   = $self->{connections}{ $session->id };
-	my $socket = $conn ? $conn->{socket} : undef;
-	return unless $socket && $socket->connected;
+	my $conn = $self->{connections}{ $session->id } or return;
 
-	eval { $socket->syswrite($bytes) };
-	if ($@) {
-		Fugu::Log->default->warning( 'Failed to write to session: %s',
-			$@ );
+	local $SIG{PIPE} = 'IGNORE';
+	unless ( Fugu::File->_write_all( $conn->{socket}, $bytes, 'session' ) )
+	{
+		Fugu::Log->default->warning(
+			'Dropping session %d: write failed',
+			$session->id );
+		$self->_close_client( $conn->{socket} );
 	}
 
 	return;
@@ -313,16 +303,16 @@ sub _write ( $self, $session, $bytes )
 #	Drop a client and everything the server kept for it.
 sub _close_client ( $self, $sock )
 {
-	my $fileno  = fileno $sock;
-	my $sid     = defined $fileno ? $self->{by_fileno}{$fileno} : undef;
-	my $conn    = defined $sid    ? $self->{connections}{$sid}  : undef;
-	my $session = $conn           ? $conn->{session}            : undef;
+	# A write failure inside receive drops the connection before
+	# the read path does, so a second close must be a no-op. A
+	# closed handle has no fileno, and a handled one has no row.
+	my $fileno = fileno $sock                       // return;
+	my $sid    = delete $self->{by_fileno}{$fileno} // return;
+	my $conn   = delete $self->{connections}{$sid};
 
-	$self->{engine}->session_close($session) if $session;
+	$self->{engine}->session_close( $conn->{session} );
 
 	$self->loop->remove_fd($sock);
-	delete $self->{by_fileno}{$fileno} if defined $fileno;
-	delete $self->{connections}{$sid}  if defined $sid;
 	$sock->close;
 
 	return;
@@ -392,12 +382,10 @@ sub _mqtt_retry ($self)
 sub _mqtt_resubscribe_accessories ($self)
 {
 	for my $acc ( $self->{engine}->get_bridged_accessories ) {
-		if ( $acc->can('subscribe_mqtt') ) {
-			eval { $acc->subscribe_mqtt; };
-			Fugu::Log->default->error(
-				'Failed to resubscribe accessory: %s', $@ )
-			    if $@;
-		}
+		eval { $acc->subscribe_mqtt; };
+		Fugu::Log->default->error(
+			'Failed to resubscribe accessory: %s', $@ )
+		    if $@;
 	}
 
 	return;
@@ -421,13 +409,11 @@ sub set_mdns ( $self, $mdns )
 #	real state change.
 sub _refresh_mdns ( $self, $paired )
 {
-	return unless defined $self->{mdns};
-
 	# Never send an update to an unpublished handle. The daemon
 	# can start while mdnsd is down. This code runs on the
 	# pairing path. A write to a dead socket must not be
 	# reachable there.
-	return unless $self->{mdns}->is_published;
+	return unless $self->{mdns} && $self->{mdns}->is_published;
 
 	if ( $self->{mdns}->update_txt( txt => $self->mdns_txt_string ) ) {
 		Fugu::Log->default->info(

@@ -15,7 +15,6 @@ use_ok('Fugu::Signal');
 
 # Test interrupt flag
 {
-	Fugu::Signal::reset_all_interrupted();
 	ok( !Fugu::Signal::check_interrupted(),
 		'Not interrupted initially' );
 }
@@ -36,7 +35,6 @@ use_ok('Fugu::Signal');
 
 # Test interrupt flag setting
 {
-	Fugu::Signal::reset_all_interrupted();
 	my $sig = Fugu::Signal->new;
 	$sig->setup_interrupt_flag('USR1');
 
@@ -53,40 +51,6 @@ use_ok('Fugu::Signal');
 	ok( !$sig->interrupted, 'reset_interrupted clears the flag' );
 
 	$sig->restore;
-}
-
-# Test cleanup handlers
-{
-	my $cleanup_called = 0;
-	my $cleanup_signal;
-
-	my $sig = Fugu::Signal->new;
-	$sig->add_cleanup(
-		sub ($signal) {
-			$cleanup_called++;
-			$cleanup_signal = $signal;
-		}
-	);
-
-	# Trigger the cleanup manually
-	$sig->_run_cleanup_handlers('TEST');
-
-	is( $cleanup_called, 1,      'Cleanup handler called' );
-	is( $cleanup_signal, 'TEST', 'Cleanup received signal name' );
-}
-
-# Test multiple cleanup handlers
-{
-	my @calls;
-
-	my $sig = Fugu::Signal->new;
-	$sig->add_cleanup( sub ($) { push @calls, 'first'; } );
-	$sig->add_cleanup( sub ($) { push @calls, 'second'; } );
-
-	$sig->_run_cleanup_handlers('TEST');
-
-	is_deeply( \@calls, [ 'first', 'second' ],
-		'Multiple cleanup handlers called in order' );
 }
 
 # Test automatic restoration on DESTROY
@@ -106,7 +70,6 @@ use_ok('Fugu::Signal');
 
 # Test interrupt flag with multiple signals
 {
-	Fugu::Signal::reset_all_interrupted();
 	my $sig = Fugu::Signal->new;
 	$sig->setup_interrupt_flag( 'USR1', 'USR2' );
 
@@ -116,72 +79,25 @@ use_ok('Fugu::Signal');
 	ok( $sig->interrupted, 'Interrupted by second signal' );
 
 	$sig->restore;
-	Fugu::Signal::reset_all_interrupted();
 }
 
-# Two managers do not share state. Each one owns its cleanups and its
-# interrupt flag.
+# Two managers do not share state. Each one owns its interrupt flag.
 {
-	Fugu::Signal::reset_all_interrupted();
-
-	my @ran;
 	my $first  = Fugu::Signal->new;
 	my $second = Fugu::Signal->new;
-	$first->add_cleanup( sub ($) { push @ran, 'first' } );
-	$second->add_cleanup( sub ($) { push @ran, 'second' } );
-
-	$first->_run_cleanup_handlers('TEST');
-	is_deeply( \@ran, ['first'], 'a manager runs only its own cleanups' );
-
-	@ran = ();
-	$second->_run_cleanup_handlers('TEST');
-	is_deeply( \@ran, ['second'], 'and the other one runs only its own' );
 
 	$first->setup_interrupt_flag('USR1');
 	kill 'USR1', $$;
 	sleep 0.1;
 
-	ok( $first->interrupted,   'the manager that caught it is interrupted' );
+	ok( $first->interrupted, 'the manager that caught it is interrupted' );
 	ok( !$second->interrupted, 'the other manager is not' );
 
 	$first->restore;
-	Fugu::Signal::reset_all_interrupted();
-}
-
-# The cleanup list survives its run. A second signal during a shutdown
-# must find the same handlers.
-{
-	my $runs = 0;
-	my $sig  = Fugu::Signal->new;
-	$sig->add_cleanup( sub ($) { $runs++ } );
-
-	$sig->_run_cleanup_handlers('TERM');
-	$sig->_run_cleanup_handlers('TERM');
-
-	is( $runs, 2, 'the cleanups run again on a second signal' );
-}
-
-# A cleanup that dies does not stop the ones after it
-{
-	my @ran;
-	my $sig = Fugu::Signal->new;
-	$sig->add_cleanup( sub ($) { die "cleanup failed\n" } );
-	$sig->add_cleanup( sub ($) { push @ran, 'after' } );
-
-	$sig->_run_cleanup_handlers('TERM');
-	is_deeply( \@ran, ['after'], 'a dying cleanup does not stop the rest' );
-}
-
-# The exit status of a graceful exit is configurable
-{
-	is( Fugu::Signal->new->{exit_status}, 130, 'the default is 130' );
-	is( Fugu::Signal->new( exit_status => 143 )->{exit_status},
-		143, 'exit_status overrides it' );
 }
 
 # A destroyed manager leaves no entry behind for check_interrupted
 {
-	Fugu::Signal::reset_all_interrupted();
 	{
 		my $sig = Fugu::Signal->new;
 		$sig->setup_interrupt_flag('USR2');

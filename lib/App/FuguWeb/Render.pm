@@ -19,6 +19,7 @@ use v5.36;
 
 package App::FuguWeb::Render;
 
+use App::FuguWeb::Manual;
 use Fugu::Log;
 use Fugu::Process;
 
@@ -41,8 +42,14 @@ use constant {
 	DEFAULT_POD2MAN => 'pod2man',
 };
 
-# The section that a POD sidecar renders into.
-use constant POD_SECTION => '3p';
+# The pod2man --center and --release values. They are constants and
+# not settings: they pin the pod2man output so the site does not vary
+# with the build host. Without them, pod2man writes its own center
+# text and the perl version of the machine that built the site.
+use constant {
+	POD_CENTER  => 'Perl Library Manual',
+	POD_RELEASE => 'OpenBSD',
+};
 
 # App::FuguWeb::Render->new(%args):
 #	config  => $config	the site description (required)
@@ -141,16 +148,14 @@ sub mdoc ( $self, $file, $dir )
 #	would give different bytes on every checkout.
 sub pod ( $self, $path, $name, $date )
 {
-	my $config = $self->{config};
-
 	my $man = Fugu::Process->run(
 		cmd => [
 			$self->{pod2man},
-			'--section=' . POD_SECTION,
+			'--section=' . App::FuguWeb::Manual::POD_SECTION,
 			"--name=$name",
 			"--date=$date",
-			'--center=' . $config->pod_center,
-			'--release=' . $config->pod_release,
+			'--center=' . POD_CENTER,
+			'--release=' . POD_RELEASE,
 			$path,
 		],
 	);

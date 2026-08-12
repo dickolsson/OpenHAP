@@ -108,7 +108,6 @@ CONF
 	is( $devices[1]{settings}{topic}, 'tasmota_LIGHT1',
 		'a block setting of the second device' );
 
-	is_deeply( [ $config->block_types ], ['device'], 'one block type' );
 	is_deeply( [ $config->blocks('vm') ], [], 'an unused type is empty' );
 };
 
@@ -193,27 +192,23 @@ CONF
 	is( $vm->{settings}{memory}, '512', 'and its settings parsed' );
 };
 
-subtest 'bool' => sub {
+subtest 'parse_bool' => sub {
 	my $config = fixture(<<'CONF')->load;
 a = yes
-b = true
-c = on
-d = 1
-e = NO
-f = False
-g = off
-h = 0
-bad = maybe
 CONF
 
 	ok( $config, 'the file loaded' );
-	ok( $config->bool($_), "$_ is true" ) for qw(a b c d);
-	ok( !$config->bool($_), "$_ is false" ) for qw(e f g h);
+	ok( $config->parse_bool($_), "$_ is true" )
+	    for qw(yes true on 1);
+	ok( !$config->parse_bool($_), "$_ is false" )
+	    for qw(NO False off 0);
 
-	is( $config->bool( 'absent', 1 ), 1, 'an absent key takes the default' );
-	is( $config->bool('absent'), 0, 'and 0 without one' );
+	is( $config->parse_bool( undef, 1 ),
+		1, 'an absent value takes the default' );
+	is( $config->parse_bool(undef), 0, 'and 0 without one' );
 
-	is( $config->bool( 'bad', 1 ), 1, 'an unreadable value takes the default' );
+	is( $config->parse_bool( 'maybe', 1 ),
+		1, 'an unreadable value takes the default' );
 	like( $config->error, qr/not a yes\/no value: maybe/,
 		'and records why' );
 };

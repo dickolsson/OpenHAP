@@ -30,10 +30,10 @@ use v5.36;
 package App::FuguVM::DiskCache;
 
 use Digest::SHA ();
-use File::Basename;
-use File::Path qw(remove_tree);
+use File::Path  qw(remove_tree);
 use Fugu::File;
 use Fugu::Log;
+use Fugu::Proxy;
 use App::FuguVM::Console;
 use App::FuguVM::Miniroot;
 
@@ -56,11 +56,6 @@ sub new ( $class, $cache_dir )
 	    $class;
 
 	return $self;
-}
-
-sub cache_dir ($self)
-{
-	return $self->{cache_dir};
 }
 
 # $self->installed_dir:
@@ -232,7 +227,7 @@ sub list ($self)
 
 	for my $key ( sort @keys ) {
 		my $entry = $self->lookup($key) or next;
-		$entry->{size}       = _tree_size( $entry->{dir} );
+		$entry->{size} = Fugu::Proxy::Cache->dir_size( $entry->{dir} );
 		$entry->{created_at} = $entry->{meta}{created_at};
 		$entry->{snapshots}  = $self->_snapshot_names($key);
 		push @entries, $entry;
@@ -329,13 +324,14 @@ sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
 	my $dir = $self->snapshot_dir($key);
 	Fugu::File->ensure_dir($dir) or return;
 
+	# qemu-img writes the image, so the atomic file helpers cannot
+	# carry it. It goes through one temporary path and one rename.
 	my $target   = $self->snapshot_path( $key, $name );
 	my $tmp_disk = "$target." . TEMP_PREFIX . $$;
-	my $tmp_meta = "$dir/$name.json." . TEMP_PREFIX . $$;
 
-	unlink $tmp_disk, $tmp_meta;
+	unlink $tmp_disk;
 
-	if ( !_convert( $disk_path, $tmp_disk, $entry->{base}, 'qcow2' ) ) {
+	if ( !_convert( $disk_path, $tmp_disk, $entry->{base} ) ) {
 		unlink $tmp_disk;
 		return;
 	}
@@ -355,18 +351,17 @@ sub snapshot_store ( $self, $key, $name, $disk_path, $meta = {} )
 		root_password => $entry->{meta}{root_password},
 		created_at    => time,
 	);
-	if ( !Fugu::File->write_json( $tmp_meta, \%record, mode => 0600 ) ) {
-		unlink $tmp_disk, $tmp_meta;
-		return;
-	}
 
-	# Two renames, metadata first. To save a name again is normal.
-	# A reader that catches the window sees the previous image with
-	# the new metadata. Those fields describe the base, which did
-	# not change.
-	if ( !rename $tmp_meta, "$dir/$name.json" ) {
-		warn "Cannot publish snapshot metadata $name: $!\n";
-		unlink $tmp_disk, $tmp_meta;
+	# Metadata first, atomically, with the mode before the content.
+	# To save a name again is normal. A reader that catches the
+	# window sees the previous image with the new metadata. Those
+	# fields describe the base, which did not change.
+	if (
+		!Fugu::File->write_json(
+			"$dir/$name.json", \%record, mode => 0600
+		) )
+	{
+		unlink $tmp_disk;
 		return;
 	}
 	if ( !rename $tmp_disk, $target ) {
@@ -497,14 +492,14 @@ sub sweep_temp ($self)
 	return Fugu::File->sweep_temp( $self->installed_dir );
 }
 
-# _convert($source, $target, $backing, $backing_format):
+# _convert($source, $target, $backing):
 #	Compact $source into a fresh qcow2 at $target. When $backing is
 #	given, keep it as the parent. Then the target stores only the
 #	difference.
-sub _convert ( $source, $target, $backing = undef, $backing_format = 'qcow2' )
+sub _convert ( $source, $target, $backing = undef )
 {
 	my @cmd = ( 'qemu-img', 'convert', '-O', 'qcow2' );
-	push @cmd, '-B', $backing, '-F', $backing_format if defined $backing;
+	push @cmd, '-B', $backing, '-F', 'qcow2' if defined $backing;
 	push @cmd, $source, $target;
 
 	my $result = system(@cmd);
@@ -538,26 +533,6 @@ sub _sanitize ($value)
 {
 	$value =~ s/[^\w.]/_/g;
 	return $value;
-}
-
-sub _tree_size ($dir)
-{
-	my $total = 0;
-
-	opendir my $dh, $dir or return $total;
-	my @names = grep { !/^\.\.?$/ } readdir $dh;
-	closedir $dh;
-
-	for my $name (@names) {
-		my $path = "$dir/$name";
-		if ( -d $path ) {
-			$total += _tree_size($path);
-			next;
-		}
-		$total += ( -s $path ) // 0;
-	}
-
-	return $total;
 }
 
 1;

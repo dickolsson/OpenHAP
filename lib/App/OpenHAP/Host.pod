@@ -39,17 +39,17 @@ kernel reuses descriptors; session ids never repeat.
 
 =head2 new(%args)
 
-C<port>, C<pin>, C<name>, C<storage_path>, C<setup_id>, and an
-optional C<loop>.
+C<port>, C<pin>, C<name>, C<storage_path>, and C<setup_id>.
 
 =head2 engine()
 
 The L<Protocol::HAP::Server> engine of this host.
 
-=head2 run(), stop(), shutdown(), listen()
+=head2 run(), shutdown(), listen()
 
-The service lifecycle. C<run> serves until the loop stops; C<shutdown>
-closes the listener and every client connection afterwards.
+The service lifecycle. C<run> serves until a signal ends the loop;
+C<shutdown> closes the listener and every client connection
+afterwards.
 
 =head2 set_mqtt_client($mqtt), set_mdns($mdns)
 

@@ -45,9 +45,7 @@ method.
 .Fn daemonize "%args"
 forks into the background and detaches from the controlling terminal.
 .Pp
-The parent calls
-.Fa on_fork
-if the caller gave one, and then exits with status 0.
+The parent exits with status 0.
 Thus
 .Fn daemonize
 returns only in the child.
@@ -58,8 +56,8 @@ and reopens standard input from
 The child then appends standard output to
 .Fa logfile
 and duplicates standard output onto standard error.
-It changes to the root directory and applies
-.Fa umask .
+It changes to the root directory and sets the file creation mask
+to 022.
 Last, it takes the PID file when the caller named one.
 .Pp
 The child redirects the descriptors before it changes the directory.
@@ -86,15 +84,6 @@ so the file holds the PID of the session leader.
 The child holds the lock for the life of the process, even if the
 caller discards the returned object.
 The default is no PID file.
-.It Fa umask
-The file creation mask of the daemon.
-The default is 022.
-.It Fa on_fork
-A code reference that the parent calls with the child's process ID
-before the parent exits.
-Use
-.Fa pidfile
-instead for the common case.
 .El
 .Sh RETURN VALUES
 .Fn daemonize
@@ -144,15 +133,6 @@ Call
 before you open files or sockets that the daemon must keep.
 The child redirects the standard descriptors, but it inherits
 everything that is already open with no change.
-.Pp
-The parent exits with status 0 even if
-.Fa on_fork
-fails.
-To make sure that the PID file exists, the caller must do a separate
-check.
-Use
-.Fa pidfile
-instead: a failure there stops the child.
 .Pp
 The daemon never removes the PID file.
 An

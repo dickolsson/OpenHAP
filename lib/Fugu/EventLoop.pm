@@ -102,16 +102,6 @@ sub remove_fd ( $self, $fh )
 	return $self;
 }
 
-# $self->has_fd($fh):
-#	Report if the loop watches a descriptor.
-sub has_fd ( $self, $fh )
-{
-	my $key = fileno $fh;
-	return 0 unless defined $key;
-
-	return exists $self->{handlers}{$key} ? 1 : 0;
-}
-
 # $self->every($seconds, $code):
 #	Run the callback every $seconds. The method returns a handle
 #	for cancel.

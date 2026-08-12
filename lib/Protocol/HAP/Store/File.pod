@@ -63,7 +63,8 @@ The long-term public key of the accessory, mode 0644.
 =item F<< <path>/pairings.db >>
 
 One line for each paired controller, mode 0600. The format is
-C<controller_id:ltpk_hex:permissions>. A read takes a shared lock.
+C<controller_id:ltpk_hex:permissions>. One process owns the store, so
+a read takes no lock.
 
 =item F<< <path>/state.json >>
 

@@ -24,20 +24,7 @@ $subscriber->pair_verify
 # Locate an event-capable writable characteristic (On, type 25)
 my $result   = $subscriber->request('GET', '/accessories');
 my $database = decode_json($result->{body});
-my ($aid, $iid);
-OUTER: for my $accessory (@{ $database->{accessories} }) {
-	next unless $accessory->{aid} > 1;
-	for my $service (@{ $accessory->{services} }) {
-		for my $char (@{ $service->{characteristics} }) {
-			my $perms = $char->{perms} // [];
-			if ($char->{type} eq '25'
-				&& grep { $_ eq 'ev' } @$perms) {
-				($aid, $iid) = ($accessory->{aid}, $char->{iid});
-				last OUTER;
-			}
-		}
-	}
-}
+my ($aid, $iid) = $env->find_char($database, '25', ev => 1);
 ok(defined $iid, 'found an event-capable On characteristic') or do {
 	$env->teardown;
 	die "No event-capable characteristic found\n";

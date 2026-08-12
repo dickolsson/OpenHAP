@@ -242,8 +242,7 @@ sub is_published ($self)
 	return $self->{published};
 }
 
-# $self->error:
-#	Return the most recent failure. The caller can log it.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};
@@ -380,20 +379,14 @@ sub _publish ( $self, $timeout )
 #	of the module. new proves the template itself at construction.
 sub _encode_service ($self)
 {
-	my $s   = $self->{service};
-	my $buf = pack( SERVICE_TEMPLATE,
+	# The length needs no check here: new proved the template
+	# encodes SERVICE_LEN bytes, and _check_service bounds every
+	# field.
+	my $s = $self->{service};
+
+	return pack( SERVICE_TEMPLATE,
 		$s->{app}, $s->{proto}, $s->{name}, 0, 0, $s->{port},
 		$s->{txt} );
-
-	if ( length($buf) != SERVICE_LEN ) {
-		$self->{error} =
-		      'encoded struct mdns_service is not '
-		    . SERVICE_LEN
-		    . ' bytes';
-		return;
-	}
-
-	return $buf;
 }
 
 1;

@@ -38,6 +38,11 @@ use Fugu::Log;
 # model behind them, and a tool that only reads the device blocks
 # needs none of it. The daemon builds its devices before it pledges,
 # thus the late load costs it nothing.
+# The lightbulb family differs only in its capability mask, so those
+# entries carry a caps field instead of one closure each. The mask
+# values are the CAP_* constants of the class, spelled as numbers
+# here because the class loads only when the configuration asks for
+# it: dimmer 1, color 2, ct 4.
 my %DEVICE = (
 	'tasmota/thermostat' => {
 		name  => 'thermostat',
@@ -50,10 +55,6 @@ my %DEVICE = (
 		},
 	},
 	'tasmota/heater' => {
-		name  => 'switch',
-		class => 'App::OpenHAP::Tasmota::Heater',
-	},
-	'tasmota/switch' => {
 		name  => 'switch',
 		class => 'App::OpenHAP::Tasmota::Heater',
 	},
@@ -71,48 +72,23 @@ my %DEVICE = (
 	'tasmota/lightbulb' => {
 		name  => 'lightbulb',
 		class => 'App::OpenHAP::Tasmota::Lightbulb',
-		args  => sub ($) {
-			return (
-				capabilities =>
-				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
-				    ) );
-		},
-	},
-	'tasmota/dimmer' => {
-		name  => 'dimmer',
-		class => 'App::OpenHAP::Tasmota::Lightbulb',
-		args  => sub ($) {
-			return (
-				capabilities =>
-				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
-				    ) );
-		},
+		caps  => 1,
 	},
 	'tasmota/rgblight' => {
 		name  => 'rgb light',
 		class => 'App::OpenHAP::Tasmota::Lightbulb',
-		args  => sub ($) {
-			return (
-				capabilities =>
-				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
-				    ) |
-				    App::OpenHAP::Tasmota::Lightbulb::CAP_COLOR(
-				    ) );
-		},
+		caps  => 1 | 2,
 	},
 	'tasmota/ctlight' => {
 		name  => 'ct light',
 		class => 'App::OpenHAP::Tasmota::Lightbulb',
-		args  => sub ($) {
-			return (
-				capabilities =>
-				    App::OpenHAP::Tasmota::Lightbulb::CAP_DIMMER(
-				    ) |
-				    App::OpenHAP::Tasmota::Lightbulb::CAP_CT()
-			);
-		},
+		caps  => 1 | 4,
 	},
 );
+
+# Two names for existing entries
+$DEVICE{'tasmota/switch'} = $DEVICE{'tasmota/heater'};
+$DEVICE{'tasmota/dimmer'} = $DEVICE{'tasmota/lightbulb'};
 
 # $class->new():
 #	Create a new device loader instance.
@@ -176,8 +152,10 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 		'Processing device: type=%s, subtype=%s, name=%s',
 		$dev_type, $dev_subtype, $device->{name} // '<unnamed>' );
 
-	# Validate the device type
-	unless ( $self->_is_supported_device( $dev_type, $dev_subtype ) ) {
+	# Validate the device type. The one lookup serves the check,
+	# the build, and the log name.
+	my $entry = $DEVICE{"$dev_type/$dev_subtype"};
+	unless ($entry) {
 		Fugu::Log->default->debug(
 			'Skipping unsupported device type: %s/%s',
 			$dev_type, $dev_subtype );
@@ -191,15 +169,11 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 	my $accessory;
 	eval {
 		$accessory =
-		    $self->_instantiate_device( $device, $mqtt, $dev_type,
-			$dev_subtype );
+		    $self->_instantiate_device( $device, $mqtt, $entry );
 	};
 	if ($@) {
-		Fugu::Log->default->error(
-			'Failed to create %s "%s": %s',
-			$self->_device_type_name($device),
-			$device->{name}, $@
-		);
+		Fugu::Log->default->error( 'Failed to create %s "%s": %s',
+			$entry->{name}, $device->{name}, $@ );
 		return;
 	}
 
@@ -214,13 +188,6 @@ sub _create_device ( $self, $device, $mqtt, $mqtt_connected )
 	}
 
 	return $accessory;
-}
-
-# $self->_is_supported_device($type, $subtype):
-#	Check if the loader supports the device type.
-sub _is_supported_device ( $self, $type, $subtype )
-{
-	return exists $DEVICE{"$type/$subtype"} ? 1 : undef;
 }
 
 # $class->devices($config):
@@ -271,13 +238,10 @@ sub _validate_device ( $self, $device )
 	return 1;
 }
 
-# $self->_instantiate_device($device, $mqtt, $type, $subtype):
-#	Create the device object for the given type.
-sub _instantiate_device ( $self, $device, $mqtt, $type, $subtype )
+# $self->_instantiate_device($device, $mqtt, $entry):
+#	Create the device object for a %DEVICE entry.
+sub _instantiate_device ( $self, $device, $mqtt, $entry )
 {
-	my $entry = $DEVICE{"$type/$subtype"}
-	    or die "Unsupported device type: $type/$subtype";
-
 	# The class loads here, not at compile time. require needs the
 	# path form of the name.
 	my $module = $entry->{class} =~ s{::}{/}gr;
@@ -297,6 +261,7 @@ sub _instantiate_device ( $self, $device, $mqtt, $type, $subtype )
 		# reaching the daemon log.
 		logger => Fugu::Log->default,
 	);
+	$args{capabilities} = $entry->{caps}         if defined $entry->{caps};
 	%args = ( %args, $entry->{args}->($device) ) if $entry->{args};
 
 	return $entry->{class}->new(%args);
@@ -319,15 +284,11 @@ sub _subscribe_mqtt ( $self, $accessory, $device )
 }
 
 # $self->_device_type_name($device):
-#	Return the human-readable device type name.
+#	Return the human-readable device type name. Every caller has
+#	already passed the %DEVICE lookup, so the entry is there.
 sub _device_type_name ( $self, $device )
 {
-	my $type    = $device->{type}    // 'unknown';
-	my $subtype = $device->{subtype} // 'unknown';
-
-	my $entry = $DEVICE{"$type/$subtype"};
-
-	return $entry ? $entry->{name} : "$type/$subtype";
+	return $DEVICE{"$device->{type}/$device->{subtype}"}{name};
 }
 
 1;

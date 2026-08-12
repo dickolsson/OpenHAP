@@ -58,11 +58,24 @@ SKIP: {
     is($result, 1, 'init on readonly dir returns EXIT_ERROR');
 }
 
-# Issue 2: Init on non-existent directory
+# Init creates an absent target directory (mkdir -p semantics)
 {
+    my $tmpdir = tempdir(CLEANUP => 1);
+    my $result = App::FuguVM::CLI->run('init', "$tmpdir/nested/project");
+    is($result, 0, 'init creates an absent directory');
+    ok(-f "$tmpdir/nested/project/.fuguvmrc", 'and writes the config there');
+}
+
+# A target that exists as a file is a diagnosed error, not a crash:
+# Fugu::File refuses to create a directory through it.
+{
+    my $tmpdir = tempdir(CLEANUP => 1);
+    open my $fh, '>', "$tmpdir/occupied" or die $!;
+    close $fh;
+
     local $SIG{__WARN__} = sub {};
-    my $result = App::FuguVM::CLI->run('init', '/nonexistent/path/should/fail');
-    is($result, 1, 'init on non-existent dir returns EXIT_ERROR');
+    my $result = App::FuguVM::CLI->run('init', "$tmpdir/occupied");
+    is($result, 1, 'init on a non-directory returns EXIT_ERROR');
 }
 
 # Issue 5: Non-existent project path
@@ -169,7 +182,7 @@ SKIP: {
 	2, 'unknown cache clear option returns EXIT_INVALID_ARGS');
 }
 
-# A 'cache list' on an empty cache mirrors 'image list'
+# A 'cache list' on an empty cache still succeeds
 {
     my $project = _cache_project();
     is(App::FuguVM::CLI->run("--project=$project", '--quiet', 'cache', 'list'),
@@ -258,7 +271,7 @@ SKIP: {
 
     # A working disk in this checkout, backed by the cached entry
     my $state_dir = "$project/.fuguvm/state";
-    App::FuguVM::Disk->new($state_dir)->create('default', undef, $base, 'qcow2');
+    App::FuguVM::Disk->new($state_dir)->create('default', undef, $base);
 
     # This test process stands in for a live QEMU
     make_path("$state_dir/default");
@@ -341,7 +354,7 @@ SKIP: {
     # Rebuild the disk as an overlay on a cached base
     my $base = $cache->store($key, $source, { root_password => 'pw' });
     unlink $disk->path('default');
-    $disk->create('default', undef, $base, 'qcow2');
+    $disk->create('default', undef, $base);
 
     is(App::FuguVM::CLI->run("--project=$project", '--quiet',
 	    'snapshot', 'save', 'deps'),
@@ -405,7 +418,7 @@ SKIP: {
 	or skip 'cannot create a test disk image', 4;
     my $base = $cache->store($key, $source, { root_password => 'pw' });
     App::FuguVM::Disk->new("$project/.fuguvm/state")
-	->create('default', undef, $base, 'qcow2');
+	->create('default', undef, $base);
     App::FuguVM::State->new("$project/.fuguvm/state", 'default')->mark_installed;
 
     is(_capture_stdout($project, 'snapshot', 'list', '--names'), '',

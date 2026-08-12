@@ -20,7 +20,7 @@ use v5.36;
 package Protocol::HAP::Store::File;
 
 use Carp       qw(croak);
-use Fcntl      qw(:flock O_CREAT O_EXCL O_TRUNC O_WRONLY);
+use Fcntl      qw(O_CREAT O_EXCL O_TRUNC O_WRONLY);
 use File::Path qw(make_path);
 use JSON::PP;
 use Protocol::HAP;
@@ -76,13 +76,6 @@ sub new ( $class, %args )
 	return $self;
 }
 
-# $self->path:
-#	The state directory.
-sub path ($self)
-{
-	return $self->{path};
-}
-
 # --- the accessory identity -----------------------------------------------
 
 sub load_accessory_keys ($self)
@@ -120,16 +113,8 @@ sub load_pairings ($self)
 
 	$self->{logger}->debug('Loading pairings from storage');
 	my %pairings;
-	open my $fh, '<', $self->{pairings_file} or do {
-		$self->{logger}->error( 'Cannot open pairings file %s: %s',
-			$self->{pairings_file}, $! );
-		die "Cannot open pairings file: $!";
-	};
-	flock( $fh, LOCK_SH ) or do {
-		$self->{logger}->error( 'Cannot lock pairings file %s: %s',
-			$self->{pairings_file}, $! );
-		die "Cannot lock pairings file: $!";
-	};
+	open my $fh, '<', $self->{pairings_file}
+	    or die 'Cannot open pairings file: ' . _reason($!);
 
 	while ( my $line = <$fh> ) {
 		chomp $line;
@@ -145,7 +130,6 @@ sub load_pairings ($self)
 		}
 	}
 
-	flock( $fh, LOCK_UN );
 	close $fh;
 
 	return \%pairings;
@@ -389,7 +373,6 @@ sub _write_atomic ( $self, $path, $data, $mode )
 #	the loop continues until the data is gone.
 sub _write_all ( $self, $fh, $data, $path )
 {
-	$data //= '';
 	my $offset = 0;
 	while ( $offset < length $data ) {
 		my $n = syswrite $fh, $data, length($data) - $offset, $offset;

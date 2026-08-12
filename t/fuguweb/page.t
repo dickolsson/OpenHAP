@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ex:ts=8 sw=4:
 # App::FuguWeb::Page: the chrome, the two byte separators, the
-# escaping, and the two optional files.
+# escaping, and the optional footer fragment.
 #
 # The test builds each site in a File::Temp directory. It never reads
 # the repository, so a change to web/ cannot break it.
@@ -42,6 +42,25 @@ sub site ( $rc, %files )
 	return $config;
 }
 
+# render($page, $title, $fragment):
+#	Write one page into a scratch file and return its bytes.
+#	write is the one public method, so the test reads back what
+#	it wrote.
+sub render ( $page, $title, $fragment )
+{
+	my $path = tempdir( CLEANUP => 1 ) . '/page.html';
+	$page->write( $path, $title, $fragment )
+	    or die 'write failed';
+
+	open my $fh, '<', $path or die "Cannot read $path: $!";
+	binmode $fh;
+	local $/ = undef;
+	my $html = <$fh>;
+	close $fh;
+
+	return $html;
+}
+
 my $RC = <<'RC';
 site = Example
 
@@ -56,7 +75,7 @@ RC
 
 subtest 'the whole chrome, in order' => sub {
 	my $page = App::FuguWeb::Page->new( config => site($RC) );
-	my $html = $page->document( 'Install', "<h1>Install</h1>\n" );
+	my $html = render( $page, 'Install', "<h1>Install</h1>\n" );
 
 	my $expected = <<"HTML";
 <!DOCTYPE html>
@@ -81,7 +100,7 @@ subtest 'the whole chrome, in order' => sub {
 </html>
 HTML
 
-	is( $html, $expected, 'the document is byte for byte the chrome' );
+	is( $html, $expected, 'the page is byte for byte the chrome' );
 };
 
 subtest 'the two separators are the UTF-8 bytes' => sub {
@@ -91,7 +110,7 @@ subtest 'the two separators are the UTF-8 bytes' => sub {
 		'the middle dot' );
 
 	my $page = App::FuguWeb::Page->new( config => site($RC) );
-	my $html = $page->document( 'Install', '' );
+	my $html = render( $page, 'Install', '' );
 
 	like( $html, qr/<title>Install \xe2\x80\x94 Example<\/title>/,
 		'an em dash separates the title from the site' );
@@ -110,7 +129,7 @@ nav "index.html" {
 }
 RC
 	my $page = App::FuguWeb::Page->new( config => $config );
-	my $html = $page->document( 'Tags < & >', '' );
+	my $html = render( $page, 'Tags < & >', '' );
 
 	like( $html, qr/<title>Tags &lt; &amp; &gt; /,
 		'the title is escaped' );
@@ -120,7 +139,7 @@ RC
 	# The shell chrome that this replaced substituted the title with
 	# sed. A slash ended the substitution and an ampersand meant
 	# "the whole match", so neither could ever reach a page.
-	$html = $page->document( 'openhapd.conf(5) / 8', '' );
+	$html = render( $page, 'openhapd.conf(5) / 8', '' );
 	like( $html, qr{<title>openhapd\.conf\(5\) / 8 },
 		'a title may hold a slash' );
 };
@@ -136,7 +155,7 @@ nav "search.html?q=1&r=2" {
 }
 RC
 	my $page = App::FuguWeb::Page->new( config => $config );
-	my $html = $page->document( 'Install', '' );
+	my $html = render( $page, 'Install', '' );
 
 	# A quote in a value would end the attribute early, and
 	# everything after it would become markup.
@@ -147,52 +166,22 @@ RC
 	# An ampersand is not markup, but it is not valid in an
 	# attribute either, and the same escape covers both.
 	like( $html, qr{href="index\.html\?a&amp;b"},
-		'the banner link is escaped' );
+		'the header link is escaped' );
 	like( $html, qr{href="search\.html\?q=1&amp;r=2"},
 		'a navigation href is escaped' );
 };
 
 subtest 'the footer fragment is optional' => sub {
 	my $page = App::FuguWeb::Page->new( config => site($RC) );
-	my $html = $page->document( 'Install', '' );
+	my $html = render( $page, 'Install', '' );
 	unlike( $html, qr/<footer>/, 'no fragment, no footer element' );
 	like( $html, qr/<\/main>\n<\/body>/, 'and no rule before one' );
 
 	$page = App::FuguWeb::Page->new(
 		config => site( $RC, 'footer.body.html' => "<p>ISC.</p>\n" ) );
-	$html = $page->document( 'Install', '' );
+	$html = render( $page, 'Install', '' );
 	like( $html, qr{</main>\n<hr>\n<footer>\n<p>ISC\.</p>\n</footer>\n},
 		'the fragment becomes the footer' );
-};
-
-subtest 'a project stylesheet is optional' => sub {
-	my $page = App::FuguWeb::Page->new( config => site($RC) );
-	my $html = $page->document( 'Install', '' );
-	unlike( $html, qr/extra\.css/, 'no file, no second link' );
-
-	$page = App::FuguWeb::Page->new(
-		config => site( $RC, 'extra.css' => "body { color: red }\n" ) );
-	$html = $page->document( 'Install', '' );
-	my $links = qq{<link rel="stylesheet" href="style.css">\n}
-	    . qq{<link rel="stylesheet" href="extra.css">\n};
-	like( $html, qr/\Q$links\E/,
-		'the project sheet comes after the base sheet' );
-};
-
-subtest 'write puts the same bytes on disk' => sub {
-	my $config = site($RC);
-	my $page   = App::FuguWeb::Page->new( config => $config );
-	my $path   = $config->root . '/out.html';
-
-	ok( $page->write( $path, 'Install', "<p>x</p>\n" ), 'write succeeds' );
-
-	open my $fh, '<', $path or die "Cannot read $path: $!";
-	binmode $fh;
-	my $written = do { local $/; <$fh> };
-	close $fh;
-
-	is( $written, $page->document( 'Install', "<p>x</p>\n" ),
-		'the file holds the document' );
 };
 
 done_testing();

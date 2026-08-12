@@ -72,8 +72,9 @@ sub make_verified_pair ()
 	};
 
 	my $controller = Protocol::HAP::Controller->new(
-		pin       => $PIN,
-		transport => $transport,
+		pin           => $PIN,
+		transport     => $transport,
+		controller_id => 'openhap-test-ctrl',
 	);
 
 	ok( $controller->pair_setup,  'pair-setup completes' );
@@ -144,15 +145,16 @@ subtest '[HAP-Encryption §4][HAP-Encryption §6] counters increment '
 	my @c2a = grep { $_->{direction} eq 'c2a' } @wire;
 	is( scalar @c2a, 2, 'two request transmissions' );
 
-	is( $controller->{encrypt_count},
+	my $ctrl_session = $controller->{session};
+	is( $ctrl_session->{encrypt_count},
 		2, 'controller write counter advanced once per frame' );
-	cmp_ok( $controller->{decrypt_count}, '>=', 2,
+	cmp_ok( $ctrl_session->{decrypt_count}, '>=', 2,
 		'controller read counter advanced per response frame' );
 	is( $session->{decrypt_count},
-		$controller->{encrypt_count},
+		$ctrl_session->{encrypt_count},
 		'accessory read counter mirrors controller writes' );
 	is( $session->{encrypt_count},
-		$controller->{decrypt_count},
+		$ctrl_session->{decrypt_count},
 		'accessory write counter mirrors controller reads' );
 
 };
@@ -161,8 +163,11 @@ subtest '[HAP-Encryption §9] tampered frame fails the session' => sub {
 	my ( $controller, $hap, $session ) = make_verified_pair();
 
 	# Build a valid encrypted request. Then flip a ciphertext bit.
-	my $raw = $controller->_build_request( 'GET', '/accessories' );
-	my $encrypted = $controller->_encrypt($raw);
+	my $raw = Protocol::HAP::HTTP::build_request(
+		method => 'GET',
+		path   => '/accessories',
+	);
+	my $encrypted = $controller->{session}->encrypt($raw);
 	substr( $encrypted, 5, 1 ) =
 	    substr( $encrypted, 5, 1 ) ^. "\x01";
 

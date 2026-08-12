@@ -37,13 +37,13 @@ is($count // 0, scalar @device_topics,
 
 # Test 3: GET /accessories requires pairing
 my $response = $env->http_request('GET', '/accessories');
-my ($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
+my $status = App::OpenHAP::Test::Integration::status($response);
 is($status, 470,
    '[HAP-HTTP §7] GET /accessories returns 470 when unpaired');
 
 # Test 4: GET /characteristics requires pairing
 $response = $env->http_request('GET', '/characteristics?id=1.10,1.20');
-($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
+$status = App::OpenHAP::Test::Integration::status($response);
 is($status, 470,
    '[HAP-HTTP §8] GET /characteristics returns 470 when unpaired');
 
@@ -51,7 +51,7 @@ is($status, 470,
 my $multiple_ok = 1;
 for my $aid (1..3) {
 	$response = $env->http_request('GET', "/characteristics?id=$aid.10");
-	($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
+	$status = App::OpenHAP::Test::Integration::status($response);
 	$multiple_ok = 0 unless defined $status && $status == 470;
 }
 ok($multiple_ok, 'repeated unpaired characteristic queries return 470');
@@ -60,13 +60,13 @@ ok($multiple_ok, 'repeated unpaired characteristic queries return 470');
 $response = $env->http_request('PUT', '/characteristics',
 	'{"characteristics":[{"aid":1,"iid":10,"value":1}]}',
 	{'Content-Type' => 'application/hap+json'});
-($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
+$status = App::OpenHAP::Test::Integration::status($response);
 is($status, 470,
    '[HAP-HTTP §9] PUT /characteristics returns 470 when unpaired');
 
 # Test 7: An invalid characteristic id still returns 470 when unpaired
 $response = $env->http_request('GET', '/characteristics?id=999.999');
-($status) = App::OpenHAP::Test::Integration::parse_http_response($response);
+$status = App::OpenHAP::Test::Integration::status($response);
 is($status, 470,
    'invalid characteristic request returns 470 when unpaired');
 

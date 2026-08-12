@@ -110,9 +110,6 @@ The module registers the subscription even when the client is not
 connected, so a caller can subscribe before the broker is up.
 .Fn resubscribe
 sends the set again after a reconnection.
-.Ss unsubscribe
-.Fn unsubscribe "$topic"
-removes a topic and its callback.
 .Ss publish
 .Fn publish "$topic" "$payload" "$retain"
 sends one message.

@@ -25,7 +25,6 @@ directory and one in the project root. The project file wins.
 
     vm "default" {
         version      7.8
-        arch         arm64
         memory       2048
         disk_size    8G
         ssh_port     2222
@@ -69,7 +68,7 @@ C<cache_dir> is folded in on purpose. Without it, C<fuguvm up> would
 write its images under C<$HOME> while the cache subcommands worked on
 a different tree.
 
-=head2 cache_dir, state_dir, default_vm, ssh_pubkey, project_root
+=head2 cache_dir, state_dir, default_vm, ssh_pubkey
 
 The top-level settings. C<cache_dir> expands a leading tilde;
 C<state_dir> resolves a relative path against the project root.

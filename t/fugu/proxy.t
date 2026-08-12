@@ -167,23 +167,6 @@ subtest 'the metadata table validates against the file' => sub {
 		undef, 'and store refuses a file that does not stat' );
 };
 
-subtest 'the metadata table forgets on request' => sub {
-	my $cache = cache();
-	my $meta  = Fugu::Proxy::Meta->new;
-
-	for my $n ( 1 .. 3 ) {
-		my $url = "http://host/pub/OpenBSD/$n.tgz";
-		$meta->store( $url, $cache->store( $url, "content $n" ), $cache );
-	}
-	is( $meta->count, 3, 'three entries' );
-
-	$meta->remove('http://host/pub/OpenBSD/2.tgz');
-	is( $meta->count, 2, 'remove drops one' );
-
-	$meta->clear;
-	is( $meta->count, 0, 'clear drops the rest' );
-};
-
 subtest 'warm builds an entry for every cached file' => sub {
 	my $cache = cache();
 	for my $n ( 1 .. 3 ) {
@@ -210,8 +193,7 @@ subtest 'the supervisor before anything runs' => sub {
 
 	ok( defined $proxy,      'the supervisor exists' );
 	ok( !$proxy->is_running, 'nothing runs yet' );
-	is( $proxy->port,     undef, 'and there is no port' );
-	is( $proxy->host_url, undef, 'and no URL' );
+	is( $proxy->port, undef, 'and there is no port' );
 	is( $proxy->wait_ready(1), 0, 'waiting for nothing gives up' );
 
 	my $port = $proxy->_find_free_port;
@@ -242,8 +224,7 @@ subtest 'the supervisor reads its port from the store' => sub {
 		store   => $store,
 	);
 
-	is( $proxy->port,     8099,                    'the port' );
-	is( $proxy->host_url, 'http://127.0.0.1:8099', 'and the host URL' );
+	is( $proxy->port, 8099, 'the port' );
 
 	# A stop with nothing running clears the record and does not
 	# complain

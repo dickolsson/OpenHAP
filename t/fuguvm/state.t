@@ -24,7 +24,7 @@ use_ok('App::FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
-    $state->set_vm_pid(12345);
+    $state->vm_pidfile->write_pid(12345);
     is($state->get_vm_pid, 12345, 'VM PID stored and retrieved');
     
     $state->clear_vm_pid;
@@ -36,7 +36,7 @@ use_ok('App::FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
-    $state->set_vm_pid(54321);
+    $state->vm_pidfile->write_pid(54321);
     
     # Make sure that the vm.pid file exists and contains the PID
     my $pid_file = "$tmpdir/test/vm.pid";
@@ -67,7 +67,7 @@ use_ok('App::FuguVM::State');
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
-    $state->set_vm_pid($$);
+    $state->vm_pidfile->write_pid($$);
     is($state->get_vm_pid, $$, 'VM PID set to current process');
     
     # Reload the state. The PID stays readable from the pid file.
@@ -86,96 +86,30 @@ use_ok('App::FuguVM::State');
     my $state = App::FuguVM::State->new($tmpdir, 'test');
     
     # Use the current process PID, which is running
-    $state->set_vm_pid($$);
+    $state->vm_pidfile->write_pid($$);
     ok($state->is_vm_running, 'is_vm_running returns true for running process');
     
     # Use an invalid PID
-    $state->set_vm_pid(99999999);
+    $state->vm_pidfile->write_pid(99999999);
     ok(!$state->is_vm_running, 'is_vm_running returns false for non-running process');
 }
 
-# Test proxy PID management
+# The proxy child rides on its own pid file, apart from the VM's
 {
     my $tmpdir = tempdir(CLEANUP => 1);
     my $state = App::FuguVM::State->new($tmpdir, 'test');
-    
-    $state->set_proxy_pid(67890);
-    is($state->get_proxy_pid, 67890, 'Proxy PID stored and retrieved');
-    
-    $state->clear_proxy_pid;
-    is($state->get_proxy_pid, undef, 'Proxy PID cleared');
-}
 
-# Test proxy PID is stored in separate file
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $state = App::FuguVM::State->new($tmpdir, 'test');
-    
-    $state->set_proxy_pid(11111);
-    
-    # Make sure that the proxy.pid file exists
-    my $proxy_pid_file = "$tmpdir/test/proxy.pid";
-    ok(-f $proxy_pid_file, 'proxy.pid file created');
-    open my $fh, '<', $proxy_pid_file;
-    my $pid_content = <$fh>;
-    close $fh;
-    chomp $pid_content;
-    is($pid_content, '11111', 'proxy.pid file contains correct PID');
-    
-    # Clear the PID. Make sure that the file is gone.
-    $state->clear_proxy_pid;
-    ok(!-f $proxy_pid_file, 'proxy.pid file removed after clear_proxy_pid');
-}
+    $state->proxy_pidfile->write_pid(22222);
+    is($state->proxy_pidfile->read_pid, 22222,
+	'proxy pidfile stores its own PID');
+    ok(-f "$tmpdir/test/proxy.pid", 'proxy.pid is a separate file');
 
-# Test is_proxy_running
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $state = App::FuguVM::State->new($tmpdir, 'test');
-    
-    # Use the current process PID, which is running
-    $state->set_proxy_pid($$);
-    ok($state->is_proxy_running, 'is_proxy_running returns true for running process');
-    
-    # Use an invalid PID
-    $state->set_proxy_pid(99999999);
-    ok(!$state->is_proxy_running, 'is_proxy_running returns false for non-running process');
-}
-
-# Test proxy port management
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $state = App::FuguVM::State->new($tmpdir, 'test');
-    
-    is($state->get_proxy_port, undef, 'No proxy port initially');
-    
-    $state->set_proxy_port(8080);
-    is($state->get_proxy_port, 8080, 'Proxy port stored and retrieved');
-    
-    # Make sure that the port persists in the status JSON
-    my $state2 = App::FuguVM::State->new($tmpdir, 'test');
-    is($state2->get_proxy_port, 8080, 'Proxy port persisted across reload');
-    
-    $state2->clear_proxy_port;
-    is($state2->get_proxy_port, undef, 'Proxy port cleared');
-}
-
-# Test VM and proxy PIDs are independent
-{
-    my $tmpdir = tempdir(CLEANUP => 1);
-    my $state = App::FuguVM::State->new($tmpdir, 'test');
-    
-    $state->set_vm_pid(11111);
-    $state->set_proxy_pid(22222);
-    
-    is($state->get_vm_pid, 11111, 'VM PID independent');
-    is($state->get_proxy_pid, 22222, 'Proxy PID independent');
-    
     $state->clear_vm_pid;
-    is($state->get_vm_pid, undef, 'VM PID cleared');
-    is($state->get_proxy_pid, 22222, 'Proxy PID unchanged after clearing VM PID');
-    
-    $state->clear_proxy_pid;
-    is($state->get_proxy_pid, undef, 'Proxy PID cleared');
+    is($state->proxy_pidfile->read_pid, 22222,
+	'proxy PID unchanged after clearing VM PID');
+
+    $state->proxy_pidfile->remove;
+    ok(!-f "$tmpdir/test/proxy.pid", 'proxy.pid removed');
 }
 
 # Test installation state

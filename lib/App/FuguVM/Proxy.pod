@@ -49,9 +49,8 @@ warms the metadata table, and serves until a C<SIGTERM> arrives.
 
 Return the proxy URL as the guest reaches it. QEMU user-mode
 networking puts the host at 10.0.2.2, and no other address gets out of
-the SLIRP network. The C<host_url> of the parent class names the
-loopback address, which is the same proxy but is unreachable from the
-guest.
+the SLIRP network. The loopback address serves the same proxy, but the
+guest cannot reach it.
 
 The method returns C<undef> while the proxy does not run.
 

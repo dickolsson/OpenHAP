@@ -196,8 +196,9 @@ subtest 'full pairing flow over the sans-IO engine' => sub {
 	};
 
 	my $controller = Protocol::HAP::Controller->new(
-		pin       => '123-45-678',
-		transport => $transport,
+		pin           => '123-45-678',
+		transport     => $transport,
+		controller_id => 'openhap-test-ctrl',
 	);
 
 	ok( $controller->pair_setup,  'pair-setup completes' );
@@ -236,8 +237,9 @@ subtest 'non-ASCII values survive the encrypted JSON path' => sub {
 	};
 
 	my $controller = Protocol::HAP::Controller->new(
-		pin       => '123-45-678',
-		transport => $transport,
+		pin           => '123-45-678',
+		transport     => $transport,
+		controller_id => 'openhap-test-ctrl',
 	);
 
 	ok( $controller->pair_setup,  'pair-setup completes' );

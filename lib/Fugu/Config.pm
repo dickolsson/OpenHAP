@@ -179,21 +179,6 @@ sub setting_names ($self)
 	return sort keys %{ $self->{settings} };
 }
 
-# $self->bool($key, $default):
-#	Return a top-level setting as a switch. The accepted spellings
-#	are yes, true, on and 1, and their opposites no, false, off and
-#	0. Any other value returns the default and records an error, so
-#	a caller that checks gets told, and one that does not still
-#	gets a defined answer instead of the opposite of what the file
-#	said.
-sub bool ( $self, $key, $default = 0 )
-{
-	my $value = $self->{settings}{$key};
-	return $default unless defined $value;
-
-	return $self->parse_bool( $value, $default );
-}
-
 # $self->parse_bool($value, $default):
 #	The same switch grammar, for a value that a caller already
 #	holds. A block setting comes through here.
@@ -247,13 +232,6 @@ sub block ( $self, $type, $name )
 	}
 
 	return $found;
-}
-
-# $self->block_types:
-#	Return the block types that the file used, sorted.
-sub block_types ($self)
-{
-	return sort keys %{ $self->{blocks} };
 }
 
 # $class->find_project_root($marker):

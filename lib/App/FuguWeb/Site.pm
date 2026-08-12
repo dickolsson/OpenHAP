@@ -19,6 +19,7 @@ use v5.36;
 
 package App::FuguWeb::Site;
 
+use App::FuguWeb;
 use App::FuguWeb::Index;
 use App::FuguWeb::Page;
 use App::FuguWeb::Render;
@@ -48,16 +49,12 @@ use POSIX ();
 # that a cross-reference uses.
 use constant STAGING_DIR => '.man';
 
-# The stylesheet that ships with the tool, and the name it takes in
-# the output.
-use constant {
-	SHARE_STYLESHEET  => 'share/fuguweb/style.css',
-	OUTPUT_STYLESHEET => 'style.css',
-};
+# The stylesheet that ships with the tool, under the share path.
+use constant SHARE_STYLESHEET => 'share/fuguweb/style.css';
 
 # App::FuguWeb::Site->new(%args):
 #	config => $config	the site description (required)
-#	out    => $dir		the output directory (default: out_dir)
+#	out    => $dir		the output directory (required)
 #	log    => $logger	default: Fugu::Log->default
 #	render => $render	default: one over the same description
 sub new ( $class, %args )
@@ -67,11 +64,10 @@ sub new ( $class, %args )
 	    unless defined $config;
 
 	my $log = $args{log} // Fugu::Log->default;
-	my $out = $args{out} // ( $config->root . '/' . $config->out_dir );
 
 	return bless {
 		config => $config,
-		out    => $out,
+		out    => $args{out},
 		log    => $log,
 		render => $args{render} // App::FuguWeb::Render->new(
 			config => $config,
@@ -80,11 +76,9 @@ sub new ( $class, %args )
 	}, $class;
 }
 
-# $self->config, $self->out, $self->render:
-#	The site description, the output directory, and the renderers.
+# $self->config:
+#	The site description.
 sub config ($self) { return $self->{config}; }
-sub out    ($self) { return $self->{out}; }
-sub render ($self) { return $self->{render}; }
 
 # $self->staging:
 #	The mdoc staging directory. It lives inside the output
@@ -95,20 +89,25 @@ sub staging ($self)
 }
 
 # $self->missing_tool:
-#	The name of the first renderer that is not installed, or undef.
+#	The renderer that failed the probe of the last build, or
+#	undef. The caller maps it to its own exit code without a
+#	second probe.
 sub missing_tool ($self)
 {
-	return $self->{render}->probe;
+	return $self->{missing_tool};
 }
 
 # $self->build:
 #	Render the whole site. The method returns true on success, and
-#	undef with a message in the log otherwise.
+#	undef with a message in the log otherwise. The probe comes
+#	first, so the failure names the tool that is missing and never
+#	blames a manual source for it.
 sub build ($self)
 {
-	my $missing = $self->missing_tool;
-	if ( defined $missing ) {
-		$self->{log}->error( '%s is not installed', $missing );
+	$self->{missing_tool} = $self->{render}->probe;
+	if ( defined $self->{missing_tool} ) {
+		$self->{log}
+		    ->error( '%s is not installed', $self->{missing_tool} );
 		return;
 	}
 
@@ -143,16 +142,15 @@ sub clean ($self)
 	# A build writes one flat directory of files, plus the staging
 	# directory while it runs. Anything else in there means the
 	# caller named a directory that is not a site.
-	opendir my $dh, $self->{out} or do {
+	my $names = App::FuguWeb::list_dir( $self->{out} );
+	unless ($names) {
 		$self->{log}->error( 'Cannot read %s: %s', $self->{out}, $! );
 		return;
-	};
-	my @names = grep { $_ ne '.' && $_ ne '..' } readdir $dh;
-	closedir $dh;
+	}
 
-	for my $name (@names) {
+	for my $name (@$names) {
 		next if $name eq STAGING_DIR;
-		next if -f "$self->{out}/$name" && !-l "$self->{out}/$name";
+		next if $self->_build_made($name);
 
 		$self->{log}->error(
 '%s holds %s, which no build made; refusing to remove it',
@@ -193,8 +191,9 @@ sub _check_target ($self)
 	$why = 'the root of the filesystem' if $target eq '/';
 	$why = 'the home directory'
 	    if !$why && defined $home && $target eq $home;
-	$why = 'the project root'  if !$why && $target eq $root;
-	$why = 'above the project' if !$why && _holds( $target, $root );
+	$why = 'the project root' if !$why && $target eq $root;
+	$why = 'above the project'
+	    if !$why && App::FuguWeb::path_below( $root, $target );
 
 	return 1 unless $why;
 
@@ -210,24 +209,22 @@ sub _check_target ($self)
 #	removal too.
 sub _prune_output ($self)
 {
-	my %expected = map { $_ => 1 } $self->_inventory;
+	my %expected = map { $_ => 1 } $self->{config}->inventory;
 
-	opendir my $dh, $self->{out} or do {
+	my $names = App::FuguWeb::list_dir( $self->{out} );
+	unless ($names) {
 		$self->{log}->error( 'Cannot read %s: %s', $self->{out}, $! );
 		return;
-	};
-	my @names = grep { $_ ne '.' && $_ ne '..' } readdir $dh;
-	closedir $dh;
+	}
 
-	for my $name ( sort @names ) {
+	for my $name (@$names) {
 		next if $expected{$name};
 
 		# A plain file only, and never a tree. The build writes
 		# one flat directory of files, so a file is the only
 		# thing it can have left behind. Anything else belongs
 		# to whoever put it there, and the check reports it.
-		my $path = "$self->{out}/$name";
-		unless ( -f $path && !-l $path ) {
+		unless ( $self->_build_made($name) ) {
 			$self->{log}->warning(
 				'%s is in the output and no build made it',
 				$name );
@@ -237,7 +234,7 @@ sub _prune_output ($self)
 		$self->{log}
 		    ->info( 'Removing %s, which the site no longer holds',
 			$name );
-		unlink $path
+		unlink "$self->{out}/$name"
 		    or
 		    $self->{log}->warning( 'Cannot remove %s: %s', $name, $! );
 	}
@@ -245,15 +242,16 @@ sub _prune_output ($self)
 	return 1;
 }
 
-# $self->_inventory:
-#	Every name that the output directory must hold after a build.
-sub _inventory ($self)
+# $self->_build_made($name):
+#	Report whether one entry of the output directory is something
+#	a build makes: a plain file, and never a symlink. The clean
+#	and the prune share this rule, so the two can never disagree
+#	about what a build owns.
+sub _build_made ( $self, $name )
 {
-	my $config = $self->{config};
+	my $path = "$self->{out}/$name";
 
-	return ( map { $_->{file} } $config->pages ),
-	    ( map { $_->page } map { $_->manuals } $config->groups ),
-	    OUTPUT_STYLESHEET, $config->assets;
+	return -f $path && !-l $path ? 1 : 0;
 }
 
 # _absolute($path):
@@ -283,16 +281,6 @@ sub _absolute ($path)
 	}
 
 	return @parts ? '/' . join '/', @parts : '/';
-}
-
-# _holds($dir, $other):
-#	Report whether $dir is $other or holds it somewhere below.
-sub _holds ( $dir, $other )
-{
-	return 1 if $dir eq $other;
-	return 1 if $dir eq '/';
-
-	return index( $other, "$dir/" ) == 0 ? 1 : 0;
 }
 
 # $self->pod_date:
@@ -347,20 +335,29 @@ sub _prepare_output ($self)
 	return Fugu::File->ensure_dir( $self->staging );
 }
 
+# $self->_copy($from, $to):
+#	Copy one file, as bytes, through Fugu::File. The method
+#	returns true on success, and undef with a message in the log
+#	otherwise.
+sub _copy ( $self, $from, $to )
+{
+	my $bytes = Fugu::File->read($from);
+	unless ( defined $bytes ) {
+		$self->{log}->error( 'Cannot read %s', $from );
+		return;
+	}
+
+	return Fugu::File->write( $to, $bytes );
+}
+
 # $self->_stage_mdoc:
 #	Copy every mdoc source into the staging directory, under the
 #	name that a cross-reference refers to it by.
 sub _stage_mdoc ($self)
 {
 	for my $manual ( $self->_mdoc_manuals ) {
-		my $bytes = Fugu::File->read( $manual->path );
-		unless ( defined $bytes ) {
-			$self->{log}->error( 'Cannot read %s', $manual->path );
-			return;
-		}
-
-		Fugu::File->write( $self->staging . '/' . $manual->staged_name,
-			$bytes )
+		$self->_copy( $manual->path,
+			$self->staging . '/' . $manual->staged_name )
 		    or return;
 	}
 
@@ -391,11 +388,8 @@ sub _copy_stylesheet ($self)
 		return;
 	}
 
-	my $bytes = Fugu::File->read($path);
-	return unless defined $bytes;
-
-	return Fugu::File->write( $self->{out} . '/' . OUTPUT_STYLESHEET,
-		$bytes );
+	return $self->_copy( $path,
+		$self->{out} . '/' . App::FuguWeb::STYLESHEET );
 }
 
 # $self->_copy_assets:
@@ -407,10 +401,7 @@ sub _copy_assets ($self)
 	my $dir = $self->{config}->source_path;
 
 	for my $name ( $self->{config}->assets ) {
-		my $bytes = Fugu::File->read("$dir/$name");
-		return unless defined $bytes;
-
-		Fugu::File->write( $self->{out} . "/$name", $bytes )
+		$self->_copy( "$dir/$name", $self->{out} . "/$name" )
 		    or return;
 	}
 

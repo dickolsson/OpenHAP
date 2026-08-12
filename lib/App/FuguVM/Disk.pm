@@ -32,21 +32,16 @@ sub new ( $class, $state_dir )
 	return $self;
 }
 
-# $self->create($name, $size, $backing_image, $backing_format):
+# $self->create($name, $size, $backing_image):
 #	Create the VM disk image. $size can be undef for an overlay.
 #	The overlay then inherits the virtual size of $backing_image.
-#	$backing_format names the format of $backing_image. Use 'qcow2'
-#	for cached base images and snapshots. Use 'raw' in other cases.
+#	Every backing image is a qcow2: a cached base image or a
+#	snapshot.
 #
 #	The method returns early when the path already exists. Thus
 #	callers that replace a disk with an overlay must unlink the
 #	disk first.
-sub create (
-	$self, $name,
-	$size           = undef,
-	$backing_image  = undef,
-	$backing_format = 'raw'
-    )
+sub create ( $self, $name, $size = undef, $backing_image = undef )
 {
 	my $path = $self->path($name);
 
@@ -57,7 +52,7 @@ sub create (
 	my @cmd = ( 'qemu-img', 'create', '-f', 'qcow2' );
 
 	if ( defined $backing_image ) {
-		push @cmd, '-b', $backing_image, '-F', $backing_format;
+		push @cmd, '-b', $backing_image, '-F', 'qcow2';
 	}
 
 	push @cmd, $path;
@@ -77,26 +72,9 @@ sub create (
 	return $path;
 }
 
-sub disk_exists ( $self, $name )
-{
-	return -f $self->path($name);
-}
-
 sub path ( $self, $name )
 {
 	return "$self->{state_dir}/$name/disk.qcow2";
-}
-
-sub remove ( $self, $name )
-{
-	my $path = $self->path($name);
-	if ( -f $path ) {
-		unlink $path or do {
-			warn "Cannot remove $path: $!";
-			return 0;
-		};
-	}
-	return 1;
 }
 
 # $self->info($name):

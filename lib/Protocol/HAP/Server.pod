@@ -103,7 +103,8 @@ holds.
 
 C<queue_event($aid, $iid, $value, $originator)> queues a
 notification; the value changes of C</characteristics> PUT and the
-device-side C<notify_change> path call it. Events coalesce for 250 ms
+device-side C<notify_change> path call it. Without a C<$value>, the
+current value of the characteristic goes out. Events coalesce for 250 ms
 through the C<after>/C<cancel> contract. C<flush_events> sends every
 queued event now; a host without the timer contract calls it
 directly. C<send_event> delivers one event to the subscribed

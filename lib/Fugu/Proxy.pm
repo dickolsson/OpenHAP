@@ -54,7 +54,6 @@ use constant {
 #	cache   => $cache	a Fugu::Proxy::Cache (required)
 #	pidfile => $pidfile	a Fugu::Pidfile for the child (required)
 #	store   => $store	a Fugu::StateFile that holds the port (required)
-#	child   => $class	the class whose run_child the child calls
 #	logfile => $path	where the child's output goes
 #	log     => $logger	default: Fugu::Log->default
 #	ports   => [$first, $last]	the range to look in
@@ -71,7 +70,6 @@ sub new ( $class, %args )
 		cache   => $args{cache},
 		pidfile => $args{pidfile},
 		store   => $args{store},
-		child   => $args{child}   // $class,
 		logfile => $args{logfile} // '/dev/null',
 		log     => $args{log}     // Fugu::Log->default,
 		ports   => $ports,
@@ -87,8 +85,7 @@ sub cache ($self)
 	return $self->{cache};
 }
 
-# $self->error:
-#	Return the most recent failure.
+# $self->error: the most recent failure.
 sub error ($self)
 {
 	return $self->{error};
@@ -99,16 +96,6 @@ sub error ($self)
 sub port ($self)
 {
 	return $self->{store}->get('proxy_port');
-}
-
-# $self->host_url:
-#	Return the proxy URL as the host sees it.
-sub host_url ($self)
-{
-	my $port = $self->port;
-	return if !defined $port;
-
-	return "http://127.0.0.1:$port";
 }
 
 # $self->is_running:
@@ -136,9 +123,10 @@ sub start ($self)
 		return;
 	}
 
+	my $child  = ref $self;
 	my $result = Fugu::Process->spawn_perl(
-		code => "use $self->{child}; $self->{child}->run_child(\@ARGV)",
-		args => [ $port, $self->{cache}->dir ],
+		code      => "use $child; $child->run_child(\@ARGV)",
+		args      => [ $port, $self->{cache}->dir ],
 		daemonize => 1,
 		stdout    => $self->{logfile},
 		stderr    => $self->{logfile},
@@ -204,6 +192,8 @@ sub serve ( $self, $port )
 {
 	eval { require HTTP::Daemon; require LWP::UserAgent; 1 }
 	    or die "Fugu::Proxy needs HTTP::Daemon and LWP::UserAgent: $@";
+	require HTTP::Request;
+	require HTTP::Response;
 	require IO::Select;
 
 	# A client can disconnect in the middle of a transfer
@@ -299,10 +289,20 @@ sub _handle_client ( $self, $client )
 		$self->{log}->debug( '%s %s from %s', $method, $url,
 			$client->peerhost );
 
-		my $meta =
-		    ( $method eq 'GET' || $method eq 'HEAD' )
-		    ? $self->{meta}->lookup($url)
-		    : undef;
+		my $meta;
+		if ( $method eq 'GET' || $method eq 'HEAD' ) {
+			$meta = $self->{meta}->lookup($url);
+
+			# A disk hit the metadata cache does not know yet:
+			# build its entry and stream it like every hit
+			unless ( defined $meta ) {
+				my $cached = $self->{cache}->lookup($url);
+				$meta =
+				    $self->{meta}
+				    ->store( $url, $cached, $self->{cache} )
+				    if defined $cached;
+			}
+		}
 
 		if ( defined $meta ) {
 			$self->{log}->info( 'CACHE HIT: %s [%d bytes]',
@@ -326,20 +326,11 @@ sub _handle_client ( $self, $client )
 
 sub _process_request ( $self, $request )
 {
-	require HTTP::Response;
-
 	my $method = $request->method;
 	my $url    = $request->uri->as_string;
 
 	return $self->_forward($request)
 	    if $method ne 'GET' && $method ne 'HEAD';
-
-	my $cached = $self->{cache}->lookup($url);
-	if ( defined $cached ) {
-		$self->{log}->info( 'CACHE HIT (disk): %s', $url );
-		$self->{meta}->store( $url, $cached, $self->{cache} );
-		return $self->_serve_whole( $cached, $request );
-	}
 
 	$self->{log}->info( 'CACHE MISS: fetching %s', $url );
 	my $start    = time;
@@ -376,9 +367,6 @@ sub _process_request ( $self, $request )
 
 sub _forward ( $self, $request )
 {
-	require HTTP::Request;
-	require LWP::UserAgent;
-
 	my $agent = LWP::UserAgent->new(
 		timeout => 300,
 		agent   => 'Fugu-Proxy/1.0',
@@ -392,28 +380,6 @@ sub _forward ( $self, $request )
 	$forwarded->content( $request->content ) if $request->content;
 
 	return $agent->request($forwarded);
-}
-
-# $self->_serve_whole($path, $request):
-#	Build a response that holds the whole cached file. This is the
-#	path for a client that arrived before the metadata cache knew
-#	the file.
-sub _serve_whole ( $self, $path, $request )
-{
-	require HTTP::Response;
-
-	my $content = Fugu::File->read($path);
-	return HTTP::Response->new( 500, 'Cache read error' )
-	    unless defined $content;
-
-	my $response = HTTP::Response->new( 200, 'OK' );
-	$response->header( 'Content-Length' => length $content );
-	$response->header( 'X-Cache'        => 'HIT' );
-	$response->header(
-		'Content-Type' => $self->{cache}->content_type($path) );
-	$response->content($content) if $request->method eq 'GET';
-
-	return $response;
 }
 
 # $self->_serve_streaming($socket, $meta, $request):
@@ -465,7 +431,7 @@ sub _send_headers ( $self, $socket, $code, $message, $headers )
 	$head .= "$_: $headers->{$_}\r\n" for sort keys %$headers;
 	$head .= "\r\n";
 
-	return _write_all( $socket, $head );
+	return Fugu::File->_write_all( $socket, $head, 'client socket' );
 }
 
 sub _stream_file ( $self, $socket, $path, $size )
@@ -489,7 +455,7 @@ sub _stream_file ( $self, $socket, $path, $size )
 			last;
 		}
 
-		unless ( _write_all( $socket, $buffer ) ) {
+		unless ( Fugu::File->_write_all( $socket, $buffer, $path ) ) {
 			$self->{log}->error( 'Write error after %d bytes: %s',
 				$sent, $! );
 			close $fh;
@@ -502,22 +468,6 @@ sub _stream_file ( $self, $socket, $path, $size )
 	close $fh;
 
 	return $sent;
-}
-
-# _write_all($socket, $data):
-#	Write every byte. A socket takes a partial write whenever the
-#	send buffer fills, which is every large transfer.
-sub _write_all ( $socket, $data )
-{
-	my $offset = 0;
-	while ( $offset < length $data ) {
-		my $n = syswrite $socket, $data, length($data) - $offset,
-		    $offset;
-		return unless defined $n;
-		$offset += $n;
-	}
-
-	return 1;
 }
 
 package Fugu::Proxy::Cache;
@@ -803,22 +753,6 @@ sub store ( $self, $url, $path, $cache = undef )
 	$self->{entries}{$url} = $entry;
 
 	return $entry;
-}
-
-# $self->remove($url):
-#	Forget one URL.
-sub remove ( $self, $url )
-{
-	delete $self->{entries}{$url};
-	return $self;
-}
-
-# $self->clear:
-#	Forget every URL.
-sub clear ($self)
-{
-	$self->{entries} = {};
-	return $self;
 }
 
 # $self->count:

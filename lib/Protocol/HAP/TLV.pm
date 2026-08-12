@@ -5,10 +5,8 @@ package Protocol::HAP::TLV;
 # TLV8 encoding and decoding for the HomeKit Accessory Protocol
 # The format is Type-Length-Value with 8-bit type and length
 # fields. The codec splits values of more than 255 bytes into
-# multiple chunks with the same type.
-
-# TLV type for the separator. List Pairings responses use it.
-use constant kTLVType_Separator => 0xFF;
+# multiple chunks with the same type. The pairing type values,
+# including the 0xFF separator, live in Protocol::HAP::Pairing.
 
 # encode(@items) - Encode type-value pairs in order
 # The function takes a list of type, value pairs. It keeps the
@@ -39,12 +37,6 @@ sub encode (@items)
 	}
 
 	return $out;
-}
-
-# encode_separator() - Encode a TLV separator (type 0xFF, length 0)
-sub encode_separator()
-{
-	return pack( 'CC', kTLVType_Separator, 0 );
 }
 
 # decode($data) - Decode a TLV8 buffer into a type => value hash

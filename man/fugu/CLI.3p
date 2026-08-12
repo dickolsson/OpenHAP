@@ -168,6 +168,13 @@ The module defines the codes that every tool shares:
 7
 .El
 .Pp
+A caller can import
+.Dv EXIT_SUCCESS
+and
+.Dv EXIT_ERROR
+with
+.Ql use Fugu::CLI qw(EXIT_SUCCESS EXIT_ERROR) .
+.Pp
 A code that belongs to one tool is defined by that tool, not here, and
 starts above these.
 .Sh RETURN VALUES

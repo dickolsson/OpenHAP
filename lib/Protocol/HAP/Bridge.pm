@@ -2,7 +2,9 @@ use v5.36;
 
 package Protocol::HAP::Bridge;
 
-require Protocol::HAP::Accessory;
+use Protocol::HAP::Accessory;
+use Protocol::HAP::Service;
+use Protocol::HAP::Characteristic;
 our @ISA = qw(Protocol::HAP::Accessory);
 
 sub new ( $class, %args )
@@ -29,9 +31,6 @@ sub new ( $class, %args )
 
 sub _add_protocol_info_service ($self)
 {
-	require Protocol::HAP::Service;
-	require Protocol::HAP::Characteristic;
-
 	my $protocol = Protocol::HAP::Service->new(
 		type   => 'ProtocolInformation',
 		iid    => 8,

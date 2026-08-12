@@ -104,14 +104,25 @@ sub reset_auth_attempts ($self)
 	return;
 }
 
-# $self->_record_failed_attempt:
-#	Count and persist a failed attempt (§8).
-sub _record_failed_attempt ($self)
+# $self->_auth_failure($message):
+#	Count and persist a failed attempt (§8), log it with the
+#	attempt count, and return the M4 error response: MaxTries at
+#	the limit, Authentication below it.
+sub _auth_failure ( $self, $message )
 {
 	$self->{failed_auth_attempts}++;
 	$self->{store}->set_auth_attempts( $self->{failed_auth_attempts} );
 
-	return;
+	$self->{logger}->warning(
+		'%s (attempt %d/%d)',
+		$message, $self->{failed_auth_attempts},
+		MAX_AUTH_ATTEMPTS
+	);
+
+	if ( $self->{failed_auth_attempts} >= MAX_AUTH_ATTEMPTS ) {
+		return $self->_error_response( kTLVError_MaxTries, 4 );
+	}
+	return $self->_error_response( kTLVError_Authentication, 4 );
 }
 
 # $self->get_failed_attempts:
@@ -121,28 +132,30 @@ sub get_failed_attempts ($self)
 	return $self->{failed_auth_attempts};
 }
 
-# _get_accessory_pairing_id() - Generate a MAC-like pairing ID
-# from the public key
-sub _get_accessory_pairing_id ($self)
+# $self->_decode_request($body, $label):
+#	The decode-and-check preamble of both pairing endpoints.
+#	Return the request TLV as a hash reference and the state, or
+#	the empty list for a malformed TLV or a missing State
+#	([HAP-TLV8 §10]).
+sub _decode_request ( $self, $body, $label )
 {
-	my $id = uc( unpack( 'H*', substr( $self->{accessory_ltpk}, 0, 6 ) ) );
-	return join( ':', $id =~ /../g );
+	my %request = Protocol::HAP::TLV::decode($body);
+
+	unless ( defined $request{ kTLVType_State() } ) {
+		$self->{logger}
+		    ->warning( '%s rejected: malformed TLV request', $label );
+		return;
+	}
+
+	return ( \%request, unpack( 'C', $request{ kTLVType_State() } ) );
 }
 
 sub handle_pair_setup ( $self, $body, $session )
 {
+	my ( $request, $state ) = $self->_decode_request( $body, 'Pair-setup' );
+	return $self->_error_response( kTLVError_Unknown, 2 ) unless $request;
 
-	my %request = Protocol::HAP::TLV::decode($body);
-
-	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
-	unless ( defined $request{ kTLVType_State() } ) {
-		$self->{logger}
-		    ->warning('Pair-setup rejected: malformed TLV request');
-		return $self->_error_response( kTLVError_Unknown, 2 );
-	}
-
-	my $state  = unpack( 'C', $request{ kTLVType_State() } );
-	my $method = unpack( 'C', $request{ kTLVType_Method() } // "\x00" );
+	my $method = unpack( 'C', $request->{ kTLVType_Method() } // "\x00" );
 	$self->{logger}
 	    ->debug( 'Pair-setup M%d received (method=%d)', $state, $method );
 
@@ -155,10 +168,10 @@ sub handle_pair_setup ( $self, $body, $session )
 		return $self->_pair_setup_m1_m2( $session, $method );
 	}
 	elsif ( $state == 3 ) {
-		return $self->_pair_setup_m3_m4( \%request, $session );
+		return $self->_pair_setup_m3_m4( $request, $session );
 	}
 	elsif ( $state == 5 ) {
-		return $self->_pair_setup_m5_m6( \%request, $session );
+		return $self->_pair_setup_m5_m6( $request, $session );
 	}
 
 	return $self->_error_response( kTLVError_Unknown, 2 );
@@ -204,7 +217,7 @@ sub _pair_setup_m1_m2 ( $self, $session, $method = 0 )
 	# Initialize SRP
 	my $srp  = Protocol::HAP::SRP->new( password => $self->{pin} );
 	my $salt = $srp->generate_salt();
-	$srp->compute_verifier( $salt, $self->{pin} );
+	$srp->compute_verifier;
 	$srp->generate_server_public();
 
 	# Store the SRP session
@@ -232,25 +245,13 @@ sub _pair_setup_m3_m4 ( $self, $request, $session )
 	# Compute the session key. It returns undef if A mod N == 0.
 	my $K = $srp->compute_session_key($A);
 	unless ( defined $K ) {
-		$self->_record_failed_attempt;
-		$self->{logger}
-		    ->warning('Pair-setup M3 rejected: invalid public key A');
-		if ( $self->{failed_auth_attempts} >= MAX_AUTH_ATTEMPTS ) {
-			return $self->_error_response( kTLVError_MaxTries, 4 );
-		}
-		return $self->_error_response( kTLVError_Authentication, 4 );
+		return $self->_auth_failure(
+			'Pair-setup M3 rejected: invalid public key A');
 	}
 
 	unless ( $srp->verify_client_proof($M1) ) {
-		$self->_record_failed_attempt;
-		$self->{logger}->warning(
-'Pair-setup M3 proof verification failed (attempt %d/%d)',
-			$self->{failed_auth_attempts}, MAX_AUTH_ATTEMPTS
-		);
-		if ( $self->{failed_auth_attempts} >= MAX_AUTH_ATTEMPTS ) {
-			return $self->_error_response( kTLVError_MaxTries, 4 );
-		}
-		return $self->_error_response( kTLVError_Authentication, 4 );
+		return $self->_auth_failure(
+			'Pair-setup M3 proof verification failed');
 	}
 
 	# Successful SRP proof resets the attempt counter (§8)
@@ -277,7 +278,7 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 	my $encrypted_data = $request->{ kTLVType_EncryptedData() };
 
 	# Derive the encryption key from the SRP session key
-	my $session_key = $srp->get_session_key();
+	my $session_key = $srp->session_key;
 	my $encrypt_key = Protocol::HAP::Crypto->hkdf_sha512( $session_key,
 		'Pair-Setup-Encrypt-Salt', 'Pair-Setup-Encrypt-Info', 32 );
 
@@ -333,7 +334,8 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 		'Pair-Setup-Accessory-Sign-Salt',
 		'Pair-Setup-Accessory-Sign-Info', 32
 	);
-	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
+	my $accessory_pairing_id =
+	    Protocol::HAP::device_id( $self->{accessory_ltpk} );
 	my $accessory_info =
 	    $accessory_x . $accessory_pairing_id . $self->{accessory_ltpk};
 	my $accessory_signature = Protocol::HAP::Crypto->ed25519_sign(
@@ -365,24 +367,17 @@ sub _pair_setup_m5_m6 ( $self, $request, $session )
 
 sub handle_pair_verify ( $self, $body, $session )
 {
+	my ( $request, $state ) =
+	    $self->_decode_request( $body, 'Pair-verify' );
+	return $self->_error_response( kTLVError_Unknown, 2 ) unless $request;
 
-	my %request = Protocol::HAP::TLV::decode($body);
-
-	# Reject a malformed TLV or a missing State ([HAP-TLV8 §10])
-	unless ( defined $request{ kTLVType_State() } ) {
-		$self->{logger}
-		    ->warning('Pair-verify rejected: malformed TLV request');
-		return $self->_error_response( kTLVError_Unknown, 2 );
-	}
-
-	my $state = unpack( 'C', $request{ kTLVType_State() } );
 	$self->{logger}->debug( 'Pair-verify M%d received', $state );
 
 	if ( $state == 1 ) {
-		return $self->_pair_verify_m1_m2( \%request, $session );
+		return $self->_pair_verify_m1_m2( $request, $session );
 	}
 	elsif ( $state == 3 ) {
-		return $self->_pair_verify_m3_m4( \%request, $session );
+		return $self->_pair_verify_m3_m4( $request, $session );
 	}
 
 	return $self->_error_response( kTLVError_Unknown, 2 );
@@ -410,7 +405,8 @@ sub _pair_verify_m1_m2 ( $self, $request, $session )
 	$session->{pairing_state}{shared_secret}    = $shared_secret;
 
 	# Generate the accessory info and signature
-	my $accessory_pairing_id = $self->_get_accessory_pairing_id();
+	my $accessory_pairing_id =
+	    Protocol::HAP::device_id( $self->{accessory_ltpk} );
 	my $accessory_info =
 	    $accessory_public . $accessory_pairing_id . $ios_public_key;
 	my $accessory_signature = Protocol::HAP::Crypto->ed25519_sign(
