@@ -87,7 +87,7 @@ $kdump =~ s/\\\n\t//g;
 # promises before the syscall. Thus the on-the-wire string is the
 # sorted form of the production set.
 my $promises = join ' ',
-    sort qw(stdio rpath wpath cpath fattr flock inet dns unix);
+    sort qw(stdio rpath wpath cpath fattr inet dns unix);
 like($kdump, qr/CALL\s+pledge\(/, 'pledge(2) is called');
 like($kdump, qr/STRU\s+promise="\Q$promises\E"/,
      'the promise string is exactly the production set');
