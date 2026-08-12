@@ -57,14 +57,13 @@ found the truth; keep these in mind before you trust a "no callers" claim:
 
 - `get_failed_attempts` — eight test callers, two with conformance citations.
 - The nine `IMSG_*` constants — `mdns-control.t` pins the positional enum.
-- The `Host::listen` memoization — a conformance test forks after binding
-  port 0, and the guard keeps the child on the parent's port.
+- The `Host::listen` memoization — a conformance test forks after binding port
+  0, and the guard keeps the child on the parent's port.
 - The `Session` pass-through guards — `hap-encryption.t` asserts them.
 - `Pairing::new` validation — the sidecar's SYNOPSIS depends on it.
 - `Store::Memory`'s deep copy — a documented contract.
 - The `Privdrop` pre-check — a distinct diagnostic.
-- Both `hapctl uptime` checks — shape and future-timestamp are different
-  faults.
+- Both `hapctl uptime` checks — shape and future-timestamp are different faults.
 - `Control`'s `MAX_REPLY` bound and encode `eval` — a blocking write and an
   else-unanswered request.
 - The `Devices.pm` eval — it guards `require` of config-named classes after
