@@ -13,10 +13,10 @@ the normative source the conformance tier cites:
 - `MQTT.md` — index and overview; entry point into the `MQTT-*.md` topic files
 - `MQTT-*.md` — Tasmota MQTT topic files: transport, device control, state
   reporting, sensors
-- `MDNS.md` — index and overview; entry point into the `MDNS-*.md` topic files
-- `MDNS-*.md` — OpenBSD mdnsd control protocol topic files: imsg framing, the
-  control socket protocol OpenHAP publishes mDNS services through
 - `IMPLEMENTATIONS.md` — practical patterns from the reference implementations
+
+The OpenBSD mdnsd control protocol references moved to the Fugu repository with
+the modules that implement them.
 
 Scope is IP transport, pairing, encryption, services, characteristics, events,
 and the Tasmota MQTT surface OpenHAP bridges. Bluetooth LE, Thread, cameras,
