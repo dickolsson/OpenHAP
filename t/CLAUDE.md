@@ -30,7 +30,8 @@ and every non-core import is in the `cpanfile`.
 `t/ci/` is the exception to driving anything: nothing under `.github/` runs
 outside a runner, so these tests read the workflows as text and assert the
 invariants that only fail in CI — that every workflow references the shared
-setup-perl action in FuguBSD/Fugu with a value it accepts, and that the
+setup-perl action in FuguBSD/Fugu with a value it accepts and installs nothing
+on the side, that no workflow uses a third-party action, and that the
 integration cache key hashes every input which decides what it caches.
 
 The tests need the Fugu library on `@INC`: `Fugu::TestLog` and the modules the
@@ -39,8 +40,9 @@ installs.
 
 ## Conformance tier
 
-One `.t` per normative spec topic file, named after the lowercased stem
-(`spec/HAP-TLV8.md` ↔ `t/conformance/hap-tlv8.t`). Rules:
+One stem-named `.t` per normative spec topic file (`spec/HAP-TLV8.md` ↔
+`t/conformance/hap-tlv8.t`); a full exchange flow adds a second, suffixed file
+(`hap-pairing-exchange.t`). Rules:
 
 - Every subtest name starts with a citation; catalog tables are data-driven
   loops citing `/<row>`; wire examples from the spec are replayed byte-exactly;

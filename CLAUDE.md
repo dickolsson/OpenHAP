@@ -41,13 +41,14 @@ latest one with cpanm:
 - [FuguBSD/FuguWeb](https://github.com/FuguBSD/FuguWeb) — `fuguweb`, the
   documentation site builder that `make web` drives; a develop dependency
 
-`.github/actions/setup-perl` also lives in FuguBSD/Fugu; every workflow
-references it as `FuguBSD/Fugu/.github/actions/setup-perl@main`.
+`.github/actions/setup-perl` also lives in FuguBSD/Fugu; every workflow that
+installs dependencies references it as
+`FuguBSD/Fugu/.github/actions/setup-perl@main`.
 
 ## Commands
 
 ```sh
-make check          # tidy + lint + test + spec-coverage; MUST pass before every commit
+make check          # lint + test + tidy + spec-coverage; MUST pass before every commit
 make test           # prove -l -v t/{protocol,openhap,conformance,scripts,web,ci}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
@@ -87,7 +88,8 @@ make web            # build the website with the installed fuguweb
   `spec/CLAUDE.md`)
 - `plans/` — design documents and phased implementation plans (see the Plans
   section below)
-- `deps/` — per-OS dependency manifests; `scripts/` — dependency and VM helpers
+- `deps/` — per-OS dependency manifests; `scripts/` — the dependency, coverage
+  and VM helpers
 
 ## Coding style
 
@@ -257,7 +259,5 @@ sweeping commit.
 
 - Version numbers derive from `git rev-list --count HEAD` (release tag `b<N>`);
   there is no VERSION file
-- The tests and the daemon need the installed Fugu library on `@INC`;
-  `make deps` installs it
 - Use `explore/` (gitignored) for scratch scripts and experiments, never `/tmp`
 - Audit findings go to `SCRATCHPAD-<N>.md` files (gitignored)

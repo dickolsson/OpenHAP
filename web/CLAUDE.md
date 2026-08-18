@@ -16,8 +16,9 @@ make web-clean          # remove it
 fuguweb check --out web/build
 ```
 
-Nothing here is part of `make check`. `fuguweb`, `mandoc` and `lowdown` arrive
-with `make deps-develop`.
+`t/web/site.t` builds and checks the whole site inside `make test`, and skips
+where the renderers are missing. `fuguweb`, `mandoc` and `lowdown` arrive with
+`make deps-develop`.
 
 `.github/workflows/web.yml` builds and checks the site on every pull request and
 deploys it to GitHub Pages on pushes to `main`. The site is served from
@@ -30,12 +31,12 @@ output so the deploy artifact always carries it. Change both together.
 Every source format is reduced to one HTML **body fragment** and wrapped in the
 shared chrome:
 
-| Source                | Renderer                        |
-| --------------------- | ------------------------------- |
-| `web/*.body.html`     | none — the fragment is the file |
-| `INSTALL.md`          | `lowdown -Thtml`                |
-| `man/*/*.1 .3p .5 .8` | `mandoc -Thtml -O fragment`     |
-| `lib/**/*.pod`        | `pod2man` then the same mandoc  |
+| Source            | Renderer                        |
+| ----------------- | ------------------------------- |
+| `web/*.body.html` | none — the fragment is the file |
+| `INSTALL.md`      | `lowdown -Thtml`                |
+| `man/*/*.5 .8`    | `mandoc -Thtml -O fragment`     |
+| `lib/**/*.pod`    | `pod2man` then the same mandoc  |
 
 `web/footer.body.html` is the footer prose, and `web/manuals.body.html` would
 replace the opening of the manual index. Both are optional.
@@ -50,10 +51,9 @@ replace the opening of the manual index. Both are optional.
   names, and it is staged, rendered and indexed with no further edit. A `.pod`
   sidecar under a `modules` directory needs no edit either.
 - **A new namespace** — add one `modules` block.
-- **Prose that belongs to the project rather than the site** — it goes in
-  `README.md`, `INSTALL.md`, `man/`, or a `.pod` sidecar, and the site renders
-  it. The root `CLAUDE.md` placement table decides; `web/*.body.html` is for
-  site-specific framing only.
+- **Prose that belongs to the project rather than the site** — the root
+  `CLAUDE.md` placement table decides; `web/*.body.html` is for site-specific
+  framing only.
 
 ## Findings worth not rediscovering
 

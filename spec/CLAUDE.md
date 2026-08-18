@@ -36,9 +36,9 @@ Structure is load-bearing, not cosmetic:
   parses them and fails on any test citation pointing at a section that no
   longer exists, so renumbering or resequencing sections breaks tests in
   `t/conformance/` — update the citations in the same change.
-- One normative topic file maps to one conformance test file (`spec/HAP-TLV8.md`
-  ↔ `t/conformance/hap-tlv8.t`); adding a topic file means adding its test file.
-  See `t/CLAUDE.md`.
+- One normative topic file maps to one stem-named conformance test file
+  (`spec/HAP-TLV8.md` ↔ `t/conformance/hap-tlv8.t`), plus optional suffixed flow
+  files; adding a topic file means adding its test file. See `t/CLAUDE.md`.
 - Tables are catalogs the tests loop over; unnumbered rows are cited as
   `§<section>/<row>`, so row labels are anchors too.
 - Wire examples and known-answer vectors are replayed byte-exactly by tests.
