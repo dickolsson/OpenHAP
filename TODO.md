@@ -549,14 +549,13 @@ refinements.
   - File: `cpanfile` exists, consider adding `scripts/install-deps.sh`
 
 - [x] **Automated builds**
-  - Implemented: GitHub Actions for testing
-  - File: `.github/workflows/test.yml`, `.github/workflows/release.yml`
-  - Tests run on: Perl 5.32, 5.34, 5.36, 5.38
+  - Implemented: GitHub Actions for testing and per-commit build artifacts
+  - File: `.github/workflows/test.yml`, `.github/workflows/build.yml`
 
-- [ ] **Release process**
-  - Current: No formal release process
-  - Need: Version tagging, changelog, release notes
-  - Files: New `CHANGELOG.md`, version tagging
+- [x] **Release process**
+  - Implemented: a b<N> tag drives `.github/workflows/release.yml`, which tests,
+    builds, and publishes the archive to GitHub Releases
+  - Still open: changelog and release notes
 
 ### CPAN release
 

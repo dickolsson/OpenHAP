@@ -82,6 +82,36 @@ for my $file (@files) {
 
 ok( $users >= 1, 'at least one workflow uses the shared action' );
 
+# The supply-chain rule: no third-party action. A workflow may use
+# GitHub's own actions/, the FuguBSD organization's, or a local path -
+# nothing else runs foreign code in CI.
+subtest 'workflows use no third-party action' => sub {
+	opendir my $dh, $workflow or do {
+		fail('.github/workflows is readable');
+		return;
+	};
+	my @all = sort grep { /\.yml\z/ } readdir $dh;
+	closedir $dh;
+
+	my @violations;
+	for my $file (@all) {
+		my $text = _slurp("$workflow/$file") // next;
+		my $n    = 0;
+		for my $line ( split /\n/, $text ) {
+			$n++;
+			next unless $line =~ /^\s+uses:\s*(\S+)/;
+			my $ref = $1;
+			next if $ref =~ m{^\./};
+			next if $ref =~ m{^actions/};
+			next if $ref =~ m{^FuguBSD/};
+			push @violations, "$file:$n uses $ref";
+		}
+	}
+
+	is( scalar @violations, 0, 'every action is first-party' )
+	    or diag( join "\n", @violations );
+};
+
 # The integration cache key. hashFiles over a path that matches
 # nothing returns an empty string rather than an error. Thus a renamed
 # input would quietly collapse the key, not rotate it. And the inputs
