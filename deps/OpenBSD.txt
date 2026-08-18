@@ -1,3 +1,4 @@
+runtime dist https://github.com/FuguBSD/Fugu/releases/latest/download/Fugu.tar.gz
 runtime pkg mosquitto
 runtime pkg openmdns
 runtime pkg p5-Crypt-Ed25519
@@ -9,11 +10,13 @@ runtime cpan Net::MQTT::Simple
 
 test pkg p5-Perl-Critic
 test pkg p5-Perl-Tidy
-test pkg p5-Net-SSH2
 
+develop dist https://github.com/FuguBSD/FuguVM/releases/latest/download/App-FuguVM.tar.gz
+develop dist https://github.com/FuguBSD/FuguWeb/releases/latest/download/App-FuguWeb.tar.gz
+develop pkg libssh2
+develop pkg p5-Net-SSH2
 develop pkg p5-HTTP-Daemon
 develop pkg p5-HTTP-Message
 develop pkg p5-libwww
 develop pkg p5-URI
-develop pkg libssh2
 develop pkg lowdown

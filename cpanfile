@@ -1,5 +1,9 @@
 # NOTE: For production deployments, use deps/*.txt with 'make deps'.
 # This file exists for development convenience and carton compatibility.
+#
+# The Fugu library and the FuguVM and FuguWeb tools install from their
+# latest GitHub releases through the dist lines of deps/*.txt, not
+# from CPAN.
 
 # Crypto dependencies for the HAP protocol
 requires 'Crypt::Ed25519';
@@ -21,15 +25,4 @@ requires 'Net::MQTT::Simple';
 on 'test' => sub {
 	requires 'Perl::Critic';
 	requires 'Perl::Tidy';
-};
-
-# Development dependencies for FuguVM. Fugu::Proxy uses HTTP::Request
-# and HTTP::Response, which the HTTP::Message distribution provides,
-# and URI.
-on 'develop' => sub {
-	requires 'HTTP::Daemon';
-	requires 'HTTP::Message';
-	requires 'LWP::UserAgent';
-	requires 'Net::SSH2';
-	requires 'URI';
 };

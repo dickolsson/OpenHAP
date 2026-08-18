@@ -1,3 +1,4 @@
+runtime dist https://github.com/FuguBSD/Fugu/releases/latest/download/Fugu.tar.gz
 runtime pkg mosquitto
 runtime pkg avahi-daemon
 runtime pkg libperl-dev
@@ -8,18 +9,15 @@ runtime cpan Crypt::Curve25519
 runtime cpan CryptX
 runtime cpan Net::MQTT::Simple
 
-test pkg libssh2-1-dev
 test cpan Perl::Critic
 test cpan Perl::Tidy
-test cpan Net::SSH2
 
 develop pkg qemu-system-arm
 develop pkg qemu-efi-aarch64
 develop pkg expect
 develop pkg telnet
+develop pkg libssh2-1-dev
 develop pkg lowdown
 develop pkg mandoc
-develop cpan HTTP::Daemon
-develop cpan HTTP::Message
-develop cpan LWP::UserAgent
-develop cpan URI
+develop dist https://github.com/FuguBSD/FuguVM/releases/latest/download/App-FuguVM.tar.gz
+develop dist https://github.com/FuguBSD/FuguWeb/releases/latest/download/App-FuguWeb.tar.gz

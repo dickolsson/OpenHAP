@@ -120,9 +120,9 @@ sub _which ($program)
 }
 
 # _read_manifest($file, $want):
-#	Parse deps/<OS>.txt into (\@pkgs, \@cpan) for environment $want.
-#	Whitespace separates the fields, as sh's 'read env type name'
-#	read them.
+#	Parse deps/<OS>.txt into (\@pkgs, \@dists, \@cpan) for
+#	environment $want. Whitespace separates the fields, as sh's
+#	'read env type name' read them.
 #
 #	The function validates every non-comment line, not only the
 #	lines that match $want. The shell version filtered first. Thus a
@@ -133,7 +133,7 @@ sub _read_manifest ( $file, $want )
 	open my $fh, '<', $file
 	    or die "deps: open $file: $!\n";
 
-	my ( @pkgs, @cpan );
+	my %by_type = ( pkg => [], dist => [], cpan => [] );
 	while ( my $line = <$fh> ) {
 		chomp $line;
 		my ( $env, $type, $name ) = split ' ', $line, 3;
@@ -148,20 +148,20 @@ sub _read_manifest ( $file, $want )
 		if ( !defined $type || !defined $name || $name eq '' ) {
 			warn "ERROR: Invalid format in $file: $line\n";
 			die
-"Expected: <environment> <pkg|cpan> <package-name>\n";
+"Expected: <environment> <pkg|dist|cpan> <package-name>\n";
 		}
-		if ( $type ne 'pkg' && $type ne 'cpan' ) {
+		if ( !exists $by_type{$type} ) {
 			die "ERROR: Unknown type '$type' "
-			    . "(expected 'pkg' or 'cpan')\n";
+			    . "(expected 'pkg', 'dist' or 'cpan')\n";
 		}
 
 		next unless $env eq $want;
 
-		push @{ $type eq 'pkg' ? \@pkgs : \@cpan }, $name;
+		push @{ $by_type{$type} }, $name;
 	}
 	close $fh;
 
-	return ( \@pkgs, \@cpan );
+	return ( $by_type{pkg}, $by_type{dist}, $by_type{cpan} );
 }
 
 # _install_packages($os, @pkgs):
@@ -187,49 +187,87 @@ sub _install_packages ( $os, @pkgs )
 	return;
 }
 
-# _install_cpanm():
-#	Bootstrap cpanm when it is not already on PATH.
-#
-#	The download goes through scripts/ftp, the repository's own cross-platform
-#	fetcher, not through curl. curl is not in OpenBSD base. The
-#	shell version used 'curl -L https://cpanmin.us | perl -'. That
-#	only worked because vm-provision installs cpanm with 'cpan -T'
-#	before this script first runs on a fresh guest.
-sub _install_cpanm ()
+# _ftp_path():
+#	The path of scripts/ftp, the repository's own cross-platform
+#	fetcher, beside this script.
+sub _ftp_path ()
 {
-	say 'Installing cpanminus...';
-
 	my $ftp = File::Spec->catfile( dirname( File::Spec->rel2abs(__FILE__) ),
 		'ftp' );
 	-x $ftp
 	    or die "deps: cannot find the ftp helper at $ftp\n";
 
-	my $tmp       = tempdir( CLEANUP => 1 );
-	my $installer = File::Spec->catfile( $tmp, 'cpanm' );
-
-	_run( $ftp, $installer, 'https://cpanmin.us' );
-	_run( $^X,  $installer, 'App::cpanminus' );
-
-	return;
+	return $ftp;
 }
 
-# _install_cpan(@modules):
-#	Install CPAN modules with cpanm. Install into
+# _cpanm_opts():
+#	The options every cpanm run shares. Install into
 #	PERL_LOCAL_LIB_ROOT when the environment names one. local::lib
 #	and CI's setup-perl set that variable.
-sub _install_cpan (@modules)
+sub _cpanm_opts ()
 {
-	say 'Installing CPAN modules: ', join ' ', @modules;
-
-	_install_cpanm() unless defined _which('cpanm');
-
 	my @opts = ('--notest');
 	if ( length( $ENV{PERL_LOCAL_LIB_ROOT} // '' ) ) {
 		say "Installing to local directory: $ENV{PERL_LOCAL_LIB_ROOT}";
 		push @opts, "--local-lib=$ENV{PERL_LOCAL_LIB_ROOT}";
 	}
 
-	_run( 'cpanm', @opts, @modules );
+	return @opts;
+}
+
+# _install_cpanm():
+#	Bootstrap cpanm when it is not already on PATH.
+#
+#	The download goes through scripts/ftp, the repository's own cross-platform
+#	fetcher, not through curl. curl is not in OpenBSD base.
+sub _install_cpanm ()
+{
+	say 'Installing cpanminus...';
+
+	my $tmp       = tempdir( CLEANUP => 1 );
+	my $installer = File::Spec->catfile( $tmp, 'cpanm' );
+
+	_run( _ftp_path(), $installer, 'https://cpanmin.us' );
+	_run( $^X,         $installer, 'App::cpanminus' );
+
+	return;
+}
+
+# _install_dists(@urls):
+#	Fetch distribution tarballs and install each with cpanm. A dist
+#	line names a release-asset URL, normally the latest release of a
+#	sibling repository. The fetch goes through scripts/ftp, so every
+#	platform uses its native downloader.
+sub _install_dists (@urls)
+{
+	say 'Installing distributions: ', join ' ', @urls;
+
+	_install_cpanm() unless defined _which('cpanm');
+
+	my $tmp = tempdir( CLEANUP => 1 );
+	for my $url (@urls) {
+		my ($name) = $url =~ m{([^/]+)\z};
+		if ( !defined $name || $name eq '' ) {
+			die "deps: cannot name the file of $url\n";
+		}
+
+		my $file = File::Spec->catfile( $tmp, $name );
+		_run( _ftp_path(), $file,         $url );
+		_run( 'cpanm',     _cpanm_opts(), $file );
+	}
+
+	return;
+}
+
+# _install_cpan(@modules):
+#	Install CPAN modules with cpanm.
+sub _install_cpan (@modules)
+{
+	say 'Installing CPAN modules: ', join ' ', @modules;
+
+	_install_cpanm() unless defined _which('cpanm');
+
+	_run( 'cpanm', _cpanm_opts(), @modules );
 
 	return;
 }
@@ -241,9 +279,13 @@ if ( !-f $manifest ) {
 	exit 0;
 }
 
-my ( $pkgs, $cpan ) = _read_manifest( $manifest, $env );
+# dist runs between pkg and cpan: the packages may provide the
+# toolchain a dist build needs, and a dist may provide modules the
+# cpan list builds on.
+my ( $pkgs, $dists, $cpan ) = _read_manifest( $manifest, $env );
 
 _install_packages( $os, @$pkgs ) if @$pkgs;
+_install_dists(@$dists)          if @$dists;
 _install_cpan(@$cpan)            if @$cpan;
 
 say "Dependencies for $env installed successfully";
