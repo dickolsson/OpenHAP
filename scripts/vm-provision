@@ -1,0 +1,309 @@
+#!/bin/sh
+# ex:ts=8 sw=4:
+# Provision OpenHAP in the OpenBSD VM
+#
+# Two layers. The deps layer installs the guest's packages and Perl
+# modules. A fuguvm snapshot caches this layer, because under TCG
+# emulation it costs as much as the OS install itself. The OpenHAP
+# layer installs this checkout and runs every time.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Find the installed fuguvm (make deps-develop installs it)
+FUGUVM="${FUGUVM:-fuguvm}"
+if ! command -v "${FUGUVM}" >/dev/null 2>&1; then
+	echo "ERROR: fuguvm not found (run 'make deps-develop')" >&2
+	exit 1
+fi
+
+# Read a field from 'fuguvm status'. fuguvm logs to stderr. Thus the
+# function folds stderr in. Without that, the value is not readable.
+vm_status() {
+	"${FUGUVM}" status 2>&1 | sed -n "s/.*$1: *//p" | head -1
+}
+
+SSH_PORT="$(vm_status ssh_port)"
+SSH_PORT="${SSH_PORT:-2222}"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+vm_run() { "${FUGUVM}" ssh "$@"; }
+vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
+
+DEPS_KEY="$("${SCRIPT_DIR}/deps-key")"
+DEPS_SNAPSHOT="deps-${DEPS_KEY}"
+DEPS_MARKER="/var/db/fuguvm-deps-${DEPS_KEY}"
+
+echo "==> Building package..."
+cd "${PROJECT_ROOT}"
+make build
+
+# Find the built tarball
+TARBALL=$(ls -t build/openhap-*.tar.gz | head -1)
+if [ ! -f "${TARBALL}" ]; then
+	echo "Error: No tarball found in build/"
+	exit 1
+fi
+echo "Using tarball: ${TARBALL}"
+
+# make deps only exists inside the extracted tarball, along with deps/
+# and scripts/deps. make deps reads those relative to the cwd. Thus
+# the package must reach the guest before the deps layer runs, not
+# with make install after it.
+copy_and_extract() {
+	vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/openhap.tar.gz"
+	vm_run <<'EOF'
+set -e
+cd /tmp && rm -rf openhap openhap-* && tar xzf openhap.tar.gz
+EOF
+}
+
+# The guest itself says whether the deps layer is already present. A
+# host-side flag could not. vm-up and vm-provision are sibling
+# make recipes in separate shells. Thus they cannot give data to each
+# other. The marker travels inside the snapshot. Thus it also answers
+# the local case where the script restored nothing, but the working
+# disk already carries the dependencies.
+if vm_run "test -f ${DEPS_MARKER}"; then
+	echo "==> Guest dependencies already present (${DEPS_SNAPSHOT}), skipping"
+else
+	echo "==> Installing guest dependencies (${DEPS_SNAPSHOT})..."
+	copy_and_extract
+
+	# BEGIN deps layer
+	# scripts/deps-key hashes everything between these markers into
+	# DEPS_KEY. An edit here invalidates the cached layer.
+	# Guest heredocs run under set -e. Thus a failed pkg_add/cpan/make
+	# cannot report a provisioned guest.
+	#
+	# Every command here that might read stdin needs </dev/null. The
+	# remote shell reads THIS SCRIPT from stdin. Thus a command that
+	# reads stdin consumes the rest of the script as its own input.
+	# Once, cpan(1) answered its configuration prompts and swallowed
+	# 'make deps', the cleanup, and the marker below. The truncated
+	# block still exited 0. Thus set -e never fired. The cache then
+	# held a layer without any dependencies in it, and provisioning
+	# failed much later on 'rcctl enable mosquitto'.
+	vm_run <<EOF
+set -e
+pkg_add -u </dev/null 2>/dev/null || true
+
+# Install cpanm if not already present
+if ! command -v cpanm >/dev/null 2>&1; then
+	echo "Installing cpanm..."
+	cpan -T App::cpanminus </dev/null
+fi
+
+cd /tmp/openhap-*
+make deps </dev/null
+
+# Leave no versioned tree in the snapshot. TAG changes with each
+# release, so a baked-in /tmp/openhap-<TAG> would make the next run's
+# 'cd /tmp/openhap-*' match two directories and abort under set -e.
+cd /tmp && rm -rf openhap openhap-* openhap.tar.gz
+
+# Written last, so the marker can only exist once everything above
+# has succeeded
+mkdir -p /var/db
+touch ${DEPS_MARKER}
+EOF
+	# END deps layer
+
+	# The layer must have finished, not merely exited 0. The marker
+	# is its last statement. Thus a missing marker means the block
+	# ended early. Check before the snapshot. Otherwise an incomplete
+	# layer enters the cache and every later run restores it.
+	if ! vm_run "test -f ${DEPS_MARKER}"; then
+		echo "Error: deps layer did not complete; not caching" >&2
+		exit 1
+	fi
+
+	# The snapshot verbs run under set -e. A base-image cache miss
+	# legitimately leaves a standalone disk. fuguvm cannot snapshot
+	# such a disk. Guard the verbs here. Do not soften the verb
+	# itself. A cache miss must not abort provisioning.
+	echo "==> Caching guest dependencies as ${DEPS_SNAPSHOT}..."
+	"${FUGUVM}" down
+	if "${FUGUVM}" snapshot save "${DEPS_SNAPSHOT}"; then
+		# The prune is safe. fuguvm flattens snapshots onto the
+		# base image. Thus no deps-* layer is another one's parent.
+		for old in $("${FUGUVM}" snapshot list --names || true); do
+			case "${old}" in
+			deps-*)
+				if [ "${old}" != "${DEPS_SNAPSHOT}" ]; then
+					"${FUGUVM}" snapshot rm "${old}" ||
+						true
+				fi
+				;;
+			esac
+		done
+	else
+		echo "WARNING: could not cache ${DEPS_SNAPSHOT}; continuing" >&2
+	fi
+	"${FUGUVM}" up
+	"${FUGUVM}" wait --timeout "${FUGUVM_WAIT_TIMEOUT:-120}"
+fi
+
+echo "==> Copying to VM..."
+copy_and_extract
+
+echo "==> Installing OpenHAP..."
+vm_run <<'EOF'
+set -e
+
+# Uninstall existing version if present
+if [ -f /etc/rc.d/openhapd ]; then
+	rcctl stop openhapd 2>/dev/null || true
+	rcctl disable openhapd 2>/dev/null || true
+	cd /tmp/openhap-* && make uninstall 2>/dev/null || true
+	# Remove the config so that the test installation is fresh
+	rm -f /etc/openhapd.conf
+fi
+
+# Change to extracted directory
+cd /tmp/openhap-*
+
+# Purge every Perl library path that an older install of this project
+# could have left on a warm disk. 'make uninstall' above runs from the
+# NEW checkout, so it names only the current paths: a renamed
+# namespace stays in @INC forever, and a missed rename still resolves
+# there. The suite would then pass against a shim that the environment
+# supplies. Only what this project owns goes: Fugu and Protocol::Imsg
+# are the Fugu distribution's now, and App/ is a shared parent that
+# holds App::cpanminus on this guest.
+SITE_PERL=/usr/local/libdata/perl5/site_perl
+rm -rf "${SITE_PERL}"/OpenHAP \
+	"${SITE_PERL}"/App/OpenHAP "${SITE_PERL}"/Protocol/HAP
+
+# Refresh the dependencies outside the snapshotted deps layer. The
+# manifests name the LATEST Fugu release, and deps-key hashes file
+# contents only. Thus a new Fugu release does not rotate the snapshot,
+# and this run is what keeps the guest current. The re-run is cheap:
+# the packages no-op and the Fugu dist is pure Perl.
+make deps </dev/null
+
+# Run make install
+make install
+
+# Create system user if not exists
+id _openhap >/dev/null 2>&1 || \
+	useradd -c "OpenHAP Daemon" -d /var/empty -g =uid -r 100..999 -s /sbin/nologin _openhap 2>/dev/null || true
+
+# Add _openhap to wheel group for mdnsd socket access
+# mdnsctl requires wheel group membership to access /var/run/mdnsd.sock
+usermod -G wheel _openhap 2>/dev/null || true
+
+# Set ownership on data directory
+chown _openhap:_openhap /var/db/openhapd
+
+# Copy example config if no config exists
+[ -f /etc/openhapd.conf ] || cp /etc/examples/openhapd.conf /etc/openhapd.conf
+
+# Start every run unpaired, even on a reused (cached) disk that carries
+# the previous run's pairing state. Keep the accessory identity keys.
+rm -f /var/db/openhapd/pairings.db /var/db/openhapd/auth_attempts
+
+# Clean up
+cd /tmp && rm -rf openhap-* openhap.tar.gz
+
+# Enable and start services (start fails when already running, for example
+# on a warm-cached disk where rc started it at boot)
+rcctl enable mosquitto
+rcctl check mosquitto >/dev/null || rcctl start mosquitto
+
+# Configure and start mdnsd on the primary network interface. The
+# openmdns package ships an rc script whose default flags name an
+# interface this guest does not have (em0), and mdnsd exits fatally
+# on an unknown interface. Thus the flags must always name a real
+# interface here. Guard on the rc script, NOT on 'rcctl get'. The
+# 'rcctl get' exit status shows whether the service is enabled. That
+# is false on every fresh disk and would silently skip this whole
+# block.
+# Prefer the default-route interface. Fall back to the first UP, non
+# loopback interface. Then make sure the daemon started.
+if [ -x /etc/rc.d/mdnsd ]; then
+	IFACE=$(route -n show -inet 2>/dev/null |
+		awk '/^default/ { print $NF; exit }')
+	[ -n "${IFACE}" ] || IFACE=$(ifconfig -a |
+		awk -F: '/^[a-z].*<UP,/ && !/^(lo|enc|pflog)/ { print $1; exit }')
+
+	if [ -n "${IFACE}" ]; then
+		# Enable first: rcctl refuses to set flags on a
+		# disabled daemon ("rcctl: mdnsd is not enabled")
+		rcctl enable mdnsd
+		rcctl set mdnsd flags "${IFACE}"
+		rcctl restart mdnsd || true
+		# Settle, then check: an immediate point-in-time check
+		# races green when mdnsd starts and then exits shortly
+		# after. Make sure it stays up across the window.
+		mdnsd_up=1
+		for probe in 1 2 3; do
+			sleep 2
+			if ! rcctl check mdnsd >/dev/null; then
+				mdnsd_up=0
+				break
+			fi
+		done
+		if [ "${mdnsd_up}" -ne 1 ]; then
+			# Show why mdnsd did not stay up.  This makes
+			# the mDNS integration tests diagnosable from
+			# the CI logs, not only from a missing-daemon
+			# report.
+			echo "WARNING: mdnsd did not stay up on ${IFACE}; diagnostics:"
+			rcctl get mdnsd || true
+			ifconfig "${IFACE}" || true
+			tail -100 /var/log/daemon | grep mdnsd | tail -20 || true
+			echo "-- mdnsd foreground start (2s) --"
+			timeout 2 /usr/local/sbin/mdnsd -d "${IFACE}" 2>&1 |
+				head -n 20 || true
+		fi
+	else
+		echo "WARNING: no network interface found for mdnsd"
+		ifconfig -a || true
+	fi
+fi
+
+if [ -x /etc/rc.d/openhapd ]; then
+	rcctl enable openhapd
+
+	# rc.subr gives a daemon 30 seconds to background itself.
+	# openhapd generates its accessory identity keys on first start.
+	# The 3072-bit SRP work behind that is slow under TCG emulation.
+	# On a fresh disk it can take more than those 30 seconds.  A warm
+	# disk already carries the keys and starts immediately.  Thus the
+	# timeout hits only on the run after a deps layer rebuild.  That
+	# is rare enough to look like a flake and stay unfixed.
+	# scripts/integration raises OPENHAP_TEST_TIMEOUT for the same
+	# reason.  This is the same allowance at the rc layer.
+	rcctl set openhapd timeout 300
+
+	if ! rcctl check openhapd >/dev/null && ! rcctl start openhapd; then
+		# Say why.  A bare "openhapd(timeout)" does not show the
+		# cause: a config error, a missing module, and a slow start
+		# all look the same.  Provisioning dies here before the test
+		# step's own diagnostics can run.  Same reasoning as mdnsd
+		# above.
+		echo "WARNING: openhapd would not start; diagnostics:"
+		rcctl get openhapd || true
+		echo "-- config test --"
+		/usr/local/bin/openhapd -n -c /etc/openhapd.conf 2>&1 |
+			head -n 20 || true
+		echo "-- daemon log --"
+		tail -100 /var/log/daemon | grep openhap | tail -20 || true
+		tail -20 /var/log/openhapd.log 2>/dev/null || true
+		echo "-- state directory --"
+		ls -l /var/db/openhapd || true
+		echo "-- openhapd foreground start (60s) --"
+		timeout 60 /usr/local/bin/openhapd -f -v -c /etc/openhapd.conf 2>&1 |
+			head -n 30 || true
+		exit 1
+	fi
+fi
+
+sleep 2
+echo "OpenHAP installed and services started"
+EOF
+
+echo "==> Provisioning complete"

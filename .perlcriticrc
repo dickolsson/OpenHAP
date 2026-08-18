@@ -1,0 +1,50 @@
+# Perl::Critic configuration for OpenHAP
+# The rules follow OpenBSD pkg_add style. See style.pod.
+severity = 4
+
+#-----------------------------------------------------------------------------
+# OpenBSD style allows these constructs
+#-----------------------------------------------------------------------------
+
+# File permissions are octal by design (for example 0644 and 0600)
+[-ValuesAndExpressions::ProhibitLeadingZeros]
+
+# use constant is the OpenBSD way for constants
+[-ValuesAndExpressions::ProhibitConstantPragma]
+
+# Multiple packages per file is fine for related classes
+[-Modules::ProhibitMultiplePackages]
+
+# File handles must stay open during flock operations
+[-InputOutput::RequireBriefOpen]
+
+# Modern Perl signatures use the prototype syntax in a different way
+[-Subroutines::ProhibitSubroutinePrototypes]
+
+#-----------------------------------------------------------------------------
+# The configuration relaxes these rules for practical reasons
+#-----------------------------------------------------------------------------
+
+# Void subroutines do not need explicit return statements
+[-Subroutines::RequireFinalReturn]
+
+#-----------------------------------------------------------------------------
+# The gates of the simplification effort (plan 010)
+#-----------------------------------------------------------------------------
+
+# No variable without a reader
+[Variables::ProhibitUnusedVariables]
+severity = 4
+
+# A "no critic" annotation must name its policy and suppress a real
+# diagnostic; the tree has none, and these keep it that way
+[Miscellanea::ProhibitUnrestrictedNoCritic]
+severity = 4
+
+[Miscellanea::ProhibitUselessNoCritic]
+severity = 4
+
+# Subroutines::ProhibitUnusedPrivateSubroutines stays off: it is
+# document-scoped and flags only the seven live template-method
+# overrides in Tasmota/*.pm; t/scripts/symbols.t covers private subs
+# across files instead.

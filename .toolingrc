@@ -1,0 +1,18 @@
+# Per-repo configuration for the FuguBSD-derived tooling. OpenHAP is
+# downstream: scripts/dist is a one-time copy, not a synced file.
+dist.name     App-OpenHAP
+dist.module   App::OpenHAP
+dist.abstract HomeKit Accessory Protocol server for OpenBSD
+dist.author   Dick Olsson <hi@senzilla.io>
+dist.exe      bin/openhapd
+dist.exe      bin/hapctl
+dist.testdir  t/openhap
+dist.testdir  t/protocol
+dist.testdir  t/conformance
+dist.prereq   Fugu
+dist.prereq   Crypt::Ed25519
+dist.prereq   Crypt::Curve25519
+dist.prereq   CryptX
+dist.prereq   JSON::XS
+dist.prereq   Math::BigInt::GMP
+dist.prereq   Net::MQTT::Simple

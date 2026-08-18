@@ -1,0 +1,71 @@
+name: Test
+
+# Use explicit includes, never excludes. Only what `make test` and
+# `make spec-coverage` load may start a run. Note that the
+# Build workflow releases from a successful run of this one. Thus a
+# path that this list omits is also a change that never ships.
+on:
+  push:
+    branches: [main]
+    paths:
+      # The files that the suite loads
+      - "bin/*"
+      - "lib/**.pm"
+      # Every *.t in the tree, not only the directories that
+      # `make test` proves. spec-coverage scans all of t/ for spec
+      # citations. Thus a stale citation anywhere must be able to fail
+      # this workflow.
+      - "t/**.t"
+      - "t/lib/**.pm"
+      # The other half of the spec-coverage cross-check
+      - "spec/*.md"
+      # t/web/site.t builds the whole site as a subprocess, so it
+      # reads the description of the site and the data that the
+      # builder ships.
+      - ".fuguwebrc"
+      - "share/**"
+      # The suite runs scripts as subprocesses: spec-coverage, deps and
+      # deps-key against fixtures, and scripts.t over the directory as
+      # a whole. Thus the workflow must see all of scripts/. A glob is
+      # necessary because the files in scripts/ have no extension, the
+      # same as bin/ above.
+      - "scripts/*"
+      # The toolchain and the dependency set that the job installs
+      - "Makefile"
+      - "cpanfile"
+      - "deps/*.txt"
+      - ".github/workflows/test.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bin/*"
+      - "lib/**.pm"
+      - "t/**.t"
+      - "t/lib/**.pm"
+      - "spec/*.md"
+      - ".fuguwebrc"
+      - "share/**"
+      - "scripts/*"
+      - "Makefile"
+      - "cpanfile"
+      - "deps/*.txt"
+      - ".github/workflows/test.yml"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: FuguBSD/Tooling/perl/actions/setup-perl@main
+        with:
+          dependencies: test
+
+      - name: Run tests
+        run: make test
+
+      - name: Check spec coverage
+        run: make spec-coverage

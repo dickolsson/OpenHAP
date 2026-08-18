@@ -1,0 +1,337 @@
+#!/usr/bin/env perl
+# ex:ts=8 sw=4:
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+# dist: build a standard Perl distribution tarball from this checkout.
+#
+# usage: dist [--version X.Y] [--out DIR]
+#
+# This is the canonical copy of the script, owned by FuguBSD/Tooling
+# at perl/sync/scripts/dist and synced verbatim into every consumer
+# repository. It carries no repository identity of its own: the
+# identity comes from .toolingrc at the repository root.
+#
+# The script stages build/<dist>-<VERSION>/ with the sources, writes
+# a Makefile.PL, a META.json and a MANIFEST into the staged tree, and
+# tars it. The Makefile.PL never exists at the repository root:
+# ExtUtils::MakeMaker would write its Makefile over the hand-written
+# one there.
+#
+# The default version derives from the latest semantic version tag:
+# v1.2.3 gives 1.2.3, and an untagged tree gives 0.0.0. There is no
+# VERSION file and no $VERSION in a source module: the tag is the one
+# source of the version, and the script stamps our $VERSION into
+# every package of the staged modules. PAUSE then indexes each
+# package with its version, and a consumer can assert a minimum,
+# e.g. use Fugu::Daemon 0.1.0. CI passes --version so that the tag
+# and the tarball agree.
+#
+# The PM map lists every module and every share file. Share files
+# install under auto/share/dist/<dist>/, the File::ShareDir layout,
+# with no dependency on File::ShareDir itself.
+
+use v5.36;
+
+use CPAN::Meta   ();
+use Cwd          qw(getcwd);
+use File::Find   ();
+use File::Path   qw(make_path remove_tree);
+use File::Copy   qw(copy);
+use File::Spec   ();
+use Getopt::Long qw(GetOptions);
+
+# _read_toolingrc($file):
+#	Read the dist.* keys of .toolingrc. The file holds one
+#	whitespace-separated key-value pair per line, with # comments.
+#	Keys of other tools use other prefixes and pass through. The
+#	dist keys:
+#
+#	  dist.name         App-OpenHAP      required
+#	  dist.module       App::OpenHAP     required; a module under
+#	                                    lib/ must declare this
+#	                                    package (see the lead-module
+#	                                    check below)
+#	  dist.abstract     one line        required
+#	  dist.author       Name <mail>     required; the META.json
+#	                                    author entry
+#	  dist.exe          bin/openhapd      repeatable
+#	  dist.testdir      t/openhap        repeatable
+#	  dist.share-extra  scripts/ftp     repeatable; files outside
+#	                                    share/ that ship in the
+#	                                    installed share tree under
+#	                                    their own path
+#	  dist.prereq       Fugu            repeatable; CPAN modules the
+#	                                    installed distribution needs
+sub _read_toolingrc ($file)
+{
+	open my $fh, '<', $file
+	    or die "dist: cannot read $file: $!\n";
+
+	my %single = map { $_ => 1 } qw(name module abstract author);
+	my %list   = map { $_ => 1 } qw(exe testdir share-extra prereq);
+
+	my %conf;
+	$conf{$_} = [] for keys %list;
+
+	while ( my $line = <$fh> ) {
+		chomp $line;
+		$line                        =~ s/^\s+//;
+		$line                        =~ s/\s+\z//;
+		next if $line eq '' || $line =~ /^#/;
+
+		my ( $key, $value ) = split /\s+/, $line, 2;
+		next if $key !~ /^dist\./;
+		my $name = $key =~ s/^dist\.//r;
+
+		defined $value && $value ne ''
+		    or die "dist: $file: '$key' has no value\n";
+
+		if ( $single{$name} ) {
+			die "dist: $file: duplicate '$key'\n"
+			    if defined $conf{$name};
+			$conf{$name} = $value;
+		}
+		elsif ( $list{$name} ) {
+			push @{ $conf{$name} }, $value;
+		}
+		else {
+			die "dist: $file: unknown key '$key'\n";
+		}
+	}
+	close $fh;
+
+	for my $required (qw(name module abstract author)) {
+		defined $conf{$required}
+		    or die "dist: $file: missing 'dist.$required'\n";
+	}
+
+	return \%conf;
+}
+
+my $conf = _read_toolingrc('.toolingrc');
+
+my $dist        = $conf->{name};
+my $module      = $conf->{module};
+my $abstract    = $conf->{abstract};
+my $author      = $conf->{author};
+my @exe_files   = @{ $conf->{exe} };
+my @test_dirs   = @{ $conf->{testdir} };
+my @share_extra = @{ $conf->{'share-extra'} };
+my @prereqs     = @{ $conf->{prereq} };
+
+my $version;
+my $out = 'build';
+
+GetOptions(
+	'version=s' => \$version,
+	'out=s'     => \$out,
+) or die "usage: dist [--version X.Y] [--out DIR]\n";
+
+if ( !defined $version ) {
+	my $tag = qx(git describe --tags --match 'v*' --abbrev=0 2>/dev/null);
+	chomp( $tag //= '' );
+	$version = $tag =~ /^v([0-9]+(?:\.[0-9]+)+)$/a ? $1 : '0.0.0';
+}
+
+$version =~ /^[0-9]+(?:\.[0-9]+)+$/a
+    or die "dist: version '$version' is not dotted-decimal\n";
+
+my $stage = File::Spec->catdir( $out, "$dist-$version" );
+remove_tree($stage);
+
+# _files_under($dir, $pattern):
+#	Every file under $dir whose path matches $pattern, as sorted
+#	paths relative to the working directory.
+sub _files_under ( $dir, $pattern )
+{
+	return unless -d $dir;
+
+	my @files;
+	File::Find::find(
+		sub {
+			push @files, $File::Find::name
+			    if -f $_ && $File::Find::name =~ $pattern;
+		},
+		$dir
+	);
+
+	return sort @files;
+}
+
+# _stage($file):
+#	Copy one file into the staged tree, under its own path.
+sub _stage ($file)
+{
+	my $target = File::Spec->catfile( $stage, $file );
+	my ( undef, $dir ) = File::Spec->splitpath($target);
+	make_path($dir);
+	copy( $file, $target ) or die "dist: copy $file: $!\n";
+
+	return;
+}
+
+my @modules = _files_under( 'lib',   qr/\.(?:pm|pod)\z/ );
+my @share   = _files_under( 'share', qr/./ );
+push @share, grep { -f } @share_extra;
+my @tests;
+push @tests, _files_under( $_, qr/\.t\z/ ) for @test_dirs;
+my @manuals = _files_under( 'man', qr/\.[0-9]p?\z/ );
+my @docs    = grep { -f } qw(README.md LICENSE cpanfile);
+
+@modules or die "dist: no modules under lib/\n";
+
+# The lead-module check. PAUSE grants a new distribution name only
+# through a package that matches it, and indexes nothing without
+# one. Fail here, not in the indexer mail.
+my $lead = 0;
+for my $file ( grep { /\.pm\z/ } @modules ) {
+	open my $rfh, '<', $file or die "dist: read $file: $!\n";
+	local $/ = undef;
+	my $code = <$rfh>;
+	close $rfh;
+
+	if ( $code =~ /^package[ \t]+\Q$module\E[ \t]*;/m ) {
+		$lead = 1;
+		last;
+	}
+}
+$lead
+    or die "dist: no module declares 'package $module;'"
+    . " (PAUSE indexes the distribution through it)\n";
+
+_stage($_) for @modules, @share, @tests, @manuals, @docs, @exe_files;
+
+# Stamp the version into every package of the staged modules. Only
+# the staged copies change: the source modules carry no $VERSION.
+for my $module ( grep { /\.pm\z/ } @modules ) {
+	my $target = File::Spec->catfile( $stage, $module );
+
+	open my $rfh, '<', $target or die "dist: read $target: $!\n";
+	local $/ = undef;
+	my $code = <$rfh>;
+	close $rfh;
+
+	$code =~
+	    s/^(package[ \t]+[\w:]+[ \t]*;)/$1\nour \$VERSION = '$version';/mg
+	    or die "dist: no package statement in $module\n";
+
+	open my $wfh, '>', $target or die "dist: write $target: $!\n";
+	print $wfh $code;
+	close $wfh or die "dist: close $target: $!\n";
+}
+
+# The PM map. Modules keep their lib/ path. Share files install under
+# the File::ShareDir layout, so Fugu::File->share_path finds them in an
+# installed tree with dist => '<dist>'.
+my %pm;
+for my $file (@modules) {
+	my $path = $file =~ s{^lib/}{}r;
+	$pm{$file} = "\$(INST_LIB)/$path";
+}
+for my $file (@share) {
+	my $path = $file =~ s{^share/}{}r;
+	$pm{$file} = "\$(INST_LIB)/auto/share/dist/$dist/$path";
+}
+
+my $pm_lines  = join ",\n", map { "\t\t'$_' => '$pm{$_}'" } sort keys %pm;
+my $exe_lines = join ",\n", map { "\t\t'$_'" } @exe_files;
+my $req_lines = join ",\n", map { "\t\t'$_' => 0" } @prereqs;
+
+# The tests live in subdirectories. The MakeMaker default glob is
+# t/*.t, which finds none of them.
+my $test_globs = join ' ', map { "$_/*.t" } @test_dirs;
+
+open my $mfpl, '>', "$stage/Makefile.PL"
+    or die "dist: write $stage/Makefile.PL: $!\n";
+print $mfpl <<EOF;
+use strict;
+use warnings;
+use ExtUtils::MakeMaker;
+
+WriteMakefile(
+	NAME             => '$module',
+	VERSION          => '$version',
+	ABSTRACT         => '$abstract',
+	LICENSE          => 'open_source',
+	MIN_PERL_VERSION => '5.036',
+	EXE_FILES        => [
+$exe_lines
+	],
+	PREREQ_PM        => {
+$req_lines
+	},
+	PM               => {
+$pm_lines
+	},
+	test             => { TESTS => '$test_globs' },
+);
+EOF
+close $mfpl or die "dist: close Makefile.PL: $!\n";
+
+# The META.json makes the index: PAUSE refuses to index a
+# distribution that ships neither META.json nor META.yml. CPAN::Meta
+# is core perl and validates the structure before it saves.
+my $meta = CPAN::Meta->create( {
+		name           => $dist,
+		version        => $version,
+		abstract       => $abstract,
+		author         => [$author],
+		license        => ['open_source'],
+		release_status => 'stable',
+		generated_by   => 'scripts/dist',
+
+		# The generated Makefile.PL computes nothing at install
+		# time: the prereqs here are complete.
+		dynamic_config => 0,
+		prereqs        => {
+			runtime => {
+				requires => {
+					perl => '5.036',
+					map { $_ => 0 } @prereqs,
+				},
+			},
+		},
+	} );
+$meta->save("$stage/META.json");
+
+# The MANIFEST lists every file of the staged tree, itself included.
+my @manifest;
+File::Find::find( {
+		wanted => sub {
+			return unless -f $_;
+			push @manifest,
+			    File::Spec->abs2rel( $File::Find::name, $stage );
+		},
+		no_chdir => 1,
+	},
+	$stage
+);
+push @manifest, 'MANIFEST';
+
+open my $mf, '>', "$stage/MANIFEST"
+    or die "dist: write $stage/MANIFEST: $!\n";
+say {$mf} $_ for sort @manifest;
+close $mf or die "dist: close MANIFEST: $!\n";
+
+my $tarball = "$dist-$version.tar.gz";
+my $status  = system 'tar', '-czf', File::Spec->catfile( $out, $tarball ),
+    '-C', $out, "$dist-$version";
+$status == 0 or die "dist: tar exited " . ( $status >> 8 ) . "\n";
+
+remove_tree($stage);
+
+say "Built $out/$tarball";

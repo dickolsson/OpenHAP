@@ -1,0 +1,20 @@
+runtime dist https://github.com/FuguBSD/Fugu/releases/latest/download/Fugu.tar.gz
+runtime pkg mosquitto
+runtime cpan JSON::XS
+runtime cpan Crypt::Ed25519
+runtime cpan Crypt::Curve25519
+runtime cpan CryptX
+runtime cpan Net::MQTT::Simple
+runtime cpan Math::BigInt::GMP
+
+test cpan Perl::Critic
+test cpan Perl::Tidy
+
+develop pkg libssh2
+develop pkg qemu
+develop pkg expect
+develop pkg telnet
+develop pkg lowdown
+develop pkg mandoc
+develop dist https://github.com/FuguBSD/FuguVM/releases/latest/download/App-FuguVM.tar.gz
+develop dist https://github.com/FuguBSD/FuguWeb/releases/latest/download/App-FuguWeb.tar.gz

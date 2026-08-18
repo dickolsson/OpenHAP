@@ -1,0 +1,106 @@
+name: Release
+
+# A release is deliberate: a maintainer pushes a semantic version tag
+# v<MAJOR>.<MINOR>.<PATCH>, and this workflow answers it. One build
+# feeds every publication step: the OS archive and the Perl dist
+# tarball go to the workflow artifacts, to GitHub Releases, and the
+# dist goes to PAUSE. The PAUSE step reads the PAUSE_USERNAME and
+# PAUSE_PASSWORD secrets from the release environment, and skips
+# cleanly if they are empty.
+#
+#   git tag v0.1.0
+#   git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: FuguBSD/Tooling/perl/actions/setup-perl@main
+        with:
+          dependencies: test
+
+      - name: Run tests
+        run: make test
+
+      - name: Derive the version from the tag
+        id: version
+        run: |
+          tag="${{ github.ref_name }}"
+          if ! echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "release: tag '$tag' is not v<MAJOR>.<MINOR>.<PATCH>" >&2
+            exit 1
+          fi
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the release archive
+        run: make build TAG=${{ github.ref_name }}
+
+      - name: Build the distribution tarball
+        run: |
+          make dist VERSION=${{ steps.version.outputs.version }}
+          # The stable name serves releases/latest/download/App-OpenHAP.tar.gz.
+          cp build/App-OpenHAP-${{ steps.version.outputs.version }}.tar.gz \
+            build/App-OpenHAP.tar.gz
+
+      - name: Keep the archive as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openhap-${{ github.ref_name }}
+          path: build/openhap-${{ github.ref_name }}.tar.gz
+
+      - name: Keep the dist tarball as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-OpenHAP-${{ steps.version.outputs.version }}
+          path: build/App-OpenHAP-${{ steps.version.outputs.version }}.tar.gz
+
+      - name: Release to GitHub
+        uses: FuguBSD/Tooling/actions/gh-release@main
+        with:
+          tag: ${{ github.ref_name }}
+          title: OpenHAP ${{ steps.version.outputs.version }}
+          files:
+            build/openhap-${{ github.ref_name }}.tar.gz build/App-OpenHAP-${{
+            steps.version.outputs.version }}.tar.gz build/App-OpenHAP.tar.gz
+          token: ${{ github.token }}
+          body: |
+            ## Installation
+
+            On OpenBSD, install from the OS archive:
+
+            ```sh
+            tar -xzf openhap-${{ github.ref_name }}.tar.gz
+            cd openhap-${{ github.ref_name }}
+            make deps
+            doas make install
+            ```
+
+            As a Perl distribution:
+
+            ```sh
+            cpanm --notest App-OpenHAP-${{ steps.version.outputs.version }}.tar.gz
+            ```
+
+            See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md) for full instructions.
+
+      # The PAUSE gate mirrors the pause input of the shared
+      # perl-release workflow: the upload runs only when the
+      # repository variable PAUSE_ENABLED is "true".
+      - name: Release to PAUSE
+        if: vars.PAUSE_ENABLED == 'true'
+        uses: FuguBSD/Tooling/perl/actions/pause-upload@main
+        with:
+          file: build/App-OpenHAP-${{ steps.version.outputs.version }}.tar.gz
+          username: ${{ secrets.PAUSE_USERNAME }}
+          password: ${{ secrets.PAUSE_PASSWORD }}

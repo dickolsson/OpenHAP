@@ -1,0 +1,23 @@
+#!/bin/ksh
+# /etc/rc.d/openhapd
+#
+# OpenHAP daemon rc.d script for OpenBSD
+
+daemon="/usr/local/bin/openhapd"
+daemon_flags="-c /etc/openhapd.conf"
+# Note: the daemon starts as root. It drops to _openhap after the
+# privileged operations.
+
+. /etc/rc.d/rc.subr
+
+rc_configtest() {
+    ${daemon} -n ${daemon_flags}
+}
+
+rc_reload() {
+    pkill -HUP -xf "${pexp}"
+}
+
+pexp="perl ${daemon}.*"
+
+rc_cmd $1

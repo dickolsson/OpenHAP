@@ -1,0 +1,41 @@
+# Perltidy configuration for OpenHAP
+# The settings follow OpenBSD pkg_add style. See style.pod.
+
+# Indentation: 8-character tabs, as style(9) requires
+--indent-columns=8
+--tabs
+--entab-leading-whitespace=8
+
+# Continuation indent: 4 spaces
+--continuation-indentation=4
+
+# Opening brace on its own line for subroutines
+--opening-sub-brace-on-new-line
+
+# Opening brace on the same line for control structures (default with -sbl)
+--noopening-brace-on-new-line
+
+# No cuddled else
+--nocuddled-else
+
+# Spaces around operators
+--paren-tightness=1
+--brace-tightness=1
+--square-bracket-tightness=1
+
+# No space before semicolons
+--nospace-terminal-semicolon
+
+# Break before operators (not after)
+--want-break-before="&& || and or"
+
+# Do not add extra blank lines
+--maximum-consecutive-blank-lines=1
+
+# Keep the formatting of the hash arrows aligned
+--valign-side-comments
+--valign-block-comments
+
+# Stack opening tokens for anonymous subs
+--stack-opening-tokens
+--stack-closing-tokens

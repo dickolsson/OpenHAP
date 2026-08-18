@@ -1,0 +1,35 @@
+{
+  "name": "OpenHAP Perl Development",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "richterger.perl",
+        "editorconfig.editorconfig",
+        "github.vscode-pull-request-github",
+        "github.copilot",
+        "github.copilot-chat"
+      ]
+    }
+  },
+
+  "postCreateCommand": "apt-get update && make deps-develop",
+
+  "remoteUser": "root",
+
+  "runArgs": ["--device=/dev/kvm"],
+
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer/bash_history,target=/root/.bash_history,type=bind,consistency=cached"
+  ]
+}

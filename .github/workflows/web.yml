@@ -1,0 +1,104 @@
+name: Website
+
+# Use explicit includes, never excludes. The build renders the site
+# from a known set of sources, so no path outside that set can change
+# the build. The published site derives fully from these paths. That is
+# what makes it safe for a push to main to skip the deploy job below.
+on:
+  push:
+    branches: [main]
+    paths:
+      # The hand-written pages and the assets
+      - "web/*.html"
+      - "web/*.css"
+      - "web/CNAME"
+      - "web/robots.txt"
+      # The file that describes the site. The fuguweb tool arrives
+      # from its latest release through deps/Linux.txt.
+      - ".fuguwebrc"
+      - "deps/Linux.txt"
+      # The files that the build renders into pages
+      - "man/**.5"
+      - "man/**.8"
+      - "lib/**.pod"
+      - "INSTALL.md"
+      # The build rules and the test that checks the result
+      - "Makefile"
+      - "t/web/*.t"
+      - ".github/workflows/web.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "web/*.html"
+      - "web/*.css"
+      - "web/CNAME"
+      - "web/robots.txt"
+      - ".fuguwebrc"
+      - "deps/Linux.txt"
+      - "man/**.5"
+      - "man/**.8"
+      - "lib/**.pod"
+      - "INSTALL.md"
+      - "Makefile"
+      - "t/web/*.t"
+      - ".github/workflows/web.yml"
+
+# A deploy needs more permissions than this. The deploy job alone
+# receives them.
+permissions:
+  contents: read
+
+# Run one deploy at a time. Never cancel a deploy that already runs.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Perl
+        # The develop tier installs fuguweb from its latest release,
+        # with the renderers it drives.
+        uses: FuguBSD/Tooling/perl/actions/setup-perl@main
+        with:
+          dependencies: develop
+
+      - name: Build the site
+        run: make web
+
+      - name: Check the site
+        run: |
+          fuguweb check --out web/build
+          prove -l t/web/site.t
+
+      - name: Upload the site
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/build
+
+  # Pull requests build and check the site but deploy nothing
+  deploy:
+    name: Deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,291 @@
+#!/usr/bin/env perl
+# ex:ts=8 sw=4:
+# $OpenBSD$
+#
+# Copyright (c) 2026 Dick Olsson <hi@senzilla.io>
+#
+# Permission to use, copy, modify, and distribute this software for any
+# purpose with or without fee is hereby granted, provided that the above
+# copyright notice and this permission notice appear in all copies.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+# WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+# MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+# ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+# WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+# ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+# OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+# deps: install the OS packages and CPAN modules that deps/<OS>.txt names.
+#
+# usage: deps [--dry-run] [--os NAME] <runtime|test|develop>
+#
+# The script reads deps/<OS>.txt relative to the current directory,
+# not relative to this script. The guest runs
+# 'cd /tmp/openhap-* && make deps' out of the extracted tarball. That
+# tree is different from any checkout.
+#
+# This script is the bootstrap. Nothing it needs may be something it
+# installs. Thus it uses only core modules and no v5.36. macOS still
+# ships perl 5.34. A v5.36 floor would make the script that installs
+# things install a perl first.  The 5.34 bundle turns on strict but not
+# warnings. Warnings start at 5.35. Thus the script asks for warnings
+# by name.
+use v5.34;
+use warnings;
+use experimental 'signatures';
+
+use File::Basename qw(dirname);
+use File::Spec;
+use File::Temp   qw(tempdir);
+use Getopt::Long qw(GetOptions);
+use POSIX        qw(uname);
+
+my $dry_run = 0;
+my $os;
+
+GetOptions(
+	'dry-run' => \$dry_run,
+	'os=s'    => \$os,
+) or die "usage: deps [--dry-run] [--os NAME] <runtime|test|develop>\n";
+
+use constant ENVIRONMENTS => qw(runtime test develop);
+
+my $env = shift @ARGV;
+defined $env
+    or die "usage: deps [--dry-run] [--os NAME] <runtime|test|develop>\n";
+
+# An unrecognized environment selects nothing. The shell version then
+# reported success for having installed it. Say so instead.
+grep { $_ eq $env } ENVIRONMENTS
+    or die "deps: unknown environment '$env' (expected "
+    . join( ', ', ENVIRONMENTS ) . ")\n";
+
+$os //= ( uname() )[0];
+
+# _run(@cmd):
+#	Run a command in list form. Die on anything but a clean exit.
+#	List form is the point. The shell version wrote
+#	'pkg_add $PKG_PACKAGES' and leaned on word splitting. Thus a
+#	package name that contains a space installed two wrong packages.
+#	Every caller passes at least two elements. Thus perl never falls
+#	back to a shell.
+sub _run (@cmd)
+{
+	say '+ ', join ' ', map { _quote($_) } @cmd;
+	return if $dry_run;
+
+	my $status = system @cmd;
+
+	if ( $status == -1 ) {
+		die "deps: cannot execute $cmd[0]: $!\n";
+	}
+	if ( $status & 127 ) {
+		die sprintf "deps: %s died with signal %d\n", $cmd[0],
+		    $status & 127;
+	}
+	if ( $status >> 8 ) {
+		die sprintf "deps: %s exited %d\n", $cmd[0], $status >> 8;
+	}
+
+	return;
+}
+
+# _quote($word):
+#	Shell-quote a word for the trace line only. The script never
+#	gives a word to a shell. This function lets a --dry-run reader
+#	and the tests see that an argument with a space is one argument.
+sub _quote ($word)
+{
+	return $word unless $word eq '' || $word =~ /[^\w.\/:=-]/;
+
+	my $quoted = $word;
+	$quoted =~ s/'/'\\''/g;
+
+	return "'$quoted'";
+}
+
+# _which($program):
+#	Return the first executable $program on PATH, or undef. This is
+#	a core-only stand-in for command -v. File::Which is not in base.
+sub _which ($program)
+{
+	for my $dir ( split /:/, ( $ENV{PATH} // '' ) ) {
+		next if $dir eq '';
+		my $path = File::Spec->catfile( $dir, $program );
+		return $path if -f $path && -x $path;
+	}
+
+	return;
+}
+
+# _read_manifest($file, $want):
+#	Parse deps/<OS>.txt into (\@pkgs, \@dists, \@cpan) for
+#	environment $want. Whitespace separates the fields, as sh's
+#	'read env type name' read them.
+#
+#	The function validates every non-comment line, not only the
+#	lines that match $want. The shell version filtered first. Thus a
+#	malformed develop line stayed invisible to 'make deps' until
+#	someone ran 'make deps-develop'.
+sub _read_manifest ( $file, $want )
+{
+	open my $fh, '<', $file
+	    or die "deps: open $file: $!\n";
+
+	my %by_type = ( pkg => [], dist => [], cpan => [] );
+	while ( my $line = <$fh> ) {
+		chomp $line;
+		my ( $env, $type, $name ) = split ' ', $line, 3;
+
+		next unless defined $env;
+		next if index( $env, '#' ) == 0;
+
+		# split with a limit keeps the tail intact. Remove the
+		# trailing whitespace, as IFS would have removed it.
+		$name =~ s/\s+\z// if defined $name;
+
+		if ( !defined $type || !defined $name || $name eq '' ) {
+			warn "ERROR: Invalid format in $file: $line\n";
+			die
+"Expected: <environment> <pkg|dist|cpan> <package-name>\n";
+		}
+		if ( !exists $by_type{$type} ) {
+			die "ERROR: Unknown type '$type' "
+			    . "(expected 'pkg', 'dist' or 'cpan')\n";
+		}
+
+		next unless $env eq $want;
+
+		push @{ $by_type{$type} }, $name;
+	}
+	close $fh;
+
+	return ( $by_type{pkg}, $by_type{dist}, $by_type{cpan} );
+}
+
+# _install_packages($os, @pkgs):
+#	Give the package list to the platform's package manager.
+sub _install_packages ( $os, @pkgs )
+{
+	say 'Installing OS packages: ', join ' ', @pkgs;
+
+	if ( $os eq 'OpenBSD' ) {
+		_run( 'pkg_add', @pkgs );
+	}
+	elsif ( $os eq 'Linux' ) {
+		_run( 'sudo', 'apt-get', 'update' );
+		_run( 'sudo', 'apt-get', 'install', '-y', @pkgs );
+	}
+	elsif ( $os eq 'Darwin' ) {
+		_run( 'brew', 'install', @pkgs );
+	}
+	else {
+		die "ERROR: Unknown OS: $os\n";
+	}
+
+	return;
+}
+
+# _ftp_path():
+#	The path of scripts/ftp, the repository's own cross-platform
+#	fetcher, beside this script.
+sub _ftp_path ()
+{
+	my $ftp = File::Spec->catfile( dirname( File::Spec->rel2abs(__FILE__) ),
+		'ftp' );
+	-x $ftp
+	    or die "deps: cannot find the ftp helper at $ftp\n";
+
+	return $ftp;
+}
+
+# _cpanm_opts():
+#	The options every cpanm run shares. Install into
+#	PERL_LOCAL_LIB_ROOT when the environment names one. local::lib
+#	and CI's setup-perl set that variable.
+sub _cpanm_opts ()
+{
+	my @opts = ('--notest');
+	if ( length( $ENV{PERL_LOCAL_LIB_ROOT} // '' ) ) {
+		say "Installing to local directory: $ENV{PERL_LOCAL_LIB_ROOT}";
+		push @opts, "--local-lib=$ENV{PERL_LOCAL_LIB_ROOT}";
+	}
+
+	return @opts;
+}
+
+# _install_cpanm():
+#	Bootstrap cpanm when it is not already on PATH.
+#
+#	The download goes through scripts/ftp, the repository's own cross-platform
+#	fetcher, not through curl. curl is not in OpenBSD base.
+sub _install_cpanm ()
+{
+	say 'Installing cpanminus...';
+
+	my $tmp       = tempdir( CLEANUP => 1 );
+	my $installer = File::Spec->catfile( $tmp, 'cpanm' );
+
+	_run( _ftp_path(), $installer, 'https://cpanmin.us' );
+	_run( $^X,         $installer, 'App::cpanminus' );
+
+	return;
+}
+
+# _install_dists(@urls):
+#	Fetch distribution tarballs and install each with cpanm. A dist
+#	line names a release-asset URL, normally the latest release of a
+#	sibling repository. The fetch goes through scripts/ftp, so every
+#	platform uses its native downloader.
+sub _install_dists (@urls)
+{
+	say 'Installing distributions: ', join ' ', @urls;
+
+	_install_cpanm() unless defined _which('cpanm');
+
+	my $tmp = tempdir( CLEANUP => 1 );
+	for my $url (@urls) {
+		my ($name) = $url =~ m{([^/]+)\z};
+		if ( !defined $name || $name eq '' ) {
+			die "deps: cannot name the file of $url\n";
+		}
+
+		my $file = File::Spec->catfile( $tmp, $name );
+		_run( _ftp_path(), $file,         $url );
+		_run( 'cpanm',     _cpanm_opts(), $file );
+	}
+
+	return;
+}
+
+# _install_cpan(@modules):
+#	Install CPAN modules with cpanm.
+sub _install_cpan (@modules)
+{
+	say 'Installing CPAN modules: ', join ' ', @modules;
+
+	_install_cpanm() unless defined _which('cpanm');
+
+	_run( 'cpanm', _cpanm_opts(), @modules );
+
+	return;
+}
+
+my $manifest = File::Spec->catfile( 'deps', "$os.txt" );
+
+if ( !-f $manifest ) {
+	warn "No dependencies for $os\n";
+	exit 0;
+}
+
+# dist runs between pkg and cpan: the packages may provide the
+# toolchain a dist build needs, and a dist may provide modules the
+# cpan list builds on.
+my ( $pkgs, $dists, $cpan ) = _read_manifest( $manifest, $env );
+
+_install_packages( $os, @$pkgs ) if @$pkgs;
+_install_dists(@$dists)          if @$dists;
+_install_cpan(@$cpan)            if @$cpan;
+
+say "Dependencies for $env installed successfully";

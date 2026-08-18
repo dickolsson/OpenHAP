@@ -1,0 +1,93 @@
+name: Check
+
+# Use explicit includes, never excludes. A path that no job reads must
+# not start this workflow only because nobody excluded it. The list is
+# the union of the paths that the three jobs below read.
+on:
+  push:
+    branches: [main]
+    paths:
+      # The Perl files that tidy, lint and the syntax sweep read. The
+      # files in bin/ and scripts/ have no extension. Thus a glob over
+      # each directory is the only way to name all of them.
+      - "bin/*"
+      - "scripts/*"
+      - "lib/**.pm"
+      - ".perlcriticrc"
+      - ".perltidyrc"
+      # Prettier formats every Markdown, JSON and YAML file in the
+      # tree, so this workflow must see all of them. The YAML glob also
+      # makes the workflow run again on edits to itself and to the
+      # composite action under .github/.
+      - "**.md"
+      - "**.json"
+      - "**.yml"
+      - ".prettierrc"
+      # The toolchain that the jobs install and use
+      - "Makefile"
+      - "cpanfile"
+      - "deps/*.txt"
+  pull_request:
+    branches: [main]
+    paths:
+      - "bin/*"
+      - "scripts/*"
+      - "lib/**.pm"
+      - ".perlcriticrc"
+      - ".perltidyrc"
+      - "**.md"
+      - "**.json"
+      - "**.yml"
+      - ".prettierrc"
+      - "Makefile"
+      - "cpanfile"
+      - "deps/*.txt"
+
+jobs:
+  tidy:
+    name: Tidy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: FuguBSD/Tooling/perl/actions/setup-perl@main
+        with:
+          dependencies: test
+
+      - name: Check formatting
+        run: make tidy
+
+  prettier:
+    name: Prettier
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Markdown/JSON/YAML formatting
+        run: make prettier
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: FuguBSD/Tooling/perl/actions/setup-perl@main
+        with:
+          dependencies: test
+
+      - name: Check lint
+        run: make lint
+
+      # find -exec ... \; does not propagate the exit status, so a
+      # module that fails to compile prints an error and the step
+      # passes. xargs does propagate it.
+      - name: Check Perl syntax
+        run: |
+          find lib -name "*.pm" -print0 | xargs -0 -n1 perl -I lib -cw
+          find bin -type f -print0 | xargs -0 -n1 perl -I lib -cw

@@ -1,0 +1,39 @@
+# Build artifacts
+*.o
+.fuguvm/
+build/
+local/
+
+# Exploratory testing
+explore/
+
+# Man pages (compiled)
+*.cat1
+*.cat3p
+*.cat5
+*.cat8
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# Devcontainer
+.devcontainer/bash_history
+
+# Integration testing
+.cache/
+*.qcow2
+*.img
+*.iso
+*.pid
+*.log
+
+# Agent files
+SCRATCHPAD*.md
+.claude/worktrees/
+
+# External projects
+external/

@@ -1,0 +1,71 @@
+# The OpenHAP website, built by fuguweb(1).
+#
+# The file describes the site. It holds no list that the tree already
+# holds: a manuals or modules group reads its directory, and every file
+# in the source directory that the build does not render is an asset.
+
+site       = OpenHAP
+out_dir    = web/build
+source_dir = web
+entry      = index.html
+
+# Four navigation entries, in the order the site shows them.
+nav "index.html" {
+	label = OpenHAP
+}
+
+nav "install.html" {
+	label = Install
+}
+
+nav "manuals.html" {
+	label = Manuals
+}
+
+nav "https://github.com/dickolsson/openhap" {
+	label = GitHub
+}
+
+# The pages. A page names one source: a body fragment in the source
+# directory, a Markdown file, or the generated manual index.
+page "index.html" {
+	title = HomeKit Accessory Protocol for OpenBSD
+	body  = index.body.html
+}
+
+page "404.html" {
+	title = Not found
+	body  = 404.body.html
+
+	# The host serves this page for an unknown path, so no page
+	# links to it.
+	unlinked = yes
+}
+
+page "install.html" {
+	title    = Install
+	markdown = INSTALL.md
+}
+
+page "manuals.html" {
+	title = Manuals
+	index = yes
+}
+
+# The manual groups. A manuals block globs its directory for the mdoc
+# sources; a modules block finds the POD sidecars below its own. The
+# order of the blocks is the order of the index.
+manuals "OpenHAP" {
+	dir    = man/openhap
+	anchor = openhap
+}
+
+modules "OpenHAP modules" {
+	dir    = lib/App/OpenHAP
+	anchor = modules
+}
+
+modules "Protocol modules" {
+	dir    = lib/Protocol
+	anchor = protocol-modules
+}
