@@ -9,7 +9,7 @@ out_dir    = web/build
 source_dir = web
 entry      = index.html
 
-# Six navigation entries, in the order the site shows them.
+# Four navigation entries, in the order the site shows them.
 nav "index.html" {
 	label = OpenHAP
 }
@@ -20,14 +20,6 @@ nav "install.html" {
 
 nav "manuals.html" {
 	label = Manuals
-}
-
-nav "fuguvm.html" {
-	label = FuguVM
-}
-
-nav "fugu.html" {
-	label = Fugu
 }
 
 nav "https://github.com/dickolsson/openhap" {
@@ -60,16 +52,6 @@ page "manuals.html" {
 	index = yes
 }
 
-page "fuguvm.html" {
-	title = FuguVM
-	body  = fuguvm.body.html
-}
-
-page "fugu.html" {
-	title = Fugu
-	body  = fugu.body.html
-}
-
 # The manual groups. A manuals block globs its directory for the mdoc
 # sources; a modules block finds the POD sidecars below its own. The
 # order of the blocks is the order of the index.
@@ -78,27 +60,6 @@ manuals "OpenHAP" {
 	anchor = openhap
 }
 
-manuals "FuguVM" {
-	dir    = man/fuguvm
-	anchor = fuguvm
-}
-
-manuals "FuguWeb" {
-	dir    = man/fuguweb
-	anchor = fuguweb
-}
-
-manuals "Fugu" {
-	dir       = man/fugu
-	anchor    = fugu
-
-	# A Fugu source drops the prefix, because a colon cannot appear
-	# in a make target. The page and the staged file keep it.
-	namespace = "Fugu::"
-}
-
-# Never name lib/App here. That one directory holds three namespaces,
-# and one group would swallow all of them.
 modules "OpenHAP modules" {
 	dir    = lib/App/OpenHAP
 	anchor = modules
@@ -107,14 +68,4 @@ modules "OpenHAP modules" {
 modules "Protocol modules" {
 	dir    = lib/Protocol
 	anchor = protocol-modules
-}
-
-modules "FuguVM modules" {
-	dir    = lib/App/FuguVM
-	anchor = vm-modules
-}
-
-modules "FuguWeb modules" {
-	dir    = lib/App/FuguWeb
-	anchor = web-modules
 }

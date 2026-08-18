@@ -30,8 +30,8 @@ runtime problems.
 3. In the test VM, run it as the real service and watch syslog:
 
    ```sh
-   bin/fuguvm ssh 'rcctl restart openhapd'
-   bin/fuguvm ssh 'tail -f /var/log/daemon'
+   fuguvm ssh 'rcctl restart openhapd'
+   fuguvm ssh 'tail -f /var/log/daemon'
    ```
 
 ## Debugging notes
@@ -51,4 +51,4 @@ runtime problems.
   `mandoc man/openhap/openhapd.8 | less`
 - `openhapd.conf(5)` — configuration file format:
   `mandoc man/openhap/openhapd.conf.5 | less`
-- `fuguvm` skill — VM lifecycle
+- `fuguvm(1)` in the FuguBSD/FuguVM repository — VM lifecycle

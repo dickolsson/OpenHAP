@@ -63,8 +63,9 @@ socket, no timer, and no file of its own. Two classes beside the engine do the
 work that the contracts describe: a blocking client and a file store. `openhapd`
 is the reference host.
 
-`Protocol::Imsg` is the second library there. It frames OpenBSD imsg(3) messages
-as bytes, and `Fugu::Imsg` owns the socket.
+The OpenBSD-style daemon plumbing comes from the
+[Fugu](https://github.com/FuguBSD/Fugu) distribution, which `make deps` installs
+from its latest release.
 
 A CPAN release is planned; see `lib/Protocol/HAP.pod` for the library overview
 and the host contracts.

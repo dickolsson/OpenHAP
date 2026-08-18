@@ -8,11 +8,14 @@ This document tells you how to install OpenHAP on OpenBSD. See
 
 - OpenBSD 7.4 or a later version
 - Perl 5.36 or a later version (base system)
+- The [Fugu](https://github.com/FuguBSD/Fugu) Perl library — `make deps`
+  installs it from its latest GitHub release
 
 ## Dependencies
 
-The `make deps` command installs the runtime dependencies. The manifests under
-`deps/` list them for each platform, for example, `deps/OpenBSD.txt`.
+The `make deps` command installs the runtime dependencies, the Fugu library
+among them. The manifests under `deps/` list them for each platform, for
+example, `deps/OpenBSD.txt`.
 
 ## Install
 

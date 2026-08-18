@@ -15,38 +15,40 @@ ChaCha20-Poly1305, HKDF-SHA-512, and TLV8 over encrypted HTTP/1.1, advertised
 via mDNS. OpenBSD is the production platform (pledge(2)/unveil(2), rc.d,
 `_openhap` user); Linux and Darwin are supported for development and CI only.
 
-The repo holds six Perl namespaces with distinct concerns. It claims exactly one
-top-level name, `Fugu`; `App::` and `Protocol::` are shared namespaces that the
-project joins.
+The repo holds two Perl namespaces. It claims no top-level name; `App::` and
+`Protocol::` are shared namespaces that the project joins.
 
 - `Protocol::HAP` (`lib/Protocol/HAP/`) — the host-neutral HAP library: codecs,
   crypto, pairing, the data model, the server engine, a controller, and two
   stores; self-contained, headed for CPAN
-- `Protocol::Imsg` (`lib/Protocol/Imsg.pm`) — the imsg(3) frame, as bytes; a
-  codec with no socket in it
 - `App::OpenHAP::` (`lib/App/OpenHAP/`) — the reference host: the daemon
   plumbing, MQTT device integration, and OpenBSD policy
-- `Fugu::` (`lib/Fugu/`) — generic OpenBSD-style daemon utilities (daemonize,
-  privilege drop, signals, logging, process, state, pledge/unveil, the imsg
-  transport, mdnsd control)
-- `App::FuguVM::` (`lib/App/FuguVM/`) — installs and manages OpenBSD VMs under
-  QEMU, driven by `bin/fuguvm` and `.fuguvmrc`. Keep it OpenHAP-agnostic: this
-  repo is its first user, not its purpose
-- `App::FuguWeb::` (`lib/App/FuguWeb/`) — builds a documentation website from
-  mdoc(7) manuals, `.pod` sidecars and Markdown, driven by `bin/fuguweb` and
-  `.fuguwebrc`. Keep it OpenHAP-agnostic, as `App::FuguVM::` is
 
 The dependency direction is one way. `Protocol::` uses core Perl and its
-declared CPAN modules, and never `Fugu::` or `App::`. `Fugu::` uses core Perl,
-its optional CPAN libraries, and the `Protocol::` codecs on an allowlist, and
-never `App::`. `App::` uses both. A sibling application is not a library: no
-`App::` namespace uses another.
+declared CPAN modules, and never `Fugu::` or `App::`. `App::OpenHAP` uses
+`Protocol::HAP`, the installed `Fugu::` library, and core Perl.
+
+## Sibling distributions
+
+Three sibling repositories carry what this one consumes. Each publishes a
+release tarball, and the `dist` lines of the `deps/` manifests install the
+latest one with cpanm:
+
+- [FuguBSD/Fugu](https://github.com/FuguBSD/Fugu) — the OpenBSD-style daemon
+  utilities (`Fugu::`) and the `Protocol::Imsg` codec; a runtime dependency
+- [FuguBSD/FuguVM](https://github.com/FuguBSD/FuguVM) — `fuguvm`, the OpenBSD VM
+  manager that `make integration` drives; a develop dependency
+- [FuguBSD/FuguWeb](https://github.com/FuguBSD/FuguWeb) — `fuguweb`, the
+  documentation site builder that `make web` drives; a develop dependency
+
+`.github/actions/setup-perl` also lives in FuguBSD/Fugu; every workflow
+references it as `FuguBSD/Fugu/.github/actions/setup-perl@main`.
 
 ## Commands
 
 ```sh
 make check          # tidy + lint + test + spec-coverage; MUST pass before every commit
-make test           # prove -l -v t/{fuguvm,fuguweb,fugu,protocol,openhap,conformance,scripts,web,ci}/*.t
+make test           # prove -l -v t/{protocol,openhap,conformance,scripts,web,ci}/*.t
 prove -l t/openhap/foo.t   # run a single test file
 make lint           # Perl::Critic, severity 4
 make spec-coverage  # spec/ section coverage + stale-citation check
@@ -55,39 +57,32 @@ make tidy           # check perltidy formatting
 make tidy-fix       # auto-fix Perl formatting
 make prettier       # check Markdown/JSON/YAML formatting
 make prettier-fix   # auto-fix Markdown/JSON/YAML
-make deps           # install runtime dependencies
+make deps           # install runtime dependencies (Fugu, mosquitto, crypto)
 make deps-test      # runtime + test dependencies
-make deps-develop   # all dependencies (adds QEMU, SSH, etc.)
+make deps-develop   # all dependencies (adds fuguvm, fuguweb, QEMU, etc.)
 make integration    # provision OpenBSD VM and run integration tests
+make web            # build the website with the installed fuguweb
 ```
 
 ## Layout
 
-- `bin/` — `openhapd` (daemon), `hapctl` (control CLI), `fuguvm` (OpenBSD VM
-  CLI), `fuguweb` (website CLI)
-- `lib/Protocol/` — two libraries. `Protocol::HAP` holds codecs (`TLV.pm`,
-  `HTTP.pm`), setup-code rules (`SetupCode.pm`), crypto (`Crypto.pm`, `SRP.pm`),
-  pairing and sessions (`Pairing.pm`, `Session.pm`, `Store.pod`,
-  `Store/Memory.pm`, `Store/File.pm`), the data model (`Accessory.pm`,
-  `Service.pm`, `Characteristic.pm`, `Bridge.pm`), the sans-IO engine
-  (`Server.pm`), and the blocking client (`Controller.pm`). `Protocol::Imsg` is
-  the imsg(3) frame. Do not call the tier sans-IO: `Server.pm` and
-  `Protocol::Imsg` are, and `Controller.pm` and `Store/File.pm` are not
-  (`t/protocol/boundary.t` enforces the dependency rule instead)
+- `bin/` — `openhapd` (daemon), `hapctl` (control CLI)
+- `lib/Protocol/HAP/` — codecs (`TLV.pm`, `HTTP.pm`), setup-code rules
+  (`SetupCode.pm`), crypto (`Crypto.pm`, `SRP.pm`), pairing and sessions
+  (`Pairing.pm`, `Session.pm`, `Store.pod`, `Store/Memory.pm`, `Store/File.pm`),
+  the data model (`Accessory.pm`, `Service.pm`, `Characteristic.pm`,
+  `Bridge.pm`), the sans-IO engine (`Server.pm`), and the blocking client
+  (`Controller.pm`). Do not call the tier sans-IO: `Server.pm` is, and
+  `Controller.pm` and `Store/File.pm` are not (`t/protocol/boundary.t` enforces
+  the dependency rule instead)
 - `lib/App/OpenHAP/` — the host (`Host.pm`), device integration (`Devices.pm`,
   `Tasmota/*.pm`), the integration-test driver (`Test/Integration.pm`)
-- `lib/App/FuguWeb/` — the website builder: the description (`Config.pm`), the
-  chrome (`Page.pm`), the manual index (`Manual.pm`, `Index.pm`), the external
-  renderers (`Render.pm`), the build (`Site.pm`), and the checks (`Check.pm`)
-- `t/openhap/`, `t/fugu/`, `t/protocol/`, `t/fuguvm/`, `t/fuguweb/` — unit
-  tests; `t/conformance/` — spec-cited conformance tests; `t/scripts/`,
-  `t/web/`, `t/ci/` — tooling tests, named after what they drive (see
-  `t/CLAUDE.md`); `t/openhap/integration/` — integration tests, run inside the
-  OpenBSD VM
+- `t/openhap/`, `t/protocol/` — unit tests; `t/conformance/` — spec-cited
+  conformance tests; `t/scripts/`, `t/web/`, `t/ci/` — tooling tests, named
+  after what they drive (see `t/CLAUDE.md`); `t/openhap/integration/` —
+  integration tests, run inside the OpenBSD VM
 - `man/openhap/` — mdoc(7) man pages: `openhapd.8`, `hapctl.8`,
-  `openhapd.conf.5`; `man/fugu/` — `<Module>.3p`, one per `lib/Fugu/` module,
-  installed as `Fugu::<Module>.3p`; `man/fuguvm/` — `fuguvm.1`; `man/fuguweb/` —
-  `fuguweb.1`
+  `openhapd.conf.5`
 - `spec/` — curated protocol references, normative for the conformance tier (see
   `spec/CLAUDE.md`)
 - `plans/` — design documents and phased implementation plans (see the Plans
@@ -104,7 +99,7 @@ match OpenBSD style; do not "fix" code toward generic Perl::Critic defaults.
 Rules the tools cannot enforce:
 
 - Always `use v5.36` (enables strict, warnings, say, signatures) — the only
-  exception is the two bootstrap scripts, see Dependencies
+  exception is the bootstrap scripts, see Dependencies
 - Object-oriented style with signatures; object is `$self`; internal methods
   prefixed with `_`; do not name unused parameters: `sub foo($, $) { }`
 - Function brace on its own line, control-structure brace on the same line:
@@ -174,12 +169,11 @@ placement top-down — first match wins:
 | #   | The content is...                               | It belongs in...                                                                                              |
 | --- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | 1   | for human end-users or operators                | `README.md` (intro, quick start), `INSTALL.md` (install, setup), `man/` (authoritative tool/config reference) |
-| 2   | the API of a `Fugu::` module                    | an mdoc(7) page at `man/fugu/<Module>.3p`                                                                     |
-| 3   | the API of any other Perl module                | sidecar `.pod` next to the `.pm` — never inline POD                                                           |
-| 4   | needed on essentially every coding task         | this file — always loaded, so keep it short                                                                   |
-| 5   | needed only when touching one directory's files | that directory's `CLAUDE.md`                                                                                  |
-| 6   | a procedure — "how to do X" on demand           | a skill in `.claude/skills/<name>/SKILL.md`                                                                   |
-| 7   | none of the above                               | nowhere — delete it                                                                                           |
+| 2   | the API of a Perl module                        | sidecar `.pod` next to the `.pm` — never inline POD                                                           |
+| 3   | needed on essentially every coding task         | this file — always loaded, so keep it short                                                                   |
+| 4   | needed only when touching one directory's files | that directory's `CLAUDE.md`                                                                                  |
+| 5   | a procedure — "how to do X" on demand           | a skill in `.claude/skills/<name>/SKILL.md`                                                                   |
+| 6   | none of the above                               | nowhere — delete it                                                                                           |
 
 `web/` is not another place for any of this: the site renders `INSTALL.md`,
 `man/` and the `.pod` sidecars, never restating them. Only site-specific framing
@@ -188,16 +182,10 @@ is hand-written, in `web/*.body.html`, and the front page is one of those — se
 
 Corollaries:
 
-- Rows 2 and 3 are exclusive. Fugu uses 3p manuals, found by `man Fugu::Daemon`.
-  OpenHAP, FuguVM and FuguWeb keep sidecars. The shared `Fugu` prefix does not
-  group `Fugu::` with `App::FuguVM::` or `App::FuguWeb::` here. No module has
-  both.
 - No `README.md` anywhere except the repository root
 - Skills and `CLAUDE.md` files may point to man pages, `.pod` files, `spec/`, or
   each other, but never restate their content
-- A new `lib/Fugu/` module needs a `man/fugu/<Module>.3p` page, a `MAN3P` entry
-  in the `Makefile`, and a test; every other new `lib/` module needs a `.pod`
-  sidecar and a test
+- A new `lib/` module needs a `.pod` sidecar and a test
 - Update the relevant documentation with any change in behavior, options, or
   configuration
 
@@ -230,8 +218,10 @@ rest.
 
 `deps/{OpenBSD,Linux,Darwin}.txt` are authoritative, installed by `make deps`
 via `scripts/deps`; one line each, `<environment> <type> <name>`, where
-`<environment>` is `runtime`, `test`, or `develop` and `<type>` is `pkg` or
-`cpan`.
+`<environment>` is `runtime`, `test`, or `develop` and `<type>` is `pkg`,
+`dist`, or `cpan`. A `dist` line names a release-asset URL of a sibling
+distribution, and `scripts/deps` installs the tarball with cpanm — this is how
+Fugu, FuguVM and FuguWeb arrive.
 
 `scripts/deps` and `scripts/deps-key` are the one exception to `use v5.36`: they
 run before anything is installed, and macOS still ships perl 5.34, so requiring
@@ -251,8 +241,8 @@ them up to 5.36.
 Use [Conventional Commits](https://www.conventionalcommits.org/):
 `<type>(<scope>): <description>` with types `feat`, `fix`, `docs`, `style`,
 `refactor`, `perf`, `test`, `build`, `ci`, `chore` and module scopes such as
-`protocol`, `hap`, `mqtt`, `crypto`, `bridge`, `config`, `daemon`, `tasmota`,
-`vm`. Breaking changes take `!` or a `BREAKING CHANGE:` footer.
+`protocol`, `hap`, `mqtt`, `crypto`, `bridge`, `config`, `daemon`, `tasmota`.
+Breaking changes take `!` or a `BREAKING CHANGE:` footer.
 
 ```
 feat(mqtt): add support for retained messages
@@ -267,5 +257,7 @@ sweeping commit.
 
 - Version numbers derive from `git rev-list --count HEAD` (release tag `b<N>`);
   there is no VERSION file
+- The tests and the daemon need the installed Fugu library on `@INC`;
+  `make deps` installs it
 - Use `explore/` (gitignored) for scratch scripts and experiments, never `/tmp`
 - Audit findings go to `SCRATCHPAD-<N>.md` files (gitignored)
