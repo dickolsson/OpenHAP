@@ -45,7 +45,7 @@ is( $? >> 8, 0, 'make web exits 0' ) or diag $build_log;
 
 # Every generic assertion is in the tool. A site that fails one of them
 # fails here, with the tool's own message.
-my $check_log = `cd $ROOT && bin/fuguweb check --out $OUT 2>&1`;
+my $check_log = `cd $ROOT && fuguweb check --out $OUT 2>&1`;
 is( $? >> 8, 0, 'fuguweb check exits 0' ) or diag $check_log;
 
 # The build writes nothing outside WEBOUT. The default output directory
@@ -62,7 +62,7 @@ SKIP: {
 # the second opinion: dropping web/CNAME or the 404 page has to fail
 # somewhere.
 my @SITE = qw(
-    index.html install.html manuals.html fuguvm.html fugu.html 404.html
+    index.html install.html manuals.html 404.html
 );
 my @ASSETS = qw(style.css robots.txt CNAME);
 
@@ -76,42 +76,22 @@ for my $file ( @SITE, @ASSETS ) {
 # published but never installed, never packaged, and has no cat page.
 {
 	my $makefile = slurp("$ROOT/Makefile");
-	# The four lists run from MAN1 to the first CATMAN line.
-	my ($lists) = $makefile =~ m{^MAN1\s*=(.*?)^CATMAN1\b}ms;
+	# The two lists run from MAN5 to the first CATMAN line.
+	my ($lists) = $makefile =~ m{^MAN5\s*=(.*?)^CATMAN5\b}ms;
 	$lists //= '';
 
-	my @listed = $lists =~ m{(man/\S+\.(?:1|3p|5|8))}g;
+	my @listed = $lists =~ m{(man/\S+\.(?:5|8))}g;
 	my %listed = map { $_ => 1 } @listed;
 	ok( scalar @listed, 'the Makefile lists manual sources' );
 
 	my @missing;
 	for my $src ( sort glob("$ROOT/man/*/*") ) {
-		next unless $src =~ m{/(man/[^/]+/[^/]+\.(?:1|3p|5|8))$};
+		next unless $src =~ m{/(man/[^/]+/[^/]+\.(?:5|8))$};
 		push @missing, $1 unless $listed{$1};
 	}
 	is( scalar @missing, 0,
-		'every manual the site publishes is in MAN1/MAN3P/MAN5/MAN8' )
+		'every manual the site publishes is in MAN5/MAN8' )
 	    or diag "not installed, not packaged: @missing";
-}
-
-# The namespaces that a manuals group declares, read from .fuguwebrc as
-# text. Plan 008 had to edit a hard-coded rule here for one directory;
-# nobody should edit it again.
-my %NAMESPACE;
-{
-	my $rc  = slurp("$ROOT/.fuguwebrc");
-	my $dir = '';
-	for my $line ( split /\n/, $rc ) {
-		$line =~ s/#.*//;
-		$dir = '' if $line =~ /^\s*\}/;
-		$dir = ''         if $line =~ /^\s*manuals\b/;
-		$dir = $1         if $line =~ m{^\s*dir\s*=?\s*man/(\S+)};
-		$NAMESPACE{$dir} = $1
-		    if length $dir
-		    && $line =~ /^\s*namespace\s*=?\s*"?([^"\s]+)"?/;
-	}
-
-	ok( $NAMESPACE{fugu}, '.fuguwebrc declares the Fugu namespace' );
 }
 
 # Manual sources in the tree, and the page each one must produce.  The test
@@ -119,11 +99,10 @@ my %NAMESPACE;
 # added but not published fails here. It does not silently go missing.
 my %MANUAL;
 for my $src ( sort glob("$ROOT/man/*/*") ) {
-	next unless $src =~ m{/man/([^/]+)/([^/]+)\.(1|3p|5|8)$};
-	my ( $dir, $stem, $section ) = ( $1, $2, $3 );
+	next unless $src =~ m{/man/[^/]+/([^/]+)\.(5|8)$};
+	my ( $stem, $section ) = ( $1, $2 );
 
-	my $name = ( $NAMESPACE{$dir} // '' ) . $stem;
-	$MANUAL{$src} = "$name.$section.html";
+	$MANUAL{$src} = "$stem.$section.html";
 }
 
 ok( scalar keys %MANUAL, 'manual sources found in man/' );
@@ -192,9 +171,7 @@ for my $file ( sort( values %MANUAL ), sort( values %POD ) ) {
 	}
 }
 
-# The module reference covers every sidecar and nothing else.  The
-# Fugu documentation is in mdoc. Thus the test does not count Fugu
-# pages here.
+# The module reference covers every sidecar and nothing else.
 {
 	opendir my $dh, $OUT or die "Cannot read $OUT: $!";
 	my @module_pages =
@@ -215,12 +192,6 @@ for my $file ( sort( values %MANUAL ), sort( values %POD ) ) {
 		'.Xr openhapd 8 links to the local page' );
 	like( $hapctl, qr{<a class="Xr" href="https://man\.openbsd\.org/rc\.8">},
 		'.Xr rc 8 leaves for man.openbsd.org' );
-
-	# Sibling module manuals cross-link. This only works because the
-	# staging directory holds them under their Fugu:: names.
-	my $daemon = slurp("$OUT/Fugu::Daemon.3p.html");
-	like( $daemon, qr{<a class="Xr" href="\./Fugu::Pidfile\.3p\.html">},
-		'.Xr Fugu::Pidfile 3p links to the local page' );
 }
 
 # The site is a pure function of the repository

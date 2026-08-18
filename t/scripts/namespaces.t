@@ -139,6 +139,31 @@ my @RETIRED = (
 	{ name => 'web/head.html', pattern => qr{\bweb/head\.html\b} },
 	{ name => 'web/foot.html', pattern => qr{\bweb/foot\.html\b} },
 	{ name => 'web/style.css', pattern => qr{\bweb/style\.css\b} },
+
+	# The repository split: Fugu, Protocol::Imsg, FuguVM and FuguWeb
+	# moved to their own repositories, and this repository consumes
+	# their release tarballs. The patterns ban the in-repo paths, not
+	# the names: prose still names Fugu::Log, the live module of an
+	# installed dependency, but nothing may point into a source tree
+	# that left.
+	{ name => 'lib/Fugu',     pattern => qr{\blib/Fugu\b} },
+	{ name => 'lib/Protocol/Imsg', pattern => qr{\blib/Protocol/Imsg\b} },
+	{
+		name    => 'lib/App/FuguVM',
+		pattern => qr{\blib/App/Fugu(?:VM|Web)\b},
+	},
+	{ name => 'bin/fuguvm',   pattern => qr{\bbin/fugu(?:vm|web)\b} },
+	{ name => 'man/fugu/',    pattern => qr{\bman/fugu(?:vm|web)?/} },
+	{ name => 't/fugu/',      pattern => qr{\bt/fugu(?:vm|web)?/} },
+	{
+		name    => 'share/fuguvm',
+		pattern => qr{\bshare/fugu(?:vm|web)\b},
+	},
+	{ name => 'spec/MDNS',    pattern => qr{\bspec/MDNS\b} },
+	{
+		name    => 'MDNS-Imsg',
+		pattern => qr{\bMDNS-(?:Imsg|Control)\b},
+	},
 );
 
 # The vocabulary gate. The project has no users, so no code path stays
