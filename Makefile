@@ -9,9 +9,8 @@ MANDIR			?= $(PREFIX)/man
 SYSCONFDIR		?= /etc
 LOCALSTATEDIR	?= /var
 
-# Build configuration
-BUILD			= $(shell git rev-list --count HEAD)
-TAG				?= b$(BUILD)
+# Build configuration.  The tag is the latest semantic version tag.
+TAG				?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null || echo v0.0.0)
 PACKAGE			= openhap-$(TAG)
 TARBALL			= $(PACKAGE).tar.gz
 

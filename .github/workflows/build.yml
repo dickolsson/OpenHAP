@@ -3,7 +3,8 @@ name: Build
 # Every merged commit proves that the package still builds, and the
 # result stays on the workflow run as an artifact for inspection.
 # Nothing here releases: a release is a deliberate act, made by
-# pushing a b<N> tag, which the Release workflow answers.
+# pushing a v<MAJOR>.<MINOR>.<PATCH> tag, which the Release workflow
+# answers.
 on:
   workflow_run:
     # The test suite gates builds. The same suite filters this
@@ -22,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # The build version derives from `git rev-list --count HEAD`
+          # The build version comes from the latest v* tag.
           fetch-depth: 0
 
       - name: Build the release archive

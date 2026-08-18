@@ -553,8 +553,9 @@ refinements.
   - File: `.github/workflows/test.yml`, `.github/workflows/build.yml`
 
 - [x] **Release process**
-  - Implemented: a b<N> tag drives `.github/workflows/release.yml`, which tests,
-    builds, and publishes the archive to GitHub Releases
+  - Implemented: a `v<MAJOR>.<MINOR>.<PATCH>` tag drives
+    `.github/workflows/release.yml`, which tests, builds, and publishes the
+    archive to GitHub Releases
   - Still open: changelog and release notes
 
 ### CPAN release

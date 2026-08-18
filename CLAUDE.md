@@ -257,7 +257,7 @@ sweeping commit.
 
 ## Gotchas
 
-- Version numbers derive from `git rev-list --count HEAD` (release tag `b<N>`);
-  there is no VERSION file
+- Releases use semantic versioning: a `v<MAJOR>.<MINOR>.<PATCH>` tag; there is
+  no VERSION file
 - Use `explore/` (gitignored) for scratch scripts and experiments, never `/tmp`
 - Audit findings go to `SCRATCHPAD-<N>.md` files (gitignored)

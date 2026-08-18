@@ -100,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The build version derives from `git rev-list --count HEAD`
+          # The build version comes from the latest v* tag.
           fetch-depth: 0
 
       - name: Setup Perl

@@ -99,8 +99,8 @@ fi
 cd /tmp/openhap-*
 make deps </dev/null
 
-# Leave no versioned tree in the snapshot. TAG derives from the commit
-# count, so a baked-in /tmp/openhap-<TAG> would make the next run's
+# Leave no versioned tree in the snapshot. TAG changes with each
+# release, so a baked-in /tmp/openhap-<TAG> would make the next run's
 # 'cd /tmp/openhap-*' match two directories and abort under set -e.
 cd /tmp && rm -rf openhap openhap-* openhap.tar.gz
 
