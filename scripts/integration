@@ -6,7 +6,13 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
+
+# Find the installed fuguvm (make deps-develop installs it)
+FUGUVM="${FUGUVM:-fuguvm}"
+if ! command -v "${FUGUVM}" >/dev/null 2>&1; then
+	echo "ERROR: fuguvm not found (run 'make deps-develop')" >&2
+	exit 1
+fi
 
 # Get SSH port from fuguvm status
 SSH_PORT=$(${FUGUVM} status 2>/dev/null | grep ssh_port | awk '{print $2}')
@@ -19,12 +25,7 @@ vm_scp() { scp ${SSH_OPTS} -P "${SSH_PORT}" "$@"; }
 echo "==> Copying test files..."
 cd "${PROJECT_ROOT}"
 TARBALL="/tmp/tests-$$.tar.gz"
-# The tarball also carries t/fugu/sandbox.t. Its enforcement
-# subtests are OpenBSD-only: a pledge violation aborts, unveil hides
-# the filesystem, and required paths are fatal. They skip on the Linux
-# hosts that `make check` runs on. Thus this guest run is the one
-# place where CI executes them.
-tar czf "${TARBALL}" t/openhap/integration/ t/fugu/sandbox.t \
+tar czf "${TARBALL}" t/openhap/integration/ \
     t/lib/ lib/App/OpenHAP/Test/
 vm_scp "${TARBALL}" "root@127.0.0.1:/tmp/tests.tar.gz"
 rm -f "${TARBALL}"
@@ -66,9 +67,8 @@ export OPENHAP_INTEGRATION_TEST=1
 # pair-setup/pair-verify do not give up before the daemon responds.
 export OPENHAP_TEST_TIMEOUT="${OPENHAP_TEST_TIMEOUT:-60}"
 
-# Run tests in order: environment first, then the Fugu sandbox
-# enforcement subtests (see the tarball note above), then the rest
-TESTS="t/openhap/integration/environment.t t/fugu/sandbox.t"
+# Run tests in order: environment first, then the rest
+TESTS="t/openhap/integration/environment.t"
 for test in t/openhap/integration/*.t; do
 	[ "$test" = "t/openhap/integration/environment.t" ] && continue
 	TESTS="$TESTS $test"

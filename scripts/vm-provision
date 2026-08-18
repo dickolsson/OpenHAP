@@ -11,7 +11,13 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
+
+# Find the installed fuguvm (make deps-develop installs it)
+FUGUVM="${FUGUVM:-fuguvm}"
+if ! command -v "${FUGUVM}" >/dev/null 2>&1; then
+	echo "ERROR: fuguvm not found (run 'make deps-develop')" >&2
+	exit 1
+fi
 
 # Read a field from 'fuguvm status'. fuguvm logs to stderr. Thus the
 # function folds stderr in. Without that, the value is not readable.
@@ -164,12 +170,19 @@ cd /tmp/openhap-*
 # NEW checkout, so it names only the current paths: a renamed
 # namespace stays in @INC forever, and a missed rename still resolves
 # there. The suite would then pass against a shim that the environment
-# supplies. The globs cover the retired spellings without naming them,
-# so t/scripts/namespaces.t stays green. App/ itself is not removed:
-# it is a shared parent and holds App::cpanminus on this guest.
+# supplies. Only what this project owns goes: Fugu and Protocol::Imsg
+# are the Fugu distribution's now, and App/ is a shared parent that
+# holds App::cpanminus on this guest.
 SITE_PERL=/usr/local/libdata/perl5/site_perl
-rm -rf "${SITE_PERL}"/Fugu* "${SITE_PERL}"/OpenHAP \
-	"${SITE_PERL}"/App/OpenHAP "${SITE_PERL}"/Protocol
+rm -rf "${SITE_PERL}"/OpenHAP \
+	"${SITE_PERL}"/App/OpenHAP "${SITE_PERL}"/Protocol/HAP
+
+# Refresh the dependencies outside the snapshotted deps layer. The
+# manifests name the LATEST Fugu release, and deps-key hashes file
+# contents only. Thus a new Fugu release does not rotate the snapshot,
+# and this run is what keeps the guest current. The re-run is cheap:
+# the packages no-op and the Fugu dist is pure Perl.
+make deps </dev/null
 
 # Run make install
 make install
