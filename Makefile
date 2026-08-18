@@ -36,8 +36,6 @@ PERLSRC			= find lib bin scripts -type f \( -name '*.pm' -o \
 			  -exec sh -c 'head -1 "$$1" | grep -q "^\#!.*perl"' \
 			  _ {} \; \) -print
 
-# OS detection
-UNAME			!= uname
 FTP				= scripts/ftp
 DEPS			= scripts/deps
 
