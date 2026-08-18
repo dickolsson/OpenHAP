@@ -1,0 +1,67 @@
+name: Release
+
+# A release is deliberate: a maintainer pushes a semantic version tag
+# v<MAJOR>.<MINOR>.<PATCH>, and this workflow answers it. The archive
+# goes to the workflow artifact and to GitHub Releases. OpenHAP is not
+# a CPAN distribution, so there is no PAUSE step here; the sibling
+# repositories have one.
+#
+#   git tag v0.1.0
+#   git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: FuguBSD/Fugu/.github/actions/setup-perl@main
+        with:
+          dependencies: test
+
+      - name: Run tests
+        run: make test
+
+      - name: Check the tag
+        run: |
+          tag="${{ github.ref_name }}"
+          if ! echo "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "release: tag '$tag' is not v<MAJOR>.<MINOR>.<PATCH>" >&2
+            exit 1
+          fi
+
+      - name: Build the release archive
+        run: make build TAG=${{ github.ref_name }}
+
+      - name: Keep the archive as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openhap-${{ github.ref_name }}
+          path: build/openhap-${{ github.ref_name }}.tar.gz
+
+      - name: Release to GitHub
+        uses: FuguBSD/Fugu/.github/actions/gh-release@main
+        with:
+          tag: ${{ github.ref_name }}
+          title: OpenHAP ${{ github.ref_name }}
+          files: build/openhap-${{ github.ref_name }}.tar.gz
+          token: ${{ github.token }}
+          body: |
+            ## Installation
+
+            ```sh
+            tar -xzf openhap-${{ github.ref_name }}.tar.gz
+            cd openhap-${{ github.ref_name }}
+            make deps
+            doas make install
+            ```
+
+            See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md) for full instructions.

@@ -180,8 +180,9 @@ EOF
 		'--os OpenBSD --dry-run runtime'
 	);
 	isnt( $exit, 0, 'a line missing its name exits non-zero' );
-	like( $output, qr/Invalid format/,        'and reports the bad line' );
-	like( $output, qr/<environment> <pkg\|cpan>/, 'and the expected shape' );
+	like( $output, qr/Invalid format/, 'and reports the bad line' );
+	like( $output, qr/<environment> <pkg\|dist\|cpan>/,
+		'and the expected shape' );
 }
 
 {
@@ -191,6 +192,42 @@ EOF
 	);
 	isnt( $exit, 0, 'an unknown type exits non-zero' );
 	like( $output, qr/Unknown type 'deb'/, 'and names the type' );
+}
+
+# A dist line names a release-asset URL. The script fetches it with
+# scripts/ftp and installs the tarball with cpanm, after the packages
+# and before the cpan modules.
+{
+	my $manifest = "runtime pkg alpha\n"
+	    . "runtime dist https://example.org/dl/Fugu.tar.gz\n"
+	    . "runtime cpan Foo::Bar\n";
+	my ( $exit, $output ) = run_in(
+		fixture( 'OpenBSD', $manifest ),
+		'--os OpenBSD --dry-run runtime'
+	);
+	is( $exit, 0, 'a dist line parses' );
+	like(
+		$output,
+		qr{^\+ \S+/ftp \S+/Fugu\.tar\.gz https://example\.org/dl/Fugu\.tar\.gz$}m,
+		'the tarball downloads through scripts/ftp'
+	);
+	like( $output, qr{^\+ cpanm --notest \S+/Fugu\.tar\.gz$}m,
+		'and installs with cpanm' );
+	like(
+		$output,
+		qr{pkg_add alpha.*Fugu\.tar\.gz.*cpanm --notest Foo::Bar}s,
+		'dists install after packages and before cpan modules'
+	);
+}
+
+# A dist URL must end in a file name.
+{
+	my ( $exit, $output ) = run_in(
+		fixture( 'OpenBSD', "runtime dist https://example.org/dl/\n" ),
+		'--os OpenBSD --dry-run runtime'
+	);
+	isnt( $exit, 0, 'a dist URL with no file name exits non-zero' );
+	like( $output, qr/cannot name the file/, 'and says why' );
 }
 
 # A malformed line in another environment still fails: the shell

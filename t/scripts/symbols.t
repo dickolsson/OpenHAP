@@ -3,11 +3,10 @@
 # The API-surface gate of the simplification effort.
 #
 # Three invariants hold the tree at its size. Every sub defined in
-# lib/Fugu/ and lib/App/ has a caller somewhere in lib/ or bin/
-# outside its own definition line. Every module has its one
-# documentation home - a man/fugu 3p page or a .pod sidecar, never
-# both, never neither. And every non-core import in lib/ and bin/
-# names a module that the cpanfile requires.
+# lib/App/ has a caller somewhere in lib/ or bin/ outside its own
+# definition line. Every module has its one documentation home - a
+# .pod sidecar, never none. And every non-core import in lib/ and
+# bin/ names a module that the cpanfile requires.
 #
 # The caller floor is textual, and therefore a floor: a name that
 # collides across the CPAN boundary passes wrongly (both Random
@@ -66,12 +65,6 @@ my %ALLOW = (
 
 	# Perl calls these itself
 	DESTROY => 'the destructor runs implicitly',
-
-	# Both Fugu::Random and Protocol::HAP::Crypto define
-	# random_bytes: the caller floor cannot tell whose callers are
-	# whose across the CPAN boundary. Check by hand when either
-	# side changes.
-	random_bytes => 'collides across the CPAN boundary',
 );
 
 subtest 'every allowlist row carries a reason' => sub {
@@ -89,11 +82,10 @@ subtest 'the caller floor' => sub {
 	my @corpus_files = ( @lib_pm, @bin );
 	my @test_corpus  = tracked(qr{^t/openhap/integration/.*\.t$});
 
-	# The definitions under the floor: lib/Fugu/ and lib/App/.
-	# Protocol:: is out of scope - a library's .pod contract is
-	# its caller.
+	# The definitions under the floor: lib/App/. Protocol:: is out
+	# of scope - a library's .pod contract is its caller.
 	my %defined;    # name => [ "file:line", ... ]
-	for my $file ( grep {m{^lib/(?:Fugu|App)/}} @lib_pm ) {
+	for my $file ( grep {m{^lib/App/}} @lib_pm ) {
 		my $n = 0;
 		for my $line ( slurp_lines($file) ) {
 			$n++;
@@ -102,7 +94,7 @@ subtest 'the caller floor' => sub {
 		}
 	}
 
-	cmp_ok( scalar keys %defined, '>', 100,
+	cmp_ok( scalar keys %defined, '>', 40,
 		'the sweep reads a whole tree of definitions' );
 
 	# Index the corpus once: every name-shaped token of every line,
@@ -181,51 +173,13 @@ subtest 'every exemption row carries a reason' => sub {
 
 subtest 'documentation completeness' => sub {
 	my @pods = tracked(qr{^lib/.*\.pod$});
-	my @man3 = tracked(qr{^man/fugu/.*\.3p$});
-	my @t_fugu = tracked(qr{^t/fugu/.*\.t$});
 
-	my %pod    = map { $_ => 1 } @pods;
-	my %man3   = map { $_ => 1 } @man3;
-	my %t_fugu = map { $_ => 1 } @t_fugu;
-	my %pm     = map { $_ => 1 } @lib_pm;
-
-	# Parse the MAN3P block of the Makefile, as t/web/site.t
-	# parses MAN
-	my %man3p_listed;
-	{
-		open my $fh, '<', 'Makefile' or die "Cannot read Makefile: $!";
-		my $in = 0;
-		while ( my $line = <$fh> ) {
-			$in = 1 if $line =~ /^MAN3P\s*=/;
-			next unless $in;
-			$man3p_listed{$_} = 1
-			    for $line =~ m{(man/fugu/\S+\.3p)}g;
-			$in = 0 unless $line =~ /\\\s*$/;
-		}
-		close $fh;
-	}
+	my %pod = map { $_ => 1 } @pods;
+	my %pm  = map { $_ => 1 } @lib_pm;
 
 	my @violations;
 	for my $pm (@lib_pm) {
 		my $pod = $pm =~ s/\.pm$/.pod/r;
-
-		if ( $pm =~ m{^lib/Fugu/(\w+)\.pm$} ) {
-			my $module = $1;
-			my $page   = "man/fugu/$module.3p";
-			my $test   = 't/fugu/' . lc($module) . '.t';
-
-			push @violations, "$pm has no $page"
-			    unless $man3{$page};
-			push @violations, "$page is not in the Makefile MAN3P"
-			    unless $man3p_listed{$page};
-			push @violations, "$pm has no $test"
-			    unless $t_fugu{$test};
-			push @violations,
-			    "$pm has both a 3p page and a sidecar"
-			    if $pod{$pod};
-			next;
-		}
-
 		push @violations, "$pm has no sidecar $pod"
 		    unless $pod{$pod};
 	}
@@ -237,13 +191,7 @@ subtest 'documentation completeness' => sub {
 		    unless $pm{$pm};
 	}
 
-	for my $page (@man3) {
-		my ($module) = $page =~ m{man/fugu/(\w+)\.3p$};
-		push @violations, "$page has no module lib/Fugu/$module.pm"
-		    unless $pm{"lib/Fugu/$module.pm"};
-	}
-
-	cmp_ok( scalar @lib_pm, '>', 30, 'the sweep reads the whole tree' );
+	cmp_ok( scalar @lib_pm, '>', 20, 'the sweep reads the whole tree' );
 	is( scalar @violations, 0, 'every module has its one home' )
 	    or diag( join "\n", @violations );
 };
@@ -251,20 +199,10 @@ subtest 'documentation completeness' => sub {
 # --- group three: declared dependencies -----------------------------------
 
 # The modules that one cpanfile entry provides beyond its own name.
-# CryptX and HTTP::Message are distributions; the code uses their
-# parts.
+# CryptX is a distribution; the code uses its parts.
 my %PROVIDED_BY = (
 	'Crypt::KeyDerivation'             => 'CryptX',
 	'Crypt::AuthEnc::ChaCha20Poly1305' => 'CryptX',
-	'HTTP::Request'                    => 'HTTP::Message',
-	'HTTP::Response'                   => 'HTTP::Message',
-);
-
-# Platform modules: part of the OpenBSD base system, absent from
-# Module::CoreList and from CPAN alike.
-my %PLATFORM = map { $_ => 1 } qw(
-    OpenBSD::Pledge
-    OpenBSD::Unveil
 );
 
 subtest 'declared dependencies' => sub {
@@ -290,8 +228,10 @@ subtest 'declared dependencies' => sub {
 			my $module = $1;
 
 			next if $module =~ /^v\d/;
+
+			# Own namespaces, and the Fugu library, which
+			# installs from its release and not from CPAN
 			next if $module =~ /^(?:Fugu|App|Protocol)\b/;
-			next if $PLATFORM{$module};
 			next if Module::CoreList::is_core($module);
 
 			my $entry = $PROVIDED_BY{$module} // $module;

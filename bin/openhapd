@@ -210,7 +210,7 @@ if ( $> == 0 ) {
 }
 
 # Publish the mDNS advertisement after the privilege drop. The daemon
-# uses the mdnsd control protocol directly (spec/MDNS-Control.md) and
+# uses the mdnsd control protocol directly (see Fugu::Mdnsd) and
 # keeps the socket open. A close of the socket withdraws the service.
 # A missing mdnsd degrades discovery. It never degrades HAP service.
 if (
@@ -318,7 +318,7 @@ Fugu::Sandbox->unveil_lock;
 #	unix	reconnecting to mdnsd. update_txt withdraws and
 #		publishes again over a fresh control socket. Thus
 #		socket(2) and connect(2) on the AF_UNIX path happen
-#		after this point (spec/MDNS-Control.md §8)
+#		after this point (see Fugu::Mdnsd)
 #
 # proc, exec and prot_exec are deliberately absent. The daemon spawns
 # nothing, and step 1 loaded every shared object before this line.

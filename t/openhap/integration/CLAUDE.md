@@ -52,13 +52,12 @@ done_testing();
 Testing anything behind pair-verify (authenticated endpoints, events, encrypted
 framing) goes through `Protocol::HAP::Controller` (API in
 `lib/Protocol/HAP/Controller.pod`): complete `pair_setup`/`pair_verify` in
-setup, use `request`/`next_event`, and `remove_pairing` in teardown so the
-shared daemon is never left paired between files.
+setup, use `request`/`next_event`, and `remove_pairing` in teardown.
 
 ## Ordering and state
 
-- `scripts/integration` runs the files as an explicit ordered list with
-  `environment.t` always first.
+- `scripts/integration` runs `environment.t` first, then the rest of the
+  directory in glob order.
 - Files own their pairing lifecycle: call `$env->ensure_unpaired` in setup, pair
   via the controller if needed, and unpair in teardown. The shared daemon is
   never left paired between files.
@@ -71,19 +70,20 @@ shared daemon is never left paired between files.
 file. To iterate on one file without re-provisioning:
 
 ```sh
-bin/fuguvm ssh 'cd /tmp && export OPENHAP_INTEGRATION_TEST=1 && \
-    prove -I/usr/local/libdata/perl5/site_perl -v t/openhap/integration/daemon.t'
+fuguvm ssh 'cd /tmp && export OPENHAP_INTEGRATION_TEST=1 && \
+    prove -I/usr/local/libdata/perl5/site_perl -It/lib \
+    -v t/openhap/integration/daemon.t'
 ```
 
 On an OpenBSD host with OpenHAP installed, skip the VM entirely:
-`OPENHAP_INTEGRATION_TEST=1 prove -l -v t/openhap/integration/`.
+`OPENHAP_INTEGRATION_TEST=1 prove -l -It/lib -v t/openhap/integration/`.
 
 ## Debugging failures
 
 ```sh
-bin/fuguvm ssh 'rcctl check openhapd && echo running || echo stopped'
-bin/fuguvm ssh 'tail -50 /var/log/daemon | grep openhapd'
-bin/fuguvm ssh 'hapctl -c /etc/openhapd.conf check'
+fuguvm ssh 'rcctl check openhapd && echo running || echo stopped'
+fuguvm ssh 'tail -50 /var/log/daemon | grep openhapd'
+fuguvm ssh 'hapctl -c /etc/openhapd.conf check'
 ```
 
 Usual causes, in order of likelihood:
@@ -103,4 +103,4 @@ Usual causes, in order of likelihood:
 
 - Test helper API: `lib/App/OpenHAP/Test/Integration.pod`,
   `lib/Protocol/HAP/Controller.pod`
-- VM lifecycle: `fuguvm` skill
+- VM lifecycle: `fuguvm(1)` in the FuguBSD/FuguVM repository

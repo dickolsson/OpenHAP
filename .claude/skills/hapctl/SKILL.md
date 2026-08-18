@@ -36,8 +36,8 @@ validity, and configured devices — with `bin/hapctl`.
 4. Against the test VM, run the installed copy:
 
    ```sh
-   bin/fuguvm ssh 'hapctl status'
-   bin/fuguvm ssh 'hapctl -c /etc/openhapd.conf check'
+   fuguvm ssh 'hapctl status'
+   fuguvm ssh 'hapctl -c /etc/openhapd.conf check'
    ```
 
 `status` and `devices` ask the daemon over `/var/run/openhapd/control.sock`.

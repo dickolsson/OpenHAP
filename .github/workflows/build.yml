@@ -1,56 +1,36 @@
 name: Build
 
+# Every merged commit proves that the package still builds, and the
+# result stays on the workflow run as an artifact for inspection.
+# Nothing here releases: a release is a deliberate act, made by
+# pushing a v<MAJOR>.<MINOR>.<PATCH> tag, which the Release workflow
+# answers.
 on:
   workflow_run:
-    # The test suite gates releases. The same suite filters this
-    # workflow, because workflow_run takes no paths of its own. Test
-    # declares an explicit include list of the sources that go into a
-    # release. Thus a merge that touches no path on that list makes no
-    # release. The tag comes from the commit count, so it skips ahead
-    # on the next release.
+    # The test suite gates builds. The same suite filters this
+    # workflow, because workflow_run takes no paths of its own.
     workflows: ["Test"]
     types:
       - completed
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # The build version comes from the latest v* tag.
           fetch-depth: 0
 
-      - name: Get build number
-        id: build
-        run: |
-          echo "build=$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
-          echo "tag=b$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
+      - name: Build the release archive
+        run: make build
 
-      - name: Create release archive
-        run: make build TAG=${{ steps.build.outputs.tag }}
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - name: Keep the archive as a workflow artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.build.outputs.tag }}
-          name: OpenHAP Build ${{ steps.build.outputs.build }}
-          draft: false
-          prerelease: false
-          files: build/openhap-${{ steps.build.outputs.tag }}.tar.gz
-          body: |
-            ## Installation
-
-            ```sh
-            tar -xzf openhap-${{ steps.build.outputs.tag }}.tar.gz
-            cd openhap-${{ steps.build.outputs.tag }}
-            doas make install
-            ```
-
-            See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md) for full instructions.
+          name: openhap-package
+          path: build/openhap-*.tar.gz

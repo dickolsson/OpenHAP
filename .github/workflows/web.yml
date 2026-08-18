@@ -13,15 +13,11 @@ on:
       - "web/*.css"
       - "web/CNAME"
       - "web/robots.txt"
-      # The tool that builds the site, and the file that describes it
-      - "lib/App/FuguWeb/**"
-      - "bin/fuguweb"
+      # The file that describes the site. The fuguweb tool arrives
+      # from its latest release through deps/Linux.txt.
       - ".fuguwebrc"
-      - "share/fuguweb/**"
-      - "t/fuguweb/**"
+      - "deps/Linux.txt"
       # The files that the build renders into pages
-      - "man/**.1"
-      - "man/**.3p"
       - "man/**.5"
       - "man/**.8"
       - "lib/**.pod"
@@ -37,13 +33,8 @@ on:
       - "web/*.css"
       - "web/CNAME"
       - "web/robots.txt"
-      - "lib/App/FuguWeb/**"
-      - "bin/fuguweb"
       - ".fuguwebrc"
-      - "share/fuguweb/**"
-      - "t/fuguweb/**"
-      - "man/**.1"
-      - "man/**.3p"
+      - "deps/Linux.txt"
       - "man/**.5"
       - "man/**.8"
       - "lib/**.pod"
@@ -70,17 +61,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install renderers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lowdown mandoc
+      - name: Setup Perl
+        # The develop tier installs fuguweb from its latest release,
+        # with the renderers it drives.
+        uses: FuguBSD/Fugu/.github/actions/setup-perl@main
+        with:
+          dependencies: develop
 
       - name: Build the site
         run: make web
 
       - name: Check the site
         run: |
-          bin/fuguweb check --out web/build
+          fuguweb check --out web/build
           prove -l t/web/site.t
 
       - name: Upload the site

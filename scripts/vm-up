@@ -9,10 +9,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Find fuguvm
-FUGUVM="${PROJECT_ROOT}/bin/fuguvm"
-if [ ! -x "${FUGUVM}" ]; then
-	echo "ERROR: fuguvm not found" >&2
+# Find the installed fuguvm (make deps-develop installs it)
+FUGUVM="${FUGUVM:-fuguvm}"
+if ! command -v "${FUGUVM}" >/dev/null 2>&1; then
+	echo "ERROR: fuguvm not found (run 'make deps-develop')" >&2
 	exit 1
 fi
 
