@@ -21,7 +21,6 @@ on:
       # The daemon, the library, and the files that go into the guest
       - "bin/hapctl"
       - "bin/openhapd"
-      - "lib/Fugu/*.pm"
       - "lib/App/OpenHAP/**.pm"
       - "lib/Protocol/**.pm"
       - "etc/rc.d/openhapd"
@@ -29,15 +28,11 @@ on:
       # The suite itself and the mocks that it carries over
       - "t/openhap/integration/*.t"
       - "t/protocol/**"
-      - "t/fugu/sandbox.t"
       - "t/lib/**.pm"
       # The harness that installs the guest, provisions it, and
-      # controls the run
-      - "bin/fuguvm"
-      - "lib/App/FuguVM/**.pm"
+      # controls the run. fuguvm itself arrives from its latest
+      # release through deps/Linux.txt.
       - ".fuguvmrc"
-      - "share/fuguvm/cache-generation"
-      - "share/fuguvm/expect/*.exp"
       - "scripts/deps"
       - "scripts/deps-key"
       - "scripts/ftp"
@@ -49,32 +44,26 @@ on:
       - "cpanfile"
       - "deps/OpenBSD.txt"
       # The host dependencies. QEMU, expect and telnet boot and control
-      # the guest. Also, setup-perl hashes this file into its own cache
-      # key. Thus, by the rule above, this file must be able to start a
-      # run of its own.
+      # the guest, and the dist lines install fuguvm and fuguweb. Also,
+      # setup-perl hashes this file into its own cache key. Thus, by
+      # the rule above, this file must be able to start a run of its
+      # own.
       - "deps/Linux.txt"
       - "Makefile"
-      - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/integration.yml"
   pull_request:
     branches: [main]
     paths:
       - "bin/hapctl"
       - "bin/openhapd"
-      - "lib/Fugu/*.pm"
       - "lib/App/OpenHAP/**.pm"
       - "lib/Protocol/**.pm"
       - "etc/rc.d/openhapd"
       - "share/openhap/examples/*.sample"
       - "t/openhap/integration/*.t"
       - "t/protocol/**"
-      - "t/fugu/sandbox.t"
       - "t/lib/**.pm"
-      - "bin/fuguvm"
-      - "lib/App/FuguVM/**.pm"
       - ".fuguvmrc"
-      - "share/fuguvm/cache-generation"
-      - "share/fuguvm/expect/*.exp"
       - "scripts/deps"
       - "scripts/deps-key"
       - "scripts/ftp"
@@ -85,7 +74,6 @@ on:
       - "deps/OpenBSD.txt"
       - "deps/Linux.txt"
       - "Makefile"
-      - ".github/actions/setup-perl/action.yml"
       - ".github/workflows/integration.yml"
   # Manual runs against any branch, for example to test workflow
   # changes before a merge
@@ -116,9 +104,23 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Perl
-        uses: ./.github/actions/setup-perl
+        uses: FuguBSD/Fugu/.github/actions/setup-perl@main
         with:
           dependencies: develop
+
+      - name: Resolve the installed FuguVM release
+        # The expect scripts and the cache-generation file live inside
+        # the installed FuguVM distribution now, so hashFiles cannot
+        # see them. The release tag subsumes every input that ships in
+        # the distribution. The redirect of releases/latest names it
+        # without an API token.
+        id: fuguvm
+        run: |
+          url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+            https://github.com/FuguBSD/FuguVM/releases/latest)
+          tag="${url##*/}"
+          test -n "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Cache OpenBSD images and downloads
         # `.fuguvm` is fully ephemeral. On every run, fuguvm rebuilds
@@ -128,19 +130,13 @@ jobs:
         # proxy's copies of all installer downloads. Nothing here
         # depends on the state of a previous run.
         #
-        # The proxy store makes a reinstall cheap rather than free.
-        # A rotated key restores the previous entry through
-        # restore-keys. Thus an install.exp edit runs the installer
-        # again, but reads the file sets from local disk. The proxy
-        # store is also the half of this directory that had no bound
-        # until `cache clear --stale` learned to prune it. See the
-        # cleanup step below.
-        #
-        # The key hashes every input that either fuguvm's own cache key
-        # or scripts/deps-key derives from. That is a constraint, not a
-        # courtesy. The post-step saves only on a primary-key MISS.
-        # Thus an input this key cannot see would rotate a cached name,
-        # rebuild it, and then discard the result on every single run.
+        # The key hashes every local input that either fuguvm's own
+        # cache key or scripts/deps-key derives from, plus the FuguVM
+        # release tag for the inputs that ship inside the installed
+        # distribution. That is a constraint, not a courtesy. The
+        # post-step saves only on a primary-key MISS. Thus an input
+        # this key cannot see would rotate a cached name, rebuild it,
+        # and then discard the result on every single run.
         #
         # A cold-cache run is a fresh OpenBSD install from the
         # miniroot. To force one, bump the v<N> suffix below. As an
@@ -155,15 +151,14 @@ jobs:
         with:
           path: ~/.cache/fuguvm
           key:
-            fuguvm-v1-${{ runner.arch }}-${{ hashFiles('.fuguvmrc',
-            'share/fuguvm/expect/install.exp', 'share/fuguvm/cache-generation',
-            'deps/OpenBSD.txt', 'cpanfile', 'scripts/deps', 'scripts/deps-key',
-            'scripts/vm-provision') }}
+            fuguvm-v2-${{ runner.arch }}-${{ steps.fuguvm.outputs.tag }}-${{
+            hashFiles('.fuguvmrc', 'deps/OpenBSD.txt', 'cpanfile',
+            'scripts/deps', 'scripts/deps-key', 'scripts/vm-provision') }}
           # A key rotation still restores the miniroot and any base
           # image that fuguvm's own keying still accepts. Thus the run
           # rebuilds only the parts that changed.
           restore-keys: |
-            fuguvm-v1-${{ runner.arch }}-
+            fuguvm-v2-${{ runner.arch }}-
 
       - name: Generate ephemeral SSH key for the VM
         # The harness installs an authorized_keys entry on the guest.
@@ -201,7 +196,7 @@ jobs:
         if: always() && !success()
         run: |
           echo "==> fuguvm status"
-          ./bin/fuguvm status || true
+          fuguvm status || true
           echo "==> QEMU log tail"
           tail -n 80 .fuguvm/state/*/qemu.log 2>/dev/null || true
           echo "==> Host virtualization"
@@ -232,5 +227,5 @@ jobs:
         # grows.
         if: always()
         run: |
-          ./bin/fuguvm down || true
-          ./bin/fuguvm cache clear --stale || true
+          fuguvm down || true
+          fuguvm cache clear --stale || true
